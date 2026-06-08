@@ -46,4 +46,5 @@ changelogUI.md
 docs/instructions/Roadmap.md
 .cursorrules
 *.md
+!plan/**/*.md
 .qodo
