@@ -5,6 +5,7 @@ import { createScopedLogger } from '~/utils/logger';
 import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markdown';
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
+import { Mermaid } from './Mermaid';
 import type { Message } from 'ai';
 import styles from './Markdown.module.scss';
 import ThoughtBox from './ThoughtBox';
@@ -98,7 +99,7 @@ export const Markdown = memo(
           );
         },
         pre: (props) => {
-          const { children, node, ...rest } = props;
+          const { children: preChildren, node, ...rest } = props;
 
           const [firstChild] = node?.children ?? [];
 
@@ -111,10 +112,22 @@ export const Markdown = memo(
             const { className, ...rest } = firstChild.properties;
             const [, language = 'plaintext'] = /language-(\w+)/.exec(String(className) || '') ?? [];
 
+            if (language === 'mermaid') {
+              const code = firstChild.children[0].value;
+              const lastMermaidIndex = children.lastIndexOf('```mermaid');
+              const isClosed = children.indexOf('```', lastMermaidIndex + 10) !== -1;
+
+              if (isClosed) {
+                return <Mermaid chart={code} />;
+              }
+
+              return null;
+            }
+
             return <CodeBlock code={firstChild.children[0].value} language={language as BundledLanguage} {...rest} />;
           }
 
-          return <pre {...rest}>{children}</pre>;
+          return <pre {...rest}>{preChildren}</pre>;
         },
         button: ({ node, children, ...props }) => {
           const dataProps = node?.properties as Record<string, unknown>;
@@ -190,8 +203,32 @@ export const Markdown = memo(
 
           return <button {...props}>{children}</button>;
         },
+        a: ({ node, children, ...props }) => {
+          const href = props.href;
+          const text =
+            typeof children === 'string' ? children : (Array.isArray(children) ? children[0]?.toString() : '') || '';
+
+          if (href && text.startsWith('[^')) {
+            return (
+              <a
+                {...props}
+                className="text-[10px] bg-bolt-elements-background-depth-2 px-1 py-0.5 rounded border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors ml-1 align-top"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {text}
+              </a>
+            );
+          }
+
+          return (
+            <a {...props} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          );
+        },
       } satisfies Components;
-    }, []);
+    }, [children]);
 
     return (
       <ReactMarkdown

@@ -10,6 +10,8 @@ import { createScopedLogger } from '~/utils/logger';
 import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
+import { z } from 'zod';
+import { fetchWebPage } from '~/lib/utils/web-fetch';
 
 export type Messages = Message[];
 
@@ -25,6 +27,22 @@ export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0]
 }
 
 const logger = createScopedLogger('stream-text');
+
+/**
+ * Returns true for Google models that support native thinking/reasoning.
+ * These models return thought: true parts in the SSE response when
+ * thinkingConfig is injected into the request via providerOptions.
+ */
+function isGoogleThinkingModel(modelName: string): boolean {
+  const name = modelName.toLowerCase();
+  return (
+    name.includes('gemini-2.5') ||
+    name.includes('gemini-3') ||
+    name.includes('gemma-3-27') ||
+    name.includes('gemma-4') ||
+    name.includes('learnlm')
+  );
+}
 
 function getCompletionTokenLimit(modelDetails: any): number {
   // 1. If model specifies completion tokens, use that
@@ -45,7 +63,7 @@ function getCompletionTokenLimit(modelDetails: any): number {
 
 function sanitizeText(text: string): string {
   let sanitized = text.replace(/<div class=\\"__boltThought__\\">.*?<\/div>/s, '');
-  sanitized = sanitized.replace(/<think>.*?<\/think>/s, '');
+  sanitized = sanitized.replace(/<(think|thought)>.*?<\/(think|thought)>/s, '');
   sanitized = sanitized.replace(/<boltAction type="file" filePath="package-lock\.json">[\s\S]*?<\/boltAction>/g, '');
 
   return sanitized.trim();
@@ -125,13 +143,6 @@ export async function streamText(props: {
     modelDetails = modelsList.find((m) => m.name === currentModel);
 
     if (!modelDetails) {
-      // Check if it's a Google provider and the model name looks like it might be incorrect
-      if (provider.name === 'Google' && currentModel.includes('2.5')) {
-        throw new Error(
-          `Model "${currentModel}" not found. Gemini 2.5 Pro doesn't exist. Available Gemini models include: gemini-1.5-pro, gemini-2.0-flash, gemini-1.5-flash. Please select a valid model.`,
-        );
-      }
-
       // Fallback to first model with warning
       logger.warn(
         `MODEL [${currentModel}] not found in provider [${provider.name}]. Falling back to first model. ${modelsList[0].name}`,
@@ -273,17 +284,37 @@ export async function streamText(props: {
     ),
   );
 
+  const modelInstance = provider.getModelInstance({
+    model: modelDetails.name,
+    serverEnv,
+    apiKeys,
+    providerSettings,
+  });
+
   const streamParams = {
-    model: provider.getModelInstance({
-      model: modelDetails.name,
-      serverEnv,
-      apiKeys,
-      providerSettings,
-    }),
+    model: modelInstance,
     system: chatMode === 'build' ? systemPrompt : discussPrompt(),
     ...tokenParams,
     messages: convertToCoreMessages(processedMessages as any),
     ...filteredOptions,
+
+    tools: {
+      ...options?.tools,
+      webSearch: {
+        description: 'Fetch the content of a web page to get up-to-date information or read documentation.',
+        parameters: z.object({
+          url: z.string().url().describe('The URL of the web page to fetch'),
+        }),
+        execute: async ({ url }: { url: string }) => {
+          try {
+            const result = await fetchWebPage(url);
+            return result;
+          } catch (error: any) {
+            return { error: error.message };
+          }
+        },
+      },
+    },
 
     // Set temperature to 1 for reasoning models (required by OpenAI API)
     ...(isReasoning ? { temperature: 1 } : {}),

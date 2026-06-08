@@ -23,8 +23,6 @@ import type { ActionAlert, SupabaseAlert, DeployAlert, LlmErrorAlertType } from 
 import DeployChatAlert from '~/components/deploy/DeployAlert';
 import ChatAlert from './ChatAlert';
 import type { ModelInfo } from '~/lib/modules/llm/types';
-import ProgressCompilation from './ProgressCompilation';
-import type { ProgressAnnotation } from '~/types/context';
 import { SupabaseChatAlert } from '~/components/chat/SupabaseAlert';
 import { expoUrlAtom } from '~/lib/stores/qrCodeStore';
 import { useStore } from '@nanostores/react';
@@ -34,7 +32,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 
-const TEXTAREA_MIN_HEIGHT = 76;
+const TEXTAREA_MIN_HEIGHT = 32;
 
 interface BaseChatProps {
   textareaRef?: React.RefObject<HTMLTextAreaElement> | undefined;
@@ -82,6 +80,8 @@ interface BaseChatProps {
   setSelectedElement?: (element: ElementInfo | null) => void;
   addToolResult?: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   onWebSearchResult?: (result: string) => void;
+  apiKeys?: Record<string, string>;
+  onApiKeysChange?: (providerName: string, apiKey: string) => Promise<void>;
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -132,18 +132,17 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         throw new Error('addToolResult not implemented');
       },
       onWebSearchResult,
+      apiKeys,
+      onApiKeysChange,
     },
     ref,
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
-    const [apiKeys, setApiKeys] = useState<Record<string, string>>(getApiKeysFromCookies());
     const [modelList, setModelList] = useState<ModelInfo[]>([]);
-    const [isModelSettingsCollapsed, setIsModelSettingsCollapsed] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
     const [transcript, setTranscript] = useState('');
     const [isModelLoading, setIsModelLoading] = useState<string | undefined>('all');
-    const [progressAnnotations, setProgressAnnotations] = useState<ProgressAnnotation[]>([]);
     const expoUrl = useStore(expoUrlAtom);
     const [qrModalOpen, setQrModalOpen] = useState(false);
 
@@ -153,14 +152,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     }, [expoUrl]);
 
-    useEffect(() => {
-      if (data) {
-        const progressList = data.filter(
-          (x) => typeof x === 'object' && (x as any).type === 'progress',
-        ) as ProgressAnnotation[];
-        setProgressAnnotations(progressList);
-      }
-    }, [data]);
     useEffect(() => {
       console.log(transcript);
     }, [transcript]);
@@ -203,16 +194,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
 
     useEffect(() => {
       if (typeof window !== 'undefined') {
-        let parsedApiKeys: Record<string, string> | undefined = {};
-
-        try {
-          parsedApiKeys = getApiKeysFromCookies();
-          setApiKeys(parsedApiKeys);
-        } catch (error) {
-          console.error('Error loading API keys from cookies:', error);
-          Cookies.remove('apiKeys');
-        }
-
         setIsModelLoading('all');
         fetch('/api/models')
           .then((response) => response.json())
@@ -229,10 +210,8 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     }, [providerList, provider]);
 
-    const onApiKeysChange = async (providerName: string, apiKey: string) => {
-      const newApiKeys = { ...apiKeys, [providerName]: apiKey };
-      setApiKeys(newApiKeys);
-      Cookies.set('apiKeys', JSON.stringify(newApiKeys));
+    const handleApiKeysChange = async (providerName: string, apiKey: string) => {
+      await onApiKeysChange?.(providerName, apiKey);
 
       setIsModelLoading(providerName);
 
@@ -425,19 +404,16 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   )}
                   {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
                 </div>
-                {progressAnnotations && <ProgressCompilation data={progressAnnotations} />}
                 <ChatBox
-                  isModelSettingsCollapsed={isModelSettingsCollapsed}
-                  setIsModelSettingsCollapsed={setIsModelSettingsCollapsed}
                   provider={provider}
                   setProvider={setProvider}
                   providerList={providerList || (PROVIDER_LIST as ProviderInfo[])}
                   model={model}
                   setModel={setModel}
                   modelList={modelList}
-                  apiKeys={apiKeys}
+                  apiKeys={apiKeys || {}}
                   isModelLoading={isModelLoading}
-                  onApiKeysChange={onApiKeysChange}
+                  onApiKeysChange={handleApiKeysChange}
                   uploadedFiles={uploadedFiles}
                   setUploadedFiles={setUploadedFiles}
                   imageDataList={imageDataList}

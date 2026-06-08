@@ -4,6 +4,8 @@ import type { KeyboardEvent } from 'react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { classNames } from '~/utils/classNames';
 import { LOCAL_PROVIDERS } from '~/lib/stores/settings';
+import { IconButton } from '~/components/ui/IconButton';
+import { APIKeyPopup } from './APIKeyPopup';
 
 // Fuzzy search utilities
 const levenshteinDistance = (str1: string, str2: string): number => {
@@ -81,6 +83,7 @@ const formatContextSize = (tokens: number): string => {
 };
 
 interface ModelSelectorProps {
+  collapsed?: boolean;
   model?: string;
   setModel?: (model: string) => void;
   provider?: ProviderInfo;
@@ -88,6 +91,7 @@ interface ModelSelectorProps {
   modelList: ModelInfo[];
   providerList: ProviderInfo[];
   apiKeys: Record<string, string>;
+  onApiKeysChange?: (providerName: string, apiKey: string) => void;
   modelLoading?: string;
 }
 
@@ -107,6 +111,7 @@ const isModelLikelyFree = (model: ModelInfo, providerName?: string): boolean => 
 };
 
 export const ModelSelector = ({
+  collapsed,
   model,
   setModel,
   provider,
@@ -114,6 +119,8 @@ export const ModelSelector = ({
   modelList,
   providerList,
   modelLoading,
+  apiKeys,
+  onApiKeysChange,
 }: ModelSelectorProps) => {
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [debouncedModelSearchQuery, setDebouncedModelSearchQuery] = useState('');
@@ -122,14 +129,9 @@ export const ModelSelector = ({
   const modelSearchInputRef = useRef<HTMLInputElement>(null);
   const modelOptionsRef = useRef<(HTMLDivElement | null)[]>([]);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
-  const [providerSearchQuery, setProviderSearchQuery] = useState('');
-  const [debouncedProviderSearchQuery, setDebouncedProviderSearchQuery] = useState('');
-  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
-  const [focusedProviderIndex, setFocusedProviderIndex] = useState(-1);
-  const providerSearchInputRef = useRef<HTMLInputElement>(null);
-  const providerOptionsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const providerDropdownRef = useRef<HTMLDivElement>(null);
   const [showFreeModelsOnly, setShowFreeModelsOnly] = useState(false);
+  const [isApiKeyPopupOpen, setIsApiKeyPopupOpen] = useState(false);
+  const [isEnvKeySet, setIsEnvKeySet] = useState(false);
 
   type ConnectionStatus = 'unknown' | 'connected' | 'disconnected';
 
@@ -157,6 +159,27 @@ export const ModelSelector = ({
     checkLocalProviders();
   }, [providerList, modelList]);
 
+  // Check if API key is set via environment variable for the current provider
+  useEffect(() => {
+    const checkEnvKey = async () => {
+      if (!provider?.name || LOCAL_PROVIDERS.includes(provider.name)) {
+        setIsEnvKeySet(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/check-env-key?provider=${encodeURIComponent(provider.name)}`);
+        const data = await response.json();
+        setIsEnvKeySet((data as { isSet: boolean }).isSet);
+      } catch (error) {
+        console.error('Failed to check environment API key:', error);
+        setIsEnvKeySet(false);
+      }
+    };
+
+    checkEnvKey();
+  }, [provider?.name]);
+
   // Debounce search queries
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -167,23 +190,17 @@ export const ModelSelector = ({
   }, [modelSearchQuery]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedProviderSearchQuery(providerSearchQuery);
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [providerSearchQuery]);
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
         setIsModelDropdownOpen(false);
         setModelSearchQuery('');
       }
 
-      if (providerDropdownRef.current && !providerDropdownRef.current.contains(event.target as Node)) {
-        setIsProviderDropdownOpen(false);
-        setProviderSearchQuery('');
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+        /*
+         * This is a bit redundant but ensures the popup closes too if it's inside the same ref
+         * Actually, the popup should probably have its own ref or be handled by the same one
+         */
       }
     };
 
@@ -192,13 +209,26 @@ export const ModelSelector = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredModels = useMemo(() => {
-    const baseModels = [...modelList].filter((e) => e.provider === provider?.name && e.name);
+  const showKeyButton = useMemo(() => {
+    if (!provider?.name || LOCAL_PROVIDERS.includes(provider.name)) {
+      return false;
+    }
 
-    return baseModels
+    return true;
+  }, [provider?.name]);
+
+  const isKeyMissing = useMemo(() => {
+    if (!provider?.name || LOCAL_PROVIDERS.includes(provider.name)) {
+      return false;
+    }
+
+    return !apiKeys[provider.name] && !isEnvKeySet;
+  }, [provider?.name, apiKeys, isEnvKeySet]);
+
+  const filteredModels = useMemo(() => {
+    return modelList
       .filter((model) => {
-        // Apply free models filter
-        if (showFreeModelsOnly && !isModelLikelyFree(model, provider?.name)) {
+        if (showFreeModelsOnly && !isModelLikelyFree(model, model.provider)) {
           return false;
         }
 
@@ -230,39 +260,29 @@ export const ModelSelector = ({
 
         return a.label.localeCompare(b.label);
       });
-  }, [modelList, provider?.name, showFreeModelsOnly, debouncedModelSearchQuery]);
+  }, [modelList, showFreeModelsOnly, debouncedModelSearchQuery]);
 
-  const filteredProviders = useMemo(() => {
-    if (!debouncedProviderSearchQuery) {
-      return providerList;
-    }
+  const groupedModels = useMemo(() => {
+    const groups: Record<string, any[]> = {};
 
-    return providerList
-      .map((provider) => {
-        const match = fuzzyMatch(debouncedProviderSearchQuery, provider.name);
-        return {
-          ...provider,
-          searchScore: match.score,
-          searchMatches: match.matches,
-          highlightedName: highlightText(provider.name, debouncedProviderSearchQuery),
-        };
-      })
-      .filter((provider) => provider.searchMatches)
-      .sort((a, b) => b.searchScore - a.searchScore);
-  }, [providerList, debouncedProviderSearchQuery]);
+    filteredModels.forEach((model) => {
+      if (!groups[model.provider]) {
+        groups[model.provider] = [];
+      }
 
-  // Reset free models filter when provider changes
-  useEffect(() => {
-    setShowFreeModelsOnly(false);
-  }, [provider?.name]);
+      groups[model.provider].push(model);
+    });
+
+    return groups;
+  }, [filteredModels]);
+
+  const sortedProviders = useMemo(() => {
+    return providerList.filter((p) => groupedModels[p.name] && groupedModels[p.name].length > 0);
+  }, [providerList, groupedModels]);
 
   useEffect(() => {
     setFocusedModelIndex(-1);
   }, [debouncedModelSearchQuery, isModelDropdownOpen, showFreeModelsOnly]);
-
-  useEffect(() => {
-    setFocusedProviderIndex(-1);
-  }, [debouncedProviderSearchQuery, isProviderDropdownOpen]);
 
   // Clear search functions
   const clearModelSearch = useCallback(() => {
@@ -274,26 +294,11 @@ export const ModelSelector = ({
     }
   }, []);
 
-  const clearProviderSearch = useCallback(() => {
-    setProviderSearchQuery('');
-    setDebouncedProviderSearchQuery('');
-
-    if (providerSearchInputRef.current) {
-      providerSearchInputRef.current.focus();
-    }
-  }, []);
-
   useEffect(() => {
     if (isModelDropdownOpen && modelSearchInputRef.current) {
       modelSearchInputRef.current.focus();
     }
   }, [isModelDropdownOpen]);
-
-  useEffect(() => {
-    if (isProviderDropdownOpen && providerSearchInputRef.current) {
-      providerSearchInputRef.current.focus();
-    }
-  }, [isProviderDropdownOpen]);
 
   const handleModelKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!isModelDropdownOpen) {
@@ -314,10 +319,7 @@ export const ModelSelector = ({
 
         if (focusedModelIndex >= 0 && focusedModelIndex < filteredModels.length) {
           const selectedModel = filteredModels[focusedModelIndex];
-          setModel?.(selectedModel.name);
-          setIsModelDropdownOpen(false);
-          setModelSearchQuery('');
-          setDebouncedModelSearchQuery('');
+          handleModelSelect(selectedModel);
         }
 
         break;
@@ -326,12 +328,6 @@ export const ModelSelector = ({
         setIsModelDropdownOpen(false);
         setModelSearchQuery('');
         setDebouncedModelSearchQuery('');
-        break;
-      case 'Tab':
-        if (!e.shiftKey && focusedModelIndex === filteredModels.length - 1) {
-          setIsModelDropdownOpen(false);
-        }
-
         break;
       case 'k':
         if (e.ctrlKey || e.metaKey) {
@@ -343,62 +339,18 @@ export const ModelSelector = ({
     }
   };
 
-  const handleProviderKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!isProviderDropdownOpen) {
-      return;
+  const handleModelSelect = (modelOption: any) => {
+    setModel?.(modelOption.name);
+
+    const selectedProvider = providerList.find((p) => p.name === modelOption.provider);
+
+    if (selectedProvider && setProvider) {
+      setProvider(selectedProvider);
     }
 
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setFocusedProviderIndex((prev) => (prev + 1 >= filteredProviders.length ? 0 : prev + 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setFocusedProviderIndex((prev) => (prev - 1 < 0 ? filteredProviders.length - 1 : prev - 1));
-        break;
-      case 'Enter':
-        e.preventDefault();
-
-        if (focusedProviderIndex >= 0 && focusedProviderIndex < filteredProviders.length) {
-          const selectedProvider = filteredProviders[focusedProviderIndex];
-
-          if (setProvider) {
-            setProvider(selectedProvider);
-
-            const firstModel = modelList.find((m) => m.provider === selectedProvider.name);
-
-            if (firstModel && setModel) {
-              setModel(firstModel.name);
-            }
-          }
-
-          setIsProviderDropdownOpen(false);
-          setProviderSearchQuery('');
-          setDebouncedProviderSearchQuery('');
-        }
-
-        break;
-      case 'Escape':
-        e.preventDefault();
-        setIsProviderDropdownOpen(false);
-        setProviderSearchQuery('');
-        setDebouncedProviderSearchQuery('');
-        break;
-      case 'Tab':
-        if (!e.shiftKey && focusedProviderIndex === filteredProviders.length - 1) {
-          setIsProviderDropdownOpen(false);
-        }
-
-        break;
-      case 'k':
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          clearProviderSearch();
-        }
-
-        break;
-    }
+    setIsModelDropdownOpen(false);
+    setModelSearchQuery('');
+    setDebouncedModelSearchQuery('');
   };
 
   useEffect(() => {
@@ -406,12 +358,6 @@ export const ModelSelector = ({
       modelOptionsRef.current[focusedModelIndex]?.scrollIntoView({ block: 'nearest' });
     }
   }, [focusedModelIndex]);
-
-  useEffect(() => {
-    if (focusedProviderIndex >= 0 && providerOptionsRef.current[focusedProviderIndex]) {
-      providerOptionsRef.current[focusedProviderIndex]?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [focusedProviderIndex]);
 
   useEffect(() => {
     if (providerList.length === 0) {
@@ -442,207 +388,23 @@ export const ModelSelector = ({
   }
 
   return (
-    <div className="flex gap-2 flex-col sm:flex-row">
-      {/* Provider Combobox */}
-      <div className="relative flex w-full" onKeyDown={handleProviderKeyDown} ref={providerDropdownRef}>
+    <div
+      className={classNames(
+        'relative',
+        collapsed
+          ? 'flex items-center gap-1 px-2 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-item-backgroundAccent text-bolt-elements-textPrimary'
+          : 'w-full',
+      )}
+      onKeyDown={handleModelKeyDown}
+      ref={modelDropdownRef}
+    >
+      <div className="flex items-center gap-1 relative">
         <div
           className={classNames(
-            'w-full p-2 rounded-lg border border-bolt-elements-borderColor',
-            'bg-bolt-elements-prompt-background text-bolt-elements-textPrimary',
-            'focus-within:outline-none focus-within:ring-2 focus-within:ring-bolt-elements-focus',
-            'transition-all cursor-pointer',
-            isProviderDropdownOpen ? 'ring-2 ring-bolt-elements-focus' : undefined,
-          )}
-          onClick={() => setIsProviderDropdownOpen(!isProviderDropdownOpen)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setIsProviderDropdownOpen(!isProviderDropdownOpen);
-            }
-          }}
-          role="combobox"
-          aria-expanded={isProviderDropdownOpen}
-          aria-controls="provider-listbox"
-          aria-haspopup="listbox"
-          tabIndex={0}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 truncate">
-              {provider?.name && LOCAL_PROVIDERS.includes(provider.name) && (
-                <span
-                  className={classNames(
-                    'inline-block w-2 h-2 rounded-full flex-shrink-0',
-                    localProviderStatus[provider.name] === 'connected'
-                      ? 'bg-green-500'
-                      : localProviderStatus[provider.name] === 'disconnected'
-                        ? 'bg-red-400'
-                        : 'bg-bolt-elements-textTertiary',
-                  )}
-                  title={
-                    localProviderStatus[provider.name] === 'connected'
-                      ? `${provider.name} is running`
-                      : localProviderStatus[provider.name] === 'disconnected'
-                        ? `${provider.name} is not reachable`
-                        : 'Checking...'
-                  }
-                />
-              )}
-              {provider?.name || 'Select provider'}
-            </div>
-            <div
-              className={classNames(
-                'i-ph:caret-down w-4 h-4 text-bolt-elements-textSecondary opacity-75',
-                isProviderDropdownOpen ? 'rotate-180' : undefined,
-              )}
-            />
-          </div>
-        </div>
-
-        {isProviderDropdownOpen && (
-          <div
-            className="absolute z-20 w-full mt-1 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 shadow-lg"
-            role="listbox"
-            id="provider-listbox"
-          >
-            <div className="px-2 pb-2">
-              <div className="relative">
-                <input
-                  ref={providerSearchInputRef}
-                  type="text"
-                  value={providerSearchQuery}
-                  onChange={(e) => setProviderSearchQuery(e.target.value)}
-                  placeholder="Search providers... (⌘K to clear)"
-                  className={classNames(
-                    'w-full pl-8 pr-8 py-1.5 rounded-md text-sm',
-                    'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
-                    'text-bolt-elements-textPrimary placeholder:text-bolt-elements-textTertiary',
-                    'focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus',
-                    'transition-all',
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                  role="searchbox"
-                  aria-label="Search providers"
-                />
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
-                  <span className="i-ph:magnifying-glass text-bolt-elements-textTertiary" />
-                </div>
-                {providerSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearProviderSearch();
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-bolt-elements-background-depth-3 transition-colors"
-                    aria-label="Clear search"
-                  >
-                    <span className="i-ph:x text-bolt-elements-textTertiary text-xs" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div
-              className={classNames(
-                'max-h-60 overflow-y-auto',
-                'sm:scrollbar-none',
-                '[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2',
-                '[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor',
-                '[&::-webkit-scrollbar-thumb]:hover:bg-bolt-elements-borderColorHover',
-                '[&::-webkit-scrollbar-thumb]:rounded-full',
-                '[&::-webkit-scrollbar-track]:bg-bolt-elements-background-depth-2',
-                '[&::-webkit-scrollbar-track]:rounded-full',
-                'sm:[&::-webkit-scrollbar]:w-1.5 sm:[&::-webkit-scrollbar]:h-1.5',
-                'sm:hover:[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor/50',
-                'sm:hover:[&::-webkit-scrollbar-thumb:hover]:bg-bolt-elements-borderColor',
-                'sm:[&::-webkit-scrollbar-track]:bg-transparent',
-              )}
-            >
-              {filteredProviders.length === 0 ? (
-                <div className="px-3 py-3 text-sm">
-                  <div className="text-bolt-elements-textTertiary mb-1">
-                    {debouncedProviderSearchQuery
-                      ? `No providers match "${debouncedProviderSearchQuery}"`
-                      : 'No providers found'}
-                  </div>
-                  {debouncedProviderSearchQuery && (
-                    <div className="text-xs text-bolt-elements-textTertiary">
-                      Try searching for provider names like "OpenAI", "Anthropic", or "Google"
-                    </div>
-                  )}
-                </div>
-              ) : (
-                filteredProviders.map((providerOption, index) => (
-                  <div
-                    ref={(el) => (providerOptionsRef.current[index] = el)}
-                    key={providerOption.name}
-                    role="option"
-                    aria-selected={provider?.name === providerOption.name}
-                    className={classNames(
-                      'px-3 py-2 text-sm cursor-pointer',
-                      'hover:bg-bolt-elements-background-depth-3',
-                      'text-bolt-elements-textPrimary',
-                      'outline-none',
-                      provider?.name === providerOption.name || focusedProviderIndex === index
-                        ? 'bg-bolt-elements-background-depth-2'
-                        : undefined,
-                      focusedProviderIndex === index ? 'ring-1 ring-inset ring-bolt-elements-focus' : undefined,
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-
-                      if (setProvider) {
-                        setProvider(providerOption);
-
-                        const firstModel = modelList.find((m) => m.provider === providerOption.name);
-
-                        if (firstModel && setModel) {
-                          setModel(firstModel.name);
-                        }
-                      }
-
-                      setIsProviderDropdownOpen(false);
-                      setProviderSearchQuery('');
-                      setDebouncedProviderSearchQuery('');
-                    }}
-                    tabIndex={focusedProviderIndex === index ? 0 : -1}
-                  >
-                    <div className="flex items-center gap-2">
-                      {LOCAL_PROVIDERS.includes(providerOption.name) && (
-                        <span
-                          className={classNames(
-                            'inline-block w-2 h-2 rounded-full flex-shrink-0',
-                            localProviderStatus[providerOption.name] === 'connected'
-                              ? 'bg-green-500'
-                              : localProviderStatus[providerOption.name] === 'disconnected'
-                                ? 'bg-red-400'
-                                : 'bg-bolt-elements-textTertiary',
-                          )}
-                        />
-                      )}
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: (providerOption as any).highlightedName || providerOption.name,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Model Combobox */}
-      <div className="relative flex w-full min-w-[70%]" onKeyDown={handleModelKeyDown} ref={modelDropdownRef}>
-        <div
-          className={classNames(
-            'w-full p-2 rounded-lg border border-bolt-elements-borderColor',
-            'bg-bolt-elements-prompt-background text-bolt-elements-textPrimary',
-            'focus-within:outline-none focus-within:ring-2 focus-within:ring-bolt-elements-focus',
-            'transition-all cursor-pointer',
-            isModelDropdownOpen ? 'ring-2 ring-bolt-elements-focus' : undefined,
+            'cursor-pointer transition-all',
+            collapsed
+              ? 'flex items-center gap-1 text-xs font-medium'
+              : 'w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus-within:outline-none focus-within:ring-2 focus-within:ring-bolt-elements-focus',
           )}
           onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
           onKeyDown={(e) => {
@@ -657,212 +419,258 @@ export const ModelSelector = ({
           aria-haspopup="listbox"
           tabIndex={0}
         >
-          <div className="flex items-center justify-between">
-            <div className="truncate">{modelList.find((m) => m.name === model)?.label || 'Select model'}</div>
-            <div
-              className={classNames(
-                'i-ph:caret-down w-4 h-4 text-bolt-elements-textSecondary opacity-75',
-                isModelDropdownOpen ? 'rotate-180' : undefined,
-              )}
-            />
-          </div>
+          {collapsed ? (
+            <div className="flex items-center gap-1 truncate">
+              <div className={`i-ph:caret-right text-lg`} />
+              <span className="truncate">{modelList.find((m) => m.name === model)?.label || 'Select model'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="truncate">{modelList.find((m) => m.name === model)?.label || 'Select model'}</div>
+              <div
+                className={classNames(
+                  'i-ph:caret-down w-4 h-4 text-bolt-elements-textSecondary opacity-75',
+                  isModelDropdownOpen ? 'rotate-180' : undefined,
+                )}
+              />
+            </div>
+          )}
         </div>
 
-        {isModelDropdownOpen && (
-          <div
-            className="absolute z-10 w-full mt-1 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 shadow-lg"
-            role="listbox"
-            id="model-listbox"
-          >
-            <div className="px-2 pb-2 space-y-2">
-              {/* Free Models Filter Toggle - Only show for OpenRouter */}
-              {provider?.name === 'OpenRouter' && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowFreeModelsOnly(!showFreeModelsOnly);
-                    }}
-                    className={classNames(
-                      'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all',
-                      'hover:bg-bolt-elements-background-depth-3',
-                      showFreeModelsOnly
-                        ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                        : 'bg-bolt-elements-background-depth-3 text-bolt-elements-textSecondary border border-bolt-elements-borderColor',
-                    )}
-                  >
-                    <span className="i-ph:gift text-xs" />
-                    Free models only
-                  </button>
-                  {showFreeModelsOnly && (
-                    <span className="text-xs text-bolt-elements-textTertiary">
-                      {filteredModels.length} free model{filteredModels.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Search Result Count */}
-              {debouncedModelSearchQuery && filteredModels.length > 0 && (
-                <div className="text-xs text-bolt-elements-textTertiary px-1">
-                  {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''} found
-                  {filteredModels.length > 5 && ' (showing best matches)'}
-                </div>
-              )}
-
-              {/* Search Input */}
-              <div className="relative">
-                <input
-                  ref={modelSearchInputRef}
-                  type="text"
-                  value={modelSearchQuery}
-                  onChange={(e) => setModelSearchQuery(e.target.value)}
-                  placeholder="Search models... (⌘K to clear)"
-                  className={classNames(
-                    'w-full pl-8 pr-8 py-1.5 rounded-md text-sm',
-                    'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
-                    'text-bolt-elements-textPrimary placeholder:text-bolt-elements-textTertiary',
-                    'focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus',
-                    'transition-all',
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                  role="searchbox"
-                  aria-label="Search models"
-                />
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
-                  <span className="i-ph:magnifying-glass text-bolt-elements-textTertiary" />
-                </div>
-                {modelSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearModelSearch();
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-bolt-elements-background-depth-3 transition-colors"
-                    aria-label="Clear search"
-                  >
-                    <span className="i-ph:x text-bolt-elements-textTertiary text-xs" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div
+        {showKeyButton && (
+          <div className="relative">
+            <IconButton
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsApiKeyPopupOpen(true);
+              }}
+              title="API Key"
               className={classNames(
-                'max-h-60 overflow-y-auto',
-                'sm:scrollbar-none',
-                '[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2',
-                '[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor',
-                '[&::-webkit-scrollbar-thumb]:hover:bg-bolt-elements-borderColorHover',
-                '[&::-webkit-scrollbar-thumb]:rounded-full',
-                '[&::-webkit-scrollbar-track]:bg-bolt-elements-background-depth-2',
-                '[&::-webkit-scrollbar-track]:rounded-full',
-                'sm:[&::-webkit-scrollbar]:w-1.5 sm:[&::-webkit-scrollbar]:h-1.5',
-                'sm:hover:[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor/50',
-                'sm:hover:[&::-webkit-scrollbar-thumb:hover]:bg-bolt-elements-borderColor',
-                'sm:[&::-webkit-scrollbar-track]:bg-transparent',
+                'transition-all',
+                collapsed
+                  ? `p-1 h-5 w-5 ${isKeyMissing ? 'text-red-400 hover:text-red-300' : 'text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary'}`
+                  : `p-1.5 h-7 w-7 rounded-md ${isKeyMissing ? 'text-red-500 hover:text-red-400 bg-red-500/10' : 'text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary bg-bolt-elements-background-depth-3'}`,
               )}
             >
-              {modelLoading === 'all' || modelLoading === provider?.name ? (
-                <div className="px-3 py-3 text-sm">
-                  <div className="flex items-center gap-2 text-bolt-elements-textTertiary">
-                    <span className="i-ph:spinner animate-spin" />
-                    Loading models...
-                  </div>
-                </div>
-              ) : filteredModels.length === 0 ? (
-                <div className="px-3 py-3 text-sm">
-                  <div className="text-bolt-elements-textTertiary mb-1">
-                    {debouncedModelSearchQuery
-                      ? `No models match "${debouncedModelSearchQuery}"${showFreeModelsOnly ? ' (free only)' : ''}`
-                      : showFreeModelsOnly
-                        ? 'No free models available'
-                        : provider?.name && LOCAL_PROVIDERS.includes(provider.name)
-                          ? `No models found — is ${provider.name} running?`
-                          : 'No models available'}
-                  </div>
-                  {!debouncedModelSearchQuery && provider?.name && LOCAL_PROVIDERS.includes(provider.name) && (
-                    <div className="text-xs text-bolt-elements-textTertiary mt-1">
-                      Make sure {provider.name} is running and has at least one model loaded.
-                      {provider.name === 'Ollama' && ' Try: ollama pull llama3.2'}
-                      {provider.name === 'LMStudio' && ' Load a model in LM Studio first.'}
-                    </div>
-                  )}
-                  {debouncedModelSearchQuery && (
-                    <div className="text-xs text-bolt-elements-textTertiary">
-                      Try searching for model names, context sizes (e.g., "128k", "1M"), or capabilities
-                    </div>
-                  )}
-                  {showFreeModelsOnly && !debouncedModelSearchQuery && (
-                    <div className="text-xs text-bolt-elements-textTertiary">
-                      Try disabling the "Free models only" filter to see all available models
-                    </div>
-                  )}
-                </div>
-              ) : (
-                filteredModels.map((modelOption, index) => (
-                  <div
-                    ref={(el) => (modelOptionsRef.current[index] = el)}
-                    key={modelOption.name}
-                    role="option"
-                    aria-selected={model === modelOption.name}
-                    className={classNames(
-                      'px-3 py-2 text-sm cursor-pointer',
-                      'hover:bg-bolt-elements-background-depth-3',
-                      'text-bolt-elements-textPrimary',
-                      'outline-none',
-                      model === modelOption.name || focusedModelIndex === index
-                        ? 'bg-bolt-elements-background-depth-2'
-                        : undefined,
-                      focusedModelIndex === index ? 'ring-1 ring-inset ring-bolt-elements-focus' : undefined,
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setModel?.(modelOption.name);
-                      setIsModelDropdownOpen(false);
-                      setModelSearchQuery('');
-                      setDebouncedModelSearchQuery('');
-                    }}
-                    tabIndex={focusedModelIndex === index ? 0 : -1}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="truncate">
-                          <span
-                            dangerouslySetInnerHTML={{
-                              __html: (modelOption as any).highlightedLabel || modelOption.label,
-                            }}
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-bolt-elements-textTertiary">
-                            {formatContextSize(modelOption.maxTokenAllowed)} tokens
-                          </span>
-                          {debouncedModelSearchQuery && (modelOption as any).searchScore > 70 && (
-                            <span className="text-xs text-green-500 font-medium">
-                              {(modelOption as any).searchScore.toFixed(0)}% match
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 ml-2">
-                        {isModelLikelyFree(modelOption, provider?.name) && (
-                          <span className="i-ph:gift text-xs text-purple-400" title="Free model" />
-                        )}
-                        {model === modelOption.name && (
-                          <span className="i-ph:check text-xs text-green-500" title="Selected" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+              <div className="i-ph:key text-sm" />
+            </IconButton>
+
+            {isApiKeyPopupOpen && (
+              <APIKeyPopup
+                provider={provider!}
+                apiKey={apiKeys[provider?.name || '']}
+                setApiKey={(key) => {
+                  if (onApiKeysChange && provider?.name) {
+                    onApiKeysChange(provider.name, key);
+                  }
+                }}
+                onClose={() => setIsApiKeyPopupOpen(false)}
+              />
+            )}
           </div>
         )}
       </div>
+
+      {isModelDropdownOpen && (
+        <div
+          className={classNames(
+            'absolute z-20 mt-1 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 shadow-lg',
+            collapsed ? 'left-0 w-64' : 'w-full',
+          )}
+          role="listbox"
+          id="model-listbox"
+        >
+          <div className="px-2 pb-2 space-y-2">
+            {/* Free Models Filter Toggle - Only show for OpenRouter */}
+            {provider?.name === 'OpenRouter' && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowFreeModelsOnly(!showFreeModelsOnly);
+                  }}
+                  className={classNames(
+                    'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all',
+                    'hover:bg-bolt-elements-background-depth-3',
+                    showFreeModelsOnly
+                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                      : 'bg-bolt-elements-background-depth-3 text-bolt-elements-textSecondary border border-bolt-elements-borderColor',
+                  )}
+                >
+                  <span className="i-ph:gift text-xs" />
+                  Free models only
+                </button>
+                {showFreeModelsOnly && (
+                  <span className="text-xs text-bolt-elements-textTertiary">
+                    {filteredModels.length} free model{filteredModels.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Search Result Count */}
+            {debouncedModelSearchQuery && filteredModels.length > 0 && (
+              <div className="text-xs text-bolt-elements-textTertiary px-1">
+                {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''} found
+              </div>
+            )}
+
+            {/* Search Input */}
+            <div className="relative">
+              <input
+                ref={modelSearchInputRef}
+                type="text"
+                value={modelSearchQuery}
+                onChange={(e) => setModelSearchQuery(e.target.value)}
+                placeholder="Search models... (⌘K to clear)"
+                className={classNames(
+                  'w-full pl-8 pr-8 py-1.5 rounded-md text-sm',
+                  'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
+                  'text-bolt-elements-textPrimary placeholder:text-bolt-elements-textTertiary',
+                  'focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus',
+                  'transition-all',
+                )}
+                onClick={(e) => e.stopPropagation()}
+                role="searchbox"
+                aria-label="Search models"
+              />
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
+                <span className="i-ph:magnifying-glass text-bolt-elements-textTertiary" />
+              </div>
+              {modelSearchQuery && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearModelSearch();
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-bolt-elements-background-depth-3 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <span className="i-ph:x text-bolt-elements-textTertiary text-xs" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className={classNames(
+              'max-h-60 overflow-y-auto',
+              'sm:scrollbar-none',
+              '[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2',
+              '[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor',
+              '[&::-webkit-scrollbar-thumb]:hover:bg-bolt-elements-borderColorHover',
+              '[&::-webkit-scrollbar-thumb]:rounded-full',
+              '[&::-webkit-scrollbar-track]:bg-bolt-elements-background-depth-2',
+              '[&::-webkit-scrollbar-track]:rounded-full',
+              'sm:[&::-webkit-scrollbar]:w-1.5 sm:[&::-webkit-scrollbar]:h-1.5',
+              'sm:hover:[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor/50',
+              'sm:hover:[&::-webkit-scrollbar-thumb:hover]:bg-bolt-elements-borderColor',
+              'sm:[&::-webkit-scrollbar-track]:bg-transparent',
+            )}
+          >
+            {modelLoading === 'all' || modelLoading === provider?.name ? (
+              <div className="px-3 py-3 text-sm">
+                <div className="flex items-center gap-2 text-bolt-elements-textTertiary">
+                  <span className="i-ph:spinner animate-spin" />
+                  Loading models...
+                </div>
+              </div>
+            ) : sortedProviders.length === 0 ? (
+              <div className="px-3 py-3 text-sm">
+                <div className="text-bolt-elements-textTertiary mb-1">
+                  {debouncedModelSearchQuery
+                    ? `No models match "${debouncedModelSearchQuery}"${showFreeModelsOnly ? ' (free only)' : ''}`
+                    : showFreeModelsOnly
+                      ? 'No free models available'
+                      : 'No models available'}
+                </div>
+              </div>
+            ) : (
+              sortedProviders.map((providerOption) => (
+                <div key={providerOption.name} className="mb-4 last:mb-0">
+                  <div className="px-3 py-1 text-xs font-semibold text-bolt-elements-textSecondary flex items-center gap-2">
+                    {providerOption.name}
+                    {LOCAL_PROVIDERS.includes(providerOption.name) && (
+                      <span
+                        className={classNames(
+                          'inline-block w-2 h-2 rounded-full',
+                          localProviderStatus[providerOption.name] === 'connected'
+                            ? 'bg-green-500'
+                            : localProviderStatus[providerOption.name] === 'disconnected'
+                              ? 'bg-red-400'
+                              : 'bg-bolt-elements-textTertiary',
+                        )}
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-0">
+                    {groupedModels[providerOption.name].map((modelOption, index) => {
+                      const globalIndex = filteredModels.findIndex((m) => m.name === modelOption.name);
+                      return (
+                        <div
+                          ref={(el) => (modelOptionsRef.current[globalIndex] = el)}
+                          key={modelOption.name}
+                          role="option"
+                          aria-selected={model === modelOption.name}
+                          className={classNames(
+                            'px-3 py-2 text-sm cursor-pointer',
+                            'hover:bg-bolt-elements-background-depth-3',
+                            'text-bolt-elements-textPrimary',
+                            'outline-none',
+                            model === modelOption.name || focusedModelIndex === globalIndex
+                              ? 'bg-bolt-elements-background-depth-2'
+                              : undefined,
+                            focusedModelIndex === globalIndex
+                              ? 'ring-1 ring-inset ring-bolt-elements-focus'
+                              : undefined,
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleModelSelect(modelOption);
+                          }}
+                          tabIndex={focusedModelIndex === globalIndex ? 0 : -1}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate">
+                                <span
+                                  dangerouslySetInnerHTML={{
+                                    __html: (modelOption as any).highlightedLabel || modelOption.label,
+                                  }}
+                                />
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-bolt-elements-textTertiary">
+                                  {formatContextSize(modelOption.maxTokenAllowed)} tokens
+                                </span>
+                                {debouncedModelSearchQuery && (modelOption as any).searchScore > 70 && (
+                                  <span className="text-xs text-green-500 font-medium">
+                                    {(modelOption as any).searchScore.toFixed(0)}% match
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 ml-2">
+                              {isModelLikelyFree(modelOption, provider?.name) && (
+                                <span className="i-ph:gift text-xs text-purple-400" title="Free model" />
+                              )}
+                              {model === modelOption.name && (
+                                <span className="i-ph:check text-xs text-green-500" title="Selected" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,12 +24,13 @@ export default class ZaiProvider extends BaseProvider {
       maxCompletionTokens: 65536,
     },
     {
-      name: 'glm-4.5',
-      label: 'GLM-4.5 (128K)',
+      name: 'glm-4.7-flash',
+      label: 'GLM-4.7 Flash (128K)',
       provider: 'Z.ai',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 65536,
     },
+    { name: 'glm-4.5', label: 'GLM-4.5 (128K)', provider: 'Z.ai', maxTokenAllowed: 128000, maxCompletionTokens: 65536 },
     {
       name: 'glm-4.5-flash',
       label: 'GLM-4.5 Flash (128K)',

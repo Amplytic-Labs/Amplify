@@ -1,0 +1,114 @@
+import React, { useState, useEffect } from 'react';
+import { IconButton } from '~/components/ui/IconButton';
+import type { ProviderInfo } from '~/types/model';
+import Cookies from 'js-cookie';
+import { classNames } from '~/utils/classNames';
+
+interface APIKeyPopupProps {
+  provider: ProviderInfo;
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  onClose: () => void;
+}
+
+export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setApiKey, onClose }) => {
+  const [tempKey, setTempKey] = useState(apiKey);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setTempKey(apiKey);
+  }, [apiKey]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+
+    try {
+      // Save to parent state
+      setApiKey(tempKey);
+
+      // Save to localStorage
+      const storedApiKeys = localStorage.getItem('apiKeys');
+      let currentKeys: Record<string, string> = {};
+
+      if (storedApiKeys) {
+        currentKeys = JSON.parse(storedApiKeys);
+      }
+
+      const newKeys = { ...currentKeys, [provider.name]: tempKey };
+      localStorage.setItem('apiKeys', JSON.stringify(newKeys));
+
+      onClose();
+    } catch (error) {
+      console.error('Failed to save API key:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="absolute z-30 w-72 mt-2 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 shadow-xl">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-bolt-elements-textPrimary">{provider.name} API Key</h3>
+        <IconButton
+          onClick={onClose}
+          title="Close"
+          className="p-1 h-6 w-6 text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary"
+        >
+          <div className="i-ph:x text-sm" />
+        </IconButton>
+      </div>
+
+      <p className="text-xs text-bolt-elements-textTertiary mb-3">
+        Enter your API key to enable this provider. Your key is stored locally in your browser.
+      </p>
+
+      <div className="space-y-3">
+        <input
+          type="password"
+          value={tempKey}
+          onChange={(e) => setTempKey(e.target.value)}
+          placeholder="sk-..."
+          className="w-full px-3 py-2 text-sm rounded-md border border-bolt-elements-borderColor 
+                    bg-bolt-elements-prompt-background text-bolt-elements-textPrimary 
+                    focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus transition-all"
+          autoFocus
+        />
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs font-medium text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !tempKey}
+            className={classNames(
+              'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
+              isSaving || !tempKey
+                ? 'bg-bolt-elements-borderColor text-bolt-elements-textTertiary cursor-not-allowed'
+                : 'bg-bolt-elements-focus text-white hover:bg-bolt-elements-focus/90',
+            )}
+          >
+            {isSaving ? 'Saving...' : 'Save Key'}
+          </button>
+        </div>
+      </div>
+
+      {provider.getApiKeyLink && (
+        <div className="mt-4 pt-3 border-t border-bolt-elements-borderColor">
+          <a
+            href={provider.getApiKeyLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+          >
+            <span>{provider.labelForGetApiKey || 'Get your API key here'}</span>
+            <div className="i-ph:arrow-square-out text-xs" />
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};

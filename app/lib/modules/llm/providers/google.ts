@@ -13,22 +13,58 @@ export default class GoogleProvider extends BaseProvider {
   };
 
   staticModels: ModelInfo[] = [
-    /*
-     * Essential fallback models - only the most reliable/stable ones
-     * Gemini 1.5 Pro: 2M context, 8K output limit (verified from API docs)
-     */
     {
-      name: 'gemini-1.5-pro',
-      label: 'Gemini 1.5 Pro',
+      name: 'gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
       provider: 'Google',
-      maxTokenAllowed: 2000000,
+      maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
     },
-
-    // Gemini 1.5 Flash: 1M context, 8K output limit, fast and cost-effective
     {
-      name: 'gemini-1.5-flash',
-      label: 'Gemini 1.5 Flash',
+      name: 'gemini-2.5-flash-lite',
+      label: 'Gemini 2.5 Flash Lite',
+      provider: 'Google',
+      maxTokenAllowed: 1000000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemini-3-flash',
+      label: 'Gemini 3 Flash',
+      provider: 'Google',
+      maxTokenAllowed: 1000000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemini-3.1-flash-lite',
+      label: 'Gemini 3.1 Flash Lite',
+      provider: 'Google',
+      maxTokenAllowed: 1000000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemini-3.5-flash',
+      label: 'Gemini 3.5 Flash',
+      provider: 'Google',
+      maxTokenAllowed: 1000000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemma-4-26b-a4b-it',
+      label: 'Gemma 4 26B',
+      provider: 'Google',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemma-4-31b-it',
+      label: 'Gemma 4 31B',
+      provider: 'Google',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 8192,
+    },
+    {
+      name: 'gemini-robotics-er-1.6-preview',
+      label: 'Gemini Robotics ER 1.6 Preview',
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,

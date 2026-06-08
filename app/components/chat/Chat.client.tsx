@@ -113,6 +113,16 @@ export const ChatImpl = memo(
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+
+    const onApiKeysChange = useCallback(
+      async (providerName: string, apiKey: string) => {
+        const newApiKeys = { ...apiKeys, [providerName]: apiKey };
+        setApiKeys(newApiKeys);
+        localStorage.setItem('apiKeys', JSON.stringify(newApiKeys));
+      },
+      [apiKeys],
+    );
+
     const [chatMode, setChatMode] = useState<'discuss' | 'build'>('build');
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
@@ -577,7 +587,7 @@ export const ChatImpl = memo(
     );
 
     useEffect(() => {
-      const storedApiKeys = Cookies.get('apiKeys');
+      const storedApiKeys = localStorage.getItem('apiKeys');
 
       if (storedApiKeys) {
         setApiKeys(JSON.parse(storedApiKeys));
@@ -621,6 +631,8 @@ export const ChatImpl = memo(
         }}
         enhancingPrompt={enhancingPrompt}
         promptEnhanced={promptEnhanced}
+        apiKeys={apiKeys}
+        onApiKeysChange={onApiKeysChange}
         sendMessage={sendMessage}
         model={model}
         setModel={handleModelChange}

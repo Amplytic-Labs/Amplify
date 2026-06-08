@@ -1,5 +1,7 @@
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { PluggableList, Plugin } from 'unified';
 import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize';
 import { SKIP, visit } from 'unist-util-visit';
@@ -56,6 +58,7 @@ export const allowedHTMLElements = [
   'ul',
   'var',
   'think',
+  'thought',
   'header',
 ];
 
@@ -63,16 +66,10 @@ export const allowedHTMLElements = [
 function remarkThinkRawContent() {
   return (tree: any) => {
     visit(tree, (node: any) => {
-      if (node.type === 'html' && node.value && node.value.startsWith('<think>')) {
-        const cleanedContent = node.value.slice(7);
-        node.value = `<div class="__boltThought__">${cleanedContent}`;
-
-        return;
-      }
-
-      if (node.type === 'html' && node.value && node.value.startsWith('</think>')) {
-        const cleanedContent = node.value.slice(8);
-        node.value = `</div>${cleanedContent}`;
+      if ((node.type === 'html' || node.type === 'text') && node.value) {
+        node.value = node.value
+          .replace(/<(think|thought)[^>]*>/g, '<div class="__boltThought__">')
+          .replace(/<\/(think|thought)>/g, '</div>');
       }
     });
   };
@@ -87,8 +84,6 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
       ...(defaultSchema.attributes?.div ?? []),
       'data*',
       ['className', '__boltArtifact__', '__boltThought__', '__boltQuickAction', '__boltSelectedElement__'],
-
-      // ['className', '__boltThought__']
     ],
     button: [
       ...(defaultSchema.attributes?.button ?? []),
@@ -104,7 +99,7 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
 };
 
 export function remarkPlugins(limitedMarkdown: boolean) {
-  const plugins: PluggableList = [remarkGfm];
+  const plugins: PluggableList = [remarkGfm, remarkMath];
 
   if (limitedMarkdown) {
     plugins.unshift(limitedMarkdownPlugin);
@@ -121,6 +116,8 @@ export function rehypePlugins(html: boolean) {
   if (html) {
     plugins.push(rehypeRaw, [rehypeSanitize, rehypeSanitizeOptions]);
   }
+
+  plugins.push(rehypeKatex);
 
   return plugins;
 }

@@ -33,6 +33,10 @@ export const links: LinksFunction = () => [
   { rel: 'stylesheet', href: globalStyles },
   { rel: 'stylesheet', href: xtermStyles },
   {
+    rel: 'stylesheet',
+    href: 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css',
+  },
+  {
     rel: 'preconnect',
     href: 'https://fonts.googleapis.com',
   },

@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Paperclip, Send, ChevronDown, Sparkles, X, FileText, Check } from 'lucide-react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { classNames } from '~/utils/classNames';
 import { PROVIDER_LIST } from '~/utils/constants';
 import { ModelSelector } from '~/components/chat/ModelSelector';
+import { APIKeyPopup } from './APIKeyPopup';
 import { APIKeyManager } from './APIKeyManager';
 import { LOCAL_PROVIDERS } from '~/lib/stores/settings';
 import FilePreview from './FilePreview';
@@ -21,9 +24,98 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 
+// Custom theme style injector to guarantee custom variables are active
+const InjectThemeStyles = () => {
+  return (
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `
+      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
+      :root {
+        --background: oklch(0.9818 0.0054 95.0986);
+        --foreground: oklch(0.3438 0.0269 95.7226);
+        --card: oklch(0.9665 0.0067 97.3521);
+        --card-foreground: oklch(0.1908 0.0020 106.5859);
+        --popover: oklch(1.0000 0 0);
+        --popover-foreground: oklch(0.2671 0.0196 98.9390);
+        --primary: oklch(0.6171 0.1375 39.0427);
+        --primary-foreground: oklch(1.0000 0 0);
+        --secondary: oklch(0.9245 0.0138 92.9892);
+        --secondary-foreground: oklch(0.4334 0.0177 98.6048);
+        --muted: oklch(0.9341 0.0153 90.2390);
+        --muted-foreground: oklch(0.5341 0.0078 97.4503);
+        --accent: oklch(0.9245 0.0138 92.9892);
+        --accent-foreground: oklch(0.2671 0.0196 98.9390);
+        --destructive: oklch(0.1908 0.0020 106.5859);
+        --destructive-foreground: oklch(1.0000 0 0);
+        --border: oklch(0.8847 0.0069 97.3627);
+        --input: oklch(0.7621 0.0156 98.3528);
+        --ring: oklch(0.6171 0.1375 39.0427);
+        
+        --font-sans: Outfit, sans-serif;
+        --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+        --font-mono: Geist Mono, ui-monospace, monospace;
+        --radius: 1.25rem;
+        
+        --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.03), 0 1px 2px -1px rgba(0,0,0,0.03);
+        --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.05), 0 2px 6px -1px rgba(0,0,0,0.03);
+        --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 16px -6px rgba(0,0,0,0.04);
+        --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.12), 0 12px 20px -8px rgba(0,0,0,0.06);
+      }
+
+      .dark {
+        --background: oklch(0.18 0.002 240);
+        --foreground: oklch(0.92 0.004 240);
+        --card: oklch(0.22 0.003 240);
+        --card-foreground: oklch(0.98 0.002 240);
+        --popover: oklch(0.20 0.003 240);
+        --popover-foreground: oklch(0.94 0.003 240);
+        --primary: oklch(0.6724 0.1308 38.7559);
+        --primary-foreground: oklch(0.98 0.002 240);
+        --secondary: oklch(0.25 0.003 240);
+        --secondary-foreground: oklch(0.85 0.003 240);
+        --muted: oklch(0.22 0.003 240);
+        --muted-foreground: oklch(0.65 0.003 240);
+        --accent: oklch(0.25 0.004 240);
+        --accent-foreground: oklch(0.95 0.004 240);
+        --border: oklch(0.26 0.003 240);
+        --input: oklch(0.28 0.003 240);
+        --ring: oklch(0.6724 0.1308 38.7559);
+        
+        --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.3);
+        --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.4);
+        --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.45);
+        --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.5);
+      }
+
+      * {
+        font-family: var(--font-sans);
+        box-sizing: border-box;
+        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--muted-foreground);
+      }
+    `,
+      }}
+    />
+  );
+};
+
 interface ChatBoxProps {
-  isModelSettingsCollapsed: boolean;
-  setIsModelSettingsCollapsed: (collapsed: boolean) => void;
   provider: any;
   providerList: any[];
   modelList: any[];
@@ -66,92 +158,131 @@ interface ChatBoxProps {
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = (props) => {
-  return (
-    <div
-      className={classNames(
-        'relative bg-bolt-elements-background-depth-2 backdrop-blur p-3 rounded-lg border border-bolt-elements-borderColor relative w-full max-w-chat mx-auto z-prompt',
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [isApiKeyPopupOpen, setIsApiKeyPopupOpen] = useState(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
+  const dropdownContainerRef = React.useRef<HTMLDivElement>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
-        /*
-         * {
-         *   'sticky bottom-2': chatStarted,
-         * },
-         */
-      )}
-    >
-      <svg className={classNames(styles.PromptEffectContainer)}>
-        <defs>
-          <linearGradient
-            id="line-gradient"
-            x1="20%"
-            y1="0%"
-            x2="-14%"
-            y2="10%"
-            gradientUnits="userSpaceOnUse"
-            gradientTransform="rotate(-45)"
-          >
-            <stop offset="0%" stopColor="#b44aff" stopOpacity="0%"></stop>
-            <stop offset="40%" stopColor="#b44aff" stopOpacity="80%"></stop>
-            <stop offset="50%" stopColor="#b44aff" stopOpacity="80%"></stop>
-            <stop offset="100%" stopColor="#b44aff" stopOpacity="0%"></stop>
-          </linearGradient>
-          <linearGradient id="shine-gradient">
-            <stop offset="0%" stopColor="white" stopOpacity="0%"></stop>
-            <stop offset="40%" stopColor="#ffffff" stopOpacity="80%"></stop>
-            <stop offset="50%" stopColor="#ffffff" stopOpacity="80%"></stop>
-            <stop offset="100%" stopColor="white" stopOpacity="0%"></stop>
-          </linearGradient>
-        </defs>
-        <rect className={classNames(styles.PromptEffectLine)} pathLength="100" strokeLinecap="round"></rect>
-        <rect className={classNames(styles.PromptShine)} x="48" y="24" width="70" height="1"></rect>
-      </svg>
-      <div>
-        <ClientOnly>
-          {() => (
-            <div className={props.isModelSettingsCollapsed ? 'hidden' : ''}>
-              <ModelSelector
-                key={props.provider?.name + ':' + props.modelList.length}
-                model={props.model}
-                setModel={props.setModel}
-                modelList={props.modelList}
-                provider={props.provider}
-                setProvider={props.setProvider}
-                providerList={props.providerList || (PROVIDER_LIST as ProviderInfo[])}
-                apiKeys={props.apiKeys}
-                modelLoading={props.isModelLoading}
-              />
-              {(props.providerList || []).length > 0 &&
-                props.provider &&
-                !LOCAL_PROVIDERS.includes(props.provider.name) && (
-                  <APIKeyManager
-                    provider={props.provider}
-                    apiKey={props.apiKeys[props.provider.name] || ''}
-                    setApiKey={(key) => {
-                      props.onApiKeysChange(props.provider.name, key);
-                    }}
-                  />
-                )}
-            </div>
-          )}
-        </ClientOnly>
-      </div>
-      <FilePreview
-        files={props.uploadedFiles}
-        imageDataList={props.imageDataList}
-        onRemove={(index) => {
-          props.setUploadedFiles?.(props.uploadedFiles.filter((_, i) => i !== index));
-          props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
-        }}
-      />
-      <ClientOnly>
-        {() => (
-          <ScreenshotStateManager
-            setUploadedFiles={props.setUploadedFiles}
-            setImageDataList={props.setImageDataList}
-            uploadedFiles={props.uploadedFiles}
-            imageDataList={props.imageDataList}
-          />
-        )}
-      </ClientOnly>
+  const isKeyMissing = useMemo(() => {
+    if (!props.provider?.name || LOCAL_PROVIDERS.includes(props.provider.name)) {
+      return false;
+    }
+
+    return !props.apiKeys[props.provider.name];
+  }, [props.provider, props.apiKeys]);
+
+  const showKeyButton = useMemo(() => {
+    return props.provider?.name && !LOCAL_PROVIDERS.includes(props.provider.name);
+  }, [props.provider]);
+
+  // Use model.name (not model.id) to match the ModelInfo type
+  const activeModel = props.modelList.find((m) => m.name === props.model);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(event.target as Node)) {
+        setIsModelDropdownOpen(false);
+        setModelSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (isModelDropdownOpen && searchInputRef.current) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [isModelDropdownOpen]);
+
+  const handleModelSelect = (modelItem: any) => {
+    // Set the model by name
+    props.setModel?.(modelItem.name);
+
+    // Also update the provider so the system knows which provider to use
+    const matchedProvider = (props.providerList || []).find((p) => p.name === modelItem.provider);
+
+    if (matchedProvider) {
+      props.setProvider?.(matchedProvider);
+    }
+
+    setIsModelDropdownOpen(false);
+    setModelSearchQuery('');
+  };
+
+  // Build grouped models from static models only (hardcoded)
+  const groupedModels = React.useMemo(() => {
+    const query = modelSearchQuery.toLowerCase().trim();
+
+    // Only use static models from the provider list — no dynamic/fetched models
+    const allStaticModels: any[] = [];
+    (props.providerList || []).forEach((provider) => {
+      if (provider.staticModels && provider.staticModels.length > 0) {
+        provider.staticModels.forEach((m: any) => {
+          allStaticModels.push({ ...m, provider: provider.name });
+        });
+      }
+    });
+
+    // Also include models from modelList that match static providers if staticModels not exposed
+    const modelListItems = props.modelList.filter((m) => {
+      // Keep if from a known provider
+      return (props.providerList || []).some((p) => p.name === m.provider);
+    });
+
+    // Prefer modelList (it may include dynamic), but dedupe by name
+    const seenNames = new Set<string>();
+    const combined: any[] = [];
+
+    // First add from modelList
+    modelListItems.forEach((m) => {
+      if (!seenNames.has(m.name)) {
+        seenNames.add(m.name);
+        combined.push(m);
+      }
+    });
+
+    // Then add any static models not already included
+    allStaticModels.forEach((m) => {
+      if (!seenNames.has(m.name)) {
+        seenNames.add(m.name);
+        combined.push(m);
+      }
+    });
+
+    // Filter by search query
+    const filtered = query
+      ? combined.filter(
+          (m) =>
+            m.label?.toLowerCase().includes(query) ||
+            m.name?.toLowerCase().includes(query) ||
+            m.provider?.toLowerCase().includes(query),
+        )
+      : combined;
+
+    // Group by provider
+    const groups: Record<string, any[]> = {};
+    filtered.forEach((m) => {
+      const prov = m.provider || 'Other';
+
+      if (!groups[prov]) {
+        groups[prov] = [];
+      }
+
+      groups[prov].push(m);
+    });
+
+    return groups;
+  }, [props.modelList, props.providerList, modelSearchQuery]);
+
+  return (
+    <div className="relative w-full max-w-chat mx-auto z-prompt">
+      <InjectThemeStyles />
+
       {props.selectedElement && (
         <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-bolt-elements-borderColor text-bolt-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
           <div className="flex gap-2 items-center lowercase">
@@ -168,169 +299,299 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           </button>
         </div>
       )}
-      <div
-        className={classNames('relative shadow-xs border border-bolt-elements-borderColor backdrop-blur rounded-lg')}
-      >
-        <textarea
-          ref={props.textareaRef}
-          className={classNames(
-            'w-full pl-4 pt-4 pr-16 outline-none resize-none text-bolt-elements-textPrimary placeholder-bolt-elements-textTertiary bg-transparent text-sm',
-            'transition-all duration-200',
-            'hover:border-bolt-elements-focus',
+
+      <div className="relative">
+        {/* Attachment Previews */}
+        <AnimatePresence initial={false}>
+          {props.uploadedFiles.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-wrap gap-2.5 p-3.5 border-b border-[var(--border)] bg-[var(--secondary)]/20 rounded-t-[20px]">
+                {props.uploadedFiles.map((file, index) => (
+                  <motion.div
+                    key={index}
+                    layout
+                    initial={{ scale: 0.85, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.85, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                    className="group relative flex items-center gap-2 p-1.5 bg-[var(--card)] border border-[var(--border)] rounded-xl text-xs shadow-sm pr-7 transition-all hover:border-[var(--muted-foreground)]"
+                  >
+                    {file.type.startsWith('image/') ? (
+                      <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-[var(--muted)]">
+                        <img src={props.imageDataList[index]} alt="preview" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="p-2 bg-[var(--secondary)] text-[var(--primary)] rounded-lg">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="truncate">
+                      <p className="font-medium text-[var(--card-foreground)] truncate max-w-[120px]">{file.name}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">{(file.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.15 }}
+                      whileTap={{ scale: 0.85 }}
+                      onClick={() => {
+                        props.setUploadedFiles?.(props.uploadedFiles.filter((_, i) => i !== index));
+                        props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
+                      }}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-[var(--muted-foreground)] hover:text-rose-500 hover:bg-rose-500/10 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </motion.button>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
           )}
-          onDragEnter={(e) => {
-            e.preventDefault();
-            e.currentTarget.style.border = '2px solid #1488fc';
-          }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.currentTarget.style.border = '2px solid #1488fc';
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            e.currentTarget.style.border = '1px solid var(--bolt-elements-borderColor)';
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            e.currentTarget.style.border = '1px solid var(--bolt-elements-borderColor)';
+        </AnimatePresence>
 
-            const files = Array.from(e.dataTransfer.files);
-            files.forEach((file) => {
-              if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
+        {/* Main Input Container */}
+        <div className="w-full flex flex-col bg-[var(--card)] border border-[var(--border)] focus-within:border-[oklch(0.6171_0.1375_39.0427)] rounded-[20px] transition-all duration-300 shadow-md focus-within:shadow-lg focus-within:shadow-[oklch(0.6171_0.1375_39.0427)]/5">
+          <div className="relative px-4 pt-4">
+            <textarea
+              ref={props.textareaRef}
+              value={props.input}
+              onChange={props.handleInputChange}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
 
-                reader.onload = (e) => {
-                  const base64Image = e.target?.result as string;
-                  props.setUploadedFiles?.([...props.uploadedFiles, file]);
-                  props.setImageDataList?.([...props.imageDataList, base64Image]);
-                };
-                reader.readAsDataURL(file);
-              }
-            });
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              if (event.shiftKey) {
-                return;
-              }
+                  if (props.isStreaming) {
+                    props.handleStop?.();
+                    return;
+                  }
 
-              event.preventDefault();
+                  if (event.nativeEvent.isComposing) {
+                    return;
+                  }
 
-              if (props.isStreaming) {
-                props.handleStop?.();
-                return;
-              }
-
-              // ignore if using input method engine
-              if (event.nativeEvent.isComposing) {
-                return;
-              }
-
-              props.handleSendMessage?.(event);
-            }
-          }}
-          value={props.input}
-          onChange={(event) => {
-            props.handleInputChange?.(event);
-          }}
-          onPaste={props.handlePaste}
-          style={{
-            minHeight: props.TEXTAREA_MIN_HEIGHT,
-            maxHeight: props.TEXTAREA_MAX_HEIGHT,
-          }}
-          placeholder={props.chatMode === 'build' ? 'How can Bolt help you today?' : 'What would you like to discuss?'}
-          translate="no"
-        />
-        <ClientOnly>
-          {() => (
-            <SendButton
-              show={props.input.length > 0 || props.isStreaming || props.uploadedFiles.length > 0}
-              isStreaming={props.isStreaming}
-              disabled={!props.providerList || props.providerList.length === 0}
-              onClick={(event) => {
-                if (props.isStreaming) {
-                  props.handleStop?.();
-                  return;
-                }
-
-                if (props.input.length > 0 || props.uploadedFiles.length > 0) {
                   props.handleSendMessage?.(event);
                 }
               }}
+              onPaste={props.handlePaste}
+              placeholder={
+                props.chatMode === 'build' ? 'How can Bolt help you today?' : 'What would you like to discuss?'
+              }
+              rows={1}
+              className="w-full bg-transparent border-0 outline-none resize-none overflow-y-auto text-[var(--card-foreground)] placeholder-[var(--muted-foreground)] text-sm leading-relaxed pr-12 focus:ring-0"
+              style={{ minHeight: props.TEXTAREA_MIN_HEIGHT, maxHeight: props.TEXTAREA_MAX_HEIGHT }}
             />
-          )}
-        </ClientOnly>
-        <div className="flex justify-between items-center text-sm p-4 pt-2">
-          <div className="flex gap-1 items-center">
-            <ColorSchemeDialog designScheme={props.designScheme} setDesignScheme={props.setDesignScheme} />
-            <McpTools />
-            <IconButton title="Upload file" className="transition-all" onClick={() => props.handleFileUpload()}>
-              <div className="i-ph:paperclip text-xl"></div>
-            </IconButton>
-            <WebSearch onSearchResult={(result) => props.onWebSearchResult?.(result)} disabled={props.isStreaming} />
-            <IconButton
-              title="Enhance prompt"
-              disabled={props.input.length === 0 || props.enhancingPrompt}
-              className={classNames('transition-all', props.enhancingPrompt ? 'opacity-100' : '')}
-              onClick={() => {
-                props.enhancePrompt?.();
-                toast.success('Prompt enhanced!');
-              }}
-            >
-              {props.enhancingPrompt ? (
-                <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl animate-spin"></div>
-              ) : (
-                <div className="i-bolt:stars text-xl"></div>
-              )}
-            </IconButton>
-
-            <SpeechRecognitionButton
-              isListening={props.isListening}
-              onStart={props.startListening}
-              onStop={props.stopListening}
-              disabled={props.isStreaming}
-            />
-            {props.chatStarted && (
-              <IconButton
-                title="Discuss"
-                className={classNames(
-                  'transition-all flex items-center gap-1 px-1.5',
-                  props.chatMode === 'discuss'
-                    ? '!bg-bolt-elements-item-backgroundAccent !text-bolt-elements-item-contentAccent'
-                    : 'bg-bolt-elements-item-backgroundDefault text-bolt-elements-item-contentDefault',
-                )}
-                onClick={() => {
-                  props.setChatMode?.(props.chatMode === 'discuss' ? 'build' : 'discuss');
-                }}
-              >
-                <div className={`i-ph:chats text-xl`} />
-                {props.chatMode === 'discuss' ? <span>Discuss</span> : <span />}
-              </IconButton>
-            )}
-            <IconButton
-              title="Model Settings"
-              className={classNames('transition-all flex items-center gap-1', {
-                'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent':
-                  props.isModelSettingsCollapsed,
-                'bg-bolt-elements-item-backgroundDefault text-bolt-elements-item-contentDefault':
-                  !props.isModelSettingsCollapsed,
-              })}
-              onClick={() => props.setIsModelSettingsCollapsed(!props.isModelSettingsCollapsed)}
-              disabled={!props.providerList || props.providerList.length === 0}
-            >
-              <div className={`i-ph:caret-${props.isModelSettingsCollapsed ? 'right' : 'down'} text-lg`} />
-              {props.isModelSettingsCollapsed ? <span className="text-xs">{props.model}</span> : <span />}
-            </IconButton>
           </div>
-          {props.input.length > 3 ? (
-            <div className="text-xs text-bolt-elements-textTertiary">
-              Use <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Shift</kbd> +{' '}
-              <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Return</kbd> a new line
+
+          <div className="flex items-center justify-between px-3.5 pb-3.5 pt-0 border-t border-transparent">
+            <div className="flex items-center gap-1.5">
+              <motion.button
+                whileHover={{ scale: 1.05, opacity: 0.8 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => props.handleFileUpload()}
+                className="p-2.5 rounded-xl !bg-transparent text-[var(--muted-foreground)] hover:text-[var(--card-foreground)] transition-all cursor-pointer"
+                title="Attach images or files"
+              >
+                <Paperclip className="w-4.5 h-4.5" />
+              </motion.button>
+              <div className="relative" ref={dropdownContainerRef}>
+                <motion.button
+                  whileHover={{ scale: 1.02, opacity: 0.8 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--muted)] text-xs font-medium text-[var(--card-foreground)] transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+                  <span>{activeModel?.label || activeModel?.name || props.model || 'Select model'}</span>
+                  <motion.div
+                    animate={{ rotate: isModelDropdownOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                  >
+                    <ChevronDown className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+                  </motion.div>
+                </motion.button>
+
+                <AnimatePresence>
+                  {isModelDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 15, scale: 0.94 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute left-0 bottom-full mb-2 w-80 bg-[var(--popover)] border border-[var(--border)] rounded-2xl shadow-xl z-50 origin-bottom-left overflow-hidden"
+                    >
+                      {/* Search input at the very top */}
+                      <div className="p-2 border-b border-[var(--border)]">
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          placeholder="Search models..."
+                          value={modelSearchQuery}
+                          onChange={(e) => setModelSearchQuery(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full bg-[var(--muted)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-[var(--primary)] text-[var(--card-foreground)] placeholder-[var(--muted-foreground)]"
+                        />
+                      </div>
+
+                      {/* Model list grouped by provider */}
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {Object.keys(groupedModels).length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-center text-[var(--muted-foreground)]">
+                            No models found
+                          </div>
+                        ) : (
+                          Object.entries(groupedModels).map(([providerName, models]) => (
+                            <div key={providerName} className="mb-1">
+                              {/* Provider header */}
+                              <div className="px-3 pt-2 pb-1">
+                                <span className="text-[10px] font-bold text-[var(--muted-foreground)] uppercase tracking-widest">
+                                  {providerName}
+                                </span>
+                              </div>
+                              {/* Models */}
+                              <div className="space-y-0.5 px-1.5">
+                                {models.map((modelItem: any) => {
+                                  const isSelected = props.model === modelItem.name;
+                                  return (
+                                    <motion.button
+                                      key={modelItem.name}
+                                      whileHover={{ scale: 1.01 }}
+                                      whileTap={{ scale: 0.99 }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleModelSelect(modelItem);
+                                      }}
+                                      className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-colors cursor-pointer bg-transparent hover:bg-[var(--secondary)]/60 border border-transparent hover:border-[var(--border)]"
+                                    >
+                                      {/* Icon — only the icon bg changes to indicate selection */}
+                                      <div className="flex-shrink-0">
+                                        {isSelected ? (
+                                          <motion.div
+                                            layoutId="selectedModelIcon"
+                                            className="p-1 rounded-lg bg-[oklch(0.6171_0.1375_39.0427)] text-white"
+                                          >
+                                            <Check className="w-3.5 h-3.5" />
+                                          </motion.div>
+                                        ) : (
+                                          <div className="p-1 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)]">
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Model info */}
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-[var(--card-foreground)] truncate">
+                                          {modelItem.label || modelItem.name}
+                                        </p>
+                                        <p className="text-[10px] text-[var(--muted-foreground)] truncate">
+                                          {modelItem.name}
+                                        </p>
+                                      </div>
+                                    </motion.button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              {showKeyButton && (
+                <div className="relative">
+                  <IconButton
+                    onClick={() => setIsApiKeyPopupOpen(true)}
+                    title="API Key"
+                    className={classNames(
+                      'transition-all',
+                      isKeyMissing
+                        ? 'p-1.5 h-7 w-7 text-red-500 hover:text-red-400 bg-red-500/10 rounded-md'
+                        : 'p-1.5 h-7 w-7 text-[var(--muted-foreground)] hover:text-[var(--card-foreground)] bg-[var(--muted)] rounded-md',
+                    )}
+                  >
+                    <div className="i-ph:key text-sm" />
+                  </IconButton>
+                  <AnimatePresence>
+                    {isApiKeyPopupOpen && (
+                      <APIKeyPopup
+                        provider={props.provider}
+                        apiKey={props.apiKeys[props.provider.name] || ''}
+                        setApiKey={(key) => props.onApiKeysChange(props.provider.name, key)}
+                        onClose={() => setIsApiKeyPopupOpen(false)}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
-          ) : null}
-          <SupabaseConnection />
-          <ExpoQrModal open={props.qrModalOpen} onClose={() => props.setQrModalOpen(false)} />
+
+            <div className="flex items-center gap-2">
+              <AnimatePresence>
+                {props.input.length > 0 && (
+                  <motion.span
+                    initial={{ opacity: 0, x: 5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 5 }}
+                    className="hidden sm:inline text-[10px] text-[var(--muted-foreground)] font-mono px-1"
+                  >
+                    {props.input.length} chars
+                  </motion.span>
+                )}
+              </AnimatePresence>
+
+              <motion.button
+                whileHover={
+                  (!props.input.trim() && props.uploadedFiles.length === 0) || props.isStreaming || isKeyMissing
+                    ? {}
+                    : { scale: 1.05 }
+                }
+                whileTap={
+                  (!props.input.trim() && props.uploadedFiles.length === 0) || props.isStreaming || isKeyMissing
+                    ? {}
+                    : { scale: 0.95 }
+                }
+                onClick={(event) => props.handleSendMessage?.(event)}
+                disabled={
+                  props.isStreaming || (!props.input.trim() && props.uploadedFiles.length === 0) || isKeyMissing
+                }
+                className={`p-2.5 rounded-[14px] flex items-center justify-center transition-all duration-300 relative overflow-hidden group cursor-pointer ${
+                  (!props.input.trim() && props.uploadedFiles.length === 0) || props.isStreaming || isKeyMissing
+                    ? 'bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed border border-[var(--border)] shadow-none'
+                    : 'bg-[oklch(0.6171_0.1375_39.0427)] text-white hover:opacity-95 shadow-md shadow-[oklch(0.6171_0.1375_39.0427)]/20 hover:shadow-lg hover:shadow-[oklch(0.6171_0.1375_39.0427)]/35'
+                }`}
+                title="Send Prompt (Enter)"
+              >
+                <AnimatePresence mode="wait">
+                  {props.isStreaming ? (
+                    <motion.div
+                      key="spinner"
+                      initial={{ opacity: 0, rotate: -45 }}
+                      animate={{ opacity: 1, rotate: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="w-4.5 h-4.5 rounded-full border-2 border-white/30 border-t-white animate-spin"
+                    />
+                  ) : (
+                    <motion.div
+                      key="send-icon"
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Send className="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.button>
+            </div>
+          </div>
         </div>
+        <div className="absolute bottom-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-[oklch(0.6171_0.1375_39.0427)]/10 to-transparent blur-[1px]"></div>
       </div>
     </div>
   );

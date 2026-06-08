@@ -48,27 +48,37 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     },
   });
 
-  const { messages, files, promptId, contextOptimization, supabase, chatMode, designScheme, maxLLMSteps } =
-    await request.json<{
-      messages: Messages;
-      files: any;
-      promptId?: string;
-      contextOptimization: boolean;
-      chatMode: 'discuss' | 'build';
-      designScheme?: DesignScheme;
-      supabase?: {
-        isConnected: boolean;
-        hasSelectedProject: boolean;
-        credentials?: {
-          anonKey?: string;
-          supabaseUrl?: string;
-        };
+  const {
+    messages,
+    files,
+    promptId,
+    contextOptimization,
+    supabase,
+    chatMode,
+    designScheme,
+    maxLLMSteps,
+    apiKeys: bodyApiKeys,
+  } = await request.json<{
+    messages: Messages;
+    files: any;
+    promptId?: string;
+    contextOptimization: boolean;
+    chatMode: 'discuss' | 'build';
+    designScheme?: DesignScheme;
+    supabase?: {
+      isConnected: boolean;
+      hasSelectedProject: boolean;
+      credentials?: {
+        anonKey?: string;
+        supabaseUrl?: string;
       };
-      maxLLMSteps: number;
-    }>();
+    };
+    maxLLMSteps: number;
+    apiKeys?: Record<string, string>;
+  }>();
 
   const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
+  const apiKeys = bodyApiKeys || JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
   const providerSettings: Record<string, IProviderSetting> = JSON.parse(
     parseCookies(cookieHeader || '').providers || '{}',
   );
@@ -88,7 +98,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
-    let lastChunk: string | undefined = undefined;
+    const lastChunk: string | undefined = undefined;
 
     const dataStream = createDataStream({
       async execute(dataStream) {
@@ -282,7 +292,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               messageSliceId,
             });
 
-            result.mergeIntoDataStream(dataStream);
+            result.mergeIntoDataStream(dataStream, { sendReasoning: true });
 
             (async () => {
               for await (const part of result.fullStream) {
@@ -344,7 +354,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           }
           streamRecovery.stop();
         })();
-        result.mergeIntoDataStream(dataStream);
+        result.mergeIntoDataStream(dataStream, { sendReasoning: true });
       },
       onError: (error: any) => {
         // Provide more specific error messages for common issues
@@ -380,45 +390,9 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
         return `Custom error: ${errorMessage}`;
       },
-    }).pipeThrough(
-      new TransformStream({
-        transform: (chunk, controller) => {
-          if (!lastChunk) {
-            lastChunk = ' ';
-          }
+    });
 
-          if (typeof chunk === 'string') {
-            if (chunk.startsWith('g') && !lastChunk.startsWith('g')) {
-              controller.enqueue(encoder.encode(`0: "<div class=\\"__boltThought__\\">"\n`));
-            }
-
-            if (lastChunk.startsWith('g') && !chunk.startsWith('g')) {
-              controller.enqueue(encoder.encode(`0: "</div>\\n"\n`));
-            }
-          }
-
-          lastChunk = chunk;
-
-          let transformedChunk = chunk;
-
-          if (typeof chunk === 'string' && chunk.startsWith('g')) {
-            let content = chunk.split(':').slice(1).join(':');
-
-            if (content.endsWith('\n')) {
-              content = content.slice(0, content.length - 1);
-            }
-
-            transformedChunk = `0:${content}\n`;
-          }
-
-          // Convert the string stream to a byte stream
-          const str = typeof transformedChunk === 'string' ? transformedChunk : JSON.stringify(transformedChunk);
-          controller.enqueue(encoder.encode(str));
-        },
-      }),
-    );
-
-    return new Response(dataStream, {
+    return new Response(dataStream.pipeThrough(new TextEncoderStream()), {
       status: 200,
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',

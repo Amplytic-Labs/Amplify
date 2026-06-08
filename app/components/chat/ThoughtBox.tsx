@@ -18,7 +18,7 @@ const ThoughtBox = ({ title, children }: PropsWithChildren<{ title: string }>) =
         border border-bolt-elements-borderColor
       `}
     >
-      <div className="p-4 flex items-center gap-4 rounded-lg  text-bolt-elements-textSecondary font-medium leading-5 text-sm  border border-bolt-elements-borderColor">
+      <div className="p-4 flex items-center gap-4 rounded-lg  text-bolt-elements-textSecondary font-medium leading-5 text-base  border border-bolt-elements-borderColor">
         <div className="i-ph:brain-thin text-2xl" />
         <div className="div">
           <span> {title}</span>{' '}

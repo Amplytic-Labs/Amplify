@@ -2,7 +2,6 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { classNames } from '~/utils/classNames';
 import type { TabVisibilityConfig } from '~/components/@settings/core/types';
 import { TAB_LABELS, TAB_ICONS } from '~/components/@settings/core/constants';
-import { GlowingEffect } from '~/components/ui/GlowingEffect';
 
 interface TabTileProps {
   tab: TabVisibilityConfig;
@@ -33,16 +32,6 @@ export const TabTile: React.FC<TabTileProps> = ({
         <Tooltip.Trigger asChild>
           <div className={classNames('min-h-[160px] list-none', className || '')}>
             <div className="relative h-full rounded-xl border border-[#E5E5E5] dark:border-[#333333] p-0.5">
-              <GlowingEffect
-                blur={0}
-                borderWidth={1}
-                spread={20}
-                glow={true}
-                disabled={false}
-                proximity={40}
-                inactiveZone={0.3}
-                movementDuration={0.4}
-              />
               <div
                 onClick={onClick}
                 className={classNames(

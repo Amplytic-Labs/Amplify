@@ -11,6 +11,12 @@ export interface ModelInfo {
 
   /** Maximum completion/output tokens - how many tokens the model can generate. If not specified, falls back to provider defaults */
   maxCompletionTokens?: number;
+
+  /** Tokens per minute limit */
+  tpm?: number;
+
+  /** Requests per minute limit */
+  rpm?: number;
 }
 
 export interface ProviderInfo {
