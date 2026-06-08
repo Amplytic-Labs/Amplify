@@ -1,76 +1,71 @@
-# Plan: Implement SystemPromptBuilder
+# Plan: Extend PromptLibrary for Skill & Memory Injection
 
 ## Overview
 
-The `SystemPromptBuilder` is the orchestrator that assembles the complex system prompt required for the LLM to function as a "Claude-like" agent. It ensures that all necessary context (skills, memory, tools, and environment) is injected in the correct format.
+Instead of building a separate `SystemPromptBuilder`, we will extend the existing `PromptLibrary` (`app/lib/common/prompt-library.ts`). This ensures that skills and memory are available across all prompt variants (default, optimized, etc.) and maintains consistency with the existing prompt management system.
 
 ## Implementation Details
 
-### 1. Prompt Components
+### 1. Integration Point
 
-The builder will assemble the prompt from the following sources:
+I will modify the `PromptLibrary` class to accept an optional `ContextOptions` object during prompt retrieval.
 
-#### A. Base Persona
-
-- A static or configurable set of core instructions defining the AI's identity, tone, and general constraints.
-
-#### B. Skill Registry (`<available_skills>`)
-
-- Call `SkillLoader.buildSystemPromptBlock()` to get the XML list of available skills.
-- Inject this block with a header explaining how to use skills.
-
-#### C. User Memory
-
-- Call `MemoryStore.load()` to retrieve persistent facts about the user.
-- Format these as a bulleted list under a `## Memory` section.
-
-#### D. Environmental Context
-
-- Inject current UTC time and timezone.
-- Inject user location (if available).
-- Describe the filesystem layout (`/workspace/` vs `/chat/`).
-
-#### E. Tool Definitions
-
-- Inject the JSON schemas for all available tools (bash, read_file, create_file, etc.).
-
-### 2. Assembly Logic
-
-I will implement a `buildSystemPrompt` function:
+**Proposed Method Signature:**
 
 ```typescript
-async function buildSystemPrompt(conversationId: string): Promise<string> {
-  const persona = await loadPersona();
-  const skills = await skillLoader.buildSystemPromptBlock();
-  const memory = await memoryStore.formatForPrompt();
-  const context = getEnvContext();
-
-  return `
-${persona}
-
-## Your Skills
-${skills}
-
-## Memory
-${memory}
-
-## Environment
-${context}
-
-## Available Tools
-[Tool Definitions]
-`.trim();
-}
+static getPrompt(promptId: string, options: PromptOptions, context?: {
+  skills?: SkillContext;
+  memory?: UserMemory;
+  env?: EnvContext;
+})
 ```
 
-### 3. Integration
+### 2. Injection Logic
 
-- The `SystemPromptBuilder` will be called at the start of every new conversation.
-- It will be integrated into the API request pipeline, ensuring the `system` message of the LLM call contains the generated prompt.
+The `PromptLibrary` will now perform a multi-stage assembly:
 
-## Verification Plan
+1. **Base Prompt**: Retrieve the base system prompt from the library based on `promptId`.
+2. **Skill Injection**:
+   - Call `SkillLoader.getRelevantSkills()` to get a compact list of available skills.
+   - Append this list to the prompt under a `## Available Skills` section.
+3. **Memory Injection**:
+   - Call `MemoryStore.formatForPrompt()` to get user facts.
+   - Append this to the prompt under a `## User Memory` section.
+4. **Environmental Context**:
+   - Inject current time, timezone, and workspace layout.
 
-- [ ] Log the generated system prompt to the console and verify all sections (Persona, Skills, Memory, Context) are present.
-- [ ] Verify that adding a new skill to `index.json` automatically updates the generated prompt.
-- [ ] Verify that updating user memory reflects in the prompt for the next conversation.
-- [ ] Ensure the prompt size remains within the model's context window limits.
+### 3. Token Budgeting
+
+To prevent context overflow, the `PromptLibrary` will coordinate with the `SkillLoader` to truncate the skill list if the total prompt size exceeds the model's limit.
+
+### 4. Integration with API
+
+The `api.chat.ts` route will be updated to:
+
+1. Initialize `SkillLoader` and `MemoryStore`.
+2. Pass the resulting context into `PromptLibrary.getPrompt()`.
+3. Send the final assembled prompt to the LLM.
+
+## Testing Plan
+
+### 1. Unit Tests
+
+- **Assembly Logic**: Verify that `getPrompt()` correctly concatenates the base prompt, skills, memory, and environment context in the correct order.
+- **Variant Support**: Verify that skills and memory are injected regardless of the `promptId` used (e.g., 'default' vs 'optimized').
+- **Null Handling**: Verify that the prompt remains valid even if `skills` or `memory` are empty or undefined.
+
+### 2. Integration Tests
+
+- **End-to-End Prompt Flow**: Trace a request from `api.chat.ts` $\rightarrow$ `PromptLibrary` $\rightarrow$ `SkillLoader`/`MemoryStore` and verify the final string sent to the LLM.
+- **Token Budget Enforcement**: Mock a scenario with 50 skills and verify that the `PromptLibrary` truncates the list to fit the model's context window.
+
+### 3. Edge Cases
+
+- **Extreme Memory Size**: Test behavior when the user has hundreds of stored facts.
+- **Conflicting Instructions**: Verify that injected skills do not contradict the base persona instructions.
+- **Empty Base Prompt**: Ensure the system doesn't crash if a `promptId` is requested that doesn't exist in the library.
+
+### 4. Performance
+
+- **Generation Latency**: Measure the time to assemble the final prompt; it must be negligible (< 20ms).
+- **Memory Overhead**: Ensure that the `ContextOptions` object doesn't cause memory leaks during high-concurrency chat sessions.

@@ -1,9 +1,17 @@
 import type { PromptOptions } from '~/lib/common/prompt-library';
 
 export default (options: PromptOptions) => {
-  const { cwd, allowedHtmlElements, supabase } = options;
+  const { cwd, allowedHtmlElements, supabase, skills, memory } = options;
   return `
 You are Bolt, an expert AI assistant and exceptional senior software developer with vast knowledge across multiple programming languages, frameworks, and best practices.
+
+<available_skills>
+${skills || 'No specialized skills currently loaded.'}
+</available_skills>
+
+<user_memory>
+${memory || 'No persistent memory available for this user.'}
+</user_memory>
 
 <system_constraints>
   - Operating in WebContainer, an in-browser Node.js runtime

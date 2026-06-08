@@ -1,54 +1,71 @@
-# Plan: Implement Core Skills
+# Plan: Implement Core Skills (Procedural)
 
 ## Overview
 
-Skills are the "knowledge base" of the agent. They provide specialized instructions that the LLM follows to achieve high-quality results in specific domains. This plan covers the creation of the first three essential skills.
+Skills are the "knowledge base" of the agent. To be effective, they must be **procedural** (step-by-step) rather than just high-level guidelines. This plan covers the creation of the first three essential skills.
 
 ## Skill 1: Frontend Design (`frontend-design`)
 
-**Goal**: Ensure the AI creates visually stunning, accessible, and production-ready web interfaces.
+**Goal**: Create production-grade, accessible, and visually stunning web interfaces.
 
-**Key Instructions to Include**:
+**Procedural Steps to Implement in SKILL.md**:
 
-- **Design Principles**: Use modern spacing, typography, and color palettes.
-- **Component Architecture**: Prefer modular, reusable React components.
-- **Styling**: Use Tailwind CSS for efficiency and consistency.
-- **Interactivity**: Implement smooth transitions and loading states.
-- **Accessibility**: Ensure ARIA labels and keyboard navigation are handled.
+1. **Analysis**: Identify component type, target audience, and design requirements.
+2. **Design System**: Establish a color palette, typography scale, and spacing system (4px base).
+3. **Architecture**: Break UI into atomic components and define prop interfaces.
+4. **Implementation**: Use Tailwind CSS, implement responsive breakpoints (mobile-first), and add ARIA labels.
+5. **Polish**: Add micro-interactions (hover/focus) and verify WCAG AA contrast ratios.
 
 ## Skill 2: File Reading (`file-reading`)
 
-**Goal**: Provide a standardized way for the AI to handle various uploaded file formats.
+**Goal**: Standardize the extraction and analysis of uploaded files.
 
-**Key Instructions to Include**:
+**Procedural Steps to Implement in SKILL.md**:
 
-- **Routing**: Identify the file extension and use the appropriate tool (e.g., `pdf_read` for `.pdf`).
-- **Chunking**: For large files, read in chunks to avoid context overflow.
-- **Summarization**: Always provide a brief summary of the file content before diving into details.
-- **Cross-Referencing**: Link information from multiple files when answering complex queries.
+1. **Identification**: Detect file extension and route to the correct MCP tool (e.g., `pdf_read`).
+2. **Extraction**: Read content in chunks for large files to avoid context overflow.
+3. **Summarization**: Generate a high-level summary of the file before detailed analysis.
+4. **Synthesis**: Cross-reference information across multiple uploaded files.
 
 ## Skill 3: Code Execution (`code-execution`)
 
-**Goal**: Enable the AI to run code, verify logic, and provide actual output to the user.
+**Goal**: Verify logic and provide actual program output.
 
-**Key Instructions to Include**:
+**Procedural Steps to Implement in SKILL.md**:
 
-- **Environment**: Use the sandboxed bash/python environment.
-- **Verification**: Run tests before declaring a feature "complete".
-- **Error Handling**: If a script fails, analyze the stderr and iterate on the fix.
-- **Output Formatting**: Present code output clearly using markdown code blocks.
+1. **Environment Setup**: Initialize the sandboxed bash/python environment.
+2. **Implementation**: Write the code and execute it.
+3. **Verification**: Run a set of test cases to verify the output.
+4. **Iteration**: Analyze stderr on failure and iterate until the tests pass.
+5. **Presentation**: Format the final output clearly in markdown code blocks.
 
 ## Implementation Process
 
-1. **Create Directory Structure**:
-   - `/chat/skills/frontend-design/`
-   - `/chat/skills/file-reading/`
-   - `/chat/skills/code-execution/`
-2. **Write `SKILL.md`**: For each skill, follow the standard template (Frontmatter -> Overview -> Process -> Output).
-3. **Update Registry**: Add each skill to `/chat/skills/index.json`.
+1. **Define Schema**: Ensure all skills follow the YAML frontmatter $\rightarrow$ Procedural Steps $\rightarrow$ Output Format structure.
+2. **Create Files**: Write the `SKILL.md` files as static assets.
+3. **Update Registry**: Add skills to the `SkillLoader` registry.
 
-## Verification Plan
+## Testing Plan
 
-- [ ] Trigger the `frontend-design` skill by asking for a "beautiful landing page" and verify the AI follows the design principles.
-- [ ] Upload a PDF and verify the `file-reading` skill is triggered and the content is extracted.
-- [ ] Ask the AI to "calculate the first 10 Fibonacci numbers using Python" and verify the `code-execution` skill is used.
+### 1. Behavioral Evaluation (The "Golden Set")
+
+Since skills are instructions for an LLM, we will use a "Golden Set" of prompts to evaluate quality:
+
+- **Frontend Design**: Prompt the AI to build a "Modern SaaS Dashboard". Verify the output follows the 5-step process (Analysis $\rightarrow$ Design System $\rightarrow$ Architecture $\rightarrow$ Implementation $\rightarrow$ Polish).
+- **File Reading**: Upload a complex PDF. Verify the AI first summarizes the document before answering specific questions.
+- **Code Execution**: Request a complex algorithm. Verify the AI writes the code, runs a test script, and only returns the result after the test passes.
+
+### 2. Negative Testing
+
+- **Anti-Triggering**: Prompt the AI with a task that is _almost_ a skill trigger but not quite. Verify the AI does NOT load the skill.
+- **Instruction Conflict**: Provide a user instruction that contradicts a skill step. Verify the AI prioritizes the user's explicit request while still following the general skill procedure.
+
+### 3. Token Efficiency
+
+- **Metadata Check**: Verify that the skill descriptions in the registry are concise enough to allow 10+ skills to be listed without consuming more than 1000 tokens.
+- **Loading Latency**: Measure the time from `read_skill` call to the LLM receiving the content.
+
+### 4. Iterative Refinement
+
+- **Feedback Loop**: Log cases where the AI fails to follow a skill step.
+- **Refinement**: Update the `SKILL.md` procedural steps to be more explicit or provide examples of "Good" vs "Bad" output.

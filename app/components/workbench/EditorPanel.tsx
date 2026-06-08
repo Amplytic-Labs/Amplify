@@ -1,7 +1,8 @@
 import { useStore } from '@nanostores/react';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import * as Tabs from '@radix-ui/react-tabs';
+import { saveAs } from 'file-saver';
 import {
   CodeMirrorEditor,
   type EditorDocument,
@@ -62,6 +63,37 @@ export const EditorPanel = memo(
 
     const theme = useStore(themeStore);
     const showTerminal = useStore(workbenchStore.showTerminal);
+    const currentView = useStore(workbenchStore.currentView);
+
+    const handleCopy = useCallback(async () => {
+      if (!editorDocument) return;
+      await navigator.clipboard.writeText(editorDocument.value);
+      toast.success('Content copied to clipboard');
+    }, [editorDocument]);
+
+    const handleDownload = useCallback(() => {
+      if (!editorDocument) return;
+      const blob = new Blob([editorDocument.value], { type: 'text/plain' });
+      saveAs(blob, editorDocument.filePath.split('/').pop() || 'file.txt');
+    }, [editorDocument]);
+
+    const handleViewToggle = useCallback(() => {
+      const nextView = currentView === 'code' ? 'render' : 'code';
+      workbenchStore.currentView.set(nextView);
+    }, [currentView]);
+
+    const handleVersionSelect = useCallback(
+      (versionIndex: number) => {
+        if (!editorDocument || !fileHistory) return;
+        const history = fileHistory[editorDocument.filePath];
+        if (!history || !history.versions[versionIndex]) return;
+
+        const content = history.versions[versionIndex].content;
+        workbenchStore.setCurrentDocumentContent(content);
+        toast.info(`Reverted to version ${versionIndex + 1}`);
+      },
+      [editorDocument, fileHistory],
+    );
 
     const activeFileSegments = useMemo(() => {
       if (!editorDocument) {
@@ -148,18 +180,55 @@ export const EditorPanel = memo(
                 {activeFileSegments?.length && (
                   <div className="flex items-center flex-1 text-sm">
                     <FileBreadcrumb pathSegments={activeFileSegments} files={files} onFileSelect={onFileSelect} />
-                    {activeFileUnsaved && (
-                      <div className="flex gap-1 ml-auto -mr-1.5">
-                        <PanelHeaderButton onClick={onFileSave}>
-                          <div className="i-ph:floppy-disk-duotone" />
-                          Save
-                        </PanelHeaderButton>
-                        <PanelHeaderButton onClick={onFileReset}>
-                          <div className="i-ph:clock-counter-clockwise-duotone" />
-                          Reset
-                        </PanelHeaderButton>
-                      </div>
-                    )}
+
+                    <div className="flex gap-1 ml-auto -mr-1.5">
+                      {/* Version Selector */}
+                      {fileHistory && editorDocument && fileHistory[editorDocument.filePath] && (
+                        <select
+                          className="bg-bolt-elements-background-depth-1 border border-bolt-elements-borderColor text-xs rounded px-1 py-1 outline-none"
+                          onChange={(e) => handleVersionSelect(parseInt(e.target.value))}
+                          value={0} // Default to latest or current
+                        >
+                          {fileHistory[editorDocument.filePath].versions.map((_, i) => (
+                            <option key={i} value={i}>
+                              v{fileHistory[editorDocument.filePath].versions.length - i}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {/* View Toggle */}
+                      {editorDocument &&
+                        ['.md', '.mermaid', '.svg'].some((ext) => editorDocument.filePath.endsWith(ext)) && (
+                          <PanelHeaderButton onClick={handleViewToggle}>
+                            <div className={classNames('i-ph', currentView === 'code' ? 'i-ph:eye' : 'i-ph:code')} />
+                            {currentView === 'code' ? 'Render' : 'Code'}
+                          </PanelHeaderButton>
+                        )}
+
+                      <PanelHeaderButton onClick={handleCopy}>
+                        <div className="i-ph:copy" />
+                        Copy
+                      </PanelHeaderButton>
+
+                      <PanelHeaderButton onClick={handleDownload}>
+                        <div className="i-ph:download-simple" />
+                        Download
+                      </PanelHeaderButton>
+
+                      {activeFileUnsaved && (
+                        <>
+                          <PanelHeaderButton onClick={onFileSave}>
+                            <div className="i-ph:floppy-disk-duotone" />
+                            Save
+                          </PanelHeaderButton>
+                          <PanelHeaderButton onClick={onFileReset}>
+                            <div className="i-ph:clock-counter-clockwise-duotone" />
+                            Reset
+                          </PanelHeaderButton>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </PanelHeader>

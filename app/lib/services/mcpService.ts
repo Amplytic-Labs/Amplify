@@ -10,6 +10,8 @@ import { Experimental_StdioMCPTransport } from 'ai/mcp-stdio';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
+import { SkillLoader } from '~/lib/services/skillLoader';
+import { memoryStore } from '~/lib/persistence/memoryStore';
 import {
   TOOL_EXECUTION_APPROVAL,
   TOOL_EXECUTION_DENIED,
@@ -111,12 +113,63 @@ export class MCPService {
     mcpServers: {},
   };
 
+  constructor() {
+    this._registerInternalTools();
+    SkillLoader.getInstance().loadSkills();
+  }
+
   static getInstance(): MCPService {
     if (!MCPService._instance) {
       MCPService._instance = new MCPService();
     }
 
     return MCPService._instance;
+  }
+
+  private _registerInternalTools() {
+    const internalTools: ToolSet = {
+      read_skill: {
+        description: 'Reads the full content of a specific skill by its ID.',
+        parameters: z.object({
+          skillId: z.string().describe('The ID of the skill to read'),
+        }),
+        execute: async ({ skillId }) => {
+          const content = await SkillLoader.getInstance().getSkillContent(skillId);
+          return content || 'Skill not found';
+        },
+      },
+      update_user_memory: {
+        description: "Updates or adds a fact about the user to the AI's long-term memory.",
+        parameters: z.object({
+          content: z.string().describe('The fact to remember about the user'),
+          category: z.string().optional().describe('Optional category for the memory'),
+        }),
+        execute: async ({ content, category }) => {
+          const memory = memoryStore.addMemory(content, category);
+          return `Memory stored: ${memory.content} (ID: ${memory.id})`;
+        },
+      },
+      read_user_memory: {
+        description: 'Retrieves stored facts about the user. Can be filtered by a query.',
+        parameters: z.object({
+          query: z.string().optional().describe('Optional query to filter memories'),
+        }),
+        execute: async ({ query }) => {
+          const memories = query ? memoryStore.searchMemories(query) : memoryStore.getMemories();
+
+          if (memories.length === 0) {
+            return 'No memories found.';
+          }
+
+          return memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
+        },
+      },
+    };
+
+    for (const [toolName, tool] of Object.entries(internalTools)) {
+      this._tools[toolName] = tool;
+      this._toolsWithoutExecute[toolName] = { ...tool, execute: undefined };
+    }
   }
 
   private _validateServerConfig(serverName: string, config: any): MCPServerConfig {

@@ -37,10 +37,20 @@ function isVisible(path: string): boolean {
 - **Search/Quick Open**: If the app has a file search feature, ensure `/chat/` files are excluded from results.
 - **Breadcrumbs**: Ensure that if a user somehow navigates to a file in `/chat/`, the breadcrumbs don't expose the root `/chat/` folder.
 
-## Verification Plan
+## Testing Plan
 
-- [ ] Start the application.
-- [ ] Create a dummy folder named `/chat` in the workspace.
-- [ ] Verify that the `/chat` folder does not appear in the sidebar explorer.
-- [ ] Verify that other folders remain visible.
-- [ ] (If applicable) Search for a file inside `/chat` and verify it doesn't appear in search results.
+### 1. UI Verification
+
+- **Sidebar Explorer**: Create a folder named `/chat` in the project root. Verify it is not rendered in the file tree.
+- **Nested Paths**: Create a folder `/chat/internal/secrets`. Verify that neither the root `/chat` nor any of its children are visible.
+- **Positive Test**: Create a folder `/chat-logs`. Verify that it IS visible (ensuring the filter isn't too aggressive).
+
+### 2. Integration Tests
+
+- **Search/Quick Open**: Use the global search (if available) to look for a file inside `/chat/`. Verify it does not appear in the results.
+- **Breadcrumbs**: Manually navigate to a file in `/chat/` (via URL or console). Verify that the breadcrumb navigation does not expose the `/chat/` root.
+
+### 3. Edge Cases
+
+- **Case Sensitivity**: Test if `/CHAT` or `/Chat` are also hidden (depending on the OS/Filesystem).
+- **Root-level files**: Verify that files in the root directory (e.g., `package.json`) remain visible.

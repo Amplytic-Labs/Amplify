@@ -1,65 +1,61 @@
-# Plan: Implement SkillLoader (Skill Injector)
+# Plan: Implement SkillLoader (Integrated & Token-Aware)
 
 ## Overview
 
-The `SkillLoader` is the core engine for managing "Skills" (markdown-based instruction sets). It handles the discovery of available skills and provides the necessary content to the LLM's system prompt and tool-based read requests.
+The `SkillLoader` is responsible for managing the discovery and loading of "Skills" (procedural markdown instructions). Unlike the previous version, it now integrates with the existing `PromptLibrary` and implements a token budget to prevent context overflow.
 
 ## Implementation Details
 
-### 1. Skill Registry Structure
+### 1. Skill Source & Registry
 
-The system will rely on a JSON index file located at `/chat/skills/index.json`.
-**Schema:**
+Skills will no longer be stored in a virtual filesystem. Instead:
 
-```json
-[
-  {
-    "name": "skill-id",
-    "description": "Detailed trigger description",
-    "path": "/chat/skills/skill-id/SKILL.md"
-  }
-]
-```
+- **Core Skills**: Bundled as static assets within the application build.
+- **User Skills**: Fetched from a database (Appwrite) or loaded from `localStorage`.
+- **Registry**: A JSON index (name, description, path/ID) is used for discovery.
 
-### 2. SkillLoader Class Design
+### 2. Token Budget Management
 
-I will implement a `SkillLoader` class with the following responsibilities:
+To prevent the system prompt from exceeding the LLM's context window:
 
-#### A. Initialization (`init`)
+- **Budget Allocation**: Define a `maxSkillTokens` limit (e.g., 20% of the total context window).
+- **Prioritization**: Skills are injected based on relevance or a priority score.
+- **Counting**: Use a tokenizer (e.g., `tiktoken` or provider-specific) to count tokens in the skill metadata before injection.
 
-- Load and parse `/chat/skills/index.json`.
-- Cache the registry in memory for fast access.
+### 3. Integration with PromptLibrary
 
-#### B. System Prompt Generation (`buildSystemPromptBlock`)
+The `SkillLoader` will not build its own prompt. Instead, it will provide a `SkillContext` object to the `PromptLibrary`.
 
-- Iterate through the registry.
-- Generate an XML block formatted as:
-  ```xml
-  <available_skills>
-    <skill>
-      <name>...</name>
-      <description>...</description>
-      <location>...</location>
-    </skill>
-  </available_skills>
-  ```
-- This block will be injected into the global system prompt.
+**Flow:**
+`PromptLibrary.getPrompt()` $\rightarrow$ calls `SkillLoader.getRelevantSkills()` $\rightarrow$ injects compact XML/Markdown list into the base prompt.
 
-#### C. Skill Content Retrieval (`readSkill`)
+### 4. Skill Content Retrieval
 
-- Accept a path to a skill file.
-- **Security Validation**: Ensure the path starts with `/chat/skills/` to prevent directory traversal attacks.
-- Read the file from the virtual filesystem and return the content.
+Full skill content is retrieved on-demand via an MCP tool (`read_skill`).
 
-### 3. Integration
+- **Security**: Since skills are now bundled or DB-backed, the `read_skill` tool will use a lookup table (ID $\rightarrow$ Content) rather than direct filesystem paths, eliminating path traversal risks.
 
-- The `SkillLoader` will be instantiated as a singleton during the chat session initialization.
-- It will be called by the `SystemPromptBuilder` during the initial API request.
-- It will be called by the tool execution handler when the LLM calls `read_file` on a skill location.
+## Testing Plan
 
-## Verification Plan
+### 1. Unit Tests
 
-- [ ] Create a sample `index.json` and a `SKILL.md` file in `/chat/skills/`.
-- [ ] Call `buildSystemPromptBlock()` and verify the XML output matches the expected format.
-- [ ] Call `readSkill()` with a valid path and verify content is returned.
-- [ ] Call `readSkill()` with an invalid path (e.g., `/etc/passwd`) and verify it throws a security error.
+- **Registry Loading**: Verify `loadRegistry()` handles missing, empty, or malformed JSON files without crashing.
+- **Token Counting**: Verify the tokenizer accurately counts tokens for various skill descriptions and matches provider-specific counts.
+- **Budget Logic**: Verify `getRelevantSkills()` returns the maximum number of skills that fit within the `maxSkillTokens` limit.
+- **Prioritization**: Verify that skills with higher priority scores are selected over lower priority ones when the budget is tight.
+
+### 2. Integration Tests
+
+- **PromptLibrary Handshake**: Verify that `PromptLibrary.getPrompt()` correctly calls `SkillLoader` and the resulting system prompt contains the expected skill list.
+- **MCP Tool Linkage**: Verify that the `read_skill` MCP tool correctly invokes `SkillLoader.getSkillContent()` and returns the expected markdown.
+
+### 3. Edge Cases
+
+- **Empty Registry**: Ensure the system functions normally when no skills are available.
+- **Oversized Skills**: Test behavior when a single skill's metadata exceeds the entire token budget.
+- **Invalid IDs**: Verify that requesting a non-existent skill ID returns a clean "Not Found" error.
+
+### 4. Performance & Security
+
+- **Latency**: Measure the time taken to filter and inject skills; it must not add more than 50ms to the prompt generation.
+- **Isolation**: Verify that `SkillLoader` cannot be tricked into reading files outside of the bundled assets or DB records.

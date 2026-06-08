@@ -20,6 +20,7 @@ import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
 import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
+import { ArtifactRenderer } from './ArtifactRenderer';
 import useViewport from '~/lib/hooks';
 
 import { usePreviewStore } from '~/lib/stores/previews';
@@ -54,6 +55,10 @@ const sliderOptions: SliderOptions<WorkbenchViewType> = {
   right: {
     value: 'preview',
     text: 'Preview',
+  },
+  render: {
+    value: 'render',
+    text: 'Render',
   },
 };
 
@@ -503,6 +508,9 @@ export const Workbench = memo(
                   </View>
                   <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
                     <Preview setSelectedElement={setSelectedElement} />
+                  </View>
+                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
+                    {selectedFile && <ArtifactRenderer filePath={selectedFile} />}
                   </View>
                 </div>
               </div>

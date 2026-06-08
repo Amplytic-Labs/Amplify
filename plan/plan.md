@@ -206,430 +206,136 @@ The system prompt is the "OS boot sequence" of each conversation.
 
 ---
 
-## Part 2: Your Silent Chat Workspace Design
+## Part 2: Revised Integrated Architecture
 
-Now that you understand the full system, here's how to replicate it in your bolt.diy fork.
+Now that we have analyzed the existing bolt.diy infrastructure, we are pivoting from a "replacement" strategy to an "integration" strategy. Instead of building a parallel system, we will extend the existing production-grade services.
 
----
+### 2.1 Core Concept: Integration over Replacement
 
-### 2.1 Core Concept
+The goal is to implement Claude-like capabilities (Skills, Memory, Artifacts) by augmenting the existing bolt.diy pipeline.
 
-```
-bolt.diy has a "Project Workspace" (visible to user)
-You want a "Chat Workspace" (invisible, per-conversation)
+**Key Architectural Shifts:**
 
-The chat workspace:
-- Mounts on every new conversation
-- Lives in /chat/ virtual directory
-- Contains tools + skills
-- Is never shown in the file explorer UI
-- Is destroyed/reset between conversations
-```
+- **No Virtual FS**: We will not use a `/chat/` directory in WebContainer because it is ephemeral. Skills will be bundled as static assets or fetched via API.
+- **MCP-First Tools**: All new capabilities (like reading skills or updating memory) will be implemented as **MCP Tools** using the existing `MCPService`.
+- **Prompt Extension**: Instead of a new builder, we will extend the `PromptLibrary` to inject skills and memory into the system prompt.
+- **Artifact Augmentation**: We will extend the existing `StreamingMessageParser` and `Artifact` components rather than rebuilding the artifact system.
 
----
+### 2.2 The Skill System (Bundled & Token-Aware)
 
-### 2.2 Directory Layout
+Skills are procedural markdown documents. To avoid context overflow, we implement a **Token Budget**.
 
-```
-/workspace/          ← bolt.diy's existing project workspace (unchanged, user sees this)
-/chat/               ← Your new silent workspace (user never sees this)
-├── skills/
-│   ├── index.json           ← Skill registry (name, description, path)
-│   ├── code-execution/
-│   │   └── SKILL.md
-│   ├── file-reading/
-│   │   └── SKILL.md
-│   ├── frontend-design/
-│   │   └── SKILL.md
-│   └── [your custom skills]/
-├── tools/
-│   └── definitions.json     ← Tool schemas (JSON Schema format for API)
-├── memory/
-│   └── user.json            ← Persistent user facts across sessions
-├── context/
-│   └── session.json         ← Per-session metadata (start time, model, etc.)
-└── outputs/
-    └── artifacts/           ← Generated artifacts (shown in artifact panel)
-```
+**Skill Lifecycle:**
 
----
+1. **Registry**: A JSON index of skills (name, description, path) is loaded at startup.
+2. **Discovery**: The `SkillLoader` injects a compact list of available skills into the system prompt.
+3. **Loading**: The LLM calls an MCP tool `read_skill(name)` to load the full procedural instructions only when needed.
+4. **Budgeting**: The `SkillLoader` tracks token usage and only injects skills that fit within the remaining context window.
 
-### 2.3 Initialization Flow
+### 2.3 Prompt Integration (Extending PromptLibrary)
 
-```
-User starts new chat
-    ↓
-chatWorkspace.init(conversationId)
-    ↓
-1. Copy /chat/ template to /chat/sessions/{conversationId}/
-2. Load skills/index.json → build <available_skills> XML block
-3. Load tools/definitions.json → build tools[] array for API
-4. Load memory/user.json → inject into system prompt
-5. Compose system prompt (skills + tools + memory + instructions)
-6. Send first API call with composed system prompt
-    ↓
-AI responds, calls tools, reads skills via virtual FS
-```
+We will modify `app/lib/common/prompt-library.ts` to support dynamic injections.
+
+**Injection Flow:**
+`PromptLibrary.getPrompt()`
+-> `Base Persona`
+-> `Skill Context` (via SkillLoader)
+-> `User Memory` (via MemoryStore)
+-> `Environmental Context` (Time, Location)
+
+### 2.4 Persistent Memory System
+
+Since WebContainer is ephemeral, memory must be stored in a persistent layer.
+
+**Storage Strategy:**
+
+- **Local**: `localStorage` for quick, client-side persistence.
+- **Cloud**: Appwrite collection (keyed by User ID) for cross-device synchronization.
+- **Interface**: A `MemoryStore` class providing `load()`, `add()`, and `remove()` methods.
+- **LLM Access**: An MCP tool `update_user_memory` allows the AI to save facts about the user.
+
+### 2.5 Enhanced Artifact System
+
+We will leverage the existing `<boltArtifact>` and `<boltAction>` infrastructure.
+
+**Extensions:**
+
+- **New Renderers**: Add support for `.md`, `.svg`, and `.mermaid` in the Artifact panel.
+- **Versioning**: Implement a version history for artifacts, allowing users to switch between different iterations of a generated file.
+- **Export**: Add "Download" and "Copy" functionality to the Artifact UI.
 
 ---
 
-### 2.4 Implementing the Silent Workspace in bolt.diy
+## Part 3: Revised Implementation Roadmap
 
-#### Step 1: Hide /chat/ from the file explorer [ ] (Not Complete)
+We will implement these changes incrementally to avoid breaking the existing working system.
 
-In bolt.diy's `FileTree` component, filter out `/chat/` from the displayed tree:
+### Phase 0: Foundation & Security (Week 1)
 
-```typescript
-// In your FileTree component
-const HIDDEN_PATHS = ['/chat', '/chat/'];
+- [ ] **Infrastructure Audit**: Map all existing prompt and tool flows.
+- [ ] **Token Budgeting**: Implement a token counter for the system prompt.
+- [ ] **Security Hardening**: Implement path normalization for all file-reading tools to prevent traversal attacks.
+- [ ] **Skill Schema**: Define the procedural `SKILL.md` format.
 
-function shouldShowFile(path: string): boolean {
-  return !HIDDEN_PATHS.some((hidden) => path.startsWith(hidden));
-}
-```
+### Phase 1: Core Skills & Prompting (Weeks 2-3)
 
-Also hide it from the terminal (optional — patch the shell prompt to not cd into it).
+- [ ] **Extend PromptLibrary**: Add hooks for skill and memory injection.
+- [ ] **Implement SkillLoader**: Load skills from bundled assets.
+- [ ] **Write Procedural Skills**: Create 3-5 high-quality, step-by-step skills.
+- [ ] **MCP Integration**: Add `read_skill` as an MCP tool.
 
-#### Step 2: Build the skill injector [ ] (Not Complete)
+### Phase 2: Persistent Memory (Week 4)
 
-```typescript
-// chat/skills/SkillLoader.ts
+- [ ] **Implement MemoryStore**: Setup `localStorage` / Appwrite persistence.
+- [ ] **Memory MCP Tools**: Add `update_user_memory` and `read_user_memory` tools.
+- [ ] **Memory UI**: Create a settings page for users to manage their stored facts.
 
-interface SkillMeta {
-  name: string;
-  description: string;
-  path: string;
-}
+### Phase 3: Artifact Enhancements (Weeks 5-6)
 
-class SkillLoader {
-  private registry: SkillMeta[] = [];
+- [ ] **Extend Renderers**: Add Markdown, SVG, and Mermaid support to the Artifact panel.
+- [ ] **Implement Versioning**: Track and store versions of generated artifacts.
+- [ ] **UI Polish**: Add download/copy buttons to the artifact view.
 
-  async init() {
-    // Load the skill index
-    const index = await fs.readFile('/chat/skills/index.json', 'utf-8');
-    this.registry = JSON.parse(index);
-  }
+### Phase 4: Platform Features (Month 3+)
 
-  // Generates the <available_skills> block for the system prompt
-  buildSystemPromptBlock(): string {
-    const items = this.registry
-      .map(
-        (skill) => `
-  <skill>
-    <name>${skill.name}</name>
-    <description>${skill.description}</description>
-    <location>${skill.path}</location>
-  </skill>`,
-      )
-      .join('\n');
-
-    return `<available_skills>\n${items}\n</available_skills>`;
-  }
-
-  // Called when AI requests to read a skill file
-  async readSkill(path: string): Promise<string> {
-    // Validate path is within /chat/skills/ (security)
-    if (!path.startsWith('/chat/skills/')) {
-      throw new Error('Skill path out of bounds');
-    }
-    return await fs.readFile(path, 'utf-8');
-  }
-}
-```
-
-#### Step 3: The skill read mechanism [ ] (Not Complete)
-
-When the AI wants to read a skill, it should call your `read_file` tool with the skill path. You intercept this and serve from the virtual FS:
-
-```typescript
-// In your tool execution handler
-async function executeToolCall(toolName: string, args: Record<string, any>) {
-  switch (toolName) {
-    case 'read_file': {
-      const { path } = args;
-      // Route /chat/skills/* to skill loader
-      if (path.startsWith('/chat/skills/')) {
-        return await skillLoader.readSkill(path);
-      }
-      // Route /workspace/* to bolt.diy's WebContainer FS
-      return await webContainer.fs.readFile(path, 'utf-8');
-    }
-    // ... other tools
-  }
-}
-```
-
-#### Step 4: Compose the system prompt [ ] (Not Complete)
-
-```typescript
-// chat/SystemPromptBuilder.ts
-
-async function buildSystemPrompt(conversationId: string): Promise<string> {
-  const skills = await skillLoader.buildSystemPromptBlock();
-  const memory = await memoryStore.load(); // user facts
-  const time = new Date().toISOString();
-
-  return `
-You are an AI assistant with access to a coding workspace and a set of skills.
-
-## Your Skills
-${skills}
-
-## Instructions for Skills
-Before writing any code or creating any file, check if a relevant skill exists
-in <available_skills>. If it does, call read_file on its <location> path first.
-Follow the skill's instructions precisely.
-
-## Memory
-${memory ? `Facts about this user:\n${memory}` : 'No user memory yet.'}
-
-## Current Time
-${time}
-
-## Workspace
-You have access to a project workspace at /workspace/.
-The user's files are there. Do not create files in /chat/ — that is your
-internal directory and is not shown to the user.
-
-## Available Tools
-[tool list injected here by your API call builder]
-`.trim();
-}
-```
-
-#### Step 5: The artifact output path [ ] (Not Complete)
-
-Map your artifact outputs to a path the UI watches:
-
-```typescript
-// When AI creates a file in /chat/outputs/artifacts/
-// → your UI picks it up and renders in the artifact panel
-
-const ARTIFACT_OUTPUT_PATH = '/chat/outputs/artifacts/';
-const RENDERABLE_EXTENSIONS = ['.html', '.jsx', '.md', '.svg', '.mermaid', '.pdf'];
-
-async function onFileCreated(path: string) {
-  if (path.startsWith(ARTIFACT_OUTPUT_PATH)) {
-    const ext = path.split('.').pop();
-    if (RENDERABLE_EXTENSIONS.includes(`.${ext}`)) {
-      artifactPanel.render(path);
-    }
-  }
-}
-```
+- [ ] **Skill Marketplace**: Implement `.skill` bundle format and installation UI.
+- [ ] **Trust Model**: Add verification and rating for community skills.
+- [ ] **Per-Project Config**: Allow skill assignment per project.
 
 ---
 
-### 2.5 Skills Index Format
+## Appendix: Procedural Skill Template
 
-```json
-// /chat/skills/index.json
-[
-  {
-    "name": "frontend-design",
-    "description": "Create distinctive, production-grade frontend interfaces. Use when the user asks to build web components, pages, applications, or wants to style/beautify any web UI. Trigger for: websites, landing pages, dashboards, React components, HTML/CSS layouts.",
-    "path": "/chat/skills/frontend-design/SKILL.md"
-  },
-  {
-    "name": "code-execution",
-    "description": "Use when the user asks to run code, execute a script, or needs output from a program. Handles Python, JavaScript, bash. Trigger for: 'run this', 'execute', 'what does this output', any runnable code snippet.",
-    "path": "/chat/skills/code-execution/SKILL.md"
-  },
-  {
-    "name": "file-reading",
-    "description": "Use when a file has been uploaded and needs to be read. Routes by file type: PDF, DOCX, XLSX, CSV, images, archives. Trigger whenever a file path is mentioned that Claude hasn't read yet.",
-    "path": "/chat/skills/file-reading/SKILL.md"
-  }
-]
-```
+Skills must be **procedural**, not just guidelines.
 
+```markdown
+---
+name: skill-name
+description: >
+  When to trigger this skill. Be specific.
+  Include trigger phrases: "Use when user says X, Y, Z".
 ---
 
-### 2.6 Memory System [ ] (Not Complete)
+# Skill Title
 
-```typescript
-// chat/memory/MemoryStore.ts
+## Step 1: Analysis
 
-interface UserFact {
-  key: string;
-  value: string;
-  addedAt: string;
-}
+- Do X
+- Check for Y
 
-class MemoryStore {
-  private path = '/chat/memory/user.json';
+## Step 2: Execution
 
-  async load(): Promise<UserFact[]> {
-    try {
-      const raw = await fs.readFile(this.path, 'utf-8');
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
+- Apply Z
+- Use pattern A
 
-  async add(key: string, value: string) {
-    const facts = await this.load();
-    facts.push({ key, value, addedAt: new Date().toISOString() });
-    await fs.writeFile(this.path, JSON.stringify(facts, null, 2));
-  }
+## Step 3: Verification
 
-  async remove(key: string) {
-    const facts = await this.load();
-    const filtered = facts.filter((f) => f.key !== key);
-    await fs.writeFile(this.path, JSON.stringify(filtered, null, 2));
-  }
+- Ensure B is present
+- Check for C
 
-  formatForPrompt(facts: UserFact[]): string {
-    return facts.map((f) => `- ${f.key}: ${f.value}`).join('\n');
-  }
-}
-```
+## Output Format
 
-Memory is stored outside the conversation — it persists to your Appwrite backend keyed by user ID.
-
----
-
-## Part 3: Better Paths & Alternative Approaches
-
----
-
-### Option A: Your Current Approach (Virtual FS in WebContainer)
-
-**What you described** — `/chat/` directory inside bolt.diy's WebContainer.
-
-✅ Pros:
-
-- Skills are real files the AI can actually read via tool calls
-- Exactly mirrors how Claude.ai works
-- Skills can include runnable scripts
-- Zero special casing needed — it's just filesystem reads
-
-❌ Cons:
-
-- WebContainer resets between page refreshes (need to re-init)
-- Skills have to be bundled into the app or fetched at startup
-- More complex to persist memory
-
-**Verdict**: Best option if you want true fidelity to the Claude.ai model.
-
----
-
-### Option B: System Prompt Template Injection (Simpler)
-
-Instead of a virtual FS, just embed skill content directly in the system prompt as text.
-
-```typescript
-const systemPrompt = `
-${baseInstructions}
-
-## Available Skills
-### frontend-design
-${await fetch('/skills/frontend-design.md').then((r) => r.text())}
-
-### file-reading
-${await fetch('/skills/file-reading.md').then((r) => r.text())}
-`;
-```
-
-✅ Pros:
-
-- Extremely simple to implement
-- No filesystem needed
-- Guaranteed the AI "sees" the skills
-
-❌ Cons:
-
-- All skills always in context = large prompt = more tokens = slower + more expensive
-- Can't do progressive loading (Level 3 resources)
-- Skills can't include runnable scripts
-
-**Verdict**: Good for a prototype or if you have ≤5 small skills.
-
----
-
-### Option C: RAG-Based Skill Retrieval (Advanced)
-
-Store skills in a vector DB. On each message, retrieve the top-k relevant skills and inject only those.
-
-```
-User message → embed → vector search → top 2-3 skills → inject into prompt
-```
-
-✅ Pros:
-
-- Scales to hundreds of skills
-- Always injects the most relevant skills
-- Keeps prompt size controlled
-
-❌ Cons:
-
-- Requires vector DB (Qdrant, pgvector, etc.)
-- Retrieval can miss skills with unusual phrasing
-- More infrastructure
-
-**Verdict**: Worth considering once you have 20+ skills.
-
----
-
-### Option D: MCP Server for Skills (Most Extensible)
-
-Expose your skill library as an MCP server. The AI calls `list_skills()` and `read_skill(name)` as tool calls.
-
-```typescript
-// MCP server
-server.addTool('list_skills', async () => {
-  return skillIndex.map((s) => ({ name: s.name, description: s.description }));
-});
-
-server.addTool('read_skill', async ({ name }) => {
-  return await fs.readFile(`/skills/${name}/SKILL.md`, 'utf-8');
-});
-```
-
-✅ Pros:
-
-- Cleanest architecture
-- Skills discoverable at runtime
-- Works with any MCP-compatible client
-- Extensible to tools as well
-
-❌ Cons:
-
-- More infrastructure (MCP server process)
-- Slight latency on skill reads
-- Requires the model to proactively call `list_skills`
-
-**Verdict**: Best long-term architecture if you're building a platform others will extend.
-
----
-
-## Part 4: Recommended Implementation Path
-
-Given you're on bolt.diy + Appwrite + React Native experience, here's the suggested build order:
-
-```
-Phase 1 (Week 1): Get it working
-├── Implement Option B (direct system prompt injection)
-├── Write 3-5 core skills (frontend-design, file-reading, code-execution)
-└── Verify the AI actually uses them
-
-Phase 2 (Week 2-3): Make it proper
-├── Migrate to Option A (virtual /chat/ FS in WebContainer)
-├── Build SkillLoader + SystemPromptBuilder
-├── Add the skill index JSON
-└── Hide /chat/ from the file explorer UI
-
-Phase 3 (Month 2): Add intelligence
-├── Add memory system (Appwrite collection, keyed by user ID)
-├── Add artifact output watcher
-├── Write more skills (CampusSwap-specific, project templates, etc.)
-└── Consider Option D (MCP) if skill count grows
-
-Phase 4 (Month 3+): Platform features
-├── Allow users to install custom skills (.skill bundle format)
-├── Skill marketplace UI
-└── Per-project skill configurations
+Describe the exact structure of the expected output.
 ```
 
 ---

@@ -1,45 +1,69 @@
-# Plan: Implement Custom Skill Installation/Marketplace (Phase 4)
+# Plan: Implement Skill Marketplace (Phase 4)
 
 ## Overview
 
-The Skill Marketplace transforms the agent from a fixed-capability tool into an extensible platform. Users can discover, install, and manage specialized skills to tailor the AI to their specific needs.
+The Skill Marketplace allows users to extend the agent's capabilities by installing specialized skill bundles. This is a late-stage feature that will be implemented only after the core skill system is stable and proven.
 
 ## Implementation Details
 
-### 1. Skill Bundle Format
+### 1. Refined Skill Bundle Format
 
-To allow sharing, skills will be packaged as "Skill Bundles".
-**Format**: A `.skill` file (essentially a ZIP archive) containing:
+Skills will be packaged as `.skill` bundles (ZIP archives) with a strict manifest schema to ensure compatibility and security.
 
-- `SKILL.md` (The core instructions)
-- `manifest.json` (Version, author, dependencies, category)
-- `references/` (Optional documentation)
-- `scripts/` (Optional helper scripts)
-- `assets/` (Optional templates/icons)
+**Manifest Schema (`manifest.json`):**
 
-### 2. Installation Workflow
+- `name`, `version` (SemVer), `author`, `description`.
+- `category`: ('coding' | 'design' | 'data' | 'writing' | ...).
+- `minAppVersion`: Minimum version of Open Claude required.
+- `dependencies`: List of other skills required.
+- `permissions`: Requested access ('filesystem', 'network', 'shell').
+- `estimatedTokens`: Token cost of loading the skill.
 
-1. **Discovery**: User finds a skill in the Marketplace UI.
+### 2. Trust & Security Model
+
+To prevent malicious skills from compromising the system:
+
+- **Verification**: Official skills are marked as "Verified".
+- **Sandboxing**: Skills are restricted from accessing sensitive system paths.
+- **Audit**: A manifest-based permission system requires user approval for high-risk permissions.
+- **Community Rating**: User-driven ratings and install counts to identify quality skills.
+
+### 3. Installation Workflow
+
+1. **Discovery**: User browses the Marketplace UI.
 2. **Installation**:
-   - The app downloads the `.skill` bundle.
-   - The bundle is extracted into `/chat/skills/{skill-name}/`.
-   - The `index.json` registry is updated to include the new skill.
-3. **Activation**: The `SkillLoader` detects the change and the skill becomes available in the next system prompt generation.
+   - Bundle is downloaded and validated against the manifest schema.
+   - Content is extracted to a secure user-skills directory.
+   - `SkillLoader` registry is updated dynamically.
+3. **Activation**: The skill is added to the available skills list for the next conversation.
 
-### 3. Marketplace UI
+### 4. Marketplace UI
 
-- **Browse Page**: Categories (Coding, Writing, Data Analysis, etc.), Top Rated, and Newest skills.
-- **Skill Detail Page**: Description, examples of what the skill can do, and an "Install" button.
-- **My Skills Page**: A list of installed skills with the ability to update or uninstall them.
+- **Browse**: Category-based filtering and search.
+- **Detail View**: Showcases the skill's procedural steps, examples, and trust rating.
+- **Management**: A "My Skills" page to update, disable, or uninstall bundles.
 
-### 4. Advanced Configurations
+## Testing Plan
 
-- **Per-Project Skills**: Allow users to assign specific skills to specific projects (e.g., a "React Native" skill only for the mobile app project).
-- **Private Skills**: Allow users to create and save their own local skills.
+### 1. Unit Tests
 
-## Verification Plan
+- **Manifest Validation**: Verify that the validator correctly identifies missing required fields or invalid SemVer versions in `manifest.json`.
+- **Bundle Extraction**: Verify that the ZIP extractor correctly handles nested directories and prevents "Zip Slip" (path traversal via archive).
+- **Dependency Resolver**: Verify that the system correctly identifies and warns about missing dependencies for a skill.
 
-- [ ] Create a manual `.skill` bundle and "install" it by extracting it to the skills folder. Verify it appears in the system prompt.
-- [ ] Implement a basic UI that lists skills from a remote JSON API and allows "installing" them.
-- [ ] Verify that uninstalling a skill removes it from the registry and the filesystem.
-- [ ] Test per-project skill assignment and verify the LLM only sees the relevant skills.
+### 2. Integration Tests
+
+- **Install $\rightarrow$ Load**: Verify the full flow: Download bundle $\rightarrow$ Validate $\rightarrow$ Extract $\rightarrow$ Update Registry $\rightarrow$ Inject into Prompt.
+- **Uninstall Flow**: Verify that uninstalling a skill removes all its files and removes its entry from the `SkillLoader` registry.
+- **Permission Gate**: Verify that a skill requesting 'shell' access is blocked unless the user explicitly grants permission in the UI.
+
+### 3. Edge Cases
+
+- **Version Conflict**: Test behavior when installing a newer version of an existing skill.
+- **Corrupt Bundle**: Verify that a malformed ZIP file is handled gracefully with a clear error message.
+- **Circular Dependencies**: Test behavior when Skill A depends on Skill B, and Skill B depends on Skill A.
+
+### 4. Security & Trust
+
+- **Malicious Manifest**: Attempt to install a skill with a manifest that tries to override core system skills.
+- **Resource Exhaustion**: Test the installation of a massive skill bundle to ensure it doesn't crash the app or fill up the user's storage.

@@ -3,18 +3,20 @@ import { WORK_DIR } from '~/utils/constants';
 import { allowedHTMLElements } from '~/utils/markdown';
 import { stripIndents } from '~/utils/stripIndent';
 
-export const getFineTunedPrompt = (
-  cwd: string = WORK_DIR,
-  supabase?: {
-    isConnected: boolean;
-    hasSelectedProject: boolean;
-    credentials?: { anonKey?: string; supabaseUrl?: string };
-  },
-  designScheme?: DesignScheme,
-) => `
+export const getFineTunedPrompt = (options: PromptOptions) => {
+  const { cwd = WORK_DIR, supabase, designScheme, skills, memory } = options;
+  return `
 You are Bolt, an expert AI assistant and exceptional senior software developer with vast knowledge across multiple programming languages, frameworks, and best practices, created by StackBlitz.
 
 The year is 2025.
+
+<available_skills>
+${skills || 'No specialized skills currently loaded.'}
+</available_skills>
+
+<user_memory>
+${memory || 'No persistent memory available for this user.'}
+</user_memory>
 
 <response_requirements>
   CRITICAL: You MUST STRICTLY ADHERE to these guidelines:

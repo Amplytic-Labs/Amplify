@@ -1,41 +1,64 @@
-# Plan: Implement Skill Read Mechanism (read_file intercept)
+# Plan: Implement Skill Read Mechanism (MCP Tool)
 
 ## Overview
 
-To enable "Progressive Loading" of skills, the LLM must be able to read the full content of a `SKILL.md` file only when it decides the skill is relevant. This is achieved by intercepting the standard `read_file` tool call.
+To enable "Progressive Loading" of skills, the LLM must be able to read the full content of a skill only when it decides the skill is relevant. Instead of intercepting existing tools, we will implement a dedicated MCP tool for this purpose.
 
 ## Implementation Details
 
-### 1. Tool Execution Interceptor
+### 1. MCP Tool Definition
 
-I will modify the central tool execution handler (the function that maps tool names to their implementation).
+I will register a new tool in the `MCPService` called `read_skill`.
 
-### 2. Routing Logic
+**Tool Schema:**
 
-When the `read_file` tool is invoked with a `path` argument:
+- **Name**: `read_skill`
+- **Description**: "Reads the full procedural instructions for a specific skill. Use this when you identify a relevant skill in the available skills list and need the detailed steps to execute the task."
+- **Parameters**:
+  - `skillName` (string): The unique identifier of the skill (e.g., "frontend-design").
 
-1. **Check for Skill Path**:
-   - If `path.startsWith('/chat/skills/')`:
-     - Delegate the read operation to `SkillLoader.readSkill(path)`.
-     - Return the content of the skill file.
-2. **Fallback to Workspace**:
-   - If the path does not match the skill prefix:
-     - Delegate the read operation to the standard WebContainer filesystem (`webcontainer.fs.readFile`).
-     - Return the content of the project file.
+### 2. Execution Logic
 
-### 3. Error Handling
+When `read_skill` is invoked:
 
-- If `SkillLoader` throws a security error (path out of bounds), return a clear error message to the LLM: `"Error: Access denied. You can only read files within the /chat/skills/ directory."`
-- If the file does not exist in either location, return a standard `"File not found"` error.
+1. **Lookup**: The tool will call `SkillLoader.getSkillContent(skillName)`.
+2. **Retrieval**: `SkillLoader` will retrieve the content from the bundled assets or database.
+3. **Response**: The full markdown content of the `SKILL.md` file is returned to the LLM.
+
+### 3. Security & Validation
+
+- **No Path Input**: By using `skillName` instead of a file path, we completely eliminate the risk of path traversal attacks.
+- **Validation**: If the `skillName` does not exist in the registry, return a clear error: `"Error: Skill '...' not found."`
 
 ### 4. LLM Guidance
 
 The system prompt will be updated to instruct the LLM:
-_"If you see a skill in <available_skills> that is relevant to the task, use the `read_file` tool on its <location> path to load the full instructions before proceeding."_
+_"If you see a skill in the available skills list that is relevant to the task, use the `read_skill` tool with the skill's name to load the full procedural instructions before proceeding."_
 
-## Verification Plan
+## Testing Plan
 
-- [ ] Mock a `read_file` call with a path to a skill: `/chat/skills/frontend-design/SKILL.md`. Verify it returns the skill content.
-- [ ] Mock a `read_file` call with a path to a project file: `/workspace/src/main.ts`. Verify it returns the project file content.
-- [ ] Mock a `read_file` call with an invalid path. Verify it returns a "File not found" error.
-- [ ] Verify that the LLM actually calls `read_file` after seeing a relevant skill in the system prompt.
+### 1. Unit Tests
+
+- **Tool Registration**: Verify that `read_skill` is correctly registered in the `MCPService` with the expected schema.
+- **Lookup Logic**: Verify that `SkillLoader.getSkillContent()` returns the correct content for valid names and `null` for invalid ones.
+- **Error Formatting**: Verify that the tool returns a user-friendly error message when a skill is not found.
+
+### 2. Integration Tests
+
+- **MCP $\rightarrow$ SkillLoader**: Verify the full chain from MCP tool invocation to content retrieval from bundled assets.
+- **LLM Loop**: Mock a conversation where the LLM:
+  1. Receives a prompt with a skill list.
+  2. Calls `read_skill`.
+  3. Receives the content.
+  4. Uses the content to generate a response.
+
+### 3. Edge Cases
+
+- **Case Sensitivity**: Test if `read_skill` handles case-insensitive skill names (e.g., "Frontend-Design" vs "frontend-design").
+- **Empty Content**: Verify behavior when a skill exists in the registry but its `SKILL.md` is empty.
+- **Special Characters**: Test skill names with spaces or special characters.
+
+### 4. Security & Performance
+
+- **Input Sanitization**: Verify that passing malicious strings (e.g., `../etc/passwd`) as `skillName` does not result in any file access outside the skill registry.
+- **Latency**: Ensure the tool returns content in under 100ms.

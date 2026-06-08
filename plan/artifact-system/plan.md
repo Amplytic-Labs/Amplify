@@ -1,55 +1,60 @@
-# Plan: Implement Artifact Output Path & Watcher
+# Plan: Extend Existing Artifact System
 
 ## Overview
 
-Artifacts are high-value deliverables (code, documents, diagrams) that the LLM creates. Instead of just appearing as text in the chat, they are written to a specific directory and rendered in a dedicated side-panel for a better user experience.
+bolt.diy already has a sophisticated artifact system using `<boltArtifact>` and `<boltAction>` tags. Instead of rebuilding it, we will extend the existing infrastructure to support a wider range of renderable types and add versioning.
 
 ## Implementation Details
 
-### 1. The Artifact Path
+### 1. Extending the Rendering Engine
 
-All renderable outputs must be written to:
-`/chat/outputs/artifacts/`
+The current system handles code and shell actions. I will extend the `Artifact` component and `StreamingMessageParser` to support:
 
-### 2. The Watcher Mechanism
+- **Markdown (`.md`)**: Integrate a high-quality markdown renderer in the artifact panel.
+- **SVG (`.svg`)**: Render inline vector graphics.
+- **Mermaid (`.mermaid`)**: Integrate `mermaid.js` to render diagrams.
+- **HTML/JS (`.html`)**: Render in a sandboxed `<iframe>`.
 
-I will implement a filesystem watcher (or intercept the `create_file` tool) to detect new files in the artifact directory.
+### 2. Artifact Versioning
 
-**Logic:**
+To allow users to track changes to a generated artifact:
 
-1. LLM calls `create_file(path, content)`.
-2. If `path` starts with `/chat/outputs/artifacts/`:
-   - Trigger the `ArtifactManager`.
-   - Notify the UI to open the Artifact Panel.
+- **Version Store**: Implement a simple in-memory or `localStorage` store that tracks content changes for a specific `filePath`.
+- **UI Controls**: Add "Previous" and "Next" buttons to the Artifact panel to switch between versions.
+- **Diff View**: (Optional) Implement a side-by-side diff view for artifact versions.
 
-### 3. The Rendering Engine
+### 3. Enhanced Export Options
 
-The `ArtifactManager` will determine the renderer based on the file extension:
+Add utility buttons to the Artifact UI:
 
-| Extension       | Renderer | Implementation                                               |
-| :-------------- | :------- | :----------------------------------------------------------- |
-| `.md`           | Markdown | Use `react-markdown` or similar.                             |
-| `.html`         | HTML/JS  | Render in a sandboxed `<iframe>`.                            |
-| `.jsx` / `.tsx` | React    | Compile using `esbuild-wasm` and render in a preview iframe. |
-| `.svg`          | SVG      | Render as an inline SVG image.                               |
-| `.mermaid`      | Diagram  | Use `mermaid.js` to render the diagram.                      |
-| `.pdf`          | PDF      | Use a PDF viewer component.                                  |
+- **Download**: Export the raw file to the user's local machine.
+- **Copy**: Copy the content to the clipboard.
 
-### 4. UI Integration
+### 4. Integration with ActionRunner
 
-- **Artifact Panel**: A slide-out panel on the right side of the chat.
-- **Version Control**: If the LLM updates an artifact, the panel should show the new version (and optionally allow switching between versions).
-- **Download/Copy**: Provide buttons to download the raw file or copy the content.
+Ensure that when the LLM creates a file that is designated as an "artifact" (e.g., via a specific path or tag), the `ActionRunner` triggers the Artifact Panel to open.
 
-## Sub-Feature Breakdown
+## Testing Plan
 
-- **PDF Generation**: Integrate a library like `jspdf` or `pdf-lib` if the LLM needs to "create" a PDF.
-- **Doc Generation**: Use a template-based approach for `.docx` files.
-- **React Sandbox**: Implement a secure environment for executing JSX code.
+### 1. Unit Tests
 
-## Verification Plan
+- **Extension Mapping**: Verify that the `Artifact` component correctly maps `.md`, `.svg`, `.mermaid`, and `.html` to their respective renderers.
+- **Version Store**: Verify that `addVersion()` correctly stores content and `getVersion(n)` retrieves the correct iteration.
+- **Export Logic**: Verify that the "Download" function generates a blob with the correct MIME type and filename.
 
-- [ ] Create a file at `/chat/outputs/artifacts/test.md`. Verify the Artifact Panel opens and renders markdown.
-- [ ] Create a file at `/chat/outputs/artifacts/test.html`. Verify it renders in an iframe.
-- [ ] Create a file at `/chat/outputs/artifacts/test.mermaid`. Verify the diagram renders.
-- [ ] Update an existing artifact and verify the UI refreshes the content.
+### 2. Integration Tests
+
+- **Parser $\rightarrow$ UI**: Verify that a `<boltArtifact>` tag in the LLM stream triggers the opening of the Artifact panel with the correct content.
+- **ActionRunner $\rightarrow$ Versioning**: Verify that every `file` action targeting an artifact path creates a new version in the store.
+- **Renderer Sandbox**: Verify that HTML artifacts are rendered in a sandboxed iframe and cannot access the parent window's cookies or localStorage.
+
+### 3. Edge Cases
+
+- **Malformed Content**: Test how the Mermaid and Markdown renderers handle syntax errors (should show a graceful error message, not crash).
+- **Large Artifacts**: Test rendering of a 1MB SVG or a 10,000-line Markdown file for performance lags.
+- **Rapid Updates**: Verify that multiple rapid updates to the same artifact don't cause race conditions in the version store.
+
+### 4. E2E / Behavioral Tests
+
+- **Full Cycle**: Request the AI to "Create a mermaid diagram of the system architecture, then update it to add a database". Verify the panel opens, renders the first version, and then allows switching to the second version.
+- **Export Test**: Create an artifact and verify it can be downloaded and opened in an external editor.
