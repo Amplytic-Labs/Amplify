@@ -1,0 +1,26 @@
+tree a910a778646f05f8604809d78bd9ed7b19ae2d29
+parent 9792e9387ad725865f0ef7dabbe5b7952ff096f0
+parent cb8a096fc4d784ec7c79873cba881b38a009ecf1
+author Chris Mahoney <chris.p.mahoney@gmail.com> 1732243242 -0600
+committer GitHub <noreply@github.com> 1732243242 -0600
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJnP+8qCRC1aQ7uu5UhlAAAa3wQAK3zPHdoEu2IiVYxLrd4T7rU
+ HbWmOtSDqmxU+VngaguYaSnNmie7OaeUwGH2Zn6I7JwuLyIXIdU0nLzqW6U4eidi
+ GTiwWTR59Vm8fsGaKGibSc+Bl9IN/7gZXsBejd0mtUPueVw/V7QX0fs1JI8ejd2M
+ dXo42CIyigeTGesHRVIq48nqfVCG1bnOchXMm7xoipEys/xRswuSgWkCt2J8ngjB
+ YhWNgx1MuADY6MrEq8crzxeISW9Njj4NuLEkIicPm6CvHYWA8CjahyRzeNwtEzyJ
+ 5zpPHDBGrnl1/v/9LQ5vzrw8cwnVA3BEnVCqvrJD6sl4ZH+z859e1tG693FatG3Z
+ yQ9eYA0qyWgvPL43fbElDKdkioTZVFTna1pqJa8UhWkPCJp1yu9qoSQo3tGpZPex
+ a2JNlmz1fwdT2yEgelZjXoQHAMYQq7lXkCH9Hy6pwN7OKQ0ib0sH42+f17z1PxOb
+ DJ9NxInCjJ4vXbAOycHWsXQ/jNnDg9ac1sdpPN5rdaEzuDsCboBZUpiOYPqDrgzU
+ Mg+BRFUVlG2sYw8N4y1rISeD1OoIgLymyr9xktQYAB9qEQIX+R+SaCsRHh46SuCn
+ XW2/sc2XFNGZhMZIoXHIORv0kw/NBxuwXd4bord077/vZz384IvQoi2OlVCuFztn
+ q9G0xLqcPt6m1vKtEvAQ
+ =N1os
+ -----END PGP SIGNATURE-----
+ 
+
+Merge pull request #328 from aaronbolton/main
+
+Created DEFAULT_NUM_CTX VAR with a default of 32768
