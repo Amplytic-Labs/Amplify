@@ -134,7 +134,7 @@ export class MCPService {
           skillId: z.string().describe('The ID of the skill to read'),
         }),
         execute: async ({ skillId }) => {
-          const content = await SkillLoader.getInstance().getSkillContent(skillId);
+          const content = await SkillLoader.getInstance().getSkillContent(skillId.toLowerCase());
           return content || 'Skill not found';
         },
       },

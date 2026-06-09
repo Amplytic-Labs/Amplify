@@ -65,6 +65,7 @@
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.7731 0 0);
 
+  --header-height: 54px;
   --chat-max-width: 700px;
 
   --bolt-elements-borderColor: var(--border);
@@ -205,6 +206,8 @@
   --sidebar-accent-foreground: oklch(0.8074 0.0142 93.0137);
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.7731 0 0);
+
+  --header-height: 54px;
 
   --bolt-elements-borderColor: var(--border);
   --bolt-elements-borderColorActive: var(--ring);

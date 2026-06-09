@@ -34,6 +34,19 @@ export class MemoryStore {
    */
   public addMemory(content: string, category?: string): Memory {
     const memories = this.getMemories();
+
+    // Basic deduplication: check if a similar memory already exists
+    const existingMemory = memories.find((m) => m.content.toLowerCase().trim() === content.toLowerCase().trim());
+
+    if (existingMemory) {
+      // Update timestamp of existing memory instead of adding a duplicate
+      const updatedMemories = memories.map((m) =>
+        m.id === existingMemory.id ? { ...m, timestamp: new Date().toISOString() } : m,
+      );
+      setLocalStorage(MEMORY_STORAGE_KEY, updatedMemories);
+      return existingMemory;
+    }
+
     const newMemory: Memory = {
       id: crypto.randomUUID(),
       content,
@@ -92,6 +105,13 @@ export class MemoryStore {
       (m) =>
         m.content.toLowerCase().includes(lowerQuery) || (m.category && m.category.toLowerCase().includes(lowerQuery)),
     );
+  }
+
+  formatForPrompt(): string {
+    const memories = this.getMemories();
+    if (memories.length === 0) return 'No persistent memory available for this user.';
+
+    return memories.map((m) => `- ${m.content}${m.category ? ` (${m.category})` : ''}`).join('\n');
   }
 
   /**

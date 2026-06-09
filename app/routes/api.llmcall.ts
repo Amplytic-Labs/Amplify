@@ -8,6 +8,8 @@ import { LLMManager } from '~/lib/modules/llm/manager';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
 import { createScopedLogger } from '~/utils/logger';
+import { memoryStore } from '~/lib/persistence/memoryStore';
+import { SkillLoader } from '~/lib/services/skillLoader';
 
 export async function action(args: ActionFunctionArgs) {
   return llmCallAction(args);
@@ -117,6 +119,11 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         env: context.cloudflare?.env as any,
         apiKeys,
         providerSettings,
+        memory: memoryStore.formatForPrompt(),
+        skills: SkillLoader.getInstance()
+          .getSkills()
+          .map((s) => `<skill name="${s.id}" description="${s.description}"/>`)
+          .join('\n'),
       });
 
       return new Response(result.textStream, {

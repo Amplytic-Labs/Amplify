@@ -1,6 +1,6 @@
-import { convertToCoreMessages, streamText as _streamText, type Message } from 'ai';
+import { convertToCoreMessages, streamText as _streamText, type Message, formatDataStreamPart, type DataStreamWriter } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
-import { getSystemPrompt } from '~/lib/common/prompts/prompts';
+import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
 import type { IProviderSetting } from '~/types/model';
 import { PromptLibrary } from '~/lib/common/prompt-library';
@@ -11,7 +11,10 @@ import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { z } from 'zod';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { fetchWebPage } from '~/lib/utils/web-fetch';
+import { getTemplates } from '~/utils/selectStarterTemplate';
 
 export type Messages = Message[];
 
@@ -83,6 +86,9 @@ export async function streamText(props: {
   messageSliceId?: number;
   chatMode?: 'discuss' | 'build';
   designScheme?: DesignScheme;
+  skills?: string;
+  memory?: string;
+  dataStream?: DataStreamWriter;
 }) {
   const {
     messages,
@@ -97,6 +103,8 @@ export async function streamText(props: {
     summary,
     chatMode,
     designScheme,
+    skills,
+    memory,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -166,6 +174,8 @@ export async function streamText(props: {
       allowedHtmlElements: allowedHTMLElements,
       modificationTagName: MODIFICATIONS_TAG_NAME,
       designScheme,
+      skills,
+      memory,
       supabase: {
         isConnected: options?.supabaseConnection?.isConnected || false,
         hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,
@@ -300,6 +310,131 @@ export async function streamText(props: {
 
     tools: {
       ...options?.tools,
+      request_capabilities: {
+        description:
+          'Requests the core capabilities and system instructions required to build applications (artifacts, design guidelines, project structure). MUST be called before building an application.',
+        parameters: z.object({
+          capability: z.enum(['app_builder']).describe('The capability bundle to load'),
+        }),
+        execute: async ({ capability }: { capability: string }) => {
+          if (capability === 'app_builder') {
+            const { getAppBuilderCapabilities } = await import('~/lib/common/prompts/new-prompt');
+            return getAppBuilderCapabilities({
+              cwd: WORK_DIR,
+              supabase: {
+                isConnected: options?.supabaseConnection?.isConnected || false,
+                hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,
+                credentials: options?.supabaseConnection?.credentials || undefined,
+              },
+              designScheme,
+            });
+          }
+          return { error: 'Unknown capability' };
+        },
+      },
+      list_design_systems: {
+        description: 'Lists all available design systems',
+        parameters: z.object({}),
+        execute: async () => {
+          try {
+            const dirPath = path.join(process.cwd(), 'design', 'design-systems');
+            if (!fs.existsSync(dirPath)) return { error: 'design-systems directory not found' };
+            const files = fs
+              .readdirSync(dirPath)
+              .filter(
+                (f) => f.endsWith('.md') || f.endsWith('.json') || fs.statSync(path.join(dirPath, f)).isDirectory(),
+              );
+            return { design_systems: files };
+          } catch (e: any) {
+            return { error: e.message };
+          }
+        },
+      },
+      get_design_system: {
+        description: 'Gets the instructions for a specific design system',
+        parameters: z.object({
+          name: z.string().describe('The name of the design system folder or file'),
+        }),
+        execute: async ({ name }: { name: string }) => {
+          try {
+            let itemPath = path.join(process.cwd(), 'design', 'design-systems', name);
+            if (!fs.existsSync(itemPath) && fs.existsSync(itemPath + '.md')) {
+              itemPath += '.md';
+            }
+            if (!fs.existsSync(itemPath)) return { error: 'Design system not found' };
+            if (fs.statSync(itemPath).isDirectory()) {
+              const file = path.join(itemPath, 'SKILL.md');
+              if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
+              const file2 = path.join(itemPath, 'design.md');
+              if (fs.existsSync(file2)) return fs.readFileSync(file2, 'utf8');
+              return { error: 'No SKILL.md or design.md found in folder' };
+            }
+            return fs.readFileSync(itemPath, 'utf8');
+          } catch (e: any) {
+            return { error: e.message };
+          }
+        },
+      },
+      list_skills: {
+        description: 'Lists all available specialized skills',
+        parameters: z.object({}),
+        execute: async () => {
+          try {
+            const dirPath = path.join(process.cwd(), 'design', 'skills');
+            if (!fs.existsSync(dirPath)) return { error: 'skills directory not found' };
+            const files = fs.readdirSync(dirPath).filter((f) => fs.statSync(path.join(dirPath, f)).isDirectory());
+            return { skills: files };
+          } catch (e: any) {
+            return { error: e.message };
+          }
+        },
+      },
+      get_skill: {
+        description: 'Gets the instructions for a specific skill',
+        parameters: z.object({
+          name: z.string().describe('The name of the skill folder'),
+        }),
+        execute: async ({ name }: { name: string }) => {
+          try {
+            const itemPath = path.join(process.cwd(), 'design', 'skills', name, 'SKILL.md');
+            if (fs.existsSync(itemPath)) {
+              return fs.readFileSync(itemPath, 'utf8');
+            }
+            return { error: 'SKILL.md not found' };
+          } catch (e: any) {
+            return { error: e.message };
+          }
+        },
+      },
+      inject_template: {
+        description:
+          'Injects a starter template into the workspace. Use this when starting a new project or adding a base structure for a component.',
+        parameters: z.object({
+          templateName: z
+            .string()
+            .describe(
+              'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
+            ),
+          title: z.string().optional().describe('A title for the imported files artifact'),
+        }),
+        execute: async ({ templateName, title }) => {
+          try {
+            const result = await getTemplates(templateName, title);
+            if (!result) return { error: `Template "${templateName}" not found.` };
+            
+            if (props.dataStream) {
+              props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
+            }
+            
+            return {
+              summary: result.summary,
+              userMessage: result.userMessage,
+            };
+          } catch (e: any) {
+            return { error: e.message };
+          }
+        },
+      },
       webSearch: {
         description: 'Fetch the content of a web page to get up-to-date information or read documentation.',
         parameters: z.object({
@@ -338,5 +473,7 @@ export async function streamText(props: {
     ),
   );
 
-  return await _streamText(streamParams);
+  const result = await _streamText(streamParams);
+
+  return result;
 }

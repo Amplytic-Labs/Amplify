@@ -18,6 +18,7 @@ import { description } from '~/lib/persistence';
 import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
+import type { FileHistory } from '~/types/actions';
 
 const { saveAs } = fileSaver;
 
@@ -40,6 +41,8 @@ export class WorkbenchStore {
   #filesStore = new FilesStore(webcontainer);
   #editorStore = new EditorStore(this.#filesStore);
   #terminalStore = new TerminalStore(webcontainer);
+
+  fileHistory: MapStore<Record<string, FileHistory>> = import.meta.hot?.data.fileHistory ?? map({});
 
   #reloadedMessages = new Set<string>();
 
@@ -66,6 +69,7 @@ export class WorkbenchStore {
       import.meta.hot.data.actionAlert = this.actionAlert;
       import.meta.hot.data.supabaseAlert = this.supabaseAlert;
       import.meta.hot.data.deployAlert = this.deployAlert;
+      import.meta.hot.data.fileHistory = this.fileHistory;
 
       // Ensure binary files are properly preserved across hot reloads
       const filesMap = this.files.get();
@@ -575,7 +579,11 @@ export class WorkbenchStore {
         this.setSelectedFile(fullPath);
       }
 
-      if (this.currentView.value !== 'code') {
+      this.showWorkbench.set(true);
+
+      if (data.action.filePath.endsWith('.html')) {
+        this.currentView.set('render');
+      } else if (this.currentView.value !== 'code') {
         this.currentView.set('code');
       }
 

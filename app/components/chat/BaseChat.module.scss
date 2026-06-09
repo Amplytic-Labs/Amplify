@@ -14,6 +14,18 @@
   }
 }
 
+@media (min-width: 1024px) {
+  .BaseChat {
+    --chat-min-width: 32rem;
+
+    &[data-chat-visible='true'] {
+      --workbench-width: calc(100vw - var(--chat-min-width));
+      --workbench-inner-width: calc(100vw - var(--chat-min-width) - 2rem);
+      --workbench-left: var(--chat-min-width);
+    }
+  }
+}
+
 .Chat {
   opacity: 1;
 }

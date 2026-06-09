@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { BundledLanguage } from 'shiki';
 import { createScopedLogger } from '~/utils/logger';
@@ -27,6 +27,11 @@ interface MarkdownProps {
 export const Markdown = memo(
   ({ children, html = false, limitedMarkdown = false, append, setChatMode, model, provider }: MarkdownProps) => {
     logger.trace('Render');
+
+    const parsedChildren = useMemo(() => stripCodeFenceFromArtifact(children), [children]);
+    
+    const childrenRef = useRef(parsedChildren);
+    childrenRef.current = parsedChildren;
 
     const components = useMemo(() => {
       return {
@@ -114,8 +119,14 @@ export const Markdown = memo(
 
             if (language === 'mermaid') {
               const code = firstChild.children[0].value;
-              const lastMermaidIndex = children.lastIndexOf('```mermaid');
-              const isClosed = children.indexOf('```', lastMermaidIndex + 10) !== -1;
+              let isClosed = false;
+
+              if (node?.position?.start?.offset !== undefined) {
+                isClosed = childrenRef.current.indexOf('```', node.position.start.offset + 10) !== -1;
+              } else {
+                const lastMermaidIndex = childrenRef.current.lastIndexOf('```mermaid');
+                isClosed = childrenRef.current.indexOf('```', lastMermaidIndex + 10) !== -1;
+              }
 
               if (isClosed) {
                 return <Mermaid chart={code} />;
@@ -222,23 +233,26 @@ export const Markdown = memo(
           }
 
           return (
-            <a {...props} target="_blank" rel="noopener noreferrer">
+             <a {...props} target="_blank" rel="noopener noreferrer">
               {children}
             </a>
           );
         },
       } satisfies Components;
-    }, [children]);
+    }, [append, setChatMode, model, provider]);
+
+    const remarkPluginsArray = useMemo(() => remarkPlugins(limitedMarkdown), [limitedMarkdown]);
+    const rehypePluginsArray = useMemo(() => rehypePlugins(html), [html]);
 
     return (
       <ReactMarkdown
         allowedElements={allowedHTMLElements}
         className={styles.MarkdownContent}
         components={components}
-        remarkPlugins={remarkPlugins(limitedMarkdown)}
-        rehypePlugins={rehypePlugins(html)}
+        remarkPlugins={remarkPluginsArray}
+        rehypePlugins={rehypePluginsArray}
       >
-        {stripCodeFenceFromArtifact(children)}
+        {parsedChildren}
       </ReactMarkdown>
     );
   },

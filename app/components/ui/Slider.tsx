@@ -4,41 +4,26 @@ import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { genericMemo } from '~/utils/react';
 
-export type SliderOptions<T> = {
-  left: { value: T; text: string };
-  middle?: { value: T; text: string };
-  right: { value: T; text: string };
-};
+export type SliderOption<T> = { value: T; text: string };
 
 interface SliderProps<T> {
   selected: T;
-  options: SliderOptions<T>;
+  options: SliderOption<T>[];
   setSelected?: (selected: T) => void;
 }
 
 export const Slider = genericMemo(<T,>({ selected, options, setSelected }: SliderProps<T>) => {
-  const hasMiddle = !!options.middle;
-  const isLeftSelected = hasMiddle ? selected === options.left.value : selected === options.left.value;
-  const isMiddleSelected = hasMiddle && options.middle ? selected === options.middle.value : false;
-
   return (
     <div className="flex items-center flex-wrap shrink-0 gap-1 bg-bolt-elements-background-depth-1 overflow-hidden rounded-full p-1">
-      <SliderButton selected={isLeftSelected} setSelected={() => setSelected?.(options.left.value)}>
-        {options.left.text}
-      </SliderButton>
-
-      {options.middle && (
-        <SliderButton selected={isMiddleSelected} setSelected={() => setSelected?.(options.middle!.value)}>
-          {options.middle.text}
+      {options.map((option) => (
+        <SliderButton
+          key={String(option.value)}
+          selected={selected === option.value}
+          setSelected={() => setSelected?.(option.value)}
+        >
+          {option.text}
         </SliderButton>
-      )}
-
-      <SliderButton
-        selected={!isLeftSelected && !isMiddleSelected}
-        setSelected={() => setSelected?.(options.right.value)}
-      >
-        {options.right.text}
-      </SliderButton>
+      ))}
     </div>
   );
 });

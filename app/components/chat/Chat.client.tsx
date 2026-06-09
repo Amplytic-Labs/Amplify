@@ -333,14 +333,14 @@ export const ChatImpl = memo(
         return;
       }
 
+      setChatStarted(true);
+
       await Promise.all([
         animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
         animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
       ]);
 
       chatStore.setKey('started', true);
-
-      setChatStarted(true);
     };
 
     // Helper function to create message parts array from text and images

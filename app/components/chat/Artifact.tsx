@@ -28,7 +28,6 @@ interface ArtifactProps {
 
 export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   const userToggledActions = useRef(false);
-  const [showActions, setShowActions] = useState(false);
   const [allActionFinished, setAllActionFinished] = useState(false);
 
   const artifacts = useStore(workbenchStore.artifacts);
@@ -43,6 +42,13 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
       });
     }),
   );
+
+  /*
+   * Initialize showActions from the current actions length so that when ReactMarkdown
+   * remounts this component during streaming (rebuilding its VDOM tree on every tick),
+   * the actions list doesn't flash closed → open due to useState resetting to false.
+   */
+  const [showActions, setShowActions] = useState(() => actions.length > 0);
 
   const toggleActions = () => {
     userToggledActions.current = true;
@@ -84,8 +90,12 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
           <button
             className="flex items-stretch bg-bolt-elements-artifacts-background hover:bg-bolt-elements-artifacts-backgroundHover w-full overflow-hidden"
             onClick={() => {
-              const showWorkbench = workbenchStore.showWorkbench.get();
-              workbenchStore.showWorkbench.set(!showWorkbench);
+              /*
+               * Always open (never toggle-close) — the button label says "Click to open Workbench".
+               * Toggling caused the workbench to silently close when clicked a second time,
+               * making it seem like clicks were doing nothing.
+               */
+              workbenchStore.showWorkbench.set(true);
             }}
           >
             <div className="px-5 p-3.5 w-full text-left">
@@ -99,7 +109,8 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
             </div>
           </button>
           {artifact.type !== 'bundled' && <div className="bg-bolt-elements-artifacts-borderColor w-[1px]" />}
-          <AnimatePresence>
+          {/* initial={false} → skip enter animation for children already present on mount (prevents flash on streaming remounts) */}
+          <AnimatePresence initial={false}>
             {actions.length && artifact.type !== 'bundled' && (
               <motion.button
                 initial={{ width: 0 }}
@@ -135,7 +146,8 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
             </div>
           </div>
         )}
-        <AnimatePresence>
+        {/* initial={false} → children already open on mount won't re-animate from height 0 on streaming remounts */}
+        <AnimatePresence initial={false}>
           {artifact.type !== 'bundled' && showActions && actions.length > 0 && (
             <motion.div
               className="actions"
@@ -186,6 +198,7 @@ const actionVariants = {
 };
 
 export function openArtifactInWorkbench(filePath: any) {
+  workbenchStore.showWorkbench.set(true);
   if (workbenchStore.currentView.get() !== 'code') {
     workbenchStore.currentView.set('code');
   }

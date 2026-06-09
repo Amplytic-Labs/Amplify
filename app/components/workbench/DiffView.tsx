@@ -584,88 +584,146 @@ const getSharedHighlighter = async () => {
   return highlighterInstance;
 };
 
-const InlineDiffComparison = memo(({ beforeCode, afterCode, filename, language }: CodeComparisonProps) => {
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Use state to hold the shared highlighter instance
-  const [highlighter, setHighlighter] = useState<any>(null);
-  const theme = useStore(themeStore);
-
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen((prev) => !prev);
-  }, []);
-
-  const { unifiedBlocks, hasChanges, isBinary, error } = useProcessChanges(beforeCode, afterCode);
-
-  useEffect(() => {
-    // Fetch the shared highlighter instance
-    getSharedHighlighter().then(setHighlighter);
-
-    /*
-     * No cleanup needed here for the highlighter instance itself,
-     * as it's managed globally. Shiki instances don't typically
-     * need disposal unless you are dynamically loading/unloading themes/languages.
-     * If you were dynamically loading, you might need a more complex
-     * shared instance manager with reference counting or similar.
-     * For static themes/langs, a single instance is sufficient.
-     */
-  }, []); // Empty dependency array ensures this runs only once on mount
-
-  if (isBinary || error) {
-    return renderContentWarning(isBinary ? 'binary' : 'error');
-  }
-
-  // Render a loading state or null while highlighter is not ready
-  if (!highlighter) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-bolt-elements-textTertiary">Loading diff...</div>
+const WholeFileView = memo(
+  ({
+    content,
+    language,
+    highlighter,
+    theme,
+    filename,
+  }: {
+    content: string;
+    language: string;
+    highlighter: any;
+    theme: string;
+    filename: string;
+  }) => (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center bg-bolt-elements-background-depth-1 p-2 text-sm text-bolt-elements-textPrimary shrink-0 border-b border-bolt-elements-borderColor">
+        <div className="i-ph:file mr-2 h-4 w-4 shrink-0" />
+        <span className="truncate font-medium">{filename}</span>
+        <span className="ml-auto text-bolt-elements-textTertiary text-xs">Whole File View</span>
       </div>
-    );
-  }
-
-  return (
-    <FullscreenOverlay isFullscreen={isFullscreen}>
-      <div className="w-full h-full flex flex-col">
-        <FileInfo
-          filename={filename}
-          hasChanges={hasChanges}
-          onToggleFullscreen={toggleFullscreen}
-          isFullscreen={isFullscreen}
-          beforeCode={beforeCode}
-          afterCode={afterCode}
-        />
-        <div className={diffPanelStyles}>
-          {hasChanges ? (
-            <div className="overflow-x-auto min-w-full">
-              {unifiedBlocks.map((block, index) => (
-                <CodeLine
-                  key={`${block.lineNumber}-${index}`}
-                  lineNumber={block.lineNumber}
-                  content={block.content}
-                  type={block.type}
-                  highlighter={highlighter} // Pass the shared instance
-                  language={language}
-                  block={block}
-                  theme={theme}
+      <div className={diffPanelStyles}>
+        <div className="overflow-auto min-w-full">
+          {content.split('\n').map((line, index) => (
+            <div key={index} className="flex group min-w-fit">
+              <div className={lineNumberStyles}>{index + 1}</div>
+              <div className={lineContentStyles}>
+                <span className="mr-2"> </span>
+                <span
+                  dangerouslySetInnerHTML={{
+                    __html: highlighter
+                      ? highlighter
+                          .codeToHtml(line, {
+                            lang: language,
+                            theme: theme === 'dark' ? 'github-dark' : 'github-light',
+                          })
+                          .replace(/<\/?pre[^>]*>/g, '')
+                          .replace(/<\/?code[^>]*>/g, '')
+                      : line,
+                  }}
                 />
-              ))}
+              </div>
             </div>
-          ) : (
-            <NoChangesView beforeCode={beforeCode} language={language} highlighter={highlighter} theme={theme} />
-          )}
+          ))}
         </div>
       </div>
-    </FullscreenOverlay>
-  );
-});
+    </div>
+  ),
+);
+
+const InlineDiffComparison = memo(
+  ({ beforeCode, afterCode, filename, language, showWholeFile }: CodeComparisonProps & { showWholeFile?: boolean }) => {
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Use state to hold the shared highlighter instance
+    const [highlighter, setHighlighter] = useState<any>(null);
+    const theme = useStore(themeStore);
+
+    const toggleFullscreen = useCallback(() => {
+      setIsFullscreen((prev) => !prev);
+    }, []);
+
+    const { unifiedBlocks, hasChanges, isBinary, error } = useProcessChanges(beforeCode, afterCode);
+
+    useEffect(() => {
+      // Fetch the shared highlighter instance
+      getSharedHighlighter().then(setHighlighter);
+    }, []); // Empty dependency array ensures this runs only once on mount
+
+    if (isBinary || error) {
+      return renderContentWarning(isBinary ? 'binary' : 'error');
+    }
+
+    // Render a loading state or null while highlighter is not ready
+    if (!highlighter) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <div className="text-bolt-elements-textTertiary">Loading diff...</div>
+        </div>
+      );
+    }
+
+    if (showWholeFile) {
+      return (
+        <FullscreenOverlay isFullscreen={isFullscreen}>
+          <WholeFileView
+            content={afterCode}
+            language={language}
+            highlighter={highlighter}
+            theme={theme}
+            filename={filename}
+          />
+        </FullscreenOverlay>
+      );
+    }
+
+    return (
+      <FullscreenOverlay isFullscreen={isFullscreen}>
+        <div className="w-full h-full flex flex-col">
+          <FileInfo
+            filename={filename}
+            hasChanges={hasChanges}
+            onToggleFullscreen={toggleFullscreen}
+            isFullscreen={isFullscreen}
+            beforeCode={beforeCode}
+            afterCode={afterCode}
+          />
+          <div className={diffPanelStyles}>
+            {hasChanges ? (
+              <div className="overflow-x-auto min-w-full">
+                {unifiedBlocks.map((block, index) => (
+                  <CodeLine
+                    key={`${block.lineNumber}-${index}`}
+                    lineNumber={block.lineNumber}
+                    content={block.content}
+                    type={block.type}
+                    highlighter={highlighter} // Pass the shared instance
+                    language={language}
+                    block={block}
+                    theme={theme}
+                  />
+                ))}
+              </div>
+            ) : (
+              <NoChangesView beforeCode={beforeCode} language={language} highlighter={highlighter} theme={theme} />
+            )}
+          </div>
+        </div>
+      </FullscreenOverlay>
+    );
+  },
+);
 
 interface DiffViewProps {
   fileHistory: Record<string, FileHistory>;
-  setFileHistory: React.Dispatch<React.SetStateAction<Record<string, FileHistory>>>;
+  setFileHistory: (history: Record<string, FileHistory>) => void;
+  comparisonContent?: string;
+  showWholeFile?: boolean;
 }
 
-export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) => {
+export const DiffView = memo(({ fileHistory, setFileHistory, comparisonContent, showWholeFile }: DiffViewProps) => {
   const files = useStore(workbenchStore.files) as FileMap;
   const selectedFile = useStore(workbenchStore.selectedFile);
   const currentDocument = useStore(workbenchStore.currentDocument) as EditorDocument;
@@ -682,18 +740,18 @@ export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) =>
       const existingHistory = fileHistory[selectedFile];
       const currentContent = currentDocument.value;
 
-      // Normalizar o conteúdo para comparação
       const normalizedCurrentContent = currentContent.replace(/\r\n/g, '\n').trim();
+
       const normalizedOriginalContent = (existingHistory?.originalContent || file.content)
         .replace(/\r\n/g, '\n')
         .trim();
 
-      // Se não há histórico existente, criar um novo apenas se houver diferenças
       if (!existingHistory) {
         if (normalizedCurrentContent !== normalizedOriginalContent) {
           const newChanges = diffLines(file.content, currentContent);
-          setFileHistory((prev) => ({
-            ...prev,
+
+          setFileHistory({
+            ...fileHistory,
             [selectedFile]: {
               originalContent: file.content,
               lastModified: Date.now(),
@@ -706,28 +764,27 @@ export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) =>
               ],
               changeSource: 'auto-save',
             },
-          }));
+          });
         }
 
         return;
       }
 
-      // Se já existe histórico, verificar se há mudanças reais desde a última versão
       const lastVersion = existingHistory.versions[existingHistory.versions.length - 1];
+
       const normalizedLastContent = lastVersion?.content.replace(/\r\n/g, '\n').trim();
 
       if (normalizedCurrentContent === normalizedLastContent) {
-        return; // Não criar novo histórico se o conteúdo é o mesmo
+        return;
       }
 
-      // Verificar se há mudanças significativas usando diffFiles
       const relativePath = extractRelativePath(selectedFile);
+
       const unifiedDiff = diffFiles(relativePath, existingHistory.originalContent, currentContent);
 
       if (unifiedDiff) {
         const newChanges = diffLines(existingHistory.originalContent, currentContent);
 
-        // Verificar se as mudanças são significativas
         const hasSignificantChanges = newChanges.some(
           (change) => (change.added || change.removed) && change.value.trim().length > 0,
         );
@@ -736,23 +793,25 @@ export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) =>
           const newHistory: FileHistory = {
             originalContent: existingHistory.originalContent,
             lastModified: Date.now(),
-            changes: [...existingHistory.changes, ...newChanges].slice(-100), // Limitar histórico de mudanças
+            changes: [...existingHistory.changes, ...newChanges].slice(-100),
             versions: [
               ...existingHistory.versions,
               {
                 timestamp: Date.now(),
                 content: currentContent,
               },
-            ].slice(-10), // Manter apenas as 10 últimas versões
+            ].slice(-10),
             changeSource: 'auto-save',
           };
 
-          setFileHistory((prev) => ({ ...prev, [selectedFile]: newHistory }));
+          setFileHistory({
+            ...fileHistory,
+            [selectedFile]: newHistory,
+          });
         }
       }
-    }
-  }, [selectedFile, currentDocument?.value, files, setFileHistory, unsavedFiles]);
-
+    } // <-- THIS BRACE IS MISSING IN YOUR FILE
+  }, [selectedFile, currentDocument?.value, files, setFileHistory, unsavedFiles, fileHistory]);
   if (!selectedFile || !currentDocument) {
     return (
       <div className="flex w-full h-full justify-center items-center bg-bolt-elements-background-depth-1 text-bolt-elements-textPrimary">
@@ -766,7 +825,7 @@ export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) =>
   const currentContent = currentDocument.value;
 
   const history = fileHistory[selectedFile];
-  const effectiveOriginalContent = history?.originalContent || originalContent;
+  const effectiveOriginalContent = comparisonContent || history?.originalContent || originalContent;
   const language = getLanguageFromExtension(selectedFile.split('.').pop() || '');
 
   try {
@@ -779,6 +838,7 @@ export const DiffView = memo(({ fileHistory, setFileHistory }: DiffViewProps) =>
           filename={selectedFile}
           lightTheme="github-light"
           darkTheme="github-dark"
+          showWholeFile={showWholeFile}
         />
       </div>
     );

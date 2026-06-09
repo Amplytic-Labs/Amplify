@@ -12,7 +12,8 @@ export interface TokenCountResult {
 
 /**
  * Estimates the number of tokens in a string.
- * Uses a general approximation of 4 characters per token for English text.
+ * Uses a heuristic: ~3 characters per token for code-heavy text,
+ * and ~4 characters per token for natural language prose.
  *
  * @param text The string to count tokens for.
  * @returns A TokenCountResult containing the estimated token count.
@@ -26,10 +27,18 @@ export function countTokens(text: string): TokenCountResult {
     };
   }
 
-  // General rule of thumb: 1 token is approximately 4 characters for English.
-  // This is a safe baseline for budgeting.
   const characters = text.length;
-  const tokens = Math.ceil(characters / 4);
+
+  // Heuristic to detect code-like content:
+  // Check for common code characters: { } [ ] ( ) => ; :
+  const codeIndicators = /[{}[\]()=>;: ]/g;
+  const matchCount = (text.match(codeIndicators) || []).length;
+  const codeDensity = matchCount / characters;
+
+  // If more than 10% of characters are code indicators, treat as code (3 chars/token)
+  // Otherwise, treat as prose (4 chars/token)
+  const ratio = codeDensity > 0.1 ? 3 : 4;
+  const tokens = Math.ceil(characters / ratio);
 
   return {
     tokens,

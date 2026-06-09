@@ -119,8 +119,16 @@ export class SkillLoader {
   }
 
   async getSkillContent(skillId: string): Promise<string | null> {
-    const skill = this._skills.get(skillId);
+    const id = skillId.toLowerCase();
+    const skill = this._skills.get(id);
     return skill ? skill.content : null;
+  }
+
+  getRelevantSkills(tokenBudget?: number): string {
+    const skills = this.getSkills(tokenBudget);
+    if (skills.length === 0) return 'No specialized skills currently loaded.';
+
+    return skills.map((s) => `<skill name="${s.id}" description="${s.description}"/>`).join('\n');
   }
 
   async installSkill(bundlePath: string) {

@@ -13,7 +13,7 @@ import {
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { IconButton } from '~/components/ui/IconButton';
-import { Slider, type SliderOptions } from '~/components/ui/Slider';
+import { Slider, type SliderOption } from '~/components/ui/Slider';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
@@ -42,25 +42,6 @@ interface WorkspaceProps {
 }
 
 const viewTransition = { ease: cubicEasingFn };
-
-const sliderOptions: SliderOptions<WorkbenchViewType> = {
-  left: {
-    value: 'code',
-    text: 'Code',
-  },
-  middle: {
-    value: 'diff',
-    text: 'Diff',
-  },
-  right: {
-    value: 'preview',
-    text: 'Preview',
-  },
-  render: {
-    value: 'render',
-    text: 'Render',
-  },
-};
 
 const workbenchVariants = {
   closed: {
@@ -295,7 +276,8 @@ export const Workbench = memo(
   }: WorkspaceProps) => {
     renderLogger.trace('Workbench');
 
-    const [fileHistory, setFileHistory] = useState<Record<string, FileHistory>>({});
+    const fileHistory = useStore(workbenchStore.fileHistory);
+    const [comparisonContentState, setComparisonContentState] = useState<string | null>(null);
 
     // const modifiedFiles = Array.from(useStore(workbenchStore.unsavedFiles).keys());
 
@@ -313,6 +295,27 @@ export const Workbench = memo(
     const streaming = useStore(streamingState);
     const { exportChat } = useChatHistory();
     const [isSyncing, setIsSyncing] = useState(false);
+
+    const isRenderable =
+      selectedFile && ['md', 'html', 'svg', 'mermaid'].includes(selectedFile.split('.').pop()?.toLowerCase() || '');
+
+    const sliderOptions = useMemo(() => {
+      const options: SliderOption<WorkbenchViewType>[] = [{ value: 'code', text: 'Code' }];
+
+      if (Object.keys(fileHistory).length > 1) {
+        options.push({ value: 'diff', text: 'Latest Version' });
+      }
+
+      if (hasPreview) {
+        options.push({ value: 'preview', text: 'Preview' });
+      }
+
+      if (isRenderable) {
+        options.push({ value: 'render', text: 'Render' });
+      }
+
+      return options;
+    }, [hasPreview, isRenderable, fileHistory]);
 
     const setSelectedView = (view: WorkbenchViewType) => {
       workbenchStore.currentView.set(view);
@@ -382,22 +385,21 @@ export const Workbench = memo(
         <motion.div
           initial="closed"
           animate={showWorkbench ? 'open' : 'closed'}
-          variants={workbenchVariants}
-          className="z-workbench"
+          variants={isSmallViewport ? workbenchVariants : undefined}
+          className={classNames('z-workbench', {
+            'absolute inset-0': !isSmallViewport,
+            'fixed inset-0 pt-[calc(var(--header-height)+1.2rem)]': isSmallViewport,
+          })}
         >
           <div
-            className={classNames(
-              'fixed top-[calc(var(--header-height)+1.2rem)] bottom-6 w-[var(--workbench-inner-width)] z-0 transition-[left,width] duration-200 bolt-ease-cubic-bezier',
-              {
-                'w-full': isSmallViewport,
-                'left-0': showWorkbench && isSmallViewport,
-                'left-[var(--workbench-left)]': showWorkbench,
-                'left-[100%]': !showWorkbench,
-              },
-            )}
+            className={classNames('z-0 h-full w-full', {
+              'transition-[left,width] duration-200 bolt-ease-cubic-bezier': isSmallViewport,
+              'left-0': showWorkbench && isSmallViewport,
+              'left-[100%]': !showWorkbench && isSmallViewport,
+            })}
           >
-            <div className="absolute inset-0 px-2 lg:px-4">
-              <div className="h-full flex flex-col bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor shadow-sm rounded-lg overflow-hidden">
+            <div className="h-full">
+              <div className="h-full flex flex-col bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor shadow-sm overflow-hidden">
                 <div className="flex items-center px-3 py-2 border-b border-bolt-elements-borderColor gap-1.5">
                   <button
                     className={`${showChat ? 'i-ph:sidebar-simple-fill' : 'i-ph:sidebar-simple'} text-lg text-bolt-elements-textSecondary mr-1`}
@@ -498,13 +500,22 @@ export const Workbench = memo(
                       onEditorChange={onEditorChange}
                       onFileSave={onFileSave}
                       onFileReset={onFileReset}
+                      onVersionSelect={(content) => {
+                        setComparisonContentState(content);
+                        workbenchStore.currentView.set('diff');
+                      }}
                     />
                   </View>
                   <View
                     initial={{ x: '100%' }}
                     animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
                   >
-                    <DiffView fileHistory={fileHistory} setFileHistory={setFileHistory} />
+                    <DiffView
+                      fileHistory={fileHistory}
+                      setFileHistory={(history) => workbenchStore.fileHistory.set(history)}
+                      comparisonContent={comparisonContentState || undefined}
+                      showWholeFile={Object.keys(fileHistory).length > 1}
+                    />
                   </View>
                   <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
                     <Preview setSelectedElement={setSelectedElement} />

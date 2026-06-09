@@ -55,6 +55,18 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
     );
   }
 
+  if (extension === 'html') {
+    return (
+      <div className="h-full w-full bg-white">
+        <iframe
+          srcDoc={content}
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          sandbox="allow-scripts allow-forms allow-popups allow-modals"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
       No renderer available for .{extension} files.

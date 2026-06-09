@@ -112,23 +112,10 @@ export const selectStarterTemplate = async (options: { message: string; model: s
   }
 };
 
+import { fetchRepoContents } from '~/lib/utils/github-templates';
+
 const getGitHubRepoContent = async (repoName: string): Promise<{ name: string; path: string; content: string }[]> => {
-  try {
-    // Instead of directly fetching from GitHub, use our own API endpoint as a proxy
-    const response = await fetch(`/api/github-template?repo=${encodeURIComponent(repoName)}`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // Our API will return the files in the format we need
-    const files = (await response.json()) as any;
-
-    return files;
-  } catch (error) {
-    console.error('Error fetching release contents:', error);
-    throw error;
-  }
+  return fetchRepoContents(repoName);
 };
 
 export async function getTemplates(templateName: string, title?: string) {
@@ -183,6 +170,9 @@ export async function getTemplates(templateName: string, title?: string) {
     filesToImport.ignoreFile = ignoredFiles;
   }
 
+  const isExpo = template.tags?.includes('expo') || template.name.toLowerCase().includes('expo');
+  const devCommand = isExpo ? 'npm start' : 'npm run dev';
+
   const assistantMessage = `
 Bolt is initializing your project with the required files using the ${template.name} template.
 <boltArtifact id="imported-files" title="${title || 'Create initial files'}" type="bundled">
@@ -194,6 +184,9 @@ ${file.content}
 </boltAction>`,
   )
   .join('\n')}
+<boltAction type="shell">
+npm install
+</boltAction>
 </boltArtifact>
 `;
   let userMessage = ``;
@@ -237,19 +230,25 @@ If you need to make changes to functionality, create new files instead of modify
 `;
   }
 
+  const packageJsonFile = filesToImport.files.find(f => f.path.endsWith('package.json'));
+  const packageJsonContext = packageJsonFile 
+    ? `\nHere is the template's package.json:\n\`\`\`json\n${packageJsonFile.content}\n\`\`\`\nPlease check the "scripts" section to determine the correct development start command (e.g., npm run dev, npm start, etc.).` 
+    : '';
+
   userMessage += `
 ---
-template import is done, and you can now use the imported files,
+template import is done, and you can now use the imported files.
 edit only the files that need to be changed, and you can create new files as needed.
-NO NOT EDIT/WRITE ANY FILES THAT ALREADY EXIST IN THE PROJECT AND DOES NOT NEED TO BE MODIFIED
+DO NOT EDIT/WRITE ANY FILES THAT ALREADY EXIST IN THE PROJECT AND DO NOT NEED TO BE MODIFIED.
 ---
-Now that the Template is imported please continue with my original request
-
-IMPORTANT: Dont Forget to install the dependencies before running the app by using \`npm install && npm run dev\`
+Now that the Template is imported and \`npm install\` has been executed automatically, please continue with my original request.
+${packageJsonContext}
+IMPORTANT: When starting the development server, you MUST use the appropriate command from the package.json scripts.
 `;
 
   return {
     assistantMessage,
+    summary: `Injected ${template.name} template. Files created: ${filesToImport.files.map((f) => f.path).join(', ')}`,
     userMessage,
   };
 }
