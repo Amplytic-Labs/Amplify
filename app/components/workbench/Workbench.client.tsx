@@ -13,21 +13,19 @@ import {
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { IconButton } from '~/components/ui/IconButton';
-import { Slider, type SliderOption } from '~/components/ui/Slider';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
 import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
-import { ArtifactRenderer } from './ArtifactRenderer';
+import { RenderPanel } from './RenderPanel';
+import { findRenderableFiles } from '~/lib/renderable/registry';
 import useViewport from '~/lib/hooks';
 
 import { usePreviewStore } from '~/lib/stores/previews';
 import { chatStore } from '~/lib/stores/chat';
 import type { ElementInfo } from './Inspector';
-import { ExportChatButton } from '~/components/chat/chatExportAndImport/ExportChatButton';
-import { useChatHistory } from '~/lib/persistence';
 import { streamingState } from '~/lib/stores/streaming';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
@@ -47,14 +45,31 @@ const workbenchVariants = {
   closed: {
     width: 0,
     transition: {
-      duration: 0.2,
+      duration: 0.4,
       ease: cubicEasingFn,
     },
   },
   open: {
     width: 'var(--workbench-width)',
     transition: {
-      duration: 0.2,
+      duration: 0.5,
+      ease: cubicEasingFn,
+    },
+  },
+} satisfies Variants;
+
+const mobileWorkbenchVariants = {
+  closed: {
+    x: '100%',
+    transition: {
+      duration: 0.4,
+      ease: cubicEasingFn,
+    },
+  },
+  open: {
+    x: 0,
+    transition: {
+      duration: 0.5,
       ease: cubicEasingFn,
     },
   },
@@ -293,39 +308,74 @@ export const Workbench = memo(
 
     const isSmallViewport = useViewport(1024);
     const streaming = useStore(streamingState);
-    const { exportChat } = useChatHistory();
-    const [isSyncing, setIsSyncing] = useState(false);
 
-    const isRenderable =
-      selectedFile && ['md', 'html', 'svg', 'mermaid'].includes(selectedFile.split('.').pop()?.toLowerCase() || '');
+    // const [isSyncing, setIsSyncing] = useState(false);
 
-    const sliderOptions = useMemo(() => {
-      const options: SliderOption<WorkbenchViewType>[] = [{ value: 'code', text: 'Code' }];
+    // Show veil only while streaming and no preview port is available yet
+    const showVeil = streaming && !hasPreview;
 
-      if (Object.keys(fileHistory).length > 1) {
-        options.push({ value: 'diff', text: 'Latest Version' });
-      }
-
-      if (hasPreview) {
-        options.push({ value: 'preview', text: 'Preview' });
-      }
-
-      if (isRenderable) {
-        options.push({ value: 'render', text: 'Render' });
-      }
-
-      return options;
-    }, [hasPreview, isRenderable, fileHistory]);
+    // Check if ANY file in the workspace is renderable (for tab visibility).
+    const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
 
     const setSelectedView = (view: WorkbenchViewType) => {
       workbenchStore.currentView.set(view);
     };
+
+    // Track workbench panel position for slider alignment (desktop only)
+    useEffect(() => {
+      if (isSmallViewport || !showWorkbench) {
+        workbenchStore.workbenchLeftPosition.set(null);
+        return;
+      }
+
+      const updateWorkbenchPosition = () => {
+        const workbenchElement = document.querySelector('[data-workbench-panel]') as HTMLElement;
+
+        if (workbenchElement) {
+          const rect = workbenchElement.getBoundingClientRect();
+          workbenchStore.workbenchLeftPosition.set(rect.left);
+        }
+      };
+
+      // Initial position update
+      updateWorkbenchPosition();
+
+      // Update on resize
+      window.addEventListener('resize', updateWorkbenchPosition);
+
+      // Update on animation frame for smooth tracking during resize
+      let animationFrameId: number;
+      const observePosition = () => {
+        updateWorkbenchPosition();
+        animationFrameId = requestAnimationFrame(observePosition);
+      };
+      animationFrameId = requestAnimationFrame(observePosition);
+
+      return () => {
+        window.removeEventListener('resize', updateWorkbenchPosition);
+        cancelAnimationFrame(animationFrameId);
+      };
+    }, [isSmallViewport, showWorkbench]);
 
     useEffect(() => {
       if (hasPreview) {
         setSelectedView('preview');
       }
     }, [hasPreview]);
+
+    /*
+     * Auto-switch to the Render tab when renderable files first appear
+     * (only if no preview is active, so preview takes priority).
+     */
+    useEffect(() => {
+      if (hasRenderableFiles && !hasPreview) {
+        const currentView = workbenchStore.currentView.get();
+
+        if (currentView === 'code') {
+          setSelectedView('render');
+        }
+      }
+    }, [hasRenderableFiles, hasPreview]);
 
     useEffect(() => {
       workbenchStore.setDocuments(files);
@@ -383,109 +433,38 @@ export const Workbench = memo(
     return (
       chatStarted && (
         <motion.div
+          data-workbench-panel
           initial="closed"
           animate={showWorkbench ? 'open' : 'closed'}
-          variants={isSmallViewport ? workbenchVariants : undefined}
-          className={classNames('z-workbench', {
-            'absolute inset-0': !isSmallViewport,
-            'fixed inset-0 pt-[calc(var(--header-height)+1.2rem)]': isSmallViewport,
-          })}
+          variants={isSmallViewport ? mobileWorkbenchVariants : undefined}
+          className={classNames('z-workbench lg:pb-4 lg:pr-4 absolute inset-0')}
         >
+          {' '}
+          {showVeil && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center bg-bolt-elements-background-depth-2/60 backdrop-blur-sm"
+            >
+              <div className="flex flex-col items-center gap-3 text-bolt-elements-textSecondary">
+                <div className="i-ph:spinner animate-spin text-3xl text-accent-500" />
+                <p className="text-sm font-medium animate-pulse">Initializing project…</p>
+              </div>
+            </motion.div>
+          )}
           <div
-            className={classNames('z-0 h-full w-full', {
-              'transition-[left,width] duration-200 bolt-ease-cubic-bezier': isSmallViewport,
-              'left-0': showWorkbench && isSmallViewport,
-              'left-[100%]': !showWorkbench && isSmallViewport,
-            })}
+            className={classNames(
+              'z-0 h-full w-full lg:rounded-2xl border border-bolt-elements-borderColor overflow-hidden',
+              {
+                'transition-[left,width] duration-200 bolt-ease-cubic-bezier': isSmallViewport,
+                'left-0': showWorkbench && isSmallViewport,
+                'left-[100%]': !showWorkbench && isSmallViewport,
+              },
+            )}
           >
-            <div className="h-full">
-              <div className="h-full flex flex-col bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor shadow-sm overflow-hidden">
-                <div className="flex items-center px-3 py-2 border-b border-bolt-elements-borderColor gap-1.5">
-                  <button
-                    className={`${showChat ? 'i-ph:sidebar-simple-fill' : 'i-ph:sidebar-simple'} text-lg text-bolt-elements-textSecondary mr-1`}
-                    disabled={!canHideChat || isSmallViewport}
-                    onClick={() => {
-                      if (canHideChat) {
-                        chatStore.setKey('showChat', !showChat);
-                      }
-                    }}
-                  />
-                  <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
-                  <div className="ml-auto" />
-                  {selectedView === 'code' && (
-                    <div className="flex overflow-y-auto">
-                      {/* Export Chat Button */}
-                      <ExportChatButton exportChat={exportChat} />
-
-                      {/* Sync Button */}
-                      <div className="flex border border-bolt-elements-borderColor rounded-md overflow-hidden ml-1">
-                        <DropdownMenu.Root>
-                          <DropdownMenu.Trigger
-                            disabled={isSyncing || streaming}
-                            className="rounded-md items-center justify-center [&:is(:disabled,.disabled)]:cursor-not-allowed [&:is(:disabled,.disabled)]:opacity-60 px-3 py-1.5 text-xs bg-accent-500 text-white hover:text-bolt-elements-item-contentAccent [&:not(:disabled,.disabled)]:hover:bg-bolt-elements-button-primary-backgroundHover outline-accent-500 flex gap-1.7"
-                          >
-                            {isSyncing ? 'Syncing...' : 'Sync'}
-                            <span className={classNames('i-ph:caret-down transition-transform')} />
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Content
-                            className={classNames(
-                              'min-w-[240px] z-[250]',
-                              'bg-white dark:bg-[#141414]',
-                              'rounded-lg shadow-lg',
-                              'border border-gray-200/50 dark:border-gray-800/50',
-                              'animate-in fade-in-0 zoom-in-95',
-                              'py-1',
-                            )}
-                            sideOffset={5}
-                            align="end"
-                          >
-                            <DropdownMenu.Item
-                              className={classNames(
-                                'cursor-pointer flex items-center w-full px-4 py-2 text-sm text-bolt-elements-textPrimary hover:bg-bolt-elements-item-backgroundActive gap-2 rounded-md group relative',
-                              )}
-                              onClick={handleSyncFiles}
-                              disabled={isSyncing}
-                            >
-                              <div className="flex items-center gap-2">
-                                {isSyncing ? (
-                                  <div className="i-ph:spinner" />
-                                ) : (
-                                  <div className="i-ph:cloud-arrow-down" />
-                                )}
-                                <span>{isSyncing ? 'Syncing...' : 'Sync Files'}</span>
-                              </div>
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Root>
-                      </div>
-
-                      {/* Toggle Terminal Button */}
-                      <div className="flex border border-bolt-elements-borderColor rounded-md overflow-hidden ml-1">
-                        <button
-                          onClick={() => {
-                            workbenchStore.toggleTerminal(!workbenchStore.showTerminal.get());
-                          }}
-                          className="rounded-md items-center justify-center [&:is(:disabled,.disabled)]:cursor-not-allowed [&:is(:disabled,.disabled)]:opacity-60 px-3 py-1.5 text-xs bg-accent-500 text-white hover:text-bolt-elements-item-contentAccent [&:not(:disabled,.disabled)]:hover:bg-bolt-elements-button-primary-backgroundHover outline-accent-500 flex gap-1.7"
-                        >
-                          <div className="i-ph:terminal" />
-                          Toggle Terminal
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedView === 'diff' && (
-                    <FileModifiedDropdown fileHistory={fileHistory} onSelectFile={handleSelectFile} />
-                  )}
-                  <IconButton
-                    icon="i-ph:x-circle"
-                    className="-mr-1"
-                    size="xl"
-                    onClick={() => {
-                      workbenchStore.showWorkbench.set(false);
-                    }}
-                  />
-                </div>
+            <div className="h-full ">
+              <div className="h-full flex flex-col bg-bolt-elements-background-depth-2  overflow-hidden">
                 <div className="relative flex-1 overflow-hidden">
                   <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
                     <EditorPanel
@@ -521,7 +500,7 @@ export const Workbench = memo(
                     <Preview setSelectedElement={setSelectedElement} />
                   </View>
                   <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
-                    {selectedFile && <ArtifactRenderer filePath={selectedFile} />}
+                    <RenderPanel />
                   </View>
                 </div>
               </div>

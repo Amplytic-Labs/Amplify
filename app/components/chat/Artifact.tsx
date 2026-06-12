@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { computed } from 'nanostores';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import type { ActionState } from '~/lib/runtime/action-runner';
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -27,145 +27,155 @@ interface ArtifactProps {
 }
 
 export const Artifact = memo(({ artifactId }: ArtifactProps) => {
-  const userToggledActions = useRef(false);
-  const [allActionFinished, setAllActionFinished] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const artifacts = useStore(workbenchStore.artifacts);
   const artifact = artifacts[artifactId];
 
   const actions = useStore(
     computed(artifact.runner.actions, (actions) => {
-      // Filter out Supabase actions except for migrations
       return Object.values(actions).filter((action) => {
-        // Exclude actions with type 'supabase' or actions that contain 'supabase' in their content
         return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
       });
     }),
   );
 
-  /*
-   * Initialize showActions from the current actions length so that when ReactMarkdown
-   * remounts this component during streaming (rebuilding its VDOM tree on every tick),
-   * the actions list doesn't flash closed → open due to useState resetting to false.
-   */
-  const [showActions, setShowActions] = useState(() => actions.length > 0);
+  /* ---- Compute summary counts ---- */
+  const summary = useMemo(() => {
+    const fileCount = actions.filter((a) => a.type === 'file').length;
+    const shellCount = actions.filter((a) => a.type === 'shell').length;
+    const startCount = actions.filter((a) => a.type === 'start').length;
+    const isRunning = actions.some((a) => a.status === 'running' || a.status === 'pending');
 
-  const toggleActions = () => {
-    userToggledActions.current = true;
-    setShowActions(!showActions);
-  };
+    return { fileCount, shellCount, startCount, isRunning };
+  }, [actions]);
 
-  useEffect(() => {
-    if (actions.length && !showActions && !userToggledActions.current) {
-      setShowActions(true);
+  /* ---- Build summary text ---- */
+  const summaryText = useMemo(() => {
+    const { fileCount, shellCount, startCount, isRunning } = summary;
+
+    // Bundled artifacts (template/git clone) — simple message, no counts
+    if (artifact.type === 'bundled') {
+      return isRunning ? 'Initializing project…' : 'Project initialized';
     }
 
-    if (actions.length !== 0 && artifact.type === 'bundled') {
-      const finished = !actions.find(
-        (action) => action.status !== 'complete' && !(action.type === 'start' && action.status === 'running'),
-      );
+    // AI-created artifacts — show detailed counts
+    const parts: string[] = [];
 
-      if (allActionFinished !== finished) {
-        setAllActionFinished(finished);
-      }
+    if (fileCount > 0) {
+      parts.push(`${fileCount} file${fileCount > 1 ? 's' : ''}`);
     }
-  }, [actions, artifact.type, allActionFinished]);
 
-  // Determine the dynamic title based on state for bundled artifacts
-  const dynamicTitle =
-    artifact?.type === 'bundled'
-      ? allActionFinished
-        ? artifact.id === 'restored-project-setup'
-          ? 'Project Restored' // Title when restore is complete
-          : 'Project Created' // Title when initial creation is complete
-        : artifact.id === 'restored-project-setup'
-          ? 'Restoring Project...' // Title during restore
-          : 'Creating Project...' // Title during initial creation
-      : artifact?.title; // Fallback to original title for non-bundled or if artifact is missing
+    if (shellCount > 0) {
+      parts.push(`${shellCount} command${shellCount > 1 ? 's' : ''}`);
+    }
+
+    if (startCount > 0) {
+      parts.push('start');
+    }
+
+    if (parts.length === 0 && isRunning) {
+      return artifact.title;
+    }
+
+    const prefix = isRunning ? 'Working on' : 'Updated';
+
+    return `${prefix} ${parts.join(', ')}`;
+  }, [summary, artifact.type, artifact.title]);
 
   return (
-    <>
-      <div className="artifact border border-bolt-elements-borderColor flex flex-col overflow-hidden rounded-lg w-full transition-border duration-150">
-        <div className="flex">
+    <div className="flex flex-col mb-4">
+      {/* ---- Compact header (reasoning-block style) ---- */}
+      <div
+        className="flex items-center gap-2 text-bolt-elements-textTertiary text-sm transition-colors hover:text-bolt-elements-textPrimary cursor-pointer bg-transparent border-none p-0"
+        onClick={() => {
+          workbenchStore.showWorkbench.set(true);
+        }}
+      >
+        {/* Status icon */}
+        <div
+          className={classNames(
+            'text-base shrink-0',
+            summary.isRunning ? 'text-accent-500' : 'text-bolt-elements-icon-success',
+          )}
+        >
+          {summary.isRunning ? (
+            <div className="i-svg-spinners:90-ring-with-bg" />
+          ) : (
+            <div className="i-ph:check-circle" />
+          )}
+        </div>
+
+        {/* Summary text */}
+        <span className="flex-1 truncate">{summaryText}</span>
+
+        {/* Expand / collapse chevron */}
+        {actions.length > 0 && (
           <button
-            className="flex items-stretch bg-bolt-elements-artifacts-background hover:bg-bolt-elements-artifacts-backgroundHover w-full overflow-hidden"
-            onClick={() => {
-              /*
-               * Always open (never toggle-close) — the button label says "Click to open Workbench".
-               * Toggling caused the workbench to silently close when clicked a second time,
-               * making it seem like clicks were doing nothing.
-               */
-              workbenchStore.showWorkbench.set(true);
+            className="shrink-0 bg-transparent border-none p-0 cursor-pointer text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsOpen(!isOpen);
             }}
           >
-            <div className="px-5 p-3.5 w-full text-left">
-              <div className="w-full text-bolt-elements-textPrimary font-medium leading-5 text-sm">
-                {/* Use the dynamic title here */}
-                {dynamicTitle}
-              </div>
-              <div className="w-full w-full text-bolt-elements-textSecondary text-xs mt-0.5">
-                Click to open Workbench
-              </div>
-            </div>
-          </button>
-          {artifact.type !== 'bundled' && <div className="bg-bolt-elements-artifacts-borderColor w-[1px]" />}
-          {/* initial={false} → skip enter animation for children already present on mount (prevents flash on streaming remounts) */}
-          <AnimatePresence initial={false}>
-            {actions.length && artifact.type !== 'bundled' && (
-              <motion.button
-                initial={{ width: 0 }}
-                animate={{ width: 'auto' }}
-                exit={{ width: 0 }}
-                transition={{ duration: 0.15, ease: cubicEasingFn }}
-                className="bg-bolt-elements-artifacts-background hover:bg-bolt-elements-artifacts-backgroundHover"
-                onClick={toggleActions}
+            {isOpen ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <div className="p-4">
-                  <div className={showActions ? 'i-ph:caret-up-bold' : 'i-ph:caret-down-bold'}></div>
-                </div>
-              </motion.button>
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             )}
-          </AnimatePresence>
-        </div>
-        {artifact.type === 'bundled' && (
-          <div className="flex items-center gap-1.5 p-5 bg-bolt-elements-actions-background border-t border-bolt-elements-artifacts-borderColor">
-            <div className={classNames('text-lg', getIconColor(allActionFinished ? 'complete' : 'running'))}>
-              {allActionFinished ? (
-                <div className="i-ph:check"></div>
-              ) : (
-                <div className="i-svg-spinners:90-ring-with-bg"></div>
-              )}
-            </div>
-            <div className="text-bolt-elements-textPrimary font-medium leading-5 text-sm">
-              {/* This status text remains the same */}
-              {allActionFinished
-                ? artifact.id === 'restored-project-setup'
-                  ? 'Restore files from snapshot'
-                  : 'Initial files created'
-                : 'Creating initial files'}
-            </div>
-          </div>
+          </button>
         )}
-        {/* initial={false} → children already open on mount won't re-animate from height 0 on streaming remounts */}
-        <AnimatePresence initial={false}>
-          {artifact.type !== 'bundled' && showActions && actions.length > 0 && (
-            <motion.div
-              className="actions"
-              initial={{ height: 0 }}
-              animate={{ height: 'auto' }}
-              exit={{ height: '0px' }}
-              transition={{ duration: 0.15 }}
-            >
-              <div className="bg-bolt-elements-artifacts-borderColor h-[1px]" />
-
-              <div className="p-5 text-left bg-bolt-elements-actions-background">
-                <ActionList actions={actions} />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
-    </>
+
+      {/* ---- Expandable action details ---- */}
+      <AnimatePresence initial={false}>
+        {isOpen && actions.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{
+              height: 'auto',
+              opacity: 1,
+              transition: { type: 'spring', stiffness: 300, damping: 30 },
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              transition: { duration: 0.25, ease: 'easeInOut' },
+            }}
+            style={{ overflow: 'hidden' }}
+            className="mt-2 rounded-lg relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-bolt-elements-textTertiary"
+          >
+            <div className="text-sm text-bolt-elements-textPrimary max-h-96 overflow-y-auto pl-4 py-2 bg-bolt-elements-background-depth-2 rounded-lg">
+              <ActionList actions={actions} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 });
 

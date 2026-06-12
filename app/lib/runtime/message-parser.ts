@@ -73,6 +73,26 @@ function cleanoutMarkdownSyntax(content: string) {
 function cleanEscapedTags(content: string) {
   return content.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
+
+/**
+ * Strips any boltArtifact / boltAction XML tags from file content.
+ * AI models sometimes leak these control tags into file output during streaming.
+ * This acts as a guard rail so project files never contain bolt-internal markup.
+ */
+function stripBoltArtifactTags(content: string): string {
+  // Remove complete <boltArtifact ...>...</boltArtifact> blocks (with any inner content)
+  let cleaned = content.replace(/<boltArtifact\b[^>]*>[\s\S]*?<\/boltArtifact>/g, '');
+
+  // Remove any remaining orphan open/close tags
+  cleaned = cleaned.replace(/<\/?boltArtifact\b[^>]*>/g, '');
+  cleaned = cleaned.replace(/<\/?boltAction\b[^>]*>/g, '');
+
+  // Remove bolt-quick-actions tags
+  cleaned = cleaned.replace(/<\/?bolt-quick-actions>/g, '');
+  cleaned = cleaned.replace(/<bolt-quick-action\b[^>]*>[\s\S]*?<\/bolt-quick-action>/g, '');
+
+  return cleaned;
+}
 export class StreamingMessageParser {
   #messages = new Map<string, MessageState>();
   #artifactCounter = 0;
@@ -155,6 +175,9 @@ export class StreamingMessageParser {
                 content = cleanEscapedTags(content);
               }
 
+              // Guard rail: strip any leaked bolt artifact/action tags from file content
+              content = stripBoltArtifactTags(content);
+
               content += '\n';
             }
 
@@ -186,6 +209,9 @@ export class StreamingMessageParser {
                 content = cleanoutMarkdownSyntax(content);
                 content = cleanEscapedTags(content);
               }
+
+              // Guard rail: strip leaked bolt tags (preserve potential partial tag at end)
+              content = stripBoltArtifactTags(content);
 
               this._options.callbacks?.onActionStream?.({
                 artifactId: currentArtifact.id,

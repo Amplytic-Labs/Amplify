@@ -123,25 +123,14 @@ export async function fetchRepoContentsCloudflare(repo: string, githubToken?: st
 export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
   const baseUrl = 'https://api.github.com';
 
-  // Get the latest release
-  const releaseResponse = await fetch(`${baseUrl}/repos/${repo}/releases/latest`, {
-    headers: {
-      Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'bolt.diy-app',
-      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
-    },
-  });
-
-  if (!releaseResponse.ok) {
-    throw new Error(`GitHub API error: ${releaseResponse.status} - ${releaseResponse.statusText}`);
-  }
-
-  const releaseData = (await releaseResponse.json()) as any;
-  const zipballUrl = releaseData.zipball_url;
+  // Use the branch zipball directly — works for any public repo without needing a published release
+  const zipballUrl = `${baseUrl}/repos/${repo}/zipball`;
 
   // Fetch the zipball
   const zipResponse = await fetch(zipballUrl, {
     headers: {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'bolt.diy-app',
       ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
     },
   });

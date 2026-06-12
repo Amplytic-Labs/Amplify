@@ -53,7 +53,7 @@ const InjectThemeStyles = () => {
         --input: oklch(0.7621 0.0156 98.3528);
         --ring: oklch(0.6171 0.1375 39.0427);
         
-        --font-sans: Outfit, sans-serif;
+        --font-sans: Almarai, sans-serif;
         --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
         --font-mono: Geist Mono, ui-monospace, monospace;
         --radius: 1.25rem;
@@ -90,7 +90,6 @@ const InjectThemeStyles = () => {
       }
 
       * {
-        font-family: var(--font-sans);
         box-sizing: border-box;
         transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
       }

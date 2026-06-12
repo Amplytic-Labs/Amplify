@@ -12,11 +12,64 @@ export interface Skill {
   manifest?: SkillManifest;
 }
 
+export interface DesignSystemEntry {
+  id: string;
+  label: string;
+  category: string;
+  summary: string;
+  filePath: string;
+}
+
+/**
+ * Parse YAML frontmatter from a markdown string.
+ * Returns a record of key-value pairs found between the --- delimiters.
+ */
+function parseFrontmatter(content: string): Record<string, string> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
+
+  const result: Record<string, string> = {};
+  const lines = match[1].split('\n');
+  let currentKey = '';
+  let currentValue = '';
+
+  for (const line of lines) {
+    // Check for key: value
+    const kvMatch = line.match(/^(\w[\w-]*):\s*(.*)/);
+    if (kvMatch && !line.startsWith(' ') && !line.startsWith('\t')) {
+      // Save previous key
+      if (currentKey) {
+        result[currentKey] = currentValue.trim();
+      }
+      currentKey = kvMatch[1];
+      currentValue = kvMatch[2];
+
+      // Handle multi-line values starting with >
+      if (currentValue.trim() === '>') {
+        currentValue = '';
+      }
+    } else if (currentKey && (line.startsWith('  ') || line.startsWith('\t'))) {
+      // Continuation of multi-line value
+      currentValue += ' ' + line.trim();
+    }
+  }
+
+  // Save last key
+  if (currentKey) {
+    result[currentKey] = currentValue.trim();
+  }
+
+  return result;
+}
+
 export class SkillLoader {
   private static _instance: SkillLoader;
   private _skills: Map<string, Skill> = new Map();
   private readonly _skillsDir = path.join(process.cwd(), 'app/lib/skills');
   private readonly _userSkillsDir = path.join(process.cwd(), 'user_skills');
+  private readonly _designSkillsDir = path.join(process.cwd(), 'design/skills');
+  private readonly _designSystemsDir = path.join(process.cwd(), 'design/design-systems');
+  private _designSystems: Map<string, DesignSystemEntry> = new Map();
 
   static getInstance(): SkillLoader {
     if (!SkillLoader._instance) {
@@ -29,16 +82,20 @@ export class SkillLoader {
     try {
       // Load core skills
       await this._loadFromDirectory(this._skillsDir, false);
+      // Load design/bundled skills (with YAML frontmatter support)
+      await this._loadFromDirectory(this._designSkillsDir, false, true);
       // Load user skills
       await this._loadFromDirectory(this._userSkillsDir, true);
+      // Load design systems index
+      await this._loadDesignSystems();
 
-      console.log(`Loaded ${this._skills.size} total skills`);
+      console.log(`Loaded ${this._skills.size} total skills, ${this._designSystems.size} design systems`);
     } catch (error) {
       console.error('Failed to load skills:', error);
     }
   }
 
-  private async _loadFromDirectory(dir: string, isUserDir: boolean) {
+  private async _loadFromDirectory(dir: string, isUserDir: boolean, useFrontmatter = false) {
     try {
       await fs.mkdir(dir, { recursive: true });
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -49,17 +106,43 @@ export class SkillLoader {
           const manifestPath = path.join(skillPath, 'manifest.json');
 
           try {
-            const manifestContent = await fs.readFile(manifestPath, 'utf-8');
-            const manifest = SkillManifestSchema.parse(JSON.parse(manifestContent));
-
             // Find the main skill file (SKILL.md)
             const skillMdPath = path.join(skillPath, 'SKILL.md');
             const content = await fs.readFile(skillMdPath, 'utf-8');
 
-            this._skills.set(manifest.name, {
-              id: manifest.name,
-              label: manifest.name,
-              description: manifest.description,
+            // Try manifest.json first, then fall back to YAML frontmatter
+            let skillName = entry.name;
+            let skillDescription = '';
+            let manifest: SkillManifest | undefined;
+
+            try {
+              const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+              manifest = SkillManifestSchema.parse(JSON.parse(manifestContent));
+              skillName = manifest.name;
+              skillDescription = manifest.description;
+            } catch {
+              // No manifest.json — parse YAML frontmatter from SKILL.md
+              const frontmatter = parseFrontmatter(content);
+              if (frontmatter.name) {
+                skillName = frontmatter.name;
+              }
+              if (frontmatter.description) {
+                skillDescription = frontmatter.description;
+              }
+            }
+
+            // Skip if no description found and no manifest
+            if (!skillDescription && !manifest) {
+              const firstContentLine = content
+                .split('\n')
+                .find((l) => l.trim() && !l.startsWith('#') && !l.startsWith('---'));
+              skillDescription = firstContentLine?.trim() || `${entry.name} skill`;
+            }
+
+            this._skills.set(skillName.toLowerCase(), {
+              id: skillName.toLowerCase(),
+              label: skillName,
+              description: skillDescription,
               content,
               manifest,
             });
@@ -84,6 +167,52 @@ export class SkillLoader {
       }
     } catch (error) {
       console.error(`Error reading directory ${dir}:`, error);
+    }
+  }
+
+  private async _loadDesignSystems() {
+    try {
+      await fs.mkdir(this._designSystemsDir, { recursive: true });
+      const entries = await fs.readdir(this._designSystemsDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        const designPath = path.join(this._designSystemsDir, entry.name, 'DESIGN.md');
+        try {
+          const content = await fs.readFile(designPath, 'utf-8');
+          const lines = content.split('\n');
+
+          // Parse title: "# Design System Inspired by X" -> "X"
+          const titleLine = lines.find((l) => l.startsWith('# '));
+          const label = titleLine
+            ? titleLine.replace('# Design System Inspired by ', '').replace('# ', '').trim()
+            : entry.name;
+
+          // Parse category: "> Category: X"
+          const categoryLine = lines.find((l) => l.startsWith('> Category:'));
+          const category = categoryLine ? categoryLine.replace('> Category:', '').trim() : 'General';
+
+          // Parse summary: line after category
+          const categoryIdx = lines.findIndex((l) => l.startsWith('> Category:'));
+          const summary =
+            categoryIdx >= 0 && lines[categoryIdx + 1]?.startsWith('>')
+              ? lines[categoryIdx + 1].replace('>', '').trim()
+              : '';
+
+          this._designSystems.set(entry.name, {
+            id: entry.name,
+            label,
+            category,
+            summary,
+            filePath: designPath,
+          });
+        } catch {
+          // DESIGN.md not found, skip
+        }
+      }
+    } catch (error) {
+      console.error('Error loading design systems:', error);
     }
   }
 
@@ -129,6 +258,26 @@ export class SkillLoader {
     if (skills.length === 0) return 'No specialized skills currently loaded.';
 
     return skills.map((s) => `<skill name="${s.id}" description="${s.description}"/>`).join('\n');
+  }
+
+  getDesignSystems(): DesignSystemEntry[] {
+    return Array.from(this._designSystems.values()).map(({ id, label, category, summary }) => ({
+      id,
+      label,
+      category,
+      summary,
+      filePath: '',
+    }));
+  }
+
+  async getDesignSystemContent(id: string): Promise<string | null> {
+    const entry = this._designSystems.get(id);
+    if (!entry) return null;
+    try {
+      return await fs.readFile(entry.filePath, 'utf-8');
+    } catch {
+      return null;
+    }
   }
 
   async installSkill(bundlePath: string) {

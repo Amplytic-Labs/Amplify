@@ -211,6 +211,13 @@ export const EditorPanel = memo(
                         Copy
                       </PanelHeaderButton>
 
+                      <PanelHeaderButton
+                        onClick={() => workbenchStore.toggleTerminal(!workbenchStore.showTerminal.get())}
+                      >
+                        <div className="i-ph:terminal" />
+                        Terminal
+                      </PanelHeaderButton>
+
                       <PanelHeaderButton onClick={handleDownload}>
                         <div className="i-ph:download-simple" />
                         Download

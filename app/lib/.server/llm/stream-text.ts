@@ -1,4 +1,10 @@
-import { convertToCoreMessages, streamText as _streamText, type Message, formatDataStreamPart, type DataStreamWriter } from 'ai';
+import {
+  convertToCoreMessages,
+  streamText as _streamText,
+  type Message,
+  formatDataStreamPart,
+  type DataStreamWriter,
+} from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
@@ -376,14 +382,31 @@ export async function streamText(props: {
         },
       },
       list_skills: {
-        description: 'Lists all available specialized skills',
+        description:
+          'Lists all available specialized skills with descriptions. Call this BEFORE starting any task to find the most relevant skill.',
         parameters: z.object({}),
         execute: async () => {
           try {
             const dirPath = path.join(process.cwd(), 'design', 'skills');
             if (!fs.existsSync(dirPath)) return { error: 'skills directory not found' };
-            const files = fs.readdirSync(dirPath).filter((f) => fs.statSync(path.join(dirPath, f)).isDirectory());
-            return { skills: files };
+            const dirs = fs.readdirSync(dirPath).filter((f) => fs.statSync(path.join(dirPath, f)).isDirectory());
+            const skills = dirs.map((dir) => {
+              const skillPath = path.join(dirPath, dir, 'SKILL.md');
+              let description = '';
+              try {
+                const content = fs.readFileSync(skillPath, 'utf8');
+                const descMatch = content.match(/^---\n[\s\S]*?\ndescription:\s*(.+?)\n/m);
+                if (descMatch) description = descMatch[1].trim();
+              } catch {
+                /* skip */
+              }
+              return { id: dir, description: description || 'No description available' };
+            });
+            return (
+              'Available skills:\n' +
+              skills.map((s) => `- ${s.id}: ${s.description}`).join('\n') +
+              '\n\nUse `get_skill` with the skill ID to load full instructions.'
+            );
           } catch (e: any) {
             return { error: e.message };
           }
@@ -421,11 +444,11 @@ export async function streamText(props: {
           try {
             const result = await getTemplates(templateName, title);
             if (!result) return { error: `Template "${templateName}" not found.` };
-            
+
             if (props.dataStream) {
               props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
             }
-            
+
             return {
               summary: result.summary,
               userMessage: result.userMessage,

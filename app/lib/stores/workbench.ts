@@ -19,6 +19,7 @@ import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
 import type { FileHistory } from '~/types/actions';
+import { isRenderableFile } from '~/lib/renderable/registry';
 
 const { saveAs } = fileSaver;
 
@@ -57,6 +58,8 @@ export class WorkbenchStore {
     import.meta.hot?.data.supabaseAlert ?? atom<SupabaseAlert | undefined>(undefined);
   deployAlert: WritableAtom<DeployAlert | undefined> =
     import.meta.hot?.data.deployAlert ?? atom<DeployAlert | undefined>(undefined);
+  workbenchLeftPosition: WritableAtom<number | null> =
+    import.meta.hot?.data.workbenchLeftPosition ?? atom<number | null>(null);
   modifiedFiles = new Set<string>();
   artifactIdList: string[] = [];
   #globalExecutionQueue = Promise.resolve();
@@ -70,6 +73,7 @@ export class WorkbenchStore {
       import.meta.hot.data.supabaseAlert = this.supabaseAlert;
       import.meta.hot.data.deployAlert = this.deployAlert;
       import.meta.hot.data.fileHistory = this.fileHistory;
+      import.meta.hot.data.workbenchLeftPosition = this.workbenchLeftPosition;
 
       // Ensure binary files are properly preserved across hot reloads
       const filesMap = this.files.get();
@@ -565,6 +569,8 @@ export class WorkbenchStore {
       return;
     }
 
+    const isBundled = artifact.type === 'bundled';
+
     if (data.action.type === 'file') {
       const wc = await webcontainer;
       const fullPath = path.join(wc.workdir, data.action.filePath);
@@ -575,33 +581,49 @@ export class WorkbenchStore {
        * This is a more complex feature that would be implemented in a future update
        */
 
-      if (this.selectedFile.value !== fullPath) {
-        this.setSelectedFile(fullPath);
+      // Always show the workbench when files are being written, but only on desktop
+      if (typeof window === 'undefined' || window.innerWidth >= 1024) {
+        this.showWorkbench.set(true);
       }
 
-      this.showWorkbench.set(true);
+      // Skip per-file focus/view switching for bundled artifacts (e.g. git clone imports)
+      // to avoid rapidly cycling through every imported file in the editor.
+      if (!isBundled) {
+        if (this.selectedFile.value !== fullPath) {
+          this.setSelectedFile(fullPath);
+        }
 
-      if (data.action.filePath.endsWith('.html')) {
-        this.currentView.set('render');
-      } else if (this.currentView.value !== 'code') {
-        this.currentView.set('code');
+        if (isRenderableFile(data.action.filePath)) {
+          this.currentView.set('render');
+        } else if (this.currentView.value !== 'code') {
+          this.currentView.set('code');
+        }
       }
 
-      const doc = this.#editorStore.documents.get()[fullPath];
-
-      if (!doc) {
-        await artifact.runner.runAction(data, isStreaming);
-      }
-
-      this.#editorStore.updateFile(fullPath, data.action.content);
-
-      if (!isStreaming && data.action.content) {
-        await this.saveFile(fullPath);
-      }
-
-      if (!isStreaming) {
+      if (isBundled) {
+        // For bundled artifacts (git clone / template imports):
+        // - Always run the action to write the file to WebContainer
+        // - Skip all editor-level updates (focus, save, document sync)
+        //   to avoid the distracting per-file editor re-renders.
+        //   The file watcher picks up changes from WebContainer naturally.
         await artifact.runner.runAction(data);
-        this.resetAllFileModifications();
+      } else {
+        const doc = this.#editorStore.documents.get()[fullPath];
+
+        if (!doc) {
+          await artifact.runner.runAction(data, isStreaming);
+        }
+
+        this.#editorStore.updateFile(fullPath, data.action.content);
+
+        if (!isStreaming && data.action.content) {
+          await this.saveFile(fullPath);
+        }
+
+        if (!isStreaming) {
+          await artifact.runner.runAction(data);
+          this.resetAllFileModifications();
+        }
       }
     } else {
       await artifact.runner.runAction(data);

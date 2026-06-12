@@ -72,6 +72,7 @@ export class ActionRunner {
   onAlert?: (alert: ActionAlert) => void;
   onSupabaseAlert?: (alert: SupabaseAlert) => void;
   onDeployAlert?: (alert: DeployAlert) => void;
+  onStatusChange?: (isRunning: boolean) => void;
   buildOutput?: { path: string; exitCode: number; output: string };
 
   constructor(
@@ -80,12 +81,14 @@ export class ActionRunner {
     onAlert?: (alert: ActionAlert) => void,
     onSupabaseAlert?: (alert: SupabaseAlert) => void,
     onDeployAlert?: (alert: DeployAlert) => void,
+    onStatusChange?: (isRunning: boolean) => void,
   ) {
     this.#webcontainer = webcontainerPromise;
     this.#shellTerminal = getShellTerminal;
     this.onAlert = onAlert;
     this.onSupabaseAlert = onSupabaseAlert;
     this.onDeployAlert = onDeployAlert;
+    this.onStatusChange = onStatusChange;
   }
 
   addAction(data: ActionCallbackData) {
@@ -186,10 +189,19 @@ export class ActionRunner {
           break;
         }
         case 'start': {
-          // making the start app non blocking
+          // Start commands (dev servers) run indefinitely, so we mark them
+          // complete once they've been running for a short period — meaning
+          // the server launched without an immediate error.
 
           this.#runStartAction(action)
-            .then(() => this.#updateAction(actionId, { status: 'complete' }))
+            .then(() => {
+              // Server process exited on its own (unusual but possible)
+              const currentStatus = this.actions.get()[actionId]?.status;
+
+              if (currentStatus === 'running') {
+                this.#updateAction(actionId, { status: 'complete' });
+              }
+            })
             .catch((err: Error) => {
               if (action.abortSignal.aborted) {
                 return;
@@ -211,10 +223,17 @@ export class ActionRunner {
             });
 
           /*
-           * adding a delay to avoid any race condition between 2 start actions
-           * i am up for a better approach
+           * Wait briefly to let the dev server start up. If it fails immediately
+           * the catch handler above will fire. Otherwise we mark it complete so
+           * the artifact UI doesn't stay stuck on a spinner forever.
            */
           await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          const currentStatus = this.actions.get()[actionId]?.status;
+
+          if (currentStatus === 'running') {
+            this.#updateAction(actionId, { status: 'complete' });
+          }
 
           return;
         }
@@ -331,7 +350,19 @@ export class ActionRunner {
     }
 
     try {
-      await webcontainer.fs.writeFile(relativePath, action.content);
+      // Guard rail: strip any leaked bolt artifact/action tags from file content
+      let fileContent = action.content;
+
+      if (typeof fileContent === 'string') {
+        fileContent = fileContent
+          .replace(/<boltArtifact\b[^>]*>[\s\S]*?<\/boltArtifact>/g, '')
+          .replace(/<\/?boltArtifact\b[^>]*>/g, '')
+          .replace(/<\/?boltAction\b[^>]*>/g, '')
+          .replace(/<\/?bolt-quick-actions>/g, '')
+          .replace(/<bolt-quick-action\b[^>]*>[\s\S]*?<\/bolt-quick-action>/g, '');
+      }
+
+      await webcontainer.fs.writeFile(relativePath, fileContent);
       logger.debug(`File written ${relativePath}`);
     } catch (error) {
       logger.error('Failed to write file\n\n', error);
@@ -342,6 +373,11 @@ export class ActionRunner {
     const actions = this.actions.get();
 
     this.actions.setKey(id, { ...actions[id], ...newState });
+
+    if (this.onStatusChange) {
+      const isRunning = Object.values(this.actions.get()).some((a) => a.status === 'running' || a.status === 'pending');
+      this.onStatusChange(isRunning);
+    }
   }
 
   async getFileHistory(filePath: string): Promise<FileHistory | null> {

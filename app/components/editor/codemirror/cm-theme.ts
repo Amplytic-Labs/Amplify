@@ -32,6 +32,7 @@ function getEditorTheme(settings: EditorSettings) {
       borderLeft: 'var(--cm-cursor-width) solid var(--cm-cursor-backgroundColor)',
     },
     '.cm-scroller': {
+      fontFamily: '"Geist Mono", monospace',
       lineHeight: '1.5',
       '&:focus-visible': {
         outline: 'none',
@@ -61,7 +62,7 @@ function getEditorTheme(settings: EditorSettings) {
     },
     '.cm-gutter': {
       '&.cm-lineNumbers': {
-        fontFamily: 'Roboto Mono, monospace',
+        fontFamily: '"Geist Mono", monospace',
         fontSize: settings.gutterFontSize ?? settings.fontSize ?? '12px',
         minWidth: '40px',
       },

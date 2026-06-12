@@ -1,4 +1,29 @@
 @font-face {
+  font-family: 'Almarai';
+  src: url('/fonts/Almarai-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Almarai';
+  src: url('/fonts/Almarai-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Almarai';
+  src: url('/fonts/Almarai-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Almarai';
+  src: url('/fonts/Almarai-ExtraBold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+}
+
+@font-face {
   font-family: 'Outfit';
   src: url('/fonts/Outfit-Regular.ttf') format('truetype');
   font-weight: 400;
@@ -65,7 +90,7 @@
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.7731 0 0);
 
-  --header-height: 54px;
+  --header-height: 44px;
   --chat-max-width: 700px;
 
   --bolt-elements-borderColor: var(--border);
@@ -207,7 +232,7 @@
   --sidebar-border: oklch(0.9401 0 0);
   --sidebar-ring: oklch(0.7731 0 0);
 
-  --header-height: 54px;
+  --header-height: 48px;
 
   --bolt-elements-borderColor: var(--border);
   --bolt-elements-borderColorActive: var(--ring);

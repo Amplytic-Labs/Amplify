@@ -11,8 +11,8 @@ IMPORTANT: Only choose shadcn templates if the user explicitly asks for shadcn.
 Available templates:
 <template>
   <name>blank</name>
-  <description>Empty starter for simple scripts and trivial tasks that don't require a full template setup</description>
-  <tags>basic, script</tags>
+  <description>Empty starter for simple scripts, file generation (docx, pdf, xlsx, pptx, html, svg), data processing, and tasks that don't require a full web app scaffold</description>
+  <tags>basic, script, file-generation, document, utility</tags>
 </template>
 ${templates
   .map(
@@ -38,7 +38,7 @@ Examples:
 User: I need to build a todo app
 Response:
 <selection>
-  <templateName>react-basic-starter</templateName>
+  <templateName>Vite React</templateName>
   <title>Simple React todo application</title>
 </selection>
 </example>
@@ -52,15 +52,47 @@ Response:
 </selection>
 </example>
 
+<example>
+User: Create a docx file with a resume template
+Response:
+<selection>
+  <templateName>blank</templateName>
+  <title>Resume document generator</title>
+</selection>
+</example>
+
+<example>
+User: Generate a PDF report from some data
+Response:
+<selection>
+  <templateName>blank</templateName>
+  <title>PDF report generator</title>
+</selection>
+</example>
+
+<example>
+User: Make an HTML page that displays a chart
+Response:
+<selection>
+  <templateName>blank</templateName>
+  <title>HTML chart page</title>
+</selection>
+</example>
+
 Instructions:
 1. For trivial tasks and simple scripts, always recommend the blank template
-2. For more complex projects, recommend templates from the provided list
-3. Follow the exact XML format
-4. Consider both technical requirements and tags
-5. If no perfect match exists, recommend the closest option
+2. For file generation tasks (creating .docx, .pdf, .xlsx, .pptx, .html, .svg, .csv, .json files), ALWAYS recommend the blank template - these do NOT need a web app scaffold
+3. For code utilities, scripts, CLI tools, or data processing, recommend the blank template
+4. Only recommend a web framework template (React, Vite, Astro, etc.) when the user explicitly wants to BUILD a web application or website
+5. For more complex web projects, recommend templates from the provided list
+6. Follow the exact XML format
+7. Consider both technical requirements and tags
+8. If no perfect match exists, recommend the closest option
+9. When in doubt, prefer blank - it is always safe and the AI can build anything from scratch
 
 Important: Provide only the selection tags in your response, no additional text.
-MOST IMPORTANT: YOU DONT HAVE TIME TO THINK JUST START RESPONDING BASED ON HUNCH 
+MOST IMPORTANT: YOU DONT HAVE TIME TO THINK JUST START RESPONDING BASED ON HUNCH.
+REMEMBER: If the user asks to create/generate a FILE (docx, pdf, xlsx, pptx, html, svg, etc.) and NOT a full web application, ALWAYS choose blank template.
 `;
 
 const templates: Template[] = STARTER_TEMPLATES.filter((t) => !t.name.includes('shadcn'));
@@ -174,7 +206,6 @@ export async function getTemplates(templateName: string, title?: string) {
   const devCommand = isExpo ? 'npm start' : 'npm run dev';
 
   const assistantMessage = `
-Bolt is initializing your project with the required files using the ${template.name} template.
 <boltArtifact id="imported-files" title="${title || 'Create initial files'}" type="bundled">
 ${filesToImport.files
   .map(
@@ -230,9 +261,9 @@ If you need to make changes to functionality, create new files instead of modify
 `;
   }
 
-  const packageJsonFile = filesToImport.files.find(f => f.path.endsWith('package.json'));
-  const packageJsonContext = packageJsonFile 
-    ? `\nHere is the template's package.json:\n\`\`\`json\n${packageJsonFile.content}\n\`\`\`\nPlease check the "scripts" section to determine the correct development start command (e.g., npm run dev, npm start, etc.).` 
+  const packageJsonFile = filesToImport.files.find((f) => f.path.endsWith('package.json'));
+  const packageJsonContext = packageJsonFile
+    ? `\nHere is the template's package.json:\n\`\`\`json\n${packageJsonFile.content}\n\`\`\`\nPlease check the "scripts" section to determine the correct development start command (e.g., npm run dev, npm start, etc.).`
     : '';
 
   userMessage += `

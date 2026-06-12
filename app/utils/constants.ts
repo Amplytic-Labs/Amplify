@@ -36,7 +36,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Expo App',
     label: 'Expo App',
     description: 'Expo starter template for building cross-platform mobile apps',
-    githubRepo: 'xKevIsDev/bolt-expo-template',
+    githubRepo: 'Amplytic-Labs/Expo-Starter-Template',
     tags: ['mobile', 'expo', 'mobile-app', 'android', 'iphone'],
     icon: 'i-bolt:expo',
   },

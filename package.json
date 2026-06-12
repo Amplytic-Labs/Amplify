@@ -117,6 +117,7 @@
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
     "diff": "^5.2.0",
+    "docx-preview": "^0.3.7",
     "dotenv": "^16.4.7",
     "electron-log": "^5.2.3",
     "electron-store": "^10.1.0",

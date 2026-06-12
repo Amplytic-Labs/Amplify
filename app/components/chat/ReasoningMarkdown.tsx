@@ -7,7 +7,6 @@ import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import type { Message } from 'ai';
 import styles from './ReasoningMarkdown.module.scss';
-import ThoughtBox from './ThoughtBox';
 import type { ProviderInfo } from '~/types/model';
 
 const logger = createScopedLogger('MarkdownComponent');
@@ -81,10 +80,6 @@ export const ReasoningMarkdown = memo(
                 </code>
               </div>
             );
-          }
-
-          if (className?.includes('__boltThought__')) {
-            return <ThoughtBox title="Thought process">{children}</ThoughtBox>;
           }
 
           if (className?.includes('__boltQuickAction__') || dataProps?.dataBoltQuickAction) {

@@ -1,4 +1,5 @@
 import ignore from 'ignore';
+import { escapeBoltTags } from './projectCommands';
 
 // Common patterns to ignore, similar to .gitignore
 export const IGNORE_PATTERNS = [
@@ -111,7 +112,7 @@ ${Object.keys(files)
   .map(
     (filePath) => `
 <boltAction type="file" filePath="${filePath}">
-${files[filePath].content}
+${escapeBoltTags(files[filePath].content)}
 </boltAction>
 `,
   )

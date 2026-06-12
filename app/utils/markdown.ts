@@ -57,23 +57,8 @@ export const allowedHTMLElements = [
   'tr',
   'ul',
   'var',
-  'think',
-  'thought',
   'header',
 ];
-
-// Add custom rehype plugin
-function remarkThinkRawContent() {
-  return (tree: any) => {
-    visit(tree, (node: any) => {
-      if ((node.type === 'html' || node.type === 'text') && node.value) {
-        node.value = node.value
-          .replace(/<(think|thought)[^>]*>/g, '<div class="__boltThought__">')
-          .replace(/<\/(think|thought)>/g, '</div>');
-      }
-    });
-  };
-}
 
 const rehypeSanitizeOptions: RehypeSanitizeOptions = {
   ...defaultSchema,
@@ -83,7 +68,7 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
     div: [
       ...(defaultSchema.attributes?.div ?? []),
       'data*',
-      ['className', '__boltArtifact__', '__boltThought__', '__boltQuickAction', '__boltSelectedElement__'],
+      ['className', '__boltArtifact__', '__boltQuickAction', '__boltSelectedElement__'],
     ],
     button: [
       ...(defaultSchema.attributes?.button ?? []),
@@ -92,7 +77,7 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
       'disabled',
       'name',
       'value',
-      ['className', '__boltArtifact__', '__boltThought__', '__boltQuickAction'],
+      ['className', '__boltArtifact__', '__boltQuickAction'],
     ],
   },
   strip: [],
@@ -104,8 +89,6 @@ export function remarkPlugins(limitedMarkdown: boolean) {
   if (limitedMarkdown) {
     plugins.unshift(limitedMarkdownPlugin);
   }
-
-  plugins.unshift(remarkThinkRawContent);
 
   return plugins;
 }

@@ -1,6 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
 import { forwardRef, memo, useEffect, useImperativeHandle, useRef } from 'react';
 import type { Theme } from '~/lib/stores/theme';
 import { createScopedLogger } from '~/utils/logger';
@@ -41,7 +42,7 @@ export const Terminal = memo(
           cursorBlink: true,
           convertEol: true,
           disableStdin: readonly,
-          theme: getTerminalTheme(readonly ? { cursor: '#00000000' } : {}),
+          theme: getTerminalTheme(theme === 'light' ? 'light' : 'dark', readonly ? { cursor: '#00000000' } : {}),
           fontSize: 12,
           fontFamily: 'Menlo, courier-new, courier, monospace',
           allowProposedApi: true,
@@ -105,7 +106,7 @@ export const Terminal = memo(
         const terminal = terminalRef.current!;
 
         // we render a transparent cursor in case the terminal is readonly
-        terminal.options.theme = getTerminalTheme(readonly ? { cursor: '#00000000' } : {});
+        terminal.options.theme = getTerminalTheme(theme === 'light' ? 'light' : 'dark', readonly ? { cursor: '#00000000' } : {});
 
         terminal.options.disableStdin = readonly;
       }, [theme, readonly]);
@@ -116,7 +117,7 @@ export const Terminal = memo(
             const terminal = terminalRef.current;
 
             if (terminal) {
-              terminal.options.theme = getTerminalTheme(readonly ? { cursor: '#00000000' } : {});
+              terminal.options.theme = getTerminalTheme(theme === 'light' ? 'light' : 'dark', readonly ? { cursor: '#00000000' } : {});
             }
           },
           getTerminal: () => {

@@ -8,7 +8,6 @@ import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
 import type { Message } from 'ai';
 import styles from './Markdown.module.scss';
-import ThoughtBox from './ThoughtBox';
 import type { ProviderInfo } from '~/types/model';
 
 const logger = createScopedLogger('MarkdownComponent');
@@ -29,7 +28,7 @@ export const Markdown = memo(
     logger.trace('Render');
 
     const parsedChildren = useMemo(() => stripCodeFenceFromArtifact(children), [children]);
-    
+
     const childrenRef = useRef(parsedChildren);
     childrenRef.current = parsedChildren;
 
@@ -87,10 +86,6 @@ export const Markdown = memo(
                 </code>
               </div>
             );
-          }
-
-          if (className?.includes('__boltThought__')) {
-            return <ThoughtBox title="Thought process">{children}</ThoughtBox>;
           }
 
           if (className?.includes('__boltQuickAction__') || dataProps?.dataBoltQuickAction) {
@@ -233,7 +228,7 @@ export const Markdown = memo(
           }
 
           return (
-             <a {...props} target="_blank" rel="noopener noreferrer">
+            <a {...props} target="_blank" rel="noopener noreferrer">
               {children}
             </a>
           );

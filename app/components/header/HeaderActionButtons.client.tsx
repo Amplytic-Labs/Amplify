@@ -2,54 +2,60 @@ import { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { DeployButton } from '~/components/deploy/DeployButton';
+import { MotionDropdownItem, MotionDropdownSeparator } from '~/components/ui/MotionDropdown';
+import { useChatHistory } from '~/lib/persistence';
 
 interface HeaderActionButtonsProps {
   chatStarted: boolean;
 }
 
-export function HeaderActionButtons({ chatStarted: _chatStarted }: HeaderActionButtonsProps) {
+export function HeaderActionButtonsContent() {
   const [activePreviewIndex] = useState(0);
   const previews = useStore(workbenchStore.previews);
   const activePreview = previews[activePreviewIndex];
+  const files = useStore(workbenchStore.files);
+  const { exportChat } = useChatHistory();
 
-  const shouldShowButtons = activePreview;
+  if (!activePreview && Object.keys(files).length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1">
-      {/* Deploy Button */}
-      {shouldShowButtons && <DeployButton />}
-
-      {/* Debug Tools */}
-      {shouldShowButtons && (
-        <div className="flex border border-bolt-elements-borderColor rounded-md overflow-hidden text-sm">
-          <button
-            onClick={() =>
-              window.open('https://github.com/stackblitz-labs/bolt.diy/issues/new?template=bug_report.yml', '_blank')
-            }
-            className="rounded-l-md items-center justify-center [&:is(:disabled,.disabled)]:cursor-not-allowed [&:is(:disabled,.disabled)]:opacity-60 px-3 py-1.5 text-xs bg-accent-500 text-white hover:text-bolt-elements-item-contentAccent [&:not(:disabled,.disabled)]:hover:bg-bolt-elements-button-primary-backgroundHover outline-accent-500 flex gap-1.5"
-            title="Report Bug"
-          >
-            <div className="i-ph:bug" />
-            <span>Report Bug</span>
-          </button>
-          <div className="w-px bg-bolt-elements-borderColor" />
-          <button
-            onClick={async () => {
-              try {
-                const { downloadDebugLog } = await import('~/utils/debugLogger');
-                await downloadDebugLog();
-              } catch (error) {
-                console.error('Failed to download debug log:', error);
-              }
-            }}
-            className="rounded-r-md items-center justify-center [&:is(:disabled,.disabled)]:cursor-not-allowed [&:is(:disabled,.disabled)]:opacity-60 px-3 py-1.5 text-xs bg-accent-500 text-white hover:text-bolt-elements-item-contentAccent [&:not(:disabled,.disabled)]:hover:bg-bolt-elements-button-primary-backgroundHover outline-accent-500 flex gap-1.5"
-            title="Download Debug Log"
-          >
-            <div className="i-ph:download" />
-            <span>Debug Log</span>
-          </button>
-        </div>
-      )}
+    <div className="flex flex-col gap-1">
+      <MotionDropdownItem onSelect={() => workbenchStore.downloadZip()} className="gap-2">
+        <div className="i-ph:code" />
+        <span>Download Code</span>
+      </MotionDropdownItem>
+      <MotionDropdownItem onSelect={() => exportChat()} className="gap-2">
+        <div className="i-ph:chat" />
+        <span>Export Chat</span>
+      </MotionDropdownItem>
+      <MotionDropdownSeparator />
+      <MotionDropdownItem
+        onSelect={() =>
+          window.open('https://github.com/stackblitz-labs/bolt.diy/issues/new?template=bug_report.yml', '_blank')
+        }
+        className="gap-2"
+      >
+        <div className="i-ph:bug" />
+        <span>Report Bug</span>
+      </MotionDropdownItem>
+      <MotionDropdownItem
+        onSelect={async () => {
+          try {
+            const { downloadDebugLog } = await import('~/utils/debugLogger');
+            await downloadDebugLog();
+          } catch (error) {
+            console.error('Failed to download debug log:', error);
+          }
+        }}
+        className="gap-2"
+      >
+        <div className="i-ph:download" />
+        <span>Debug Log</span>
+      </MotionDropdownItem>
     </div>
   );
+}
+
+export function HeaderActionButtons({ chatStarted: _chatStarted }: HeaderActionButtonsProps) {
+  return <HeaderActionButtonsContent />;
 }
