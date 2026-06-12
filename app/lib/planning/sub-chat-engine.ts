@@ -2,9 +2,9 @@
  * Sub-Chat Execution Engine
  *
  * Executes each PlanPoint as an independent sub-chat.
- * Instead of sending the entire conversation to the AI, each sub-chat
- * gets only the relevant context from the vector store plus the
- * specific instruction for that plan point.
+ * Sub-chats are treated as normal chats — they receive the full system prompt,
+ * optional app builder capabilities prompt, and contextual injections.
+ * No custom "step" prompts are used; the plan point description is the user message.
  *
  * After each sub-chat completes:
  * 1. Extracts key information and stores it in the ProjectContextVectorStore
@@ -67,6 +67,33 @@ export interface SubChatExecutionOptions {
    * Callback for progress updates (sent to the main chat UI).
    */
   onProgress?: (update: PlanProgressUpdate) => void;
+
+  /**
+   * The FULL system prompt from getSystemPrompt() — the same one used in the main chat.
+   */
+  systemPrompt: string;
+
+  /**
+   * The full app builder capabilities prompt (from getAppBuilderCapabilities()).
+   * Optional because not all sub-chats need file creation capabilities.
+   */
+  appBuilderPrompt?: string;
+
+  /**
+   * String containing tool execution results from the main chat that are
+   * relevant to the plan points.
+   */
+  toolExecutionResults: string;
+
+  /**
+   * The current chat ID.
+   */
+  chatId: string;
+
+  /**
+   * The current project ID.
+   */
+  projectId: string;
 }
 
 export interface PlanProgressUpdate {
@@ -257,32 +284,38 @@ export async function executePlan(
 
 /**
  * Executes a single plan point as a sub-chat.
+ *
+ * The sub-chat is treated as a NORMAL chat. The user message is simply
+ * the plan point's description — no custom wrapper. Context is injected
+ * into the system prompt via buildSubChatSystemPrompt.
  */
 async function executePlanPoint(
   plan: Plan,
   point: PlanPoint,
   options: SubChatExecutionOptions,
 ): Promise<{ summary: string; modifiedFiles: string[]; toolCalls: ToolInvocationRecord[] }> {
-  // Build the sub-chat context from vector store
+  // 1. Query project context from vector store
   const projectContext = await projectContextStore.formatContextForPrompt(
     plan.projectId,
     `${point.title} ${point.description}`,
     1500,
   );
 
-  // Also get previous points' summaries
+  // 2. Get previous points' summaries
   const previousPointsSummary = plan.points
     .filter((p) => p.status === 'completed' && p.order < point.order)
     .map((p) => `[Previously completed: ${p.title}] ${p.summary || 'Done'}`)
     .join('\n');
 
-  // Build the system prompt for this sub-chat
+  // 3. Build the system prompt — full main prompt + context injection
   const systemPrompt = buildSubChatSystemPrompt({
-    point,
+    systemPrompt: options.systemPrompt,
+    appBuilderPrompt: options.appBuilderPrompt,
     projectContext,
     previousPointsSummary,
+    toolExecutionResults: options.toolExecutionResults,
+    projectId: plan.projectId,
     userRequest: plan.userRequest,
-    planDescription: plan.description,
   });
 
   // Initialize the sub-chat in the store
@@ -294,13 +327,14 @@ async function executePlanPoint(
     modifiedFiles: [],
   });
 
-  // Execute the LLM call
+  // 4. The user message is just the plan point's description — no custom wrapper
   const userMessage: SubChatMessage = {
     id: crypto.randomUUID(),
     role: 'user',
     content: point.description,
   };
 
+  // 5. Call the LLM with the constructed system prompt and the user message
   const assistantMessage = await options.callLLM([userMessage], systemPrompt);
 
   // Track the sub-chat messages
@@ -347,12 +381,15 @@ async function fixVerificationErrors(
     })
     .join('\n\n');
 
+  // Use the same buildSubChatSystemPrompt for consistency
   const systemPrompt = buildSubChatSystemPrompt({
-    point,
+    systemPrompt: options.systemPrompt,
+    appBuilderPrompt: options.appBuilderPrompt,
     projectContext: '',
     previousPointsSummary: '',
+    toolExecutionResults: options.toolExecutionResults,
+    projectId: plan.projectId,
     userRequest: plan.userRequest,
-    planDescription: plan.description,
   });
 
   const fixMessage: SubChatMessage = {
@@ -445,52 +482,54 @@ function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
 
 /**
  * Builds the system prompt for a sub-chat execution.
+ *
+ * Starts with the full main chat system prompt, appends the optional
+ * app builder capabilities prompt, then injects project-specific context
+ * sections inside an <active_project> block. No custom step-specific
+ * instructions are added — the sub-chat is a normal chat with context.
  */
 function buildSubChatSystemPrompt(params: {
-  point: PlanPoint;
+  systemPrompt: string;
+  appBuilderPrompt?: string;
   projectContext: string;
   previousPointsSummary: string;
+  toolExecutionResults: string;
+  projectId: string;
   userRequest: string;
-  planDescription: string;
 }): string {
-  let prompt = `You are executing a specific step of a larger plan.
+  // 1. Start with the full system prompt from the main chat
+  let prompt = params.systemPrompt;
 
-## Overall Task
-${params.userRequest}
-
-## Plan Description
-${params.planDescription}
-
-## Your Current Step (Step ${params.point.order + 1})
-**Title:** ${params.point.title}
-**Description:** ${params.point.description}`;
-
-  if (params.point.expectedFiles.length > 0) {
-    prompt += `\n**Expected Files:** ${params.point.expectedFiles.join(', ')}`;
+  // 2. If app builder prompt is provided, append it
+  if (params.appBuilderPrompt) {
+    prompt += `\n\n${params.appBuilderPrompt}`;
   }
 
+  // 3. Build the active project context section
+  let activeProjectContent = `This chat is executing as part of an active project (ID: ${params.projectId}).
+The overall user request is: ${params.userRequest}`;
+
+  // 4. Append previously completed steps if any
   if (params.previousPointsSummary) {
-    prompt += `\n\n## Previously Completed Steps\n${params.previousPointsSummary}`;
+    activeProjectContent += `\n\n## Previously Completed Steps (in this plan)
+${params.previousPointsSummary}`;
   }
 
+  // 5. Append relevant project context from vector store if any
   if (params.projectContext) {
-    prompt += `\n\n## Project Context (from vector store)\n${params.projectContext}`;
+    activeProjectContent += `\n\n## Relevant Project Context (from vector store)
+${params.projectContext}`;
   }
 
-  prompt += `
+  // 6. Append relevant tool execution results from main chat if any
+  if (params.toolExecutionResults) {
+    activeProjectContent += `\n\n## Relevant Tool Results from Main Chat
+${params.toolExecutionResults}`;
+  }
 
-## Rules
-- Focus ONLY on completing your assigned step. Do not work on other steps.
-- Create or modify the files listed in "Expected Files".
-- After making changes, provide a brief summary of what you did.
-- Follow existing patterns and conventions found in the project context.
-- If you encounter an error, describe it clearly so it can be stored for future reference.
-
-CRITICAL RULES:
-1. "Every button does something" — Any interactive element (button, link, form) MUST call a real function or navigate to a real route. Never leave placeholder onClick handlers.
-2. "Every screen is connected" — Any screen you create MUST be reachable from some other screen through navigation (direct link, button, conditional redirect). Check existing routes and add navigation links where needed.
-3. Do NOT duplicate code. Reuse existing components, utilities, and patterns from the project context.
-4. After modifying files, run the appropriate build/check command to verify no errors were introduced.`;
+  prompt += `\n\n<active_project>
+${activeProjectContent}
+</active_project>`;
 
   return prompt;
 }

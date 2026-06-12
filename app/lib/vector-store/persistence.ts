@@ -6,8 +6,6 @@
  * browser sessions without requiring any server-side storage.
  */
 
-import type { OramaWithHighlight } from '@orama/orama';
-
 const VECTOR_DB_NAME = 'bolt_vector_stores';
 const VECTOR_DB_VERSION = 1;
 

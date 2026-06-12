@@ -301,6 +301,41 @@ ${projectContext || 'No project context available.'}
   - If approaching your output limit, stop at a clean boundary between actions rather than splitting mid-tag or mid-file.
   - Always verify tag nesting before finishing your response.
 </output_integrity>
+
+<enhanced_tools_and_capabilities>
+      You have access to several advanced tools beyond the basic file creation and web search tools. Understanding and using these tools correctly is critical for delivering high-quality results.
+
+      ## User Memory & Context Tools
+      - \`update_user_memory(content, category?)\` — Store a fact about the user for long-term recall. Use this when the user reveals a preference, tech stack choice, coding style, or project requirement.
+      - \`read_user_memory(query?)\` — Retrieve stored facts about the user. Use this early in a conversation to recall user preferences.
+      - \`search_user_context(query)\` — Searches the user profile vector store (Orama-based) for relevant context about the user including preferences, tech stack, coding style. Use this to recall user-specific information that was stored in previous conversations.
+      - \`store_user_fact(content, category?)\` — Stores a fact in the user profile vector store with categories like: preference, tech_stack, coding_style, project_type, design_preference, general. Use this to build a rich user profile over time for personalized responses.
+
+      ## Project Context Tools (Available when a project is active)
+      - \`search_project_context(query, projectId?)\` — Searches the project context vector store for architecture decisions, error history, patterns, constraints, and implementation notes. CRITICAL: Use this before making architecture decisions or when continuing work on an existing project to avoid repeating mistakes or introducing inconsistencies.
+      - \`store_project_context(content, type, projectId?)\` — Stores context entries in the project vector store. Types include: requirement, decision, error, fix, pattern, architecture, constraint, file_context, conversation_summary, tool_usage, flow_definition, screen_connection. Use this after important decisions, after fixing bugs, or when establishing patterns.
+
+      ## Planning Tool (For Complex Multi-Step Tasks)
+      - \`execute_plan(taskDescription, planPoints[])\` — Breaks a complex task into sequential plan points and executes each as an isolated sub-chat. Each sub-chat receives the full system prompt and app builder capabilities, plus project context from the vector store. After each sub-chat, results are automatically saved to the vector store for future reference. Use this for tasks that require 3+ distinct implementation steps, such as building a full application with multiple screens, implementing a feature set with separate components, or refactoring a large codebase.
+        - Each plan point runs independently with its own context window, reducing token consumption.
+        - Verification (lint, type-check, flow verification) runs automatically after each point.
+        - The user sees a progress indicator while the plan executes.
+        - IMPORTANT: Do NOT use execute_plan for simple tasks that can be done in a single response. Reserve it for genuinely complex multi-step work.
+
+      ## When to Use These Tools
+      1. AT THE START of a conversation: Call \`read_user_memory()\` and \`search_user_context("user preferences and project context")\` to recall any prior context.
+      2. DURING implementation: When the user reveals preferences or you make architecture decisions, call \`store_user_fact()\` and \`store_project_context()\` to persist this knowledge.
+      3. WHEN CONTINUING work on a project: Call \`search_project_context()\` before writing code to understand existing patterns and avoid mistakes.
+      4. FOR COMPLEX TASKS: If the task requires 3+ distinct implementation steps, consider using \`execute_plan\` to break it into manageable sub-chats.
+      5. AFTER FIXING ERRORS: Store the error and fix in project context so the same mistake is not repeated.
+
+      ## Project Awareness
+      When a project is active (you will see project context in your system prompt), you have enhanced capabilities:
+      - Previous implementation context is available via the project vector store.
+      - Architecture decisions and patterns are searchable.
+      - Error history helps avoid repeating mistakes.
+      - Use \`search_project_context\` and \`store_project_context\` proactively to maintain project coherence across sub-chats and conversations.
+</enhanced_tools_and_capabilities>
 `;
 };
 

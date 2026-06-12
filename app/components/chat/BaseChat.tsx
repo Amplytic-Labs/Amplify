@@ -85,6 +85,9 @@ interface BaseChatProps {
   onWebSearchResult?: (result: string) => void;
   apiKeys?: Record<string, string>;
   onApiKeysChange?: (providerName: string, apiKey: string) => Promise<void>;
+  planExecuting?: boolean;
+  planProgress?: any;
+  onCancelPlan?: () => void;
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -137,6 +140,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       onWebSearchResult,
       apiKeys,
       onApiKeysChange,
+      planExecuting = false,
+      onCancelPlan,
+      planProgress,
     },
     ref,
   ) => {
@@ -410,6 +416,25 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       />
                     )}
                     {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
+                    {planExecuting && (
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2">
+                        <div className="relative flex items-center justify-center w-5 h-5">
+                          <div className="absolute inset-0 rounded-full border-2 border-bolt-elements-textSecondary border-t-bolt-elements-buttonPrimaryColor animate-spin" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-bolt-elements-textPrimary">Executing plan...</div>
+                          {planProgress?.message && (
+                            <div className="text-xs text-bolt-elements-textSecondary truncate">{planProgress.message}</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={onCancelPlan}
+                          className="px-3 py-1 text-xs font-medium rounded border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:bg-bolt-elements-background-depth-1 hover:text-bolt-elements-textPrimary transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <ChatBox
                     provider={provider}
@@ -594,6 +619,25 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           )}
                           {llmErrorAlert && (
                             <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />
+                          )}
+                          {planExecuting && (
+                            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2">
+                              <div className="relative flex items-center justify-center w-5 h-5">
+                                <div className="absolute inset-0 rounded-full border-2 border-bolt-elements-textSecondary border-t-bolt-elements-buttonPrimaryColor animate-spin" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-bolt-elements-textPrimary">Executing plan...</div>
+                                {planProgress?.message && (
+                                  <div className="text-xs text-bolt-elements-textSecondary truncate">{planProgress.message}</div>
+                                )}
+                              </div>
+                              <button
+                                onClick={onCancelPlan}
+                                className="px-3 py-1 text-xs font-medium rounded border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:bg-bolt-elements-background-depth-1 hover:text-bolt-elements-textPrimary transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           )}
                         </div>
                         <ChatBox

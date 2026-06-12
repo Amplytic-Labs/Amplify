@@ -21,7 +21,6 @@
  */
 
 import { create, insert, search, remove } from '@orama/orama';
-import type { OramaWithHighlight } from '@orama/orama';
 import type {
   UserProfileEntry,
   UserProfileEntryCategory,
@@ -36,7 +35,7 @@ const DB_KEY = `vector_store_${STORE_NAME}`;
 
 export class UserProfileVectorStore {
   private static _instance: UserProfileVectorStore;
-  private db: OramaWithHighlight<UserProfileSchema> | null = null;
+  private db: any = null;
   private _initialized = false;
 
   private constructor() {}
@@ -60,7 +59,7 @@ export class UserProfileVectorStore {
       const savedData = await loadOramaFromIDB(DB_KEY);
 
       if (savedData) {
-        this.db = JSON.parse(savedData) as OramaWithHighlight<UserProfileSchema>;
+        this.db = JSON.parse(savedData);
         console.log(`[UserProfileVectorStore] Loaded from IndexedDB`);
       }
     } catch (error) {
@@ -68,7 +67,7 @@ export class UserProfileVectorStore {
     }
 
     if (!this.db) {
-      this.db = await create<UserProfileSchema>({
+      this.db = await create({
         schema: {
           id: 'string',
           content: 'string',
@@ -80,8 +79,6 @@ export class UserProfileVectorStore {
           confidence: 'number',
         },
         language: 'english',
-        stemmer: 'english',
-        stopWords: ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being'],
       });
       console.log(`[UserProfileVectorStore] Created new database`);
     }

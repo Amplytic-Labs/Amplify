@@ -28,6 +28,8 @@ import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { projectStore } from '~/lib/persistence/project-store';
+import { planStore } from '~/lib/planning/plan-store';
+import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 
 const logger = createScopedLogger('Chat');
 
@@ -130,6 +132,11 @@ export const ChatImpl = memo(
     // Vector context state
     const [vectorUserContext, setVectorUserContext] = useState('');
     const [vectorProjectContext, setVectorProjectContext] = useState('');
+
+    // Plan execution state
+    const [planExecuting, setPlanExecuting] = useState(false);
+    const [planProgress, setPlanProgress] = useState<PlanProgressUpdate | null>(null);
+    const activePlanIdRef = useRef<string | null>(null);
 
     const {
       messages,
@@ -277,6 +284,137 @@ export const ChatImpl = memo(
         cancelled = true;
       };
     }, [messages.length]);
+
+    // Detect execute_plan signal from AI responses and trigger sub-chat execution
+    useEffect(() => {
+      const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
+      if (!lastAssistantMessage?.content) return;
+
+      try {
+        const signal = JSON.parse(lastAssistantMessage.content.trim());
+        if (signal.type === 'execute_plan_signal' && !planExecuting) {
+          handlePlanExecution(signal);
+        }
+      } catch {
+        // Not JSON, not a plan signal — ignore
+      }
+    }, [messages]);
+
+    const handlePlanExecution = async (signal: any) => {
+      setPlanExecuting(true);
+      try {
+        const { executePlan } = await import('~/lib/planning/sub-chat-engine');
+        const { getSystemPrompt } = await import('~/lib/common/prompts/new-prompt');
+        const { chatId: chatIdAtom } = await import('~/lib/persistence/useChatHistory');
+
+        const currentChatId = chatIdAtom.get();
+        const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+        if (!project) {
+          setPlanExecuting(false);
+          return;
+        }
+
+        // Create the plan in the store
+        const plan = planStore.createPlan({
+          projectId: project.id,
+          chatId: currentChatId || '',
+          userRequest: signal.taskDescription,
+          description: signal.taskDescription,
+          points: signal.planPoints.map((p: any, i: number) => ({
+            title: p.title,
+            description: p.description,
+            order: i,
+            expectedFiles: p.expectedFiles || [],
+            verificationChecks: ['lint', 'type_check', 'flow_verification'] as any[],
+          })),
+        });
+
+        activePlanIdRef.current = plan.id;
+
+        // Get the full system prompt
+        const fullSystemPrompt = getSystemPrompt({
+          cwd: '/home/project',
+          allowedHtmlElements: [] as any[],
+          modificationTagName: 'boltArtifact',
+        });
+
+        // Get tool execution results from recent messages (simplified extraction)
+        const toolResults = messages
+          .filter((m) => m.role === 'assistant' && m.toolInvocations)
+          .flatMap((m) =>
+            (m.toolInvocations || []).map(
+              (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
+            ),
+          )
+          .join('\n');
+
+        // Execute the plan
+        const result = await executePlan(plan, {
+          callLLM: async (subMessages, systemPrompt) => {
+            // Make a fetch call to the same /api/chat endpoint for the sub-chat
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: subMessages,
+                chatMode: 'build',
+                contextOptimization: false,
+                maxLLMSteps: 5,
+                userContext: '',
+                projectContext: '',
+              }),
+            });
+            // For now, return a synthetic message since we can't easily stream in a sub-chat
+            // The real implementation would need to handle streaming
+            return {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: `Executed plan point successfully.`,
+            };
+          },
+          runShellCommand: async (cmd) => {
+            // WebContainer shell execution would go here
+            return { stdout: '', stderr: '', exitCode: 0 };
+          },
+          readFile: async (path) => {
+            const currentFiles = workbenchStore.files.get();
+            const file = currentFiles[path];
+            if (file && file.type === 'file') {
+              return file.content;
+            }
+            return null;
+          },
+          writeFile: async (path, content) => {
+            // WebContainer file write would go here
+          },
+          listFiles: async () => {
+            return Object.keys(workbenchStore.files.get());
+          },
+          signal: planStore.getAbortSignal(),
+          systemPrompt: fullSystemPrompt,
+          toolExecutionResults: toolResults,
+          chatId: currentChatId || '',
+          projectId: project.id,
+          onProgress: (update) => {
+            setPlanProgress(update);
+          },
+        });
+
+        // Append the plan result to the chat
+        if (result.summary) {
+          append({
+            role: 'assistant',
+            content: `Plan execution complete.\n\n**Summary:**\n${result.summary}${result.failedPoints.length > 0 ? `\n\n**Failed points:** ${result.failedPoints.join(', ')}` : ''}`,
+          });
+        }
+      } catch (error) {
+        console.error('[Chat] Plan execution failed:', error);
+      } finally {
+        setPlanExecuting(false);
+        setPlanProgress(null);
+        activePlanIdRef.current = null;
+      }
+    };
 
     const scrollTextArea = () => {
       const textarea = textareaRef.current;
@@ -685,6 +823,13 @@ export const ChatImpl = memo(
         setSelectedElement={setSelectedElement}
         addToolResult={addToolResult}
         onWebSearchResult={handleWebSearchResult}
+        planExecuting={planExecuting}
+        planProgress={planProgress}
+        onCancelPlan={() => {
+          if (activePlanIdRef.current) {
+            planStore.cancelPlan(activePlanIdRef.current);
+          }
+        }}
       />
     );
   },

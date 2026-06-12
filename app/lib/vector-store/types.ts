@@ -75,6 +75,7 @@ export interface UserProfileSchema {
   accessCount: number;
   source?: string;
   confidence: number;
+  [key: string]: any;
 }
 
 export interface ProjectContextSchema {
@@ -88,4 +89,5 @@ export interface ProjectContextSchema {
   planPointId?: string;
   files?: string[];
   tags?: string[];
+  [key: string]: any;
 }

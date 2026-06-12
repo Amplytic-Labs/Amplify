@@ -264,9 +264,9 @@ export class MCPService {
         execute: async ({ query }) => {
           try {
             await userProfileStore.initialize();
-            const results = await userProfileStore.search(query, 5);
+            const results = await userProfileStore.search(query, { limit: 5 });
             if (results.length === 0) return 'No relevant user context found.';
-            return results.map((r) => `[${r.category}] ${r.content} (confidence: ${r.score?.toFixed(2) || 'N/A'})`).join('\n');
+            return results.map((r) => `[${r.entry.category}] ${r.entry.content} (score: ${r.score?.toFixed(2) || 'N/A'})`).join('\n');
           } catch (e: any) {
             return `Error searching user context: ${e.message}`;
           }
@@ -285,10 +285,11 @@ export class MCPService {
         execute: async ({ content, category }) => {
           try {
             await userProfileStore.initialize();
-            await userProfileStore.addEntry({
+            await userProfileStore.add({
               content,
               category: category || 'general',
               source: 'conversation',
+              confidence: 0.8,
             });
             return `User fact stored successfully: "${content}" (category: ${category || 'general'})`;
           } catch (e: any) {
@@ -315,10 +316,9 @@ export class MCPService {
               }
             }
             if (!projectId) return 'No active project found. Project context requires an active project.';
-            await projectContextStore.initialize(projectId);
-            const results = await projectContextStore.search(projectId, query, 5);
+            const results = await projectContextStore.search(projectId, query, { limit: 5 });
             if (results.length === 0) return 'No relevant project context found.';
-            return results.map((r) => `[${r.type}] ${r.content}`).join('\n');
+            return results.map((r) => `[${r.entry.type}] ${r.entry.content}`).join('\n');
           } catch (e: any) {
             return `Error searching project context: ${e.message}`;
           }
@@ -345,8 +345,7 @@ export class MCPService {
               }
             }
             if (!projectId) return 'No active project found. Cannot store project context.';
-            await projectContextStore.initialize(projectId);
-            await projectContextStore.addEntry(projectId, { content, type });
+            await projectContextStore.add(projectId, { projectId, content, type });
             return `Project context stored: [${type}] ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`;
           } catch (e: any) {
             return `Error storing project context: ${e.message}`;
@@ -355,20 +354,31 @@ export class MCPService {
       },
       execute_plan: {
         description:
-          'Creates and executes a plan by breaking a complex task into sequential plan points. Each plan point runs as an isolated sub-chat. Use this for complex multi-step implementation tasks.',
+          'Creates and executes a plan by breaking a complex task into sequential plan points. Each plan point runs as an isolated sub-chat with full system prompt and app builder capabilities. Use this for complex multi-step implementation tasks that require 3+ distinct steps.',
         parameters: z.object({
           taskDescription: z.string().describe('The overall task to plan and execute'),
           planPoints: z
             .array(z.object({
+              title: z.string().describe('Short title for this plan point'),
               description: z.string().describe('What this plan point should accomplish'),
+              expectedFiles: z.array(z.string()).optional().describe('Files this point will create or modify'),
               verificationRules: z.array(z.string()).optional().describe('Rules to verify after this point'),
             }))
             .describe('Array of plan points to execute in order'),
         }),
-        execute: async ({ taskDescription, planPoints }) => {
-          // This is a signal tool - actual execution happens client-side
-          // Store plan for client-side execution
-          return `Plan created with ${planPoints.length} points. The system will execute each point as a sub-chat with vector DB context access, linter integration, and flow verification.\n\nPlan: ${taskDescription}\nPoints:\n${planPoints.map((p, i) => `${i + 1}. ${p.description}${p.verificationRules ? ` (verify: ${p.verificationRules.join(', ')})` : ''}`).join('\n')}`;
+        execute: async ({ taskDescription, planPoints }: { taskDescription: string; planPoints: Array<{ title: string; description: string; expectedFiles?: string[]; verificationRules?: string[] }> }) => {
+          // Return a structured signal that the client-side will detect and execute
+          const planSignal = {
+            type: 'execute_plan_signal',
+            taskDescription,
+            planPoints: planPoints.map((p, i) => ({
+              title: p.title || `Step ${i + 1}`,
+              description: p.description,
+              expectedFiles: p.expectedFiles || [],
+              verificationRules: p.verificationRules || [],
+            })),
+          };
+          return JSON.stringify(planSignal);
         },
       },
     };

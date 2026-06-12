@@ -24,7 +24,6 @@
  */
 
 import { create, insert, search, remove } from '@orama/orama';
-import type { OramaWithHighlight } from '@orama/orama';
 import type {
   ProjectContextEntry,
   ProjectContextEntryType,
@@ -36,7 +35,7 @@ import { saveOramaToIDB, loadOramaFromIDB, deleteOramaFromIDB } from './persiste
 
 export class ProjectContextVectorStore {
   private static _instance: ProjectContextVectorStore;
-  private databases: Map<string, OramaWithHighlight<ProjectContextSchema>> = new Map();
+  private databases: Map<string, any> = new Map();
   private _initPromise: Promise<void> | null = null;
 
   private constructor() {}
@@ -51,7 +50,7 @@ export class ProjectContextVectorStore {
   /**
    * Ensures the database for a specific project exists and is loaded.
    */
-  async ensureProject(projectId: string): Promise<OramaWithHighlight<ProjectContextSchema>> {
+  async ensureProject(projectId: string): Promise<any> {
     if (this.databases.has(projectId)) {
       return this.databases.get(projectId)!;
     }
@@ -61,7 +60,7 @@ export class ProjectContextVectorStore {
     try {
       const savedData = await loadOramaFromIDB(dbKey);
       if (savedData) {
-        const db = JSON.parse(savedData) as OramaWithHighlight<ProjectContextSchema>;
+        const db = JSON.parse(savedData);
         this.databases.set(projectId, db);
         console.log(`[ProjectContextStore] Loaded project "${projectId}" from IndexedDB`);
         return db;
@@ -71,7 +70,7 @@ export class ProjectContextVectorStore {
     }
 
     // Create new database for this project
-    const db = await create<ProjectContextSchema>({
+    const db = await create({
       schema: {
         id: 'string',
         projectId: 'string',
@@ -85,7 +84,6 @@ export class ProjectContextVectorStore {
         tags: 'string[]',
       },
       language: 'english',
-      stemmer: 'english',
     });
 
     this.databases.set(projectId, db);
