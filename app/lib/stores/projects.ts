@@ -1,6 +1,6 @@
 import { atom, map, computed } from 'nanostores';
 import type { Project } from '~/lib/planning/types';
-import { getAllProjects, setProject, deleteProject: deleteProjectFromDb, addChatToProject, removeChatFromProject } from '~/lib/persistence/db-v3';
+import { openDatabaseV3, getAllProjects, setProject, deleteProject as deleteProjectFromDb, addChatToProject, removeChatFromProject } from '~/lib/persistence/db-v3';
 import { createScopedLogger } from '~/utils/logger';
 
 const log = createScopedLogger('ProjectsStore');
@@ -31,7 +31,13 @@ export async function loadProjects(): Promise<void> {
   projectsLoadingStore.set(true);
 
   try {
-    const projects = await getAllProjects();
+    const db = await openDatabaseV3();
+    if (!db) {
+      log.error('Failed to open database for loading projects');
+      return;
+    }
+
+    const projects = await getAllProjects(db);
     const mapData: Record<string, Project> = {};
 
     for (const project of projects) {
@@ -48,20 +54,33 @@ export async function loadProjects(): Promise<void> {
 }
 
 // Create a new project
-export async function createProject(name: string, description?: string, template?: string): Promise<Project> {
-  const now = Date.now();
+export async function createProject(name: string, description?: string, template?: string): Promise<Project | undefined> {
+  const now = new Date().toISOString();
   const project: Project = {
     id: crypto.randomUUID(),
     name,
     description: description || '',
-    template: template || '',
     chatIds: [],
+    techStack: [],
     createdAt: now,
     updatedAt: now,
+    settings: {
+      autoVerify: true,
+      maxRetries: 3,
+      verifyOnEachPoint: true,
+      flowVerification: true,
+    },
+    ...(template ? { template } : {}),
   };
 
   try {
-    await setProject(project);
+    const db = await openDatabaseV3();
+    if (!db) {
+      log.error('Failed to open database for creating project');
+      return undefined;
+    }
+
+    await setProject(db, project);
 
     const currentMap = projectsMapStore.get();
     projectsMapStore.set({ ...currentMap, [project.id]: project });
@@ -69,6 +88,7 @@ export async function createProject(name: string, description?: string, template
     log.debug(`Created project: ${project.name} (${project.id})`);
   } catch (error) {
     console.error('Failed to create project:', error);
+    return undefined;
   }
 
   return project;
@@ -82,7 +102,13 @@ export async function deleteProject(id: string): Promise<void> {
       currentProjectIdStore.set(null);
     }
 
-    await deleteProjectFromDb(id);
+    const db = await openDatabaseV3();
+    if (!db) {
+      log.error('Failed to open database for deleting project');
+      return;
+    }
+
+    await deleteProjectFromDb(db, id);
 
     const currentMap = projectsMapStore.get();
     const { [id]: _, ...rest } = currentMap;
@@ -102,6 +128,12 @@ export function selectProject(id: string | null): void {
 // Rename a project
 export async function renameProject(id: string, name: string): Promise<void> {
   try {
+    const db = await openDatabaseV3();
+    if (!db) {
+      log.error('Failed to open database for renaming project');
+      return;
+    }
+
     const currentMap = projectsMapStore.get();
     const project = currentMap[id];
 
@@ -113,10 +145,10 @@ export async function renameProject(id: string, name: string): Promise<void> {
     const updated: Project = {
       ...project,
       name,
-      updatedAt: Date.now(),
+      updatedAt: new Date().toISOString(),
     };
 
-    await setProject(updated);
+    await setProject(db, updated);
     projectsMapStore.set({ ...currentMap, [id]: updated });
 
     log.debug(`Renamed project ${id} to "${name}"`);
@@ -128,6 +160,12 @@ export async function renameProject(id: string, name: string): Promise<void> {
 // Update project description
 export async function updateProjectDescription(id: string, description: string): Promise<void> {
   try {
+    const db = await openDatabaseV3();
+    if (!db) {
+      log.error('Failed to open database for updating project description');
+      return;
+    }
+
     const currentMap = projectsMapStore.get();
     const project = currentMap[id];
 
@@ -139,15 +177,67 @@ export async function updateProjectDescription(id: string, description: string):
     const updated: Project = {
       ...project,
       description,
-      updatedAt: Date.now(),
+      updatedAt: new Date().toISOString(),
     };
 
-    await setProject(updated);
+    await setProject(db, updated);
     projectsMapStore.set({ ...currentMap, [id]: updated });
 
     log.debug(`Updated description for project ${id}`);
   } catch (error) {
     console.error('Failed to update project description:', error);
+  }
+}
+
+// Add a chat to a project
+export async function linkChatToProject(projectId: string, chatId: string): Promise<void> {
+  try {
+    const db = await openDatabaseV3();
+    if (!db) return;
+
+    await addChatToProject(db, projectId, chatId);
+
+    // Update local store
+    const currentMap = projectsMapStore.get();
+    const project = currentMap[projectId];
+    if (project && !project.chatIds.includes(chatId)) {
+      projectsMapStore.set({
+        ...currentMap,
+        [projectId]: {
+          ...project,
+          chatIds: [...project.chatIds, chatId],
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    console.error('Failed to link chat to project:', error);
+  }
+}
+
+// Remove a chat from a project
+export async function unlinkChatFromProject(projectId: string, chatId: string): Promise<void> {
+  try {
+    const db = await openDatabaseV3();
+    if (!db) return;
+
+    await removeChatFromProject(db, projectId, chatId);
+
+    // Update local store
+    const currentMap = projectsMapStore.get();
+    const project = currentMap[projectId];
+    if (project) {
+      projectsMapStore.set({
+        ...currentMap,
+        [projectId]: {
+          ...project,
+          chatIds: project.chatIds.filter((id) => id !== chatId),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    console.error('Failed to unlink chat from project:', error);
   }
 }
 
@@ -177,5 +267,7 @@ export function getProjectChatIds(projectId: string): string[] {
 export function getProjectsArray(): Project[] {
   const projectsMap = projectsMapStore.get();
 
-  return Object.values(projectsMap).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Object.values(projectsMap).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
