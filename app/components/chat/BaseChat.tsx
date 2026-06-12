@@ -35,6 +35,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 import { EmbeddingStatus } from '~/components/planning/EmbeddingStatus';
+import { PlanViewLoader } from '~/components/planning/PlanViewLoader';
 
 const TEXTAREA_MIN_HEIGHT = 32;
 
@@ -390,18 +391,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   })}
                 >
                   <div className="flex flex-col gap-2">
-                    {planExecutionState?.currentPlanId && (
-                      <div className="mx-4 mb-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3">
-                        <div className="flex items-center gap-2 text-sm">
-                          {planExecutionState.isExecuting && (
-                            <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                          )}
-                          <span className="font-medium text-blue-700 dark:text-blue-300">
-                            {planExecutionState.isExecuting ? `Executing plan — Point ${planExecutionState.currentPointIndex + 1}` : 'Plan ready'}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    <PlanViewLoader />
                     {deployAlert && (
                       <DeployChatAlert
                         alert={deployAlert}
@@ -588,18 +578,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         })}
                       >
                         <div className="flex flex-col gap-2">
-                          {planExecutionState?.currentPlanId && (
-                            <div className="mx-4 mb-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3">
-                              <div className="flex items-center gap-2 text-sm">
-                                {planExecutionState.isExecuting && (
-                                  <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                                )}
-                                <span className="font-medium text-blue-700 dark:text-blue-300">
-                                  {planExecutionState.isExecuting ? `Executing plan — Point ${planExecutionState.currentPointIndex + 1}` : 'Plan ready'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                          <PlanViewLoader />
                           {deployAlert && (
                             <DeployChatAlert
                               alert={deployAlert}

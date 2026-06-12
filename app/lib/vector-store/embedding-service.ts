@@ -8,7 +8,11 @@
 import type { EmbeddingRequest, EmbeddingResponse, EmbeddingBatchRequest, EmbeddingBatchResponse, EmbeddingHealthResponse } from './types';
 import { getEmbeddingDimensions, setEmbeddingDimensions } from './types';
 
-const EMBEDDING_SERVICE_URL = '/?XTransformPort=3020';
+const EMBEDDING_PORT = 3020;
+
+function embedUrl(path: string): string {
+  return `${path}?XTransformPort=${EMBEDDING_PORT}`;
+}
 
 // In-memory cache for embeddings
 const embeddingCache = new Map<string, number[]>();
@@ -65,7 +69,7 @@ export class EmbeddingService {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3000);
 
-      const res = await fetch(`${EMBEDDING_SERVICE_URL}/health`, {
+      const res = await fetch(embedUrl('/health'), {
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -204,7 +208,7 @@ export class EmbeddingService {
   }
 
   private async embedViaService(text: string): Promise<number[]> {
-    const res = await fetch(`${EMBEDDING_SERVICE_URL}/embed`, {
+    const res = await fetch(embedUrl('/embed'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -230,7 +234,7 @@ export class EmbeddingService {
   }
 
   private async embedBatchViaService(texts: string[]): Promise<number[][]> {
-    const res = await fetch(`${EMBEDDING_SERVICE_URL}/embed-batch`, {
+    const res = await fetch(embedUrl('/embed-batch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -11,7 +11,7 @@ export function EmbeddingStatus() {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch('/?XTransformPort=3020/health', { signal: controller.signal });
+        const res = await fetch('/health?XTransformPort=3020', { signal: controller.signal });
         clearTimeout(timeout);
         setStatus(res.ok ? 'available' : 'unavailable');
       } catch {

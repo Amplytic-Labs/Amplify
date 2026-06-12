@@ -18,6 +18,7 @@ import { FlowVerifier } from '../verification/flow-verifier';
 import { autoFixer } from '../verification/auto-fixer';
 import { openDatabaseV3, setPlan, setSubChat, updatePlanStatus, getPlan } from '../persistence/db-v3';
 import { createScopedLogger } from '~/utils/logger';
+import { workbenchStore } from '~/lib/stores/workbench';
 
 const logger = createScopedLogger('PlanExecutor');
 
@@ -217,16 +218,33 @@ export class PlanExecutor {
       requiredFiles: point.requiredFiles,
     });
 
-    // 4. Run sub-chat via subChatRunner
+    // 4. Get current file state from workbench for verification
+    const currentFiles = workbenchStore.files.get();
+    const fileMapForVerification: Record<string, { content: string }> = {};
+    for (const [path, file] of Object.entries(currentFiles)) {
+      fileMapForVerification[path] = { content: file?.content || '' };
+    }
+
+    // 5. Run sub-chat via subChatRunner
+    // Get API keys from localStorage for sub-chat LLM calls
+    let apiKeys: Record<string, string> = {};
+    let providerSettings: Record<string, any> = {};
+    try {
+      const stored = localStorage.getItem('apiKeys');
+      if (stored) apiKeys = JSON.parse(stored);
+      const storedProviders = localStorage.getItem('providers');
+      if (storedProviders) providerSettings = JSON.parse(storedProviders);
+    } catch { /* use empty defaults */ }
+
     const subChat: SubChat = await subChatRunner.run({
       point,
       context,
-      files: {} as any, // Files are managed by the server-side context optimization
+      files: currentFiles as any,
       planId: plan.id,
       projectId: plan.projectId,
       chatId: plan.chatId,
-      apiKeys: {}, // Populated from cookies by the API route
-      providerSettings: {},
+      apiKeys,
+      providerSettings,
       chatMode: 'build',
     });
 
@@ -265,7 +283,7 @@ export class PlanExecutor {
         const verification = await this.verifyPoint(
           point,
           point.requiredFiles,
-          {} as Record<string, { content: string }>, // Would be populated from current file state
+          fileMapForVerification,
         );
 
         // Map verification result to plan point format
