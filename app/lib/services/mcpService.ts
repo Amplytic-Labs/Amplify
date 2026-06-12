@@ -12,6 +12,9 @@ import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { memoryStore } from '~/lib/persistence/memoryStore';
+import { userProfileStore } from '~/lib/vector-store/user-profile-store';
+import { projectContextStore } from '~/lib/vector-store/project-context-store';
+import { projectStore } from '~/lib/persistence/project-store';
 import {
   TOOL_EXECUTION_APPROVAL,
   TOOL_EXECUTION_DENIED,
@@ -250,6 +253,122 @@ export class MCPService {
           }
 
           return memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
+        },
+      },
+      search_user_context: {
+        description:
+          'Searches the user profile vector store for relevant context about the user. Use this to recall user preferences, tech stack, coding style, etc.',
+        parameters: z.object({
+          query: z.string().describe('The search query to find relevant user context'),
+        }),
+        execute: async ({ query }) => {
+          try {
+            await userProfileStore.initialize();
+            const results = await userProfileStore.search(query, 5);
+            if (results.length === 0) return 'No relevant user context found.';
+            return results.map((r) => `[${r.category}] ${r.content} (confidence: ${r.score?.toFixed(2) || 'N/A'})`).join('\n');
+          } catch (e: any) {
+            return `Error searching user context: ${e.message}`;
+          }
+        },
+      },
+      store_user_fact: {
+        description:
+          'Stores a fact about the user in the user profile vector store for future retrieval. Use this to remember user preferences, tech stack choices, coding style, etc.',
+        parameters: z.object({
+          content: z.string().describe('The fact to remember'),
+          category: z
+            .enum(['preference', 'tech_stack', 'coding_style', 'project_type', 'design_preference', 'general'])
+            .optional()
+            .describe('Category for the fact'),
+        }),
+        execute: async ({ content, category }) => {
+          try {
+            await userProfileStore.initialize();
+            await userProfileStore.addEntry({
+              content,
+              category: category || 'general',
+              source: 'conversation',
+            });
+            return `User fact stored successfully: "${content}" (category: ${category || 'general'})`;
+          } catch (e: any) {
+            return `Error storing user fact: ${e.message}`;
+          }
+        },
+      },
+      search_project_context: {
+        description:
+          'Searches the project context vector store for relevant project information. Use this to recall architecture decisions, error history, patterns, and constraints.',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          projectId: z.string().optional().describe('Optional project ID. If omitted, uses the current chat project.'),
+        }),
+        execute: async ({ query, projectId }) => {
+          try {
+            if (!projectId) {
+              // Try to infer from the current context
+              const { chatId } = await import('~/lib/persistence/useChatHistory');
+              const currentChatId = chatId.get();
+              if (currentChatId) {
+                const project = projectStore.getProjectByChat(currentChatId);
+                projectId = project?.id;
+              }
+            }
+            if (!projectId) return 'No active project found. Project context requires an active project.';
+            await projectContextStore.initialize(projectId);
+            const results = await projectContextStore.search(projectId, query, 5);
+            if (results.length === 0) return 'No relevant project context found.';
+            return results.map((r) => `[${r.type}] ${r.content}`).join('\n');
+          } catch (e: any) {
+            return `Error searching project context: ${e.message}`;
+          }
+        },
+      },
+      store_project_context: {
+        description:
+          'Stores a context entry in the project context vector store. Use this to record decisions, errors, fixes, patterns, and architecture notes.',
+        parameters: z.object({
+          content: z.string().describe('The context to store'),
+          type: z
+            .enum(['requirement', 'decision', 'error', 'fix', 'pattern', 'architecture', 'constraint', 'file_context', 'conversation_summary', 'tool_usage', 'flow_definition', 'screen_connection'])
+            .describe('Type of context entry'),
+          projectId: z.string().optional().describe('Optional project ID'),
+        }),
+        execute: async ({ content, type, projectId }) => {
+          try {
+            if (!projectId) {
+              const { chatId } = await import('~/lib/persistence/useChatHistory');
+              const currentChatId = chatId.get();
+              if (currentChatId) {
+                const project = projectStore.getProjectByChat(currentChatId);
+                projectId = project?.id;
+              }
+            }
+            if (!projectId) return 'No active project found. Cannot store project context.';
+            await projectContextStore.initialize(projectId);
+            await projectContextStore.addEntry(projectId, { content, type });
+            return `Project context stored: [${type}] ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`;
+          } catch (e: any) {
+            return `Error storing project context: ${e.message}`;
+          }
+        },
+      },
+      execute_plan: {
+        description:
+          'Creates and executes a plan by breaking a complex task into sequential plan points. Each plan point runs as an isolated sub-chat. Use this for complex multi-step implementation tasks.',
+        parameters: z.object({
+          taskDescription: z.string().describe('The overall task to plan and execute'),
+          planPoints: z
+            .array(z.object({
+              description: z.string().describe('What this plan point should accomplish'),
+              verificationRules: z.array(z.string()).optional().describe('Rules to verify after this point'),
+            }))
+            .describe('Array of plan points to execute in order'),
+        }),
+        execute: async ({ taskDescription, planPoints }) => {
+          // This is a signal tool - actual execution happens client-side
+          // Store plan for client-side execution
+          return `Plan created with ${planPoints.length} points. The system will execute each point as a sub-chat with vector DB context access, linter integration, and flow verification.\n\nPlan: ${taskDescription}\nPoints:\n${planPoints.map((p, i) => `${i + 1}. ${p.description}${p.verificationRules ? ` (verify: ${p.verificationRules.join(', ')})` : ''}`).join('\n')}`;
         },
       },
     };

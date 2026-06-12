@@ -47,4 +47,7 @@ docs/instructions/Roadmap.md
 .cursorrules
 *.md
 !plan/**/*.md
+!app/lib/skills/**/*.md
+!design/skills/**/*.md
+!design/design-systems/**/*.md
 .qodo

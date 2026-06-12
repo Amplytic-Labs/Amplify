@@ -27,6 +27,7 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
+import { projectStore } from '~/lib/persistence/project-store';
 
 const logger = createScopedLogger('Chat');
 
@@ -126,6 +127,10 @@ export const ChatImpl = memo(
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
 
+    // Vector context state
+    const [vectorUserContext, setVectorUserContext] = useState('');
+    const [vectorProjectContext, setVectorProjectContext] = useState('');
+
     const {
       messages,
       isLoading,
@@ -158,6 +163,8 @@ export const ChatImpl = memo(
           },
         },
         maxLLMSteps: mcpSettings.maxLLMSteps,
+        userContext: vectorUserContext || undefined,
+        projectContext: vectorProjectContext || undefined,
       },
       sendExtraMessageFields: true,
       onError: (e) => {
@@ -218,6 +225,58 @@ export const ChatImpl = memo(
         storeMessageHistory,
       });
     }, [messages, isLoading, parseMessages]);
+
+    // Query vector stores for RAG context when user messages change
+    useEffect(() => {
+      let cancelled = false;
+
+      async function updateVectorContext() {
+        try {
+          const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+          const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+          const { chatId } = await import('~/lib/persistence/useChatHistory');
+
+          await userProfileStore.initialize();
+
+          // Get last user message for context query
+          const userMessages = messages.filter((m) => m.role === 'user');
+          const lastMsg = userMessages[userMessages.length - 1]?.content || '';
+          if (!lastMsg) {
+            setVectorUserContext('');
+            setVectorProjectContext('');
+            return;
+          }
+
+          // Query user profile
+          const userCtx = await userProfileStore.formatContextForPrompt(lastMsg, 500);
+          if (!cancelled) {
+            setVectorUserContext(userCtx);
+          }
+
+          // Check if this is a project chat and query project context
+          const currentChatId = chatId.get();
+          const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+          if (project) {
+            const projCtx = await projectContextStore.formatContextForPrompt(project.id, lastMsg, 1000);
+            if (!cancelled) {
+              setVectorProjectContext(projCtx);
+            }
+          } else {
+            if (!cancelled) {
+              setVectorProjectContext('');
+            }
+          }
+        } catch (error) {
+          // Vector context is optional — don't block chat on errors
+          console.warn('[Chat] Vector context query failed:', error);
+        }
+      }
+
+      updateVectorContext();
+      return () => {
+        cancelled = true;
+      };
+    }, [messages.length]);
 
     const scrollTextArea = () => {
       const textarea = textareaRef.current;
