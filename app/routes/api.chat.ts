@@ -14,6 +14,12 @@ import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
+import type { SubChatConfig } from '~/lib/planning/sub-chat-runner';
+
+declare global {
+  var __currentProjectId: string | undefined;
+  var __currentChatId: string | undefined;
+}
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -58,6 +64,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     designScheme,
     maxLLMSteps,
     apiKeys: bodyApiKeys,
+    subChatConfig,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -75,7 +82,25 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     };
     maxLLMSteps: number;
     apiKeys?: Record<string, string>;
+    subChatConfig?: SubChatConfig;
   }>();
+
+  // Set global context for MCP tools and vector store access
+  if (subChatConfig) {
+    globalThis.__currentProjectId = subChatConfig.projectId;
+    globalThis.__currentChatId = messages[0]?.id;
+  }
+
+  // Build vector context string for system prompt
+  let vectorContextStr: string | undefined;
+  if (subChatConfig?.vectorContext) {
+    const vc = subChatConfig.vectorContext;
+    const parts: string[] = [];
+    if (vc.projectContext) parts.push(`<project_context>\n${vc.projectContext}\n</project_context>`);
+    if (vc.userProfile) parts.push(`<user_profile_context>\n${vc.userProfile}\n</user_profile_context>`);
+    if (vc.donts) parts.push(`<critical_constraints>\n${vc.donts}\n</critical_constraints>`);
+    vectorContextStr = parts.join('\n');
+  }
 
   const cookieHeader = request.headers.get('Cookie');
   const apiKeys = bodyApiKeys || JSON.parse(parseCookies(cookieHeader || '').apiKeys || '{}');
@@ -290,6 +315,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               designScheme,
               summary,
               messageSliceId,
+              vectorContext: vectorContextStr,
               dataStream,
             });
 
@@ -332,6 +358,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           designScheme,
           summary,
           messageSliceId,
+          vectorContext: vectorContextStr,
           dataStream,
         });
 

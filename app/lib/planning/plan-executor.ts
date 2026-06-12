@@ -621,6 +621,42 @@ export class PlanExecutor {
   }
 
   /**
+   * Resume a paused plan execution.
+   * Loads the plan from IndexedDB and continues from where it left off.
+   */
+  async resume(planId: string): Promise<void> {
+    const db = await openDatabaseV3();
+    if (!db) {
+      logger.error('Cannot open IndexedDB for plan resume');
+      return;
+    }
+
+    const plan = await getPlan(db, planId);
+    if (!plan) {
+      logger.error(`Plan ${planId} not found for resume`);
+      return;
+    }
+
+    if (plan.status !== 'paused') {
+      logger.warn(`Plan ${planId} is ${plan.status}, not paused — cannot resume`);
+      return;
+    }
+
+    logger.info(`Resuming plan "${plan.title}" (${planId})`);
+    await this.execute(plan);
+  }
+
+  /**
+   * Abort the current plan execution.
+   */
+  abort(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      logger.info('Plan execution aborted by user');
+    }
+  }
+
+  /**
    * Check if a point's dependencies are all completed.
    */
   private dependenciesMet(plan: Plan, point: PlanPoint): boolean {

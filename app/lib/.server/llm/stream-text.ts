@@ -94,6 +94,7 @@ export async function streamText(props: {
   designScheme?: DesignScheme;
   skills?: string;
   memory?: string;
+  vectorContext?: string;
   dataStream?: DataStreamWriter;
 }) {
   const {
@@ -111,6 +112,7 @@ export async function streamText(props: {
     designScheme,
     skills,
     memory,
+    vectorContext,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -182,6 +184,7 @@ export async function streamText(props: {
       designScheme,
       skills,
       memory,
+      vectorContext,
       supabase: {
         isConnected: options?.supabaseConnection?.isConnected || false,
         hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,

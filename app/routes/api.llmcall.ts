@@ -106,6 +106,19 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
 
   if (streamOutput) {
     try {
+      // Build memory string: keyword-based + vector-based (bridge both systems)
+      let memoryString = memoryStore.formatForPrompt();
+      try {
+        const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+        const vectorResults = await userProfileStore.search(message || 'user preferences and patterns', { topK: 5 });
+        if (vectorResults.length > 0) {
+          memoryString += '\n\n[Semantic Memory Matches]:\n';
+          memoryString += vectorResults.map((r) => `- [${r.type}] ${r.content} (score: ${r.score.toFixed(2)})`).join('\n');
+        }
+      } catch {
+        // Vector store not available, keyword memory is still used
+      }
+
       const result = await streamText({
         options: {
           system,
@@ -119,7 +132,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         env: context.cloudflare?.env as any,
         apiKeys,
         providerSettings,
-        memory: memoryStore.formatForPrompt(),
+        memory: memoryString,
         skills: SkillLoader.getInstance()
           .getSkills()
           .map((s) => `<skill name="${s.id}" description="${s.description}"/>`)

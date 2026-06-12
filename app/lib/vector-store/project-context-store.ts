@@ -14,6 +14,7 @@ import {
   type ProjectContextSearchResult,
   type StoreStats,
   DEFAULT_VECTOR_CONFIG,
+  getEmbeddingDimensions,
 } from './types';
 import {
   type ProjectContextDB,
@@ -122,7 +123,7 @@ function toRawEntry(entry: ProjectContextEntry): RawProjectDocument {
     id: entry.id,
     type: entry.type,
     content: entry.content,
-    embedding: entry.embedding ?? new Array(DEFAULT_VECTOR_CONFIG.embeddingDimensions).fill(0),
+    embedding: entry.embedding ?? new Array(getEmbeddingDimensions()).fill(0),
     sourceChatId: entry.sourceChatId,
     sourcePointId: entry.sourcePointId,
     filePaths: JSON.stringify(entry.filePaths ?? []),
@@ -262,7 +263,7 @@ class ProjectContextStore {
     await this.evictLRU();
 
     // Try loading from IndexedDB
-    const db = getProjectContextDB(projectId);
+    const db = getProjectContextDB(projectId, undefined, embeddingService.getDimensions());
     const loaded = await this.loadFromIndexedDB(projectId, db);
     if (loaded) {
       this.cache.set(projectId, { db, lastAccessedAt: Date.now() });

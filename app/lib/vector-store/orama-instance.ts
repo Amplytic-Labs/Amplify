@@ -4,42 +4,50 @@
  */
 
 import { create, insert, search, type Orama, type Results } from '@orama/orama';
-import { DEFAULT_VECTOR_CONFIG, type VectorStoreConfig } from './types';
+import { DEFAULT_VECTOR_CONFIG, getEmbeddingDimensions, type VectorStoreConfig } from './types';
 
-// ─── User Profile Schema ──────────────────────────────────────────
+// ─── Schema Factories (dimension-parameterized) ──────────────────
 
-export const userProfileSchema = {
-  id: 'string',
-  type: 'string',
-  content: 'string',
-  category: 'string',
-  embedding: 'vector[1536]',
-  sourceChatId: 'string',
-  confidence: 'number',
-  lastReferencedAt: 'string',
-  accessCount: 'number',
-  createdAt: 'string',
-  updatedAt: 'string',
-} as const;
+/** Create a user profile Orama schema with the given vector dimension. */
+export function createUserProfileSchema(dims: number = getEmbeddingDimensions()) {
+  return {
+    id: 'string',
+    type: 'string',
+    content: 'string',
+    category: 'string',
+    embedding: `vector[${dims}]` as const,
+    sourceChatId: 'string',
+    confidence: 'number',
+    lastReferencedAt: 'string',
+    accessCount: 'number',
+    createdAt: 'string',
+    updatedAt: 'string',
+  } as const;
+}
 
+/** Create a project context Orama schema with the given vector dimension. */
+export function createProjectContextSchema(dims: number = getEmbeddingDimensions()) {
+  return {
+    id: 'string',
+    type: 'string',
+    content: 'string',
+    embedding: `vector[${dims}]` as const,
+    sourceChatId: 'string',
+    sourcePointId: 'string',
+    filePaths: 'string',  // JSON-stringified array for Orama compatibility
+    metadata: 'string',   // JSON-stringified object
+    accessCount: 'number',
+    createdAt: 'string',
+    updatedAt: 'string',
+  } as const;
+}
+
+// ─── Backward-Compatible Default Schemas (1536) ────────────────────
+
+export const userProfileSchema = createUserProfileSchema(DEFAULT_VECTOR_CONFIG.embeddingDimensions);
 export type UserProfileDB = Orama<typeof userProfileSchema>;
 
-// ─── Project Context Schema ────────────────────────────────────────
-
-export const projectContextSchema = {
-  id: 'string',
-  type: 'string',
-  content: 'string',
-  embedding: 'vector[1536]',
-  sourceChatId: 'string',
-  sourcePointId: 'string',
-  filePaths: 'string',  // JSON-stringified array for Orama compatibility
-  metadata: 'string',   // JSON-stringified object
-  accessCount: 'number',
-  createdAt: 'string',
-  updatedAt: 'string',
-} as const;
-
+export const projectContextSchema = createProjectContextSchema(DEFAULT_VECTOR_CONFIG.embeddingDimensions);
 export type ProjectContextDB = Orama<typeof projectContextSchema>;
 
 // ─── Database Factory ─────────────────────────────────────────────
@@ -48,34 +56,46 @@ let userProfileDBInstance: UserProfileDB | null = null;
 const projectDBCache: Map<string, ProjectContextDB> = new Map();
 
 /**
- * Create (or get cached) user profile Orama database
+ * Create (or get cached) user profile Orama database.
+ * @param dimensions  Optional explicit vector dimension. If omitted, uses
+ *                    the current globally-tracked dimension (defaults to 1536).
  */
-export function getUserProfileDB(config?: Partial<VectorStoreConfig>): UserProfileDB {
+export function getUserProfileDB(config?: Partial<VectorStoreConfig>, dimensions?: number): UserProfileDB {
   if (userProfileDBInstance) {
     return userProfileDBInstance;
   }
 
+  const dims = dimensions ?? getEmbeddingDimensions();
+  const schema = createUserProfileSchema(dims);
+
   userProfileDBInstance = create({
-    schema: userProfileSchema,
+    schema,
     id: 'user-profile-store',
-  });
+  }) as UserProfileDB;
 
   return userProfileDBInstance;
 }
 
 /**
- * Create (or get cached) project context Orama database for a specific project
+ * Create (or get cached) project context Orama database for a specific project.
+ * @param projectId   The project identifier.
+ * @param config      Optional vector store config overrides.
+ * @param dimensions  Optional explicit vector dimension. If omitted, uses
+ *                    the current globally-tracked dimension (defaults to 1536).
  */
-export function getProjectContextDB(projectId: string, config?: Partial<VectorStoreConfig>): ProjectContextDB {
+export function getProjectContextDB(projectId: string, config?: Partial<VectorStoreConfig>, dimensions?: number): ProjectContextDB {
   const cached = projectDBCache.get(projectId);
   if (cached) {
     return cached;
   }
 
+  const dims = dimensions ?? getEmbeddingDimensions();
+  const schema = createProjectContextSchema(dims);
+
   const db = create({
-    schema: projectContextSchema,
+    schema,
     id: `project-context-${projectId}`,
-  });
+  }) as ProjectContextDB;
 
   projectDBCache.set(projectId, db);
   return db;

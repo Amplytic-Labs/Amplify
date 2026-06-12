@@ -8,6 +8,7 @@ export interface PromptOptions {
   designScheme?: DesignScheme;
   skills?: string;
   memory?: string;
+  vectorContext?: string;
   supabase?: {
     isConnected: boolean;
     hasSelectedProject: boolean;

@@ -8,6 +8,9 @@ export interface IChatMetadata {
   gitBranch?: string;
   netlifySiteId?: string;
   projectInitiated?: boolean;
+  chatType?: 'normal' | 'project';
+  projectId?: string;
+  planId?: string;
 }
 
 const logger = createScopedLogger('ChatHistory');

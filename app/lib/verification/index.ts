@@ -10,6 +10,7 @@
 
 // Types
 export type {
+  VerificationType,
   CheckSeverity,
   VerificationError,
   FlowIssue,

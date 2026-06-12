@@ -1,11 +1,16 @@
 /**
  * Verification System Types
  *
- * Base types are defined here and will be re-exported from ../planning/types
- * once that module is created. For now, they live here as the source of truth.
+ * Internal verification result types used by lint/type-check/flow runners.
+ * The planning module defines its own flattened PointVerification for UI display;
+ * PlanExecutor.mapVerificationToPlanFormat() bridges the two shapes.
  */
 
-// ─── Base types (will move to ../planning/types) ─────────────────────────────
+// ─── Re-export unified VerificationType from planning ─────────────────────
+import type { VerificationType } from '../planning/types';
+export type { VerificationType };
+
+// ─── Internal verification result types ────────────────────────────────────
 
 export type CheckSeverity = 'error' | 'warning' | 'info';
 

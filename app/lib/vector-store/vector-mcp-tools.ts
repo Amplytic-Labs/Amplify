@@ -47,10 +47,10 @@ Categories:
           .optional()
           .describe('How confident you are this insight is accurate (0-1, default 0.8)'),
       }),
-      execute: async ({ category, content, confidence }) => {
+      execute: async ({ category, content, confidence }: { category: string; content: string; confidence?: number }) => {
         try {
           await userProfileStore.add({
-            type: category,
+            type: category as any,
             content,
             confidence: confidence ?? 0.8,
           });
@@ -93,7 +93,7 @@ Types:
           .optional()
           .describe('Additional metadata'),
       }),
-      execute: async ({ type, content, filePaths, metadata }) => {
+      execute: async ({ type, content, filePaths, metadata }: { type: string; content: string; filePaths?: string[]; metadata?: Record<string, any> }) => {
         try {
           // We need a projectId — for now, store it and the caller ensures project context
           // The projectId comes from the current project context
@@ -158,7 +158,7 @@ Verification types per point:
           .min(1)
           .describe('The plan points in execution order'),
       }),
-      execute: async ({ title, description, points }) => {
+      execute: async ({ title, description, points }: { title: string; description: string; points: any[] }) => {
         try {
           const projectId = (globalThis as any).__currentProjectId;
           const chatId = (globalThis as any).__currentChatId;
@@ -200,7 +200,7 @@ Continue by informing the user about the plan and asking for approval.`;
       parameters: z.object({
         query: z.string().describe('What to search for in the user profile'),
       }),
-      execute: async ({ query }) => {
+      execute: async ({ query }: { query: string }) => {
         try {
           const results = await userProfileStore.search(query, { topK: 10 });
           if (results.length === 0) {
@@ -224,7 +224,7 @@ Continue by informing the user about the plan and asking for approval.`;
           .optional()
           .describe('Filter by knowledge types'),
       }),
-      execute: async ({ query, types }) => {
+      execute: async ({ query, types }: { query: string; types?: string[] }) => {
         try {
           const projectId = (globalThis as any).__currentProjectId;
           if (!projectId) {

@@ -5,7 +5,7 @@ import { allowedHTMLElements } from '~/utils/markdown';
 import { stripIndents } from '~/utils/stripIndent';
 
 export const getAppBuilderCapabilities = (options: PromptOptions) => {
-  const { cwd = WORK_DIR, supabase, designScheme, skills, memory } = options;
+  const { cwd = WORK_DIR, supabase, designScheme, skills, memory, vectorContext } = options;
   return `
 You are Bolt, an expert AI assistant and exceptional senior software developer with vast knowledge across multiple programming languages, frameworks, and best practices, created by StackBlitz.
 
@@ -18,6 +18,10 @@ ${skills || 'No specialized skills currently loaded.'}
 <user_memory>
 ${memory || 'No persistent memory available for this user.'}
 </user_memory>
+
+<retrieved_vector_context>
+${vectorContext || 'No vector context retrieved for this conversation.'}
+</retrieved_vector_context>
 
 <response_requirements>
   CRITICAL: You MUST STRICTLY ADHERE to these guidelines:

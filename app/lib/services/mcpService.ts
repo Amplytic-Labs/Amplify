@@ -19,6 +19,7 @@ import {
   TOOL_NO_EXECUTE_FUNCTION,
 } from '~/utils/constants';
 import { createScopedLogger } from '~/utils/logger';
+import { getVectorDBTools } from '~/lib/vector-store/vector-mcp-tools';
 
 const logger = createScopedLogger('mcp-service');
 
@@ -227,32 +228,75 @@ export class MCPService {
         },
       },
       update_user_memory: {
-        description: "Updates or adds a fact about the user to the AI's long-term memory.",
+        description: "Updates or adds a fact about the user to the AI's long-term memory (both keyword and semantic).",
         parameters: z.object({
           content: z.string().describe('The fact to remember about the user'),
           category: z.string().optional().describe('Optional category for the memory'),
         }),
         execute: async ({ content, category }) => {
           const memory = memoryStore.addMemory(content, category);
+
+          // Also store in vector store for semantic retrieval (non-blocking)
+          try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+            const validCategories = ['preference', 'behavior', 'fact', 'feedback', 'skill-level'];
+            const vectorCategory = validCategories.includes(category || '') ? category : 'fact';
+            userProfileStore.add({
+              type: vectorCategory as 'preference' | 'behavior' | 'fact' | 'feedback' | 'skill-level',
+              content,
+              confidence: 0.8,
+            }).catch(() => { /* silently fail — old system still works */ });
+          } catch {
+            // Vector store not available, old system still works
+          }
+
           return `Memory stored: ${memory.content} (ID: ${memory.id})`;
         },
       },
       read_user_memory: {
-        description: 'Retrieves stored facts about the user. Can be filtered by a query.',
+        description: 'Retrieves stored facts about the user from both keyword and semantic memory.',
         parameters: z.object({
           query: z.string().optional().describe('Optional query to filter memories'),
         }),
         execute: async ({ query }) => {
+          // Get keyword-based results
           const memories = query ? memoryStore.searchMemories(query) : memoryStore.getMemories();
 
-          if (memories.length === 0) {
+          let result = '';
+          if (memories.length > 0) {
+            result = memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
+          }
+
+          // Also query vector store for semantic matches (supplement, don't replace)
+          try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+            const vectorResults = await userProfileStore.search(query || 'user preferences and patterns', { topK: 5 });
+            if (vectorResults.length > 0) {
+              result += '\n\n[Semantic Memory Matches]:\n';
+              result += vectorResults.map((r) => `[${r.type}] ${r.content} (score: ${r.score.toFixed(2)})`).join('\n');
+            }
+          } catch {
+            // Vector store not available
+          }
+
+          if (!result.trim()) {
             return 'No memories found.';
           }
 
-          return memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
+          return result;
         },
       },
     };
+
+    // Register vector DB and planning tools (may not be available in all environments)
+    try {
+      const vectorTools = getVectorDBTools();
+      for (const [toolName, tool] of Object.entries(vectorTools)) {
+        internalTools[toolName] = tool;
+      }
+    } catch (error) {
+      logger.warn('Vector DB tools not available in this environment:', error);
+    }
 
     for (const [toolName, tool] of Object.entries(internalTools)) {
       this._tools[toolName] = tool;

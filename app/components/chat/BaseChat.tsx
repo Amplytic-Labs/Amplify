@@ -34,6 +34,7 @@ import { ChatBox } from './ChatBox';
 import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
+import { EmbeddingStatus } from '~/components/planning/EmbeddingStatus';
 
 const TEXTAREA_MIN_HEIGHT = 32;
 
@@ -85,6 +86,12 @@ interface BaseChatProps {
   onWebSearchResult?: (result: string) => void;
   apiKeys?: Record<string, string>;
   onApiKeysChange?: (providerName: string, apiKey: string) => Promise<void>;
+  planExecutionState?: {
+    isExecuting: boolean;
+    currentPlanId: string | null;
+    currentPointIndex: number;
+    events: any[];
+  };
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -137,6 +144,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       onWebSearchResult,
       apiKeys,
       onApiKeysChange,
+      planExecutionState,
     },
     ref,
   ) => {
@@ -357,17 +365,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   <ClientOnly>
                     {() => {
                       return chatStarted ? (
-                        <Messages
-                          className="flex flex-col w-full flex-1 max-w-chat pb-4 mx-auto z-1"
-                          messages={messages}
-                          isStreaming={isStreaming}
-                          append={append}
-                          chatMode={chatMode}
-                          setChatMode={setChatMode}
-                          provider={provider}
-                          model={model}
-                          addToolResult={addToolResult}
-                        />
+                        <>
+                          <EmbeddingStatus />
+                          <Messages
+                            className="flex flex-col w-full flex-1 max-w-chat pb-4 mx-auto z-1"
+                            messages={messages}
+                            isStreaming={isStreaming}
+                            append={append}
+                            chatMode={chatMode}
+                            setChatMode={setChatMode}
+                            provider={provider}
+                            model={model}
+                            addToolResult={addToolResult}
+                          />
+                        </>
                       ) : null;
                     }}
                   </ClientOnly>
@@ -379,6 +390,18 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   })}
                 >
                   <div className="flex flex-col gap-2">
+                    {planExecutionState?.currentPlanId && (
+                      <div className="mx-4 mb-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          {planExecutionState.isExecuting && (
+                            <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                          )}
+                          <span className="font-medium text-blue-700 dark:text-blue-300">
+                            {planExecutionState.isExecuting ? `Executing plan — Point ${planExecutionState.currentPointIndex + 1}` : 'Plan ready'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     {deployAlert && (
                       <DeployChatAlert
                         alert={deployAlert}
@@ -540,17 +563,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         <ClientOnly>
                           {() => {
                             return chatStarted ? (
-                              <Messages
-                                className="flex flex-col w-full flex-1 max-w-chat pb-4 mx-auto z-1"
-                                messages={messages}
-                                isStreaming={isStreaming}
-                                append={append}
-                                chatMode={chatMode}
-                                setChatMode={setChatMode}
-                                provider={provider}
-                                model={model}
-                                addToolResult={addToolResult}
-                              />
+                              <>
+                                <EmbeddingStatus />
+                                <Messages
+                                  className="flex flex-col w-full flex-1 max-w-chat pb-4 mx-auto z-1"
+                                  messages={messages}
+                                  isStreaming={isStreaming}
+                                  append={append}
+                                  chatMode={chatMode}
+                                  setChatMode={setChatMode}
+                                  provider={provider}
+                                  model={model}
+                                  addToolResult={addToolResult}
+                                />
+                              </>
                             ) : null;
                           }}
                         </ClientOnly>
@@ -562,6 +588,18 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         })}
                       >
                         <div className="flex flex-col gap-2">
+                          {planExecutionState?.currentPlanId && (
+                            <div className="mx-4 mb-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3">
+                              <div className="flex items-center gap-2 text-sm">
+                                {planExecutionState.isExecuting && (
+                                  <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                                )}
+                                <span className="font-medium text-blue-700 dark:text-blue-300">
+                                  {planExecutionState.isExecuting ? `Executing plan — Point ${planExecutionState.currentPointIndex + 1}` : 'Plan ready'}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                           {deployAlert && (
                             <DeployChatAlert
                               alert={deployAlert}

@@ -36,6 +36,7 @@ export interface EmbeddingHealthResponse {
   model: string;
   cacheSize: number;
   provider: string;
+  dimensions?: number;
 }
 
 // ─── User Profile Types ────────────────────────────────────────────
@@ -114,6 +115,25 @@ export const DEFAULT_VECTOR_CONFIG: VectorStoreConfig = {
   maxEntries: 10000,
   persistDebounceMs: 2000,
 };
+
+// ─── Runtime Dimension Tracking ────────────────────────────────────
+// Mutable: the embedding service updates this after the first successful
+// embed call so that Orama schemas can be created with the right size.
+
+let _currentEmbeddingDimensions: number = DEFAULT_VECTOR_CONFIG.embeddingDimensions;
+
+/** Get the current embedding dimension (updated dynamically by the embedding service). */
+export function getEmbeddingDimensions(): number {
+  return _currentEmbeddingDimensions;
+}
+
+/** Update the known embedding dimension (called by the embedding service). */
+export function setEmbeddingDimensions(dims: number): void {
+  if (dims > 0 && dims !== _currentEmbeddingDimensions) {
+    console.warn(`[VectorStore] Embedding dimensions changed from ${_currentEmbeddingDimensions} to ${dims}`);
+    _currentEmbeddingDimensions = dims;
+  }
+}
 
 // ─── Store Stats ───────────────────────────────────────────────────
 

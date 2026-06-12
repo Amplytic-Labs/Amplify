@@ -15,6 +15,7 @@ import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
 import { profileStore } from '~/lib/stores/profile';
 import { sidebarStore } from '~/lib/stores/sidebar';
+import { projectsMapStore, loadProjects, currentProjectIdStore, selectProject, getProjectsArray, createProject } from '~/lib/stores/projects';
 
 const menuVariants = {
   closed: {
@@ -74,6 +75,15 @@ export const Menu = () => {
   const profile = useStore(profileStore);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [showProjects, setShowProjects] = useState(true);
+
+  // Project state
+  const projectsMap = useStore(projectsMapStore);
+  const currentProjectId = useStore(currentProjectIdStore);
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
 
   const { filteredItems: filteredList, handleSearchChange } = useSearchFilter({
     items: list,
@@ -293,6 +303,20 @@ export const Menu = () => {
     setIsSettingsOpen(false);
   };
 
+  const handleNewProject = async () => {
+    const name = prompt('Project name:');
+    if (!name?.trim()) return;
+
+    try {
+      const project = await createProject(name.trim());
+      if (project) {
+        toast.success(`Project "${name}" created`);
+      }
+    } catch (err) {
+      toast.error('Failed to create project');
+    }
+  };
+
   const setDialogContentWithLogging = useCallback((content: DialogContent) => {
     console.log('Setting dialog content:', content);
     setDialogContent(content);
@@ -372,6 +396,55 @@ export const Menu = () => {
               />
             </div>
           </div>
+          {/* Projects Section */}
+          {Object.keys(projectsMap).length > 0 && (
+            <div className="border-b border-gray-100 dark:border-gray-800/50">
+              <button
+                className="flex items-center justify-between w-full px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                onClick={() => setShowProjects(!showProjects)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-4 i-ph:folders" />
+                  <span>Projects</span>
+                  <span className="text-xs text-gray-400">({Object.keys(projectsMap).length})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="h-5 w-5 flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNewProject();
+                    }}
+                    title="New empty project"
+                  >
+                    <div className="h-3.5 w-3.5 i-ph:plus" />
+                  </button>
+                  <div className={`h-4 w-4 i-ph:caret-down transition-transform ${showProjects ? 'rotate-0' : '-rotate-90'}`} />
+                </div>
+              </button>
+              {showProjects && (
+                <div className="max-h-48 overflow-y-auto pb-2">
+                  {getProjectsArray().map((project) => (
+                    <button
+                      key={project.id}
+                      className={`w-full text-left px-4 py-1.5 text-sm truncate hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                        currentProjectId === project.id
+                          ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}
+                      onClick={() => selectProject(project.id)}
+                      title={project.name}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-3.5 w-3.5 i-ph:folder-open" />
+                        <span className="truncate">{project.name}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm px-4 py-2">
             <div className="font-medium text-gray-600 dark:text-gray-400">Your Chats</div>
             {selectionMode && (

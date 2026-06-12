@@ -7,14 +7,15 @@
 
 import { insert, remove as oramaRemove, search as oramaSearch, getByID, count } from '@orama/orama';
 import { createScopedLogger } from '~/utils/logger';
-import type {
-  UserProfileEntry,
-  UserProfileCategory,
-  UserProfileSearchOptions,
-  UserProfileSearchResult,
-  StoreStats,
+import {
+  type UserProfileEntry,
+  type UserProfileCategory,
+  type UserProfileSearchOptions,
+  type UserProfileSearchResult,
+  type StoreStats,
+  DEFAULT_VECTOR_CONFIG,
+  getEmbeddingDimensions,
 } from './types';
-import { DEFAULT_VECTOR_CONFIG } from './types';
 import { getUserProfileDB, hybridSearch, serializeDB, deserializeDB, type UserProfileDB } from './orama-instance';
 import { embeddingService } from './embedding-service';
 
@@ -180,8 +181,8 @@ class UserProfileStore {
 
   private async _initialize(): Promise<void> {
     try {
-      // Get or create the Orama database
-      this.db = getUserProfileDB();
+      // Get or create the Orama database (use the embedding service's known dimensions)
+      this.db = getUserProfileDB(undefined, embeddingService.getDimensions());
 
       // Attempt to restore from IndexedDB
       const serialized = await loadFromIndexedDB<
@@ -198,7 +199,7 @@ class UserProfileStore {
     } catch (error) {
       logger.error('Failed to initialize user profile store', error);
       // Create a fresh DB on failure
-      this.db = getUserProfileDB();
+      this.db = getUserProfileDB(undefined, embeddingService.getDimensions());
       this.initialized = true;
     } finally {
       this.initializing = null;
@@ -361,7 +362,7 @@ class UserProfileStore {
       type: updated.type,
       content: updated.content,
       category: updated.type,
-      embedding: updated.embedding ?? new Array(DEFAULT_VECTOR_CONFIG.embeddingDimensions).fill(0),
+      embedding: updated.embedding ?? new Array(getEmbeddingDimensions()).fill(0),
       sourceChatId: updated.sourceChatId ?? '',
       confidence: updated.confidence,
       lastReferencedAt: updated.lastReferencedAt ?? '',

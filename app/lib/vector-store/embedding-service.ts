@@ -6,6 +6,7 @@
  */
 
 import type { EmbeddingRequest, EmbeddingResponse, EmbeddingBatchRequest, EmbeddingBatchResponse, EmbeddingHealthResponse } from './types';
+import { getEmbeddingDimensions, setEmbeddingDimensions } from './types';
 
 const EMBEDDING_SERVICE_URL = '/?XTransformPort=3020';
 
@@ -25,6 +26,7 @@ export class EmbeddingService {
   private apiKey: string = '';
   private baseUrl: string = '';
   private available: boolean | null = null;
+  private knownDimensions: number | null = null;
 
   private constructor() {}
 
@@ -46,6 +48,14 @@ export class EmbeddingService {
   }
 
   /**
+   * Get the known embedding dimension. Returns the tracked dimension if
+   * available, otherwise falls back to the global default (1536).
+   */
+  getDimensions(): number {
+    return this.knownDimensions ?? getEmbeddingDimensions();
+  }
+
+  /**
    * Check if the embedding service is available
    */
   async isAvailable(): Promise<boolean> {
@@ -61,6 +71,20 @@ export class EmbeddingService {
       clearTimeout(timeout);
 
       this.available = res.ok;
+
+      // Parse dimensions from health response to update schema before any DB is created
+      if (res.ok) {
+        try {
+          const health = (await res.json()) as EmbeddingHealthResponse;
+          if (health.dimensions && health.dimensions > 0) {
+            this.knownDimensions = health.dimensions;
+            setEmbeddingDimensions(health.dimensions);
+          }
+        } catch {
+          // Non-critical: dimensions will be learned from the first embed call
+        }
+      }
+
       return this.available;
     } catch {
       this.available = false;
@@ -90,7 +114,7 @@ export class EmbeddingService {
     } catch (error) {
       console.error('Embedding generation failed:', error);
       // Return a zero vector as absolute fallback
-      embedding = new Array(1536).fill(0);
+      embedding = new Array(this.getDimensions()).fill(0);
     }
 
     // Cache the result
@@ -139,7 +163,7 @@ export class EmbeddingService {
     } catch (error) {
       console.error('Batch embedding failed:', error);
       for (const idx of uncachedIndices) {
-        results[idx] = new Array(1536).fill(0);
+        results[idx] = new Array(this.getDimensions()).fill(0);
       }
     }
 
@@ -197,6 +221,11 @@ export class EmbeddingService {
     }
 
     const data: EmbeddingResponse = await res.json();
+    // Track actual dimensions for Orama schema compatibility
+    if (data.dimensions && data.dimensions > 0) {
+      this.knownDimensions = data.dimensions;
+      setEmbeddingDimensions(data.dimensions);
+    }
     return data.embedding;
   }
 
@@ -218,6 +247,11 @@ export class EmbeddingService {
     }
 
     const data: EmbeddingBatchResponse = await res.json();
+    // Track actual dimensions for Orama schema compatibility
+    if (data.dimensions && data.dimensions > 0) {
+      this.knownDimensions = data.dimensions;
+      setEmbeddingDimensions(data.dimensions);
+    }
     return data.embeddings;
   }
 
@@ -242,8 +276,14 @@ export class EmbeddingService {
       throw new Error(`Direct embedding API error: ${err}`);
     }
 
-    const data = await res.json();
-    return data.data[0].embedding;
+    const data: { data: Array<{ embedding: number[] }> } = await res.json();
+    const embedding = data.data[0].embedding;
+    // Track actual dimensions for Orama schema compatibility
+    if (embedding && embedding.length > 0) {
+      this.knownDimensions = embedding.length;
+      setEmbeddingDimensions(embedding.length);
+    }
+    return embedding;
   }
 }
 

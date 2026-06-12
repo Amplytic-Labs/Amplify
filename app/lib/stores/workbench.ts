@@ -20,7 +20,13 @@ import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
 import type { FileHistory } from '~/types/actions';
 import { isRenderableFile } from '~/lib/renderable/registry';
+import { initPlanExecutor } from '~/lib/planning/executor-bridge';
+import { chatId, db } from '~/lib/persistence/useChatHistory';
+import { getMessages, updateChatMetadata } from '~/lib/persistence/db';
+import { createScopedLogger } from '~/utils/logger';
+import { migrateMemoriesToVectorStore } from '~/lib/vector-store/memory-migration';
 
+const logger = createScopedLogger('WorkbenchStore');
 const { saveAs } = fileSaver;
 
 export interface ArtifactState {
@@ -63,6 +69,7 @@ export class WorkbenchStore {
   modifiedFiles = new Set<string>();
   artifactIdList: string[] = [];
   #globalExecutionQueue = Promise.resolve();
+  #workbenchInitialized = false;
   constructor() {
     if (import.meta.hot) {
       import.meta.hot.data.artifacts = this.artifacts;
@@ -586,6 +593,12 @@ export class WorkbenchStore {
         this.showWorkbench.set(true);
       }
 
+      // One-time initialization when workbench first opens
+      if (!this.#workbenchInitialized) {
+        this.#workbenchInitialized = true;
+        this.#onWorkbenchFirstOpen();
+      }
+
       // Skip per-file focus/view switching for bundled artifacts (e.g. git clone imports)
       // to avoid rapidly cycling through every imported file in the editor.
       if (!isBundled) {
@@ -637,6 +650,51 @@ export class WorkbenchStore {
   #getArtifact(id: string) {
     const artifacts = this.artifacts.get();
     return artifacts[id];
+  }
+
+  /**
+   * One-time initialization when the workbench first opens.
+   * Wires the PlanExecutor command bridge, sets global context,
+   * and reclassifies the chat as a project.
+   */
+  async #onWorkbenchFirstOpen() {
+    // Part A: Wire PlanExecutor with WebContainer command execution
+    initPlanExecutor().catch((err) => {
+      logger.warn('initPlanExecutor failed:', err);
+    });
+
+    // Part B: Set global context for MCP tools
+    const currentChatId = chatId.get();
+    if (currentChatId) {
+      (globalThis as any).__currentChatId = currentChatId;
+    }
+
+    // Part D: Migrate localStorage memories to vector store (one-time, fire-and-forget)
+    migrateMemoriesToVectorStore().catch(() => {});
+
+    // Part E: Start IndexedDB storage monitoring
+    try {
+      const { startStorageMonitoring } = await import('~/lib/vector-store/storage-monitor');
+      startStorageMonitoring();
+    } catch {
+      // Storage monitor not available
+    }
+
+    // Part C: Reclassify chat as 'project' when workspace opens
+    try {
+      if (db && currentChatId) {
+        const chat = await getMessages(db, currentChatId);
+        if (chat && chat.metadata?.chatType !== 'project') {
+          await updateChatMetadata(db, currentChatId, {
+            ...chat.metadata,
+            chatType: 'project',
+          });
+          logger.info(`Chat ${currentChatId} reclassified as project`);
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to reclassify chat:', err);
+    }
   }
 
   async downloadZip() {
