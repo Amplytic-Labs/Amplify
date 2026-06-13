@@ -12,6 +12,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } fro
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
+import { PlanApprovalDialog } from './PlanApprovalDialog';
 import Cookies from 'js-cookie';
 import { debounce } from '~/utils/debounce';
 import { useSettings } from '~/lib/hooks/useSettings';
@@ -137,6 +138,7 @@ export const ChatImpl = memo(
     const [planExecuting, setPlanExecuting] = useState(false);
     const [planProgress, setPlanProgress] = useState<PlanProgressUpdate | null>(null);
     const activePlanIdRef = useRef<string | null>(null);
+    const [planSignal, setPlanSignal] = useState<any>(null);
 
     const {
       messages,
@@ -285,20 +287,20 @@ export const ChatImpl = memo(
       };
     }, [messages.length]);
 
-    // Detect execute_plan signal from AI responses and trigger sub-chat execution
+    // Detect execute_plan signal from AI responses and show approval dialog
     useEffect(() => {
       const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
       if (!lastAssistantMessage?.content) return;
 
       try {
         const signal = JSON.parse(lastAssistantMessage.content.trim());
-        if (signal.type === 'execute_plan_signal' && !planExecuting) {
-          handlePlanExecution(signal);
+        if (signal.type === 'execute_plan_signal' && !planExecuting && !planSignal) {
+          setPlanSignal(signal);
         }
       } catch {
         // Not JSON, not a plan signal — ignore
       }
-    }, [messages]);
+    }, [messages, planExecuting, planSignal]);
 
     const handlePlanExecution = async (signal: any) => {
       setPlanExecuting(true);
@@ -351,7 +353,7 @@ export const ChatImpl = memo(
         // Execute the plan
         const result = await executePlan(plan, {
           callLLM: async (subMessages, systemPrompt) => {
-            // Make a fetch call to the same /api/chat endpoint for the sub-chat
+            // Make a real fetch to /api/chat and collect the streamed response
             const response = await fetch('/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -360,16 +362,56 @@ export const ChatImpl = memo(
                 chatMode: 'build',
                 contextOptimization: false,
                 maxLLMSteps: 5,
-                userContext: '',
-                projectContext: '',
+                userContext: vectorUserContext || '',
+                projectContext: vectorProjectContext || '',
+                apiKeys,
+                files: workbenchStore.files.get(),
               }),
             });
-            // For now, return a synthetic message since we can't easily stream in a sub-chat
-            // The real implementation would need to handle streaming
+
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unknown error');
+              throw new Error(`Sub-chat LLM call failed (${response.status}): ${errorText}`);
+            }
+
+            if (!response.body) {
+              throw new Error('Sub-chat response body is null — streaming not supported');
+            }
+
+            // Read the data stream and extract text parts
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+            let toolInvocations: any[] = [];
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('0:')) continue;
+                try {
+                  const jsonStr = line.slice(2);
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed.type === 'text') {
+                    fullContent += parsed.text || '';
+                  }
+                } catch {
+                  // Skip malformed lines
+                }
+              }
+            }
+
             return {
               id: crypto.randomUUID(),
               role: 'assistant' as const,
-              content: `Executed plan point successfully.`,
+              content: fullContent || 'No response generated.',
+              toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
             };
           },
           runShellCommand: async (cmd) => {
@@ -750,8 +792,44 @@ export const ChatImpl = memo(
       [input, handleInputChange],
     );
 
+    const handleApprovePlan = useCallback(() => {
+      if (!planSignal) return;
+      const signalToExecute = { ...planSignal };
+      setPlanSignal(null);
+      handlePlanExecution(signalToExecute);
+    }, [planSignal]);
+
+    const handleRejectPlan = useCallback(() => {
+      setPlanSignal(null);
+      append({
+        role: 'assistant',
+        content: 'Plan execution was cancelled by the user.',
+      });
+    }, [append]);
+
+    const handleModifyPlan = useCallback(
+      (modifiedPoints: Array<{ title: string; description: string }>) => {
+        if (!planSignal) return;
+        const modifiedSignal = {
+          ...planSignal,
+          planPoints: modifiedPoints,
+        };
+        setPlanSignal(null);
+        handlePlanExecution(modifiedSignal);
+      },
+      [planSignal],
+    );
+
     return (
-      <BaseChat
+      <>
+        <PlanApprovalDialog
+          open={!!planSignal}
+          signal={planSignal}
+          onApprove={handleApprovePlan}
+          onReject={handleRejectPlan}
+          onModify={handleModifyPlan}
+        />
+        <BaseChat
         ref={animationScope}
         textareaRef={textareaRef}
         input={input}
@@ -825,12 +903,14 @@ export const ChatImpl = memo(
         onWebSearchResult={handleWebSearchResult}
         planExecuting={planExecuting}
         planProgress={planProgress}
+        planId={activePlanIdRef.current || undefined}
         onCancelPlan={() => {
           if (activePlanIdRef.current) {
             planStore.cancelPlan(activePlanIdRef.current);
           }
         }}
       />
+      </>
     );
   },
 );

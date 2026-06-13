@@ -2,7 +2,8 @@
  * Plan Store
  *
  * Manages the lifecycle of Plans and their PlanPoints.
- * Persists everything to IndexedDB.
+ * Persists everything to IndexedDB (bolt_plans_db) for reliable storage
+ * beyond the ~5MB localStorage limit.
  *
  * Key operations:
  * - createPlan: Generate a new plan from a user request
@@ -27,49 +28,166 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('PlanStore');
 
-const PLAN_STORE_KEY = 'bolt_plans';
+const PLAN_DB_NAME = 'bolt_plans_db';
+const PLAN_DB_VERSION = 1;
+const PLAN_STORE_NAME = 'plans';
+const PLAN_DATA_KEY = 'plan_store_data';
+
 const DEFAULT_VERIFICATION_CHECKS: VerificationCheckType[] = ['lint', 'type_check', 'flow_verification'];
 
+const EMPTY_DATA: PlanStoreData = { plans: [], chatToPlan: {}, projectPlans: {} };
+
+// ============================================================
+// IndexedDB helpers
+// ============================================================
+
 /**
- * Load plan data from localStorage (simple approach, consistent with MemoryStore).
+ * Opens (or creates) the plan IndexedDB database.
+ * Exported so the auto-start script can pre-create the DB if needed.
  */
-function loadPlanData(): PlanStoreData {
-  // Guard: localStorage is not available on the server
-  if (typeof window === 'undefined') {
-    return { plans: [], chatToPlan: {}, projectPlans: {} };
-  }
-  try {
-    const raw = localStorage.getItem(PLAN_STORE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('[PlanStore] Failed to load plan data:', e);
-  }
-  return { plans: [], chatToPlan: {}, projectPlans: {} };
+export async function openPlanDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(PLAN_DB_NAME, PLAN_DB_VERSION);
+
+    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+
+      if (!db.objectStoreNames.contains(PLAN_STORE_NAME)) {
+        db.createObjectStore(PLAN_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = (event: Event) => {
+      resolve((event.target as IDBOpenDBRequest).result);
+    };
+
+    request.onerror = (event: Event) => {
+      reject((event.target as IDBOpenDBRequest).error);
+    };
+  });
 }
 
 /**
- * Save plan data to localStorage.
+ * Loads the plan store data from IndexedDB.
+ * Returns the default empty data if not found or on error.
  */
-function savePlanData(data: PlanStoreData): void {
-  // Guard: localStorage is not available on the server
+async function loadPlanDataFromIDB(): Promise<PlanStoreData> {
+  if (typeof window === 'undefined') {
+    return { ...EMPTY_DATA };
+  }
+  try {
+    const db = await openPlanDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PLAN_STORE_NAME, 'readonly');
+      const store = tx.objectStore(PLAN_STORE_NAME);
+      const request = store.get(PLAN_DATA_KEY);
+
+      request.onsuccess = () => {
+        const result = request.result;
+        db.close();
+        resolve(result?.data ? (result.data as PlanStoreData) : { ...EMPTY_DATA });
+      };
+
+      request.onerror = () => {
+        db.close();
+        console.error('[PlanStore] Failed to load plan data from IDB:', request.error);
+        resolve({ ...EMPTY_DATA });
+      };
+    });
+  } catch (e) {
+    console.error('[PlanStore] Failed to open plan DB:', e);
+    return { ...EMPTY_DATA };
+  }
+}
+
+/**
+ * Persists the plan store data to IndexedDB.
+ */
+async function savePlanDataToIDB(data: PlanStoreData): Promise<void> {
   if (typeof window === 'undefined') {
     return;
   }
   try {
-    localStorage.setItem(PLAN_STORE_KEY, JSON.stringify(data));
+    const db = await openPlanDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PLAN_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(PLAN_STORE_NAME);
+      const request = store.put({
+        id: PLAN_DATA_KEY,
+        data,
+        updatedAt: new Date().toISOString(),
+      });
+
+      request.onsuccess = () => {
+        db.close();
+        resolve();
+      };
+
+      request.onerror = () => {
+        db.close();
+        console.error('[PlanStore] Failed to save plan data to IDB:', request.error);
+        reject(request.error);
+      };
+    });
   } catch (e) {
-    console.error('[PlanStore] Failed to save plan data:', e);
+    console.error('[PlanStore] Failed to open plan DB for save:', e);
   }
 }
 
 export class PlanStore {
   private static _instance: PlanStore;
-  private _data: PlanStoreData;
+  private _data: PlanStoreData = { ...EMPTY_DATA };
   private _activePlanId: string | null = null;
   private _executionAbortController: AbortController | null = null;
+  private _initialized = false;
+  private _initPromise: Promise<void> | null = null;
 
   private constructor() {
-    this._data = loadPlanData();
+    // Synchronous constructor — data is loaded lazily on first access.
+    // If we're on the server, we stay with empty data and skip IDB entirely.
+  }
+
+  /**
+   * Ensures the in-memory data has been loaded from IndexedDB.
+   * Uses a promise-gate so concurrent callers share a single init.
+   */
+  private async ensureInit(): Promise<void> {
+    if (this._initialized) return;
+    if (this._initPromise) {
+      await this._initPromise;
+      return;
+    }
+
+    // Server-side guard: already have empty data, mark as initialized.
+    if (typeof window === 'undefined') {
+      this._initialized = true;
+      return;
+    }
+
+    this._initPromise = (async () => {
+      try {
+        this._data = await loadPlanDataFromIDB();
+        logger.info('Plan data loaded from IndexedDB');
+      } catch (e) {
+        console.error('[PlanStore] Init failed, using empty data:', e);
+        this._data = { ...EMPTY_DATA };
+      }
+      this._initialized = true;
+    })();
+
+    await this._initPromise;
+  }
+
+  /**
+   * Fire-and-forget persist to IndexedDB. Errors are logged but never thrown
+   * so the caller doesn't need to await.
+   */
+  private persist(): void {
+    savePlanDataToIDB(this._data).catch((e) => {
+      console.error('[PlanStore] Background persist failed:', e);
+    });
   }
 
   static getInstance(): PlanStore {
@@ -127,7 +245,7 @@ export class PlanStore {
     }
     this._data.projectPlans[params.projectId].push(planId);
 
-    savePlanData(this._data);
+    this.persist();
     logger.info(`Created plan ${planId} with ${points.length} points`);
 
     return plan;
@@ -176,7 +294,7 @@ export class PlanStore {
       plan.completedAt = new Date().toISOString();
     }
 
-    savePlanData(this._data);
+    this.persist();
   }
 
   /**
@@ -191,7 +309,7 @@ export class PlanStore {
 
     Object.assign(point, updates);
     plan.updatedAt = new Date().toISOString();
-    savePlanData(this._data);
+    this.persist();
   }
 
   /**
@@ -213,7 +331,7 @@ export class PlanStore {
 
     point.subChat = newSubChat;
     plan.updatedAt = new Date().toISOString();
-    savePlanData(this._data);
+    this.persist();
 
     return newSubChat;
   }
@@ -234,7 +352,7 @@ export class PlanStore {
     });
     point.subChat.updatedAt = new Date().toISOString();
     plan.updatedAt = new Date().toISOString();
-    savePlanData(this._data);
+    this.persist();
   }
 
   /**
@@ -249,7 +367,7 @@ export class PlanStore {
 
     point.verificationResults = results;
     plan.updatedAt = new Date().toISOString();
-    savePlanData(this._data);
+    this.persist();
   }
 
   /**
@@ -265,6 +383,8 @@ export class PlanStore {
     if (!point.subChat.modifiedFiles.includes(filePath)) {
       point.subChat.modifiedFiles.push(filePath);
     }
+
+    this.persist();
   }
 
   // ============================================================
@@ -347,7 +467,7 @@ export class PlanStore {
     // Remove the plan itself
     this._data.plans = this._data.plans.filter((p) => p.id !== planId);
 
-    savePlanData(this._data);
+    this.persist();
   }
 
   /**

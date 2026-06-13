@@ -17,15 +17,38 @@
 
 import type { VerificationResult, VerificationRunnerOptions, VerificationIssue } from './types';
 
+/**
+ * Simple in-memory cache for file reads during a single verification run.
+ * Prevents re-reading the same file multiple times in nested loops.
+ */
+class FileReadCache {
+  private cache = new Map<string, string | null>();
+  private readFileFn: (path: string) => Promise<string | null>;
+
+  constructor(readFileFn: (path: string) => Promise<string | null>) {
+    this.readFileFn = readFileFn;
+  }
+
+  async get(path: string): Promise<string | null> {
+    if (this.cache.has(path)) {
+      return this.cache.get(path)!;
+    }
+    const content = await this.readFileFn(path);
+    this.cache.set(path, content);
+    return content;
+  }
+}
+
 export async function runFlowVerification(options: VerificationRunnerOptions): Promise<VerificationResult> {
   const issues: VerificationIssue[] = [];
+  const fileCache = new FileReadCache(options.readFile);
 
   // Get all project files to understand the project structure
   const allFiles = await options.listFiles();
 
-  // Run both checks
-  await checkEveryButtonDoesSomething(options, issues);
-  await checkEveryScreenIsConnected(options, allFiles, issues);
+  // Run both checks (pass cached readFile)
+  await checkEveryButtonDoesSomething(options, issues, fileCache);
+  await checkEveryScreenIsConnected(options, allFiles, issues, fileCache);
 
   const errors = issues.filter((i) => i.severity === 'error');
 
@@ -48,13 +71,14 @@ export async function runFlowVerification(options: VerificationRunnerOptions): P
 async function checkEveryButtonDoesSomething(
   options: VerificationRunnerOptions,
   issues: VerificationIssue[],
+  fileCache: FileReadCache,
 ): Promise<void> {
   for (const filePath of options.modifiedFiles) {
     if (!/\.(jsx|tsx|js|ts)$/.test(filePath)) continue;
     if (filePath.includes('.test.') || filePath.includes('.spec.')) continue;
     if (filePath.includes('node_modules')) continue;
 
-    const content = await options.readFile(filePath);
+    const content = await fileCache.get(filePath);
     if (!content) continue;
 
     const lines = content.split('\n');
@@ -182,9 +206,10 @@ async function checkEveryScreenIsConnected(
   options: VerificationRunnerOptions,
   allFiles: string[],
   issues: VerificationIssue[],
+  fileCache: FileReadCache,
 ): Promise<void> {
   // Step 1: Find all route definitions
-  const routes = await findRoutes(options, allFiles);
+  const routes = await findRoutes(options, allFiles, fileCache);
 
   // Step 2: Find all component files (potential screens/pages)
   const componentFiles = options.modifiedFiles.filter(
@@ -199,7 +224,7 @@ async function checkEveryScreenIsConnected(
   );
 
   for (const compFile of componentFiles) {
-    const content = await options.readFile(compFile);
+    const content = await fileCache.get(compFile);
     if (!content) continue;
 
     // Extract the default export name
@@ -210,7 +235,7 @@ async function checkEveryScreenIsConnected(
     let isReachable = false;
 
     for (const routeFile of routes.routeFiles) {
-      const routeContent = await options.readFile(routeFile);
+      const routeContent = await fileCache.get(routeFile);
       if (!routeContent) continue;
 
       // Check if the component file is imported in the route
@@ -238,7 +263,7 @@ async function checkEveryScreenIsConnected(
         if (routes.routeFiles.includes(otherFile)) continue;
         if (!/\.(jsx|tsx|js|ts)$/.test(otherFile)) continue;
 
-        const otherContent = await options.readFile(otherFile);
+        const otherContent = await fileCache.get(otherFile);
         if (!otherContent) continue;
 
         const fileRefPattern = new RegExp(
@@ -297,6 +322,7 @@ function isLikelyAScreen(content: string): boolean {
 async function findRoutes(
   options: VerificationRunnerOptions,
   allFiles: string[],
+  fileCache?: FileReadCache,
 ): Promise<{ routeFiles: string[]; routePaths: string[] }> {
   const routeFiles: string[] = [];
   const routePaths: string[] = [];
@@ -338,7 +364,7 @@ async function findRoutes(
     if (file.includes('node_modules')) continue;
     if (file.includes('.test.') || file.includes('.spec.')) continue;
 
-    const content = await options.readFile(file);
+    const content = await (fileCache?.get(file) ?? options.readFile(file));
     if (!content) continue;
 
     if (/<Route[\s>]/.test(content) || /createBrowserRouter/.test(content) || /RouterProvider/.test(content)) {
