@@ -66,6 +66,10 @@ const PROJECT_STORE_KEY = 'bolt_projects';
 // ============================================================
 
 function loadProjectData(): ProjectStoreData {
+  // Guard: localStorage is not available on the server
+  if (typeof window === 'undefined') {
+    return { projects: [], chatToProject: {}, chatCategories: {} };
+  }
   try {
     const raw = localStorage.getItem(PROJECT_STORE_KEY);
     if (raw) return JSON.parse(raw);
@@ -76,6 +80,10 @@ function loadProjectData(): ProjectStoreData {
 }
 
 function saveProjectData(data: ProjectStoreData): void {
+  // Guard: localStorage is not available on the server
+  if (typeof window === 'undefined') {
+    return;
+  }
   try {
     localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(data));
   } catch (e) {

@@ -34,6 +34,10 @@ const DEFAULT_VERIFICATION_CHECKS: VerificationCheckType[] = ['lint', 'type_chec
  * Load plan data from localStorage (simple approach, consistent with MemoryStore).
  */
 function loadPlanData(): PlanStoreData {
+  // Guard: localStorage is not available on the server
+  if (typeof window === 'undefined') {
+    return { plans: [], chatToPlan: {}, projectPlans: {} };
+  }
   try {
     const raw = localStorage.getItem(PLAN_STORE_KEY);
     if (raw) return JSON.parse(raw);
@@ -47,6 +51,10 @@ function loadPlanData(): PlanStoreData {
  * Save plan data to localStorage.
  */
 function savePlanData(data: PlanStoreData): void {
+  // Guard: localStorage is not available on the server
+  if (typeof window === 'undefined') {
+    return;
+  }
   try {
     localStorage.setItem(PLAN_STORE_KEY, JSON.stringify(data));
   } catch (e) {

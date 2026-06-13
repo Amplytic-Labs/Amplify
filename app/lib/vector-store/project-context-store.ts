@@ -23,7 +23,7 @@
  * Instead, the AI queries for relevant context based on the current task.
  */
 
-import { create, insert, search, remove } from '@orama/orama';
+import { create, insert, search, remove, save, load } from '@orama/orama';
 import type {
   ProjectContextEntry,
   ProjectContextEntryType,
@@ -60,7 +60,25 @@ export class ProjectContextVectorStore {
     try {
       const savedData = await loadOramaFromIDB(dbKey);
       if (savedData) {
-        const db = JSON.parse(savedData);
+        // Use Orama's native load() API — JSON.parse produces a plain object
+        // that lacks Orama's internal methods (search, insert, etc.)
+        const db = await create({
+          schema: {
+            id: 'string',
+            projectId: 'string',
+            content: 'string',
+            type: 'string',
+            createdAt: 'string',
+            updatedAt: 'string',
+            sourceChatId: 'string',
+            planPointId: 'string',
+            files: 'string[]',
+            tags: 'string[]',
+          },
+          language: 'english',
+        });
+        const rawData = JSON.parse(savedData);
+        await load(db, rawData);
         this.databases.set(projectId, db);
         console.log(`[ProjectContextStore] Loaded project "${projectId}" from IndexedDB`);
         return db;
@@ -379,7 +397,9 @@ export class ProjectContextVectorStore {
 
     const dbKey = `vector_store_project_${projectId}`;
     try {
-      await saveOramaToIDB(dbKey, JSON.stringify(db));
+      // Use Orama's native save() API to get a serializable snapshot
+      const rawData = await save(db);
+      await saveOramaToIDB(dbKey, JSON.stringify(rawData));
     } catch (error) {
       console.error(`[ProjectContextStore] Failed to persist project "${projectId}":`, error);
     }

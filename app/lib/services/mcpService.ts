@@ -12,9 +12,10 @@ import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { memoryStore } from '~/lib/persistence/memoryStore';
-import { userProfileStore } from '~/lib/vector-store/user-profile-store';
-import { projectContextStore } from '~/lib/vector-store/project-context-store';
-import { projectStore } from '~/lib/persistence/project-store';
+// NOTE: userProfileStore, projectContextStore, and projectStore use browser-only APIs
+// (IndexedDB, localStorage). They CANNOT be statically imported in mcpService.ts
+// which runs on the server. Instead, they are lazily imported inside tool execute
+// functions that are only invoked client-side, or guarded with typeof window checks.
 import {
   TOOL_EXECUTION_APPROVAL,
   TOOL_EXECUTION_DENIED,
@@ -257,12 +258,17 @@ export class MCPService {
       },
       search_user_context: {
         description:
-          'Searches the user profile vector store for relevant context about the user. Use this to recall user preferences, tech stack, coding style, etc.',
+          'Searches the user profile vector store for relevant context about the user. Use this to recall user preferences, tech stack, coding style, etc. NOTE: This tool is only available in the browser context.',
         parameters: z.object({
           query: z.string().describe('The search query to find relevant user context'),
         }),
-        execute: async ({ query }) => {
+        execute: async ({ query }: { query: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'User context search is not available on the server. This tool can only be used client-side.';
+          }
           try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
             await userProfileStore.initialize();
             const results = await userProfileStore.search(query, { limit: 5 });
             if (results.length === 0) return 'No relevant user context found.';
@@ -274,7 +280,7 @@ export class MCPService {
       },
       store_user_fact: {
         description:
-          'Stores a fact about the user in the user profile vector store for future retrieval. Use this to remember user preferences, tech stack choices, coding style, etc.',
+          'Stores a fact about the user in the user profile vector store for future retrieval. Use this to remember user preferences, tech stack choices, coding style, etc. NOTE: This tool is only available in the browser context.',
         parameters: z.object({
           content: z.string().describe('The fact to remember'),
           category: z
@@ -282,12 +288,17 @@ export class MCPService {
             .optional()
             .describe('Category for the fact'),
         }),
-        execute: async ({ content, category }) => {
+        execute: async ({ content, category }: { content: string; category?: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'User fact storage is not available on the server. This tool can only be used client-side.';
+          }
           try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
             await userProfileStore.initialize();
             await userProfileStore.add({
               content,
-              category: category || 'general',
+              category: (category as any) || 'general',
               source: 'conversation',
               confidence: 0.8,
             });
@@ -302,20 +313,16 @@ export class MCPService {
           'Searches the project context vector store for relevant project information. Use this to recall architecture decisions, error history, patterns, and constraints.',
         parameters: z.object({
           query: z.string().describe('The search query'),
-          projectId: z.string().optional().describe('Optional project ID. If omitted, uses the current chat project.'),
+          projectId: z.string().describe('The project ID to search in. Must be provided explicitly.'),
         }),
-        execute: async ({ query, projectId }) => {
+        execute: async ({ query, projectId }: { query: string; projectId: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'Project context search is not available on the server. This tool can only be used client-side.';
+          }
           try {
-            if (!projectId) {
-              // Try to infer from the current context
-              const { chatId } = await import('~/lib/persistence/useChatHistory');
-              const currentChatId = chatId.get();
-              if (currentChatId) {
-                const project = projectStore.getProjectByChat(currentChatId);
-                projectId = project?.id;
-              }
-            }
-            if (!projectId) return 'No active project found. Project context requires an active project.';
+            if (!projectId) return 'No project ID provided. Project context requires an explicit projectId.';
+            const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
             const results = await projectContextStore.search(projectId, query, { limit: 5 });
             if (results.length === 0) return 'No relevant project context found.';
             return results.map((r) => `[${r.entry.type}] ${r.entry.content}`).join('\n');
@@ -332,20 +339,17 @@ export class MCPService {
           type: z
             .enum(['requirement', 'decision', 'error', 'fix', 'pattern', 'architecture', 'constraint', 'file_context', 'conversation_summary', 'tool_usage', 'flow_definition', 'screen_connection'])
             .describe('Type of context entry'),
-          projectId: z.string().optional().describe('Optional project ID'),
+          projectId: z.string().describe('The project ID to store context in. Must be provided explicitly.'),
         }),
-        execute: async ({ content, type, projectId }) => {
+        execute: async ({ content, type, projectId }: { content: string; type: string; projectId: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'Project context storage is not available on the server. This tool can only be used client-side.';
+          }
           try {
-            if (!projectId) {
-              const { chatId } = await import('~/lib/persistence/useChatHistory');
-              const currentChatId = chatId.get();
-              if (currentChatId) {
-                const project = projectStore.getProjectByChat(currentChatId);
-                projectId = project?.id;
-              }
-            }
-            if (!projectId) return 'No active project found. Cannot store project context.';
-            await projectContextStore.add(projectId, { projectId, content, type });
+            if (!projectId) return 'No project ID provided. Cannot store project context.';
+            const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+            await projectContextStore.add(projectId, { projectId, content, type: type as any });
             return `Project context stored: [${type}] ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`;
           } catch (e: any) {
             return `Error storing project context: ${e.message}`;

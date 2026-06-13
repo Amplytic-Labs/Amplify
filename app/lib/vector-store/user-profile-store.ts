@@ -20,7 +20,7 @@
  * 4. After AI responds, new user facts are extracted and stored
  */
 
-import { create, insert, search, remove } from '@orama/orama';
+import { create, insert, search, remove, save, load } from '@orama/orama';
 import type {
   UserProfileEntry,
   UserProfileEntryCategory,
@@ -59,7 +59,23 @@ export class UserProfileVectorStore {
       const savedData = await loadOramaFromIDB(DB_KEY);
 
       if (savedData) {
-        this.db = JSON.parse(savedData);
+        // Use Orama's native load() API — JSON.parse produces a plain object
+        // that lacks Orama's internal methods (search, insert, etc.)
+        this.db = await create({
+          schema: {
+            id: 'string',
+            content: 'string',
+            category: 'string',
+            createdAt: 'string',
+            updatedAt: 'string',
+            accessCount: 'number',
+            source: 'string',
+            confidence: 'number',
+          },
+          language: 'english',
+        });
+        const rawData = JSON.parse(savedData);
+        await load(this.db, rawData);
         console.log(`[UserProfileVectorStore] Loaded from IndexedDB`);
       }
     } catch (error) {
@@ -297,7 +313,9 @@ export class UserProfileVectorStore {
   private async persist(): Promise<void> {
     if (!this.db) return;
     try {
-      await saveOramaToIDB(DB_KEY, JSON.stringify(this.db));
+      // Use Orama's native save() API to get a serializable snapshot
+      const rawData = await save(this.db);
+      await saveOramaToIDB(DB_KEY, JSON.stringify(rawData));
     } catch (error) {
       console.error('[UserProfileVectorStore] Failed to persist:', error);
     }
