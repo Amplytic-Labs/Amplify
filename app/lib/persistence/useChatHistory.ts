@@ -22,6 +22,7 @@ import type { Snapshot } from './types';
 import { webcontainer } from '~/lib/webcontainer';
 import { detectProjectCommands, createCommandActionsString } from '~/utils/projectCommands';
 import type { ContextAnnotation } from '~/types/context';
+import { projectStore } from './project-store';
 
 export interface ChatHistoryItem {
   id: string;
@@ -232,6 +233,18 @@ export function useChatHistory() {
       if (firstArtifact) {
         const currentMetadata = chatMetadata.get() || {};
         chatMetadata.set({ ...currentMetadata, projectInitiated: true });
+      }
+
+      // Auto-promote chat to project when workspace is first invoked
+      if (firstArtifact) {
+        const currentId = chatId.get();
+        if (currentId && !projectStore.getProjectByChat(currentId)) {
+          try {
+            projectStore.promoteChatToProject(currentId, firstArtifact.title || 'Untitled Project');
+          } catch (e) {
+            console.warn('[ChatHistory] Failed to auto-promote chat to project:', e);
+          }
+        }
       }
 
       // Ensure chatId.get() is used here as well

@@ -12,6 +12,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } fro
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
+import { PlanApprovalDialog } from './PlanApprovalDialog';
 import Cookies from 'js-cookie';
 import { debounce } from '~/utils/debounce';
 import { useSettings } from '~/lib/hooks/useSettings';
@@ -27,6 +28,9 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
+import { projectStore } from '~/lib/persistence/project-store';
+import { planStore } from '~/lib/planning/plan-store';
+import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 
 const logger = createScopedLogger('Chat');
 
@@ -126,6 +130,16 @@ export const ChatImpl = memo(
     const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
     const mcpSettings = useMCPStore((state) => state.settings);
 
+    // Vector context state
+    const [vectorUserContext, setVectorUserContext] = useState('');
+    const [vectorProjectContext, setVectorProjectContext] = useState('');
+
+    // Plan execution state
+    const [planExecuting, setPlanExecuting] = useState(false);
+    const [planProgress, setPlanProgress] = useState<PlanProgressUpdate | null>(null);
+    const activePlanIdRef = useRef<string | null>(null);
+    const [planSignal, setPlanSignal] = useState<any>(null);
+
     const {
       messages,
       isLoading,
@@ -158,6 +172,8 @@ export const ChatImpl = memo(
           },
         },
         maxLLMSteps: mcpSettings.maxLLMSteps,
+        userContext: vectorUserContext || undefined,
+        projectContext: vectorProjectContext || undefined,
       },
       sendExtraMessageFields: true,
       onError: (e) => {
@@ -169,7 +185,6 @@ export const ChatImpl = memo(
         setData(undefined);
 
         if (usage) {
-          console.log('Token usage:', usage);
           logStore.logProvider('Chat response completed', {
             component: 'Chat',
             action: 'response',
@@ -181,6 +196,28 @@ export const ChatImpl = memo(
         }
 
         logger.debug('Finished streaming');
+
+        // M-1 fix: Auto-extract user facts and project context after each AI response
+        const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+        if (lastUserMsg?.content) {
+          import('~/lib/hooks/useVectorContext').then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
+            extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
+
+            const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
+              const cid = chatId.get();
+              if (cid) {
+                const project = projectStore.getProjectByChat(cid);
+                if (project) {
+                  extractAndStoreProjectContext(
+                    project.id,
+                    `Implemented: ${message.content.slice(0, 200)}`,
+                    'conversation_summary',
+                  ).catch(() => {});
+                }
+              }
+            });
+          }).catch(() => {});
+        }
       },
       initialMessages,
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
@@ -218,6 +255,282 @@ export const ChatImpl = memo(
         storeMessageHistory,
       });
     }, [messages, isLoading, parseMessages]);
+
+    // Query vector stores for RAG context when user messages change
+    useEffect(() => {
+      let cancelled = false;
+
+      async function updateVectorContext() {
+        try {
+          const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+          const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+          const { chatId } = await import('~/lib/persistence/useChatHistory');
+
+          await userProfileStore.initialize();
+
+          // Get last user message for context query
+          const userMessages = messages.filter((m) => m.role === 'user');
+          const lastMsg = userMessages[userMessages.length - 1]?.content || '';
+          if (!lastMsg) {
+            setVectorUserContext('');
+            setVectorProjectContext('');
+            return;
+          }
+
+          // Query user profile
+          const userCtx = await userProfileStore.formatContextForPrompt(lastMsg, 500);
+          if (!cancelled) {
+            setVectorUserContext(userCtx);
+          }
+
+          // Check if this is a project chat and query project context
+          const currentChatId = chatId.get();
+          const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+          if (project) {
+            const projCtx = await projectContextStore.formatContextForPrompt(project.id, lastMsg, 1000);
+            if (!cancelled) {
+              setVectorProjectContext(projCtx);
+            }
+          } else {
+            if (!cancelled) {
+              setVectorProjectContext('');
+            }
+          }
+        } catch (error) {
+          // Vector context is optional — don't block chat on errors
+          console.warn('[Chat] Vector context query failed:', error);
+        }
+      }
+
+      updateVectorContext();
+      return () => {
+        cancelled = true;
+      };
+    }, [messages.length]);
+
+    // Detect execute_plan signal from AI responses and show approval dialog
+    useEffect(() => {
+      const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
+      if (!lastAssistantMessage?.content) return;
+
+      const content = lastAssistantMessage.content.trim();
+      // M-4 fix: Check for the signal marker before attempting JSON.parse
+      // to avoid wasting cycles parsing normal conversational text.
+      if (!content.startsWith('{') || !content.includes('execute_plan_signal')) {
+        return;
+      }
+
+      try {
+        const signal = JSON.parse(content);
+        if (signal.type === 'execute_plan_signal' && !planExecuting && !planSignal) {
+          setPlanSignal(signal);
+        }
+      } catch {
+        // Starts with { but isn't valid JSON — ignore
+      }
+    }, [messages, planExecuting, planSignal]);
+
+    const handlePlanExecution = async (signal: any) => {
+      setPlanExecuting(true);
+      try {
+        const { executePlan } = await import('~/lib/planning/sub-chat-engine');
+        const { getSystemPrompt } = await import('~/lib/common/prompts/new-prompt');
+        const { chatId: chatIdAtom } = await import('~/lib/persistence/useChatHistory');
+
+        const currentChatId = chatIdAtom.get();
+        const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+        if (!project) {
+          setPlanExecuting(false);
+          return;
+        }
+
+        // Create the plan in the store (M-5 fix: use async version to ensure IDB is loaded)
+        const plan = await planStore.createPlanAsync({
+          projectId: project.id,
+          chatId: currentChatId || '',
+          userRequest: signal.taskDescription,
+          description: signal.taskDescription,
+          points: signal.planPoints.map((p: any, i: number) => ({
+            title: p.title,
+            description: p.description,
+            order: i,
+            expectedFiles: p.expectedFiles || [],
+            verificationChecks: ['lint', 'type_check', 'flow_verification'] as any[],
+          })),
+        });
+
+        activePlanIdRef.current = plan.id;
+
+        // M-2 fix: Get the full system prompt with ALL context injections
+        // Sub-chats must receive the same rich prompt as the main chat.
+        const { SkillLoader } = await import('~/lib/services/skillLoader');
+        const { memoryStore } = await import('~/lib/persistence/memoryStore');
+        const skillLoader = SkillLoader.getInstance();
+        const skills = skillLoader.getRelevantSkills();
+        const memory = memoryStore.formatForPrompt();
+
+        // Query vector stores for current context
+        let currentUserContext = vectorUserContext || '';
+        let currentProjectContext = vectorProjectContext || '';
+        try {
+          const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+          const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+          await userProfileStore.initialize();
+          currentUserContext = await userProfileStore.formatContextForPrompt(signal.taskDescription, 500);
+          currentProjectContext = await projectContextStore.formatContextForPrompt(project.id, signal.taskDescription, 1000);
+        } catch (e) {
+          // Vector context is optional
+        }
+
+        const fullSystemPrompt = getSystemPrompt({
+          cwd: '/home/project',
+          allowedHtmlElements: [] as any[],
+          modificationTagName: 'boltArtifact',
+          skills,
+          memory,
+          userContext: currentUserContext,
+          projectContext: currentProjectContext,
+        });
+
+        // Get tool execution results from recent messages (simplified extraction)
+        const toolResults = messages
+          .filter((m) => m.role === 'assistant' && m.toolInvocations)
+          .flatMap((m) =>
+            (m.toolInvocations || []).map(
+              (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
+            ),
+          )
+          .join('\n');
+
+        // Execute the plan
+        const result = await executePlan(plan, {
+          callLLM: async (subMessages, systemPrompt) => {
+            // Make a real fetch to /api/chat and collect the streamed response
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: subMessages,
+                chatMode: 'build',
+                contextOptimization: false,
+                maxLLMSteps: 5,
+                userContext: vectorUserContext || '',
+                projectContext: vectorProjectContext || '',
+                apiKeys,
+                files: workbenchStore.files.get(),
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unknown error');
+              throw new Error(`Sub-chat LLM call failed (${response.status}): ${errorText}`);
+            }
+
+            if (!response.body) {
+              throw new Error('Sub-chat response body is null — streaming not supported');
+            }
+
+            // Read the data stream and extract text parts
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+            let toolInvocations: any[] = [];
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('0:')) continue;
+                try {
+                  const jsonStr = line.slice(2);
+                  const parsed = JSON.parse(jsonStr);
+                  if (parsed.type === 'text') {
+                    fullContent += parsed.text || '';
+                  }
+                } catch {
+                  // Skip malformed lines
+                }
+              }
+            }
+
+            return {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: fullContent || 'No response generated.',
+              toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
+            };
+          },
+          runShellCommand: async (cmd) => {
+            // M-3 fix: Execute shell commands through the WebContainer API.
+            // We spawn a new process for each verification command rather than
+            // going through the terminal UI, which could interfere with the
+            // user's interactive session.
+            try {
+              const { webcontainer } = await import('~/lib/webcontainer');
+              const wc = await webcontainer;
+              const process = await wc.spawn('sh', ['-c', cmd]);
+              let stdout = '';
+              let stderr = '';
+              process.output.pipeTo(new WritableStream({
+                write(data) { stdout += data; },
+              }));
+              const exitCode = await process.exit;
+              return { stdout, stderr, exitCode: exitCode ?? 0 };
+            } catch (e: any) {
+              return { stdout: '', stderr: e.message || 'Shell command failed', exitCode: 1 };
+            }
+          },
+          readFile: async (path) => {
+            const currentFiles = workbenchStore.files.get();
+            const file = currentFiles[path];
+            if (file && file.type === 'file') {
+              return file.content;
+            }
+            return null;
+          },
+          writeFile: async (path, content) => {
+            // M-3 fix: Write file through the workbench store which syncs
+            // to both the editor state and WebContainer filesystem.
+            try {
+              await workbenchStore.createFile(path, content);
+            } catch (e: any) {
+              logger.error(`[Plan] writeFile failed for ${path}:`, e);
+            }
+          },
+          listFiles: async () => {
+            return Object.keys(workbenchStore.files.get());
+          },
+          signal: planStore.getAbortSignal(),
+          systemPrompt: fullSystemPrompt,
+          toolExecutionResults: toolResults,
+          chatId: currentChatId || '',
+          projectId: project.id,
+          onProgress: (update) => {
+            setPlanProgress(update);
+          },
+        });
+
+        // Append the plan result to the chat
+        if (result.summary) {
+          append({
+            role: 'assistant',
+            content: `Plan execution complete.\n\n**Summary:**\n${result.summary}${result.failedPoints.length > 0 ? `\n\n**Failed points:** ${result.failedPoints.join(', ')}` : ''}`,
+          });
+        }
+      } catch (error) {
+        console.error('[Chat] Plan execution failed:', error);
+      } finally {
+        setPlanExecuting(false);
+        setPlanProgress(null);
+        activePlanIdRef.current = null;
+      }
+    };
 
     const scrollTextArea = () => {
       const textarea = textareaRef.current;
@@ -553,8 +866,44 @@ export const ChatImpl = memo(
       [input, handleInputChange],
     );
 
+    const handleApprovePlan = useCallback(() => {
+      if (!planSignal) return;
+      const signalToExecute = { ...planSignal };
+      setPlanSignal(null);
+      handlePlanExecution(signalToExecute);
+    }, [planSignal]);
+
+    const handleRejectPlan = useCallback(() => {
+      setPlanSignal(null);
+      append({
+        role: 'assistant',
+        content: 'Plan execution was cancelled by the user.',
+      });
+    }, [append]);
+
+    const handleModifyPlan = useCallback(
+      (modifiedPoints: Array<{ title: string; description: string }>) => {
+        if (!planSignal) return;
+        const modifiedSignal = {
+          ...planSignal,
+          planPoints: modifiedPoints,
+        };
+        setPlanSignal(null);
+        handlePlanExecution(modifiedSignal);
+      },
+      [planSignal],
+    );
+
     return (
-      <BaseChat
+      <>
+        <PlanApprovalDialog
+          open={!!planSignal}
+          signal={planSignal}
+          onApprove={handleApprovePlan}
+          onReject={handleRejectPlan}
+          onModify={handleModifyPlan}
+        />
+        <BaseChat
         ref={animationScope}
         textareaRef={textareaRef}
         input={input}
@@ -626,7 +975,16 @@ export const ChatImpl = memo(
         setSelectedElement={setSelectedElement}
         addToolResult={addToolResult}
         onWebSearchResult={handleWebSearchResult}
+        planExecuting={planExecuting}
+        planProgress={planProgress}
+        planId={activePlanIdRef.current || undefined}
+        onCancelPlan={() => {
+          if (activePlanIdRef.current) {
+            planStore.cancelPlan(activePlanIdRef.current);
+          }
+        }}
       />
+      </>
     );
   },
 );

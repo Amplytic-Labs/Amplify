@@ -1,5 +1,5 @@
 import { motion, type Variants } from 'framer-motion';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Dialog, DialogButton, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import { ThemeSwitch } from '~/components/ui/ThemeSwitch';
@@ -7,13 +7,13 @@ import { ControlPanel } from '~/components/@settings/core/ControlPanel';
 import { SettingsButton, HelpButton } from '~/components/ui/SettingsButton';
 import { Button } from '~/components/ui/Button';
 import { db, deleteById, getAll, chatId, type ChatHistoryItem, useChatHistory } from '~/lib/persistence';
+import { projectStore } from '~/lib/persistence/project-store';
 import { cubicEasingFn } from '~/utils/easings';
 import { HistoryItem } from './HistoryItem';
 import { binDates } from './date-binning';
 import { useSearchFilter } from '~/lib/hooks/useSearchFilter';
 import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
-import { profileStore } from '~/lib/stores/profile';
 import { sidebarStore } from '~/lib/stores/sidebar';
 
 const menuVariants = {
@@ -71,14 +71,39 @@ export const Menu = () => {
   const open = useStore(sidebarStore);
   const [dialogContent, setDialogContent] = useState<DialogContent>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const profile = useStore(profileStore);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'all' | 'chats' | 'projects'>('all');
 
   const { filteredItems: filteredList, handleSearchChange } = useSearchFilter({
     items: list,
     searchFields: ['description'],
   });
+
+  // Compute category counts for tabs
+  const tabCounts = useMemo(() => {
+    const counts = { all: filteredList.length, chats: 0, projects: 0 };
+    for (const item of filteredList) {
+      const category = projectStore.getChatCategory(item.id);
+      if (category === 'project') {
+        counts.projects++;
+      } else {
+        counts.chats++;
+      }
+    }
+    return counts;
+  }, [filteredList]);
+
+  // Filter list by active tab (search happens first via useSearchFilter, then tab filter)
+  const categorizedList = useMemo(() => {
+    if (activeTab === 'all') return filteredList;
+    return filteredList.filter((item) => {
+      const category = projectStore.getChatCategory(item.id);
+      if (activeTab === 'chats') return category === 'chat';
+      if (activeTab === 'projects') return category === 'project';
+      return true;
+    });
+  }, [filteredList, activeTab]);
 
   const loadEntries = useCallback(() => {
     if (db) {
@@ -317,22 +342,13 @@ export const Menu = () => {
           <div className="text-gray-900 dark:text-white font-medium"></div>
           <div className="flex items-center gap-3">
             <HelpButton onClick={() => window.open('https://stackblitz-labs.github.io/bolt.diy/', '_blank')} />
-            <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
-              {profile?.username || 'Guest User'}
-            </span>
-            <div className="flex items-center justify-center w-[32px] h-[32px] overflow-hidden bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-500 rounded-full shrink-0">
-              {profile?.avatar ? (
-                <img
-                  src={profile.avatar}
-                  alt={profile?.username || 'User'}
-                  className="w-full h-full object-cover"
-                  loading="eager"
-                  decoding="sync"
-                />
-              ) : (
-                <div className="i-ph:user-fill text-lg" />
-              )}
-            </div>
+            <button
+              onClick={() => sidebarStore.set(false)}
+              className="flex items-center justify-center w-[32px] h-[32px] rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 transition-colors shrink-0"
+              aria-label="Close sidebar"
+            >
+              <span className="i-ph:x text-lg" />
+            </button>
           </div>
         </div>
         <CurrentDateTime />
@@ -372,12 +388,26 @@ export const Menu = () => {
               />
             </div>
           </div>
-          <div className="flex items-center justify-between text-sm px-4 py-2">
-            <div className="font-medium text-gray-600 dark:text-gray-400">Your Chats</div>
+          <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-100 dark:border-gray-800/50">
+            {(['all', 'chats', 'projects'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={classNames(
+                  'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+                  activeTab === tab
+                    ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+                )}
+              >
+                {tab === 'all' ? 'All' : tab === 'chats' ? '\uD83D\uDCAC Chats' : '\uD83D\uDCC1 Projects'}
+                <span className="ml-1.5 text-[10px] opacity-70">({tabCounts[tab]})</span>
+              </button>
+            ))}
             {selectionMode && (
-              <div className="flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-2">
                 <Button variant="ghost" size="sm" onClick={selectAll}>
-                  {selectedItems.length === filteredList.length ? 'Deselect all' : 'Select all'}
+                  {selectedItems.length === categorizedList.length ? 'Deselect all' : 'Select all'}
                 </Button>
                 <Button
                   variant="destructive"
@@ -391,35 +421,45 @@ export const Menu = () => {
             )}
           </div>
           <div className="flex-1 overflow-auto px-3 pb-3">
-            {filteredList.length === 0 && (
+            {categorizedList.length === 0 && (
               <div className="px-4 text-gray-500 dark:text-gray-400 text-sm">
                 {list.length === 0 ? 'No previous conversations' : 'No matches found'}
               </div>
             )}
             <DialogRoot open={dialogContent !== null}>
-              {binDates(filteredList).map(({ category, items }) => (
+              {binDates(categorizedList).map(({ category, items }) => (
                 <div key={category} className="mt-2 first:mt-0 space-y-1">
                   <div className="text-xs font-medium text-gray-500 dark:text-gray-400 sticky top-0 z-1 bg-white dark:bg-gray-950 px-4 py-1">
                     {category}
                   </div>
                   <div className="space-y-0.5 pr-1">
-                    {items.map((item) => (
-                      <HistoryItem
-                        key={item.id}
-                        item={item}
-                        exportChat={exportChat}
-                        onDelete={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          console.log('Delete triggered for item:', item);
-                          setDialogContentWithLogging({ type: 'delete', item });
-                        }}
-                        onDuplicate={() => handleDuplicate(item.id)}
-                        selectionMode={selectionMode}
-                        isSelected={selectedItems.includes(item.id)}
-                        onToggleSelection={toggleItemSelection}
-                      />
-                    ))}
+                    {items.map((item) => {
+                      const project = projectStore.getProjectByChat(item.id);
+                      return (
+                        <div key={item.id}>
+                          <HistoryItem
+                            item={item}
+                            exportChat={exportChat}
+                            onDelete={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              console.log('Delete triggered for item:', item);
+                              setDialogContentWithLogging({ type: 'delete', item });
+                            }}
+                            onDuplicate={() => handleDuplicate(item.id)}
+                            selectionMode={selectionMode}
+                            isSelected={selectedItems.includes(item.id)}
+                            onToggleSelection={toggleItemSelection}
+                          />
+                          {project && (
+                            <div className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5 px-3 pb-1">
+                              <span className="i-ph:folder-simple h-3 w-3 inline-block align-middle mr-0.5" />
+                              {project.name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}

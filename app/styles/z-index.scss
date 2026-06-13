@@ -1,11 +1,11 @@
 $zIndexMax: 999;
 
 .z-logo {
-  z-index: $zIndexMax - 1;
+  z-index: $zIndexMax - 2;
 }
 
 .z-sidebar {
-  z-index: $zIndexMax - 2;
+  z-index: $zIndexMax - 1;
 }
 
 .z-port-dropdown {

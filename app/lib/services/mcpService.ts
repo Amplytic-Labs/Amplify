@@ -12,6 +12,10 @@ import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { memoryStore } from '~/lib/persistence/memoryStore';
+// NOTE: userProfileStore, projectContextStore, and projectStore use browser-only APIs
+// (IndexedDB, localStorage). They CANNOT be statically imported in mcpService.ts
+// which runs on the server. Instead, they are lazily imported inside tool execute
+// functions that are only invoked client-side, or guarded with typeof window checks.
 import {
   TOOL_EXECUTION_APPROVAL,
   TOOL_EXECUTION_DENIED,
@@ -127,105 +131,14 @@ export class MCPService {
   }
 
   private _registerInternalTools() {
-    const loader = SkillLoader.getInstance();
+    // NOTE: list_skills, get_skill, read_skill, list_design_systems, get_design_system,
+    // and inject_template are NOT registered here because they are already defined
+    // with full execute implementations in stream-text.ts. Defining them here would
+    // cause tool name conflicts (mcpService tools get overridden by stream-text tools
+    // anyway, but the param name mismatches — e.g. "skillId" vs "name" — would
+    // confuse the AI when it sees the toolWithoutExecute schema).
 
     const internalTools: ToolSet = {
-      list_skills: {
-        description:
-          'Lists all available specialized skills. Call this BEFORE starting any task to check if a relevant skill exists. Returns skill IDs and descriptions.',
-        parameters: z.object({}),
-        execute: async () => {
-          const skills = loader.getSkills();
-          if (skills.length === 0) return 'No specialized skills currently available.';
-
-          return (
-            'Available skills:\n' +
-            skills.map((s) => `- ${s.id}: ${s.description}`).join('\n') +
-            '\n\nUse `get_skill` with the skill ID to load full instructions.'
-          );
-        },
-      },
-      get_skill: {
-        description:
-          'Loads the full procedural instructions for a specific skill. Always call `list_skills` first to find the right skill ID, then call this to get the complete instructions.',
-        parameters: z.object({
-          skillId: z.string().describe('The ID of the skill to load (from list_skills output)'),
-        }),
-        execute: async ({ skillId }) => {
-          const content = await loader.getSkillContent(skillId.toLowerCase());
-          return content || `Skill "${skillId}" not found. Use list_skills to see available skills.`;
-        },
-      },
-      read_skill: {
-        description: 'Alias for get_skill. Reads the full content of a specific skill by its ID.',
-        parameters: z.object({
-          skillId: z.string().describe('The ID of the skill to read'),
-        }),
-        execute: async ({ skillId }) => {
-          const content = await loader.getSkillContent(skillId.toLowerCase());
-          return content || 'Skill not found';
-        },
-      },
-      list_design_systems: {
-        description:
-          'Lists all available design systems. Use this when building UI-heavy applications to find a high-quality design language to follow.',
-        parameters: z.object({
-          category: z
-            .string()
-            .optional()
-            .describe('Optional category filter (e.g., "AI & LLM", "Fintech & Crypto", "Developer Tools")'),
-        }),
-        execute: async ({ category }) => {
-          let systems = loader.getDesignSystems();
-          if (category) {
-            systems = systems.filter((s) => s.category.toLowerCase() === category.toLowerCase());
-          }
-          if (systems.length === 0)
-            return 'No design systems found' + (category ? ` for category "${category}"` : '') + '.';
-
-          const grouped = systems.reduce<Record<string, typeof systems>>((acc, ds) => {
-            const cat = ds.category || 'General';
-            if (!acc[cat]) acc[cat] = [];
-            acc[cat].push(ds);
-            return acc;
-          }, {});
-
-          let output = 'Available design systems:\n';
-          for (const [cat, items] of Object.entries(grouped)) {
-            output += `\n**${cat}:**\n`;
-            for (const ds of items) {
-              output += `- ${ds.id}: ${ds.label}${ds.summary ? ` — ${ds.summary}` : ''}\n`;
-            }
-          }
-          output += '\nUse `get_design_system` with the ID to load full instructions.';
-          return output;
-        },
-      },
-      get_design_system: {
-        description:
-          'Loads the full design system instructions for a specific design system ID. Use after `list_design_systems` to get detailed styling guidance.',
-        parameters: z.object({
-          id: z.string().describe('The ID of the design system to load'),
-        }),
-        execute: async ({ id }) => {
-          const content = await loader.getDesignSystemContent(id);
-          return content || `Design system "${id}" not found. Use list_design_systems to see available options.`;
-        },
-      },
-      inject_template: {
-        description:
-          'Signals the system to inject a starter template into the workspace. Call this when a skill or task requires a specific project template. The system will fetch template files, inject them, and run npm install automatically.',
-        parameters: z.object({
-          templateName: z
-            .string()
-            .describe('The name of the template to inject (e.g., "Expo App", "Vite React", "Vanilla Vite")'),
-        }),
-        execute: async ({ templateName }) => {
-          // This is a signal tool - the actual injection happens via the client-side
-          // template selection flow. Returns confirmation with template info.
-          return `Template "${templateName}" injection requested. The system will handle fetching and injecting the template files. Continue with your implementation after the template is available.`;
-        },
-      },
       update_user_memory: {
         description: "Updates or adds a fact about the user to the AI's long-term memory.",
         parameters: z.object({
@@ -250,6 +163,135 @@ export class MCPService {
           }
 
           return memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
+        },
+      },
+      search_user_context: {
+        description:
+          'Searches the user profile vector store for relevant context about the user. Use this to recall user preferences, tech stack, coding style, etc. NOTE: This tool is only available in the browser context.',
+        parameters: z.object({
+          query: z.string().describe('The search query to find relevant user context'),
+        }),
+        execute: async ({ query }: { query: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'User context search is not available on the server. This tool can only be used client-side.';
+          }
+          try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+            await userProfileStore.initialize();
+            const results = await userProfileStore.search(query, { limit: 5 });
+            if (results.length === 0) return 'No relevant user context found.';
+            return results.map((r) => `[${r.entry.category}] ${r.entry.content} (score: ${r.score?.toFixed(2) || 'N/A'})`).join('\n');
+          } catch (e: any) {
+            return `Error searching user context: ${e.message}`;
+          }
+        },
+      },
+      store_user_fact: {
+        description:
+          'Stores a fact about the user in the user profile vector store for future retrieval. Use this to remember user preferences, tech stack choices, coding style, etc. NOTE: This tool is only available in the browser context.',
+        parameters: z.object({
+          content: z.string().describe('The fact to remember'),
+          category: z
+            .enum(['preference', 'tech_stack', 'coding_style', 'project_type', 'design_preference', 'general'])
+            .optional()
+            .describe('Category for the fact'),
+        }),
+        execute: async ({ content, category }: { content: string; category?: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'User fact storage is not available on the server. This tool can only be used client-side.';
+          }
+          try {
+            const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+            await userProfileStore.initialize();
+            await userProfileStore.add({
+              content,
+              category: (category as any) || 'general',
+              source: 'conversation',
+              confidence: 0.8,
+            });
+            return `User fact stored successfully: "${content}" (category: ${category || 'general'})`;
+          } catch (e: any) {
+            return `Error storing user fact: ${e.message}`;
+          }
+        },
+      },
+      search_project_context: {
+        description:
+          'Searches the project context vector store for relevant project information. Use this to recall architecture decisions, error history, patterns, and constraints.',
+        parameters: z.object({
+          query: z.string().describe('The search query'),
+          projectId: z.string().describe('The project ID to search in. Must be provided explicitly.'),
+        }),
+        execute: async ({ query, projectId }: { query: string; projectId: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'Project context search is not available on the server. This tool can only be used client-side.';
+          }
+          try {
+            if (!projectId) return 'No project ID provided. Project context requires an explicit projectId.';
+            const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+            const results = await projectContextStore.search(projectId, query, { limit: 5 });
+            if (results.length === 0) return 'No relevant project context found.';
+            return results.map((r) => `[${r.entry.type}] ${r.entry.content}`).join('\n');
+          } catch (e: any) {
+            return `Error searching project context: ${e.message}`;
+          }
+        },
+      },
+      store_project_context: {
+        description:
+          'Stores a context entry in the project context vector store. Use this to record decisions, errors, fixes, patterns, and architecture notes.',
+        parameters: z.object({
+          content: z.string().describe('The context to store'),
+          type: z
+            .enum(['requirement', 'decision', 'error', 'fix', 'pattern', 'architecture', 'constraint', 'file_context', 'conversation_summary', 'tool_usage', 'flow_definition', 'screen_connection'])
+            .describe('Type of context entry'),
+          projectId: z.string().describe('The project ID to store context in. Must be provided explicitly.'),
+        }),
+        execute: async ({ content, type, projectId }: { content: string; type: string; projectId: string }) => {
+          // Guard: vector store uses IndexedDB which is browser-only
+          if (typeof window === 'undefined') {
+            return 'Project context storage is not available on the server. This tool can only be used client-side.';
+          }
+          try {
+            if (!projectId) return 'No project ID provided. Cannot store project context.';
+            const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+            await projectContextStore.add(projectId, { projectId, content, type: type as any });
+            return `Project context stored: [${type}] ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`;
+          } catch (e: any) {
+            return `Error storing project context: ${e.message}`;
+          }
+        },
+      },
+      execute_plan: {
+        description:
+          'Creates and executes a plan by breaking a complex task into sequential plan points. Each plan point runs as an isolated sub-chat with full system prompt and app builder capabilities. Use this for complex multi-step implementation tasks that require 3+ distinct steps.',
+        parameters: z.object({
+          taskDescription: z.string().describe('The overall task to plan and execute'),
+          planPoints: z
+            .array(z.object({
+              title: z.string().describe('Short title for this plan point'),
+              description: z.string().describe('What this plan point should accomplish'),
+              expectedFiles: z.array(z.string()).optional().describe('Files this point will create or modify'),
+              verificationRules: z.array(z.string()).optional().describe('Rules to verify after this point'),
+            }))
+            .describe('Array of plan points to execute in order'),
+        }),
+        execute: async ({ taskDescription, planPoints }: { taskDescription: string; planPoints: Array<{ title: string; description: string; expectedFiles?: string[]; verificationRules?: string[] }> }) => {
+          // Return a structured signal that the client-side will detect and execute
+          const planSignal = {
+            type: 'execute_plan_signal',
+            taskDescription,
+            planPoints: planPoints.map((p, i) => ({
+              title: p.title || `Step ${i + 1}`,
+              description: p.description,
+              expectedFiles: p.expectedFiles || [],
+              verificationRules: p.verificationRules || [],
+            })),
+          };
+          return JSON.stringify(planSignal);
         },
       },
     };
