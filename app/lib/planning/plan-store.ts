@@ -202,6 +202,23 @@ export class PlanStore {
   // ============================================================
 
   /**
+   * M-5 fix: Async version of createPlan that ensures IDB data is loaded
+   * before modifying state, preventing data loss from the race condition
+   * where createPlan is called before ensureInit resolves.
+   */
+  async createPlanAsync(params: {
+    projectId: string;
+    chatId: string;
+    userRequest: string;
+    description: string;
+    points: Omit<PlanPoint, 'id' | 'status' | 'dependencies'>[];
+    verificationChecks?: VerificationCheckType[];
+  }): Promise<Plan> {
+    await this.ensureInit();
+    return this.createPlan(params);
+  }
+
+  /**
    * Creates a new plan from the AI's structured output.
    */
   createPlan(params: {
@@ -249,6 +266,14 @@ export class PlanStore {
     logger.info(`Created plan ${planId} with ${points.length} points`);
 
     return plan;
+  }
+
+  /**
+   * Gets a plan by ID. M-5 fix: async version that ensures init.
+   */
+  async getPlanAsync(planId: string): Promise<Plan | undefined> {
+    await this.ensureInit();
+    return this.getPlan(planId);
   }
 
   /**

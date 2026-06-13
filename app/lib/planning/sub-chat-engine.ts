@@ -337,8 +337,9 @@ async function executePlanPoint(
   // 5. Call the LLM with the constructed system prompt and the user message
   const assistantMessage = await options.callLLM([userMessage], systemPrompt);
 
-  // Track the sub-chat messages
-  const subChat = planStore.getPlan(plan.id)?.points.find((p) => p.id === point.id)?.subChat;
+  // Track the sub-chat messages (M-5 fix: use async getter to ensure IDB data is loaded)
+  const planData = await planStore.getPlanAsync(plan.id);
+  const subChat = planData?.points.find((p) => p.id === point.id)?.subChat;
   if (subChat) {
     subChat.messages.push(userMessage, assistantMessage);
   }

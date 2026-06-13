@@ -131,105 +131,14 @@ export class MCPService {
   }
 
   private _registerInternalTools() {
-    const loader = SkillLoader.getInstance();
+    // NOTE: list_skills, get_skill, read_skill, list_design_systems, get_design_system,
+    // and inject_template are NOT registered here because they are already defined
+    // with full execute implementations in stream-text.ts. Defining them here would
+    // cause tool name conflicts (mcpService tools get overridden by stream-text tools
+    // anyway, but the param name mismatches — e.g. "skillId" vs "name" — would
+    // confuse the AI when it sees the toolWithoutExecute schema).
 
     const internalTools: ToolSet = {
-      list_skills: {
-        description:
-          'Lists all available specialized skills. Call this BEFORE starting any task to check if a relevant skill exists. Returns skill IDs and descriptions.',
-        parameters: z.object({}),
-        execute: async () => {
-          const skills = loader.getSkills();
-          if (skills.length === 0) return 'No specialized skills currently available.';
-
-          return (
-            'Available skills:\n' +
-            skills.map((s) => `- ${s.id}: ${s.description}`).join('\n') +
-            '\n\nUse `get_skill` with the skill ID to load full instructions.'
-          );
-        },
-      },
-      get_skill: {
-        description:
-          'Loads the full procedural instructions for a specific skill. Always call `list_skills` first to find the right skill ID, then call this to get the complete instructions.',
-        parameters: z.object({
-          skillId: z.string().describe('The ID of the skill to load (from list_skills output)'),
-        }),
-        execute: async ({ skillId }) => {
-          const content = await loader.getSkillContent(skillId.toLowerCase());
-          return content || `Skill "${skillId}" not found. Use list_skills to see available skills.`;
-        },
-      },
-      read_skill: {
-        description: 'Alias for get_skill. Reads the full content of a specific skill by its ID.',
-        parameters: z.object({
-          skillId: z.string().describe('The ID of the skill to read'),
-        }),
-        execute: async ({ skillId }) => {
-          const content = await loader.getSkillContent(skillId.toLowerCase());
-          return content || 'Skill not found';
-        },
-      },
-      list_design_systems: {
-        description:
-          'Lists all available design systems. Use this when building UI-heavy applications to find a high-quality design language to follow.',
-        parameters: z.object({
-          category: z
-            .string()
-            .optional()
-            .describe('Optional category filter (e.g., "AI & LLM", "Fintech & Crypto", "Developer Tools")'),
-        }),
-        execute: async ({ category }) => {
-          let systems = loader.getDesignSystems();
-          if (category) {
-            systems = systems.filter((s) => s.category.toLowerCase() === category.toLowerCase());
-          }
-          if (systems.length === 0)
-            return 'No design systems found' + (category ? ` for category "${category}"` : '') + '.';
-
-          const grouped = systems.reduce<Record<string, typeof systems>>((acc, ds) => {
-            const cat = ds.category || 'General';
-            if (!acc[cat]) acc[cat] = [];
-            acc[cat].push(ds);
-            return acc;
-          }, {});
-
-          let output = 'Available design systems:\n';
-          for (const [cat, items] of Object.entries(grouped)) {
-            output += `\n**${cat}:**\n`;
-            for (const ds of items) {
-              output += `- ${ds.id}: ${ds.label}${ds.summary ? ` — ${ds.summary}` : ''}\n`;
-            }
-          }
-          output += '\nUse `get_design_system` with the ID to load full instructions.';
-          return output;
-        },
-      },
-      get_design_system: {
-        description:
-          'Loads the full design system instructions for a specific design system ID. Use after `list_design_systems` to get detailed styling guidance.',
-        parameters: z.object({
-          id: z.string().describe('The ID of the design system to load'),
-        }),
-        execute: async ({ id }) => {
-          const content = await loader.getDesignSystemContent(id);
-          return content || `Design system "${id}" not found. Use list_design_systems to see available options.`;
-        },
-      },
-      inject_template: {
-        description:
-          'Signals the system to inject a starter template into the workspace. Call this when a skill or task requires a specific project template. The system will fetch template files, inject them, and run npm install automatically.',
-        parameters: z.object({
-          templateName: z
-            .string()
-            .describe('The name of the template to inject (e.g., "Expo App", "Vite React", "Vanilla Vite")'),
-        }),
-        execute: async ({ templateName }) => {
-          // This is a signal tool - the actual injection happens via the client-side
-          // template selection flow. Returns confirmation with template info.
-          return `Template "${templateName}" injection requested. The system will handle fetching and injecting the template files. Continue with your implementation after the template is available.`;
-        },
-      },
       update_user_memory: {
         description: "Updates or adds a fact about the user to the AI's long-term memory.",
         parameters: z.object({

@@ -185,7 +185,6 @@ export const ChatImpl = memo(
         setData(undefined);
 
         if (usage) {
-          console.log('Token usage:', usage);
           logStore.logProvider('Chat response completed', {
             component: 'Chat',
             action: 'response',
@@ -197,6 +196,28 @@ export const ChatImpl = memo(
         }
 
         logger.debug('Finished streaming');
+
+        // M-1 fix: Auto-extract user facts and project context after each AI response
+        const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+        if (lastUserMsg?.content) {
+          import('~/lib/hooks/useVectorContext').then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
+            extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
+
+            const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
+              const cid = chatId.get();
+              if (cid) {
+                const project = projectStore.getProjectByChat(cid);
+                if (project) {
+                  extractAndStoreProjectContext(
+                    project.id,
+                    `Implemented: ${message.content.slice(0, 200)}`,
+                    'conversation_summary',
+                  ).catch(() => {});
+                }
+              }
+            });
+          }).catch(() => {});
+        }
       },
       initialMessages,
       initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
@@ -292,13 +313,20 @@ export const ChatImpl = memo(
       const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
       if (!lastAssistantMessage?.content) return;
 
+      const content = lastAssistantMessage.content.trim();
+      // M-4 fix: Check for the signal marker before attempting JSON.parse
+      // to avoid wasting cycles parsing normal conversational text.
+      if (!content.startsWith('{') || !content.includes('execute_plan_signal')) {
+        return;
+      }
+
       try {
-        const signal = JSON.parse(lastAssistantMessage.content.trim());
+        const signal = JSON.parse(content);
         if (signal.type === 'execute_plan_signal' && !planExecuting && !planSignal) {
           setPlanSignal(signal);
         }
       } catch {
-        // Not JSON, not a plan signal — ignore
+        // Starts with { but isn't valid JSON — ignore
       }
     }, [messages, planExecuting, planSignal]);
 
@@ -316,8 +344,8 @@ export const ChatImpl = memo(
           return;
         }
 
-        // Create the plan in the store
-        const plan = planStore.createPlan({
+        // Create the plan in the store (M-5 fix: use async version to ensure IDB is loaded)
+        const plan = await planStore.createPlanAsync({
           projectId: project.id,
           chatId: currentChatId || '',
           userRequest: signal.taskDescription,
@@ -333,11 +361,35 @@ export const ChatImpl = memo(
 
         activePlanIdRef.current = plan.id;
 
-        // Get the full system prompt
+        // M-2 fix: Get the full system prompt with ALL context injections
+        // Sub-chats must receive the same rich prompt as the main chat.
+        const { SkillLoader } = await import('~/lib/services/skillLoader');
+        const { memoryStore } = await import('~/lib/persistence/memoryStore');
+        const skillLoader = SkillLoader.getInstance();
+        const skills = skillLoader.getRelevantSkills();
+        const memory = memoryStore.formatForPrompt();
+
+        // Query vector stores for current context
+        let currentUserContext = vectorUserContext || '';
+        let currentProjectContext = vectorProjectContext || '';
+        try {
+          const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+          const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+          await userProfileStore.initialize();
+          currentUserContext = await userProfileStore.formatContextForPrompt(signal.taskDescription, 500);
+          currentProjectContext = await projectContextStore.formatContextForPrompt(project.id, signal.taskDescription, 1000);
+        } catch (e) {
+          // Vector context is optional
+        }
+
         const fullSystemPrompt = getSystemPrompt({
           cwd: '/home/project',
           allowedHtmlElements: [] as any[],
           modificationTagName: 'boltArtifact',
+          skills,
+          memory,
+          userContext: currentUserContext,
+          projectContext: currentProjectContext,
         });
 
         // Get tool execution results from recent messages (simplified extraction)
@@ -415,8 +467,24 @@ export const ChatImpl = memo(
             };
           },
           runShellCommand: async (cmd) => {
-            // WebContainer shell execution would go here
-            return { stdout: '', stderr: '', exitCode: 0 };
+            // M-3 fix: Execute shell commands through the WebContainer API.
+            // We spawn a new process for each verification command rather than
+            // going through the terminal UI, which could interfere with the
+            // user's interactive session.
+            try {
+              const { webcontainer } = await import('~/lib/webcontainer');
+              const wc = await webcontainer;
+              const process = await wc.spawn('sh', ['-c', cmd]);
+              let stdout = '';
+              let stderr = '';
+              process.output.pipeTo(new WritableStream({
+                write(data) { stdout += data; },
+              }));
+              const exitCode = await process.exit;
+              return { stdout, stderr, exitCode: exitCode ?? 0 };
+            } catch (e: any) {
+              return { stdout: '', stderr: e.message || 'Shell command failed', exitCode: 1 };
+            }
           },
           readFile: async (path) => {
             const currentFiles = workbenchStore.files.get();
@@ -427,7 +495,13 @@ export const ChatImpl = memo(
             return null;
           },
           writeFile: async (path, content) => {
-            // WebContainer file write would go here
+            // M-3 fix: Write file through the workbench store which syncs
+            // to both the editor state and WebContainer filesystem.
+            try {
+              await workbenchStore.createFile(path, content);
+            } catch (e: any) {
+              logger.error(`[Plan] writeFile failed for ${path}:`, e);
+            }
           },
           listFiles: async () => {
             return Object.keys(workbenchStore.files.get());
