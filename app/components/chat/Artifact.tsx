@@ -26,7 +26,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   /* ---- Build TraceTree items for files and commands ---- */
   const { fileItems, commandItems, fileSummary, commandSummary } = useMemo(() => {
     const fileActions = actions.filter((a) => a.type === 'file');
-    const shellActions = actions.filter((a) => a.type === 'shell');
+    const shellActions = actions.filter((a) => a.type === 'shell' || a.type === 'start' || a.type === 'build');
 
     const mapStatus = (s: ActionState['status']): TreeItemStatus => {
       switch (s) {
@@ -65,7 +65,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
     if (fileActions.length > 0) {
       fileText = isRunning
         ? `Working on ${fileActions.length} file${fileActions.length > 1 ? 's' : ''}`
-        : `Updated ${fileActions.length} file${fileActions.length > 1 ? 's' : ''}`;
+        : `Created ${fileActions.length} file${fileActions.length > 1 ? 's' : ''}`;
     }
 
     const cmdRunning = shellActions.some((a) => a.status === 'running' || a.status === 'pending');

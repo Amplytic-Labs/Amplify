@@ -2,7 +2,8 @@ import { useStore } from '@nanostores/react';
 import type { Message } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useAnimate } from 'framer-motion';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createDebugFetch } from '~/lib/debug/debug-broadcast';
 import { toast } from 'react-toastify';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
@@ -140,6 +141,9 @@ export const ChatImpl = memo(
     const activePlanIdRef = useRef<string | null>(null);
     const [planSignal, setPlanSignal] = useState<any>(null);
 
+    // Stable debug fetch instance – intercepts /api/chat requests for the debug page
+    const debugFetch = useMemo(() => createDebugFetch(), []);
+
     const {
       messages,
       isLoading,
@@ -156,6 +160,7 @@ export const ChatImpl = memo(
       addToolResult,
     } = useChat({
       api: '/api/chat',
+      fetch: debugFetch,
       body: {
         apiKeys,
         files,
@@ -200,23 +205,25 @@ export const ChatImpl = memo(
         // M-1 fix: Auto-extract user facts and project context after each AI response
         const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
         if (lastUserMsg?.content) {
-          import('~/lib/hooks/useVectorContext').then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
-            extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
+          import('~/lib/hooks/useVectorContext')
+            .then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
+              extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
 
-            const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
-              const cid = chatId.get();
-              if (cid) {
-                const project = projectStore.getProjectByChat(cid);
-                if (project) {
-                  extractAndStoreProjectContext(
-                    project.id,
-                    `Implemented: ${message.content.slice(0, 200)}`,
-                    'conversation_summary',
-                  ).catch(() => {});
+              const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
+                const cid = chatId.get();
+                if (cid) {
+                  const project = projectStore.getProjectByChat(cid);
+                  if (project) {
+                    extractAndStoreProjectContext(
+                      project.id,
+                      `Implemented: ${message.content.slice(0, 200)}`,
+                      'conversation_summary',
+                    ).catch(() => {});
+                  }
                 }
-              }
-            });
-          }).catch(() => {});
+              });
+            })
+            .catch(() => {});
         }
       },
       initialMessages,
@@ -377,7 +384,11 @@ export const ChatImpl = memo(
           const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
           await userProfileStore.initialize();
           currentUserContext = await userProfileStore.formatContextForPrompt(signal.taskDescription, 500);
-          currentProjectContext = await projectContextStore.formatContextForPrompt(project.id, signal.taskDescription, 1000);
+          currentProjectContext = await projectContextStore.formatContextForPrompt(
+            project.id,
+            signal.taskDescription,
+            1000,
+          );
         } catch (e) {
           // Vector context is optional
         }
@@ -477,9 +488,13 @@ export const ChatImpl = memo(
               const process = await wc.spawn('sh', ['-c', cmd]);
               let stdout = '';
               let stderr = '';
-              process.output.pipeTo(new WritableStream({
-                write(data) { stdout += data; },
-              }));
+              process.output.pipeTo(
+                new WritableStream({
+                  write(data) {
+                    stdout += data;
+                  },
+                }),
+              );
               const exitCode = await process.exit;
               return { stdout, stderr, exitCode: exitCode ?? 0 };
             } catch (e: any) {
@@ -904,86 +919,86 @@ export const ChatImpl = memo(
           onModify={handleModifyPlan}
         />
         <BaseChat
-        ref={animationScope}
-        textareaRef={textareaRef}
-        input={input}
-        showChat={showChat}
-        chatStarted={chatStarted}
-        isStreaming={isLoading || fakeLoading}
-        onStreamingChange={(streaming) => {
-          streamingState.set(streaming);
-        }}
-        enhancingPrompt={enhancingPrompt}
-        promptEnhanced={promptEnhanced}
-        apiKeys={apiKeys}
-        onApiKeysChange={onApiKeysChange}
-        sendMessage={sendMessage}
-        model={model}
-        setModel={handleModelChange}
-        provider={provider}
-        setProvider={handleProviderChange}
-        providerList={activeProviders}
-        handleInputChange={(e) => {
-          onTextareaChange(e);
-          debouncedCachePrompt(e);
-        }}
-        handleStop={abort}
-        description={description}
-        importChat={importChat}
-        exportChat={exportChat}
-        messages={messages.map((message, i) => {
-          if (message.role === 'user') {
-            return message;
-          }
+          ref={animationScope}
+          textareaRef={textareaRef}
+          input={input}
+          showChat={showChat}
+          chatStarted={chatStarted}
+          isStreaming={isLoading || fakeLoading}
+          onStreamingChange={(streaming) => {
+            streamingState.set(streaming);
+          }}
+          enhancingPrompt={enhancingPrompt}
+          promptEnhanced={promptEnhanced}
+          apiKeys={apiKeys}
+          onApiKeysChange={onApiKeysChange}
+          sendMessage={sendMessage}
+          model={model}
+          setModel={handleModelChange}
+          provider={provider}
+          setProvider={handleProviderChange}
+          providerList={activeProviders}
+          handleInputChange={(e) => {
+            onTextareaChange(e);
+            debouncedCachePrompt(e);
+          }}
+          handleStop={abort}
+          description={description}
+          importChat={importChat}
+          exportChat={exportChat}
+          messages={messages.map((message, i) => {
+            if (message.role === 'user') {
+              return message;
+            }
 
-          return {
-            ...message,
-            content: parsedMessages[i] || '',
-          };
-        })}
-        enhancePrompt={() => {
-          enhancePrompt(
-            input,
-            (input) => {
-              setInput(input);
-              scrollTextArea();
-            },
-            model,
-            provider,
-            apiKeys,
-          );
-        }}
-        uploadedFiles={uploadedFiles}
-        setUploadedFiles={setUploadedFiles}
-        imageDataList={imageDataList}
-        setImageDataList={setImageDataList}
-        actionAlert={actionAlert}
-        clearAlert={() => workbenchStore.clearAlert()}
-        supabaseAlert={supabaseAlert}
-        clearSupabaseAlert={() => workbenchStore.clearSupabaseAlert()}
-        deployAlert={deployAlert}
-        clearDeployAlert={() => workbenchStore.clearDeployAlert()}
-        llmErrorAlert={llmErrorAlert}
-        clearLlmErrorAlert={clearApiErrorAlert}
-        data={chatData}
-        chatMode={chatMode}
-        setChatMode={setChatMode}
-        append={append}
-        designScheme={designScheme}
-        setDesignScheme={setDesignScheme}
-        selectedElement={selectedElement}
-        setSelectedElement={setSelectedElement}
-        addToolResult={addToolResult}
-        onWebSearchResult={handleWebSearchResult}
-        planExecuting={planExecuting}
-        planProgress={planProgress}
-        planId={activePlanIdRef.current || undefined}
-        onCancelPlan={() => {
-          if (activePlanIdRef.current) {
-            planStore.cancelPlan(activePlanIdRef.current);
-          }
-        }}
-      />
+            return {
+              ...message,
+              content: parsedMessages[i] || '',
+            };
+          })}
+          enhancePrompt={() => {
+            enhancePrompt(
+              input,
+              (input) => {
+                setInput(input);
+                scrollTextArea();
+              },
+              model,
+              provider,
+              apiKeys,
+            );
+          }}
+          uploadedFiles={uploadedFiles}
+          setUploadedFiles={setUploadedFiles}
+          imageDataList={imageDataList}
+          setImageDataList={setImageDataList}
+          actionAlert={actionAlert}
+          clearAlert={() => workbenchStore.clearAlert()}
+          supabaseAlert={supabaseAlert}
+          clearSupabaseAlert={() => workbenchStore.clearSupabaseAlert()}
+          deployAlert={deployAlert}
+          clearDeployAlert={() => workbenchStore.clearDeployAlert()}
+          llmErrorAlert={llmErrorAlert}
+          clearLlmErrorAlert={clearApiErrorAlert}
+          data={chatData}
+          chatMode={chatMode}
+          setChatMode={setChatMode}
+          append={append}
+          designScheme={designScheme}
+          setDesignScheme={setDesignScheme}
+          selectedElement={selectedElement}
+          setSelectedElement={setSelectedElement}
+          addToolResult={addToolResult}
+          onWebSearchResult={handleWebSearchResult}
+          planExecuting={planExecuting}
+          planProgress={planProgress}
+          planId={activePlanIdRef.current || undefined}
+          onCancelPlan={() => {
+            if (activePlanIdRef.current) {
+              planStore.cancelPlan(activePlanIdRef.current);
+            }
+          }}
+        />
       </>
     );
   },
