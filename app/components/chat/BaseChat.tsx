@@ -31,6 +31,7 @@ import { expoUrlAtom } from '~/lib/stores/qrCodeStore';
 import { useStore } from '@nanostores/react';
 import { StickToBottom, useStickToBottomContext } from '~/lib/hooks';
 import { ChatBox } from './ChatBox';
+import { PlanView } from './PlanView';
 import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
@@ -85,6 +86,10 @@ interface BaseChatProps {
   onWebSearchResult?: (result: string) => void;
   apiKeys?: Record<string, string>;
   onApiKeysChange?: (providerName: string, apiKey: string) => Promise<void>;
+  planExecuting?: boolean;
+  planProgress?: any;
+  onCancelPlan?: () => void;
+  planId?: string;
 }
 
 export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
@@ -137,6 +142,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       onWebSearchResult,
       apiKeys,
       onApiKeysChange,
+      planExecuting = false,
+      onCancelPlan,
+      planProgress,
+      planId,
     },
     ref,
   ) => {
@@ -410,6 +419,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       />
                     )}
                     {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
+                    {planExecuting && planId && (
+                      <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} />
+                    )}
                   </div>
                   <ChatBox
                     provider={provider}
@@ -594,6 +606,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           )}
                           {llmErrorAlert && (
                             <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />
+                          )}
+                          {planExecuting && planId && (
+                            <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} />
                           )}
                         </div>
                         <ChatBox

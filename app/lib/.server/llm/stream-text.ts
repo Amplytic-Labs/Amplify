@@ -17,10 +17,9 @@ import { createFilesContext, extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { z } from 'zod';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { fetchWebPage } from '~/lib/utils/web-fetch';
 import { getTemplates } from '~/utils/selectStarterTemplate';
+import { SkillLoader } from '~/lib/services/skillLoader';
 
 export type Messages = Message[];
 
@@ -95,6 +94,8 @@ export async function streamText(props: {
   skills?: string;
   memory?: string;
   dataStream?: DataStreamWriter;
+  userContext?: string;
+  projectContext?: string;
 }) {
   const {
     messages,
@@ -111,6 +112,8 @@ export async function streamText(props: {
     designScheme,
     skills,
     memory,
+    userContext,
+    projectContext,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -182,12 +185,19 @@ export async function streamText(props: {
       designScheme,
       skills,
       memory,
+      userContext,
+      projectContext,
       supabase: {
         isConnected: options?.supabaseConnection?.isConnected || false,
         hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,
         credentials: options?.supabaseConnection?.credentials || undefined,
       },
-    }) ?? getSystemPrompt();
+    }) ??
+    getSystemPrompt({
+      cwd: WORK_DIR,
+      allowedHtmlElements: allowedHTMLElements,
+      modificationTagName: MODIFICATIONS_TAG_NAME,
+    });
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {
     const codeContext = createFilesContext(contextFiles, true);
@@ -327,6 +337,8 @@ export async function streamText(props: {
             const { getAppBuilderCapabilities } = await import('~/lib/common/prompts/new-prompt');
             return getAppBuilderCapabilities({
               cwd: WORK_DIR,
+              allowedHtmlElements: allowedHTMLElements,
+              modificationTagName: MODIFICATIONS_TAG_NAME,
               supabase: {
                 isConnected: options?.supabaseConnection?.isConnected || false,
                 hasSelectedProject: options?.supabaseConnection?.hasSelectedProject || false,
@@ -340,17 +352,19 @@ export async function streamText(props: {
       },
       list_design_systems: {
         description: 'Lists all available design systems',
-        parameters: z.object({}),
-        execute: async () => {
+        parameters: z.object({
+          category: z.string().optional().describe('Optional category filter'),
+        }),
+        execute: async ({ category }: { category?: string }) => {
           try {
-            const dirPath = path.join(process.cwd(), 'design', 'design-systems');
-            if (!fs.existsSync(dirPath)) return { error: 'design-systems directory not found' };
-            const files = fs
-              .readdirSync(dirPath)
-              .filter(
-                (f) => f.endsWith('.md') || f.endsWith('.json') || fs.statSync(path.join(dirPath, f)).isDirectory(),
-              );
-            return { design_systems: files };
+            const loader = SkillLoader.getInstance();
+            let systems = loader.getDesignSystems();
+            if (category) {
+              systems = systems.filter((s) => s.category?.toLowerCase().includes(category.toLowerCase()));
+            }
+            if (systems.length === 0) return 'No design systems found.';
+            const output = systems.map((s) => `- ${s.id}: ${s.label}${s.summary ? ` — ${s.summary}` : ''}`).join('\n');
+            return `Available design systems:\n${output}\n\nUse \`get_design_system\` with the ID to load full instructions.`;
           } catch (e: any) {
             return { error: e.message };
           }
@@ -363,19 +377,9 @@ export async function streamText(props: {
         }),
         execute: async ({ name }: { name: string }) => {
           try {
-            let itemPath = path.join(process.cwd(), 'design', 'design-systems', name);
-            if (!fs.existsSync(itemPath) && fs.existsSync(itemPath + '.md')) {
-              itemPath += '.md';
-            }
-            if (!fs.existsSync(itemPath)) return { error: 'Design system not found' };
-            if (fs.statSync(itemPath).isDirectory()) {
-              const file = path.join(itemPath, 'SKILL.md');
-              if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8');
-              const file2 = path.join(itemPath, 'design.md');
-              if (fs.existsSync(file2)) return fs.readFileSync(file2, 'utf8');
-              return { error: 'No SKILL.md or design.md found in folder' };
-            }
-            return fs.readFileSync(itemPath, 'utf8');
+            const loader = SkillLoader.getInstance();
+            const content = await loader.getDesignSystemContent(name);
+            return content || `Design system "${name}" not found. Use list_design_systems to see available options.`;
           } catch (e: any) {
             return { error: e.message };
           }
@@ -387,21 +391,9 @@ export async function streamText(props: {
         parameters: z.object({}),
         execute: async () => {
           try {
-            const dirPath = path.join(process.cwd(), 'design', 'skills');
-            if (!fs.existsSync(dirPath)) return { error: 'skills directory not found' };
-            const dirs = fs.readdirSync(dirPath).filter((f) => fs.statSync(path.join(dirPath, f)).isDirectory());
-            const skills = dirs.map((dir) => {
-              const skillPath = path.join(dirPath, dir, 'SKILL.md');
-              let description = '';
-              try {
-                const content = fs.readFileSync(skillPath, 'utf8');
-                const descMatch = content.match(/^---\n[\s\S]*?\ndescription:\s*(.+?)\n/m);
-                if (descMatch) description = descMatch[1].trim();
-              } catch {
-                /* skip */
-              }
-              return { id: dir, description: description || 'No description available' };
-            });
+            const loader = SkillLoader.getInstance();
+            const skills = loader.getSkills();
+            if (skills.length === 0) return 'No specialized skills currently available.';
             return (
               'Available skills:\n' +
               skills.map((s) => `- ${s.id}: ${s.description}`).join('\n') +
@@ -419,11 +411,9 @@ export async function streamText(props: {
         }),
         execute: async ({ name }: { name: string }) => {
           try {
-            const itemPath = path.join(process.cwd(), 'design', 'skills', name, 'SKILL.md');
-            if (fs.existsSync(itemPath)) {
-              return fs.readFileSync(itemPath, 'utf8');
-            }
-            return { error: 'SKILL.md not found' };
+            const loader = SkillLoader.getInstance();
+            const content = await loader.getSkillContent(name.toLowerCase());
+            return content || `Skill "${name}" not found. Use list_skills to see available skills.`;
           } catch (e: any) {
             return { error: e.message };
           }
@@ -440,7 +430,7 @@ export async function streamText(props: {
             ),
           title: z.string().optional().describe('A title for the imported files artifact'),
         }),
-        execute: async ({ templateName, title }) => {
+        execute: async ({ templateName, title }: { templateName: string; title?: string }) => {
           try {
             const result = await getTemplates(templateName, title);
             if (!result) return { error: `Template "${templateName}" not found.` };

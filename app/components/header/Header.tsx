@@ -68,10 +68,7 @@ export function Header() {
 
             {/* Centering wrapper — lets the pill bar stay compact (content width) and be centred */}
             <div className="flex-1 flex justify-center  min-w-0 m">
-              <MobileWorkbenchTabBar
-                selected={selectedView}
-                onSelect={setSelectedView}
-              />
+              <MobileWorkbenchTabBar selected={selectedView} onSelect={setSelectedView} />
             </div>
 
             <DeployButton />
@@ -106,7 +103,7 @@ export function Header() {
                   </SvgGradientText>
                 </div>
               </a>
-              <div 
+              <div
                 className="flex-1 truncate text-lg text-bolt-elements-textPrimary flex items-center"
                 style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
               >
@@ -128,10 +125,13 @@ export function Header() {
       {/* Desktop Layout */}
       <div className={classNames('hidden lg:flex items-center justify-between w-full')}>
         <div className="flex items-center gap-2 z-logo text-bolt-elements-textPrimary cursor-pointer">
-          {!showWorkbench && !sidebarOpen && (
+          {!showWorkbench && (
             <div
-              className="i-ph:sidebar-simple-duotone text-xl cursor-pointer hover:text-accent transition-colors"
-              onClick={() => sidebarStore.set(true)}
+              className={classNames(
+                'text-xl cursor-pointer hover:text-accent transition-colors',
+                sidebarOpen ? 'i-ph:sidebar-simple-duotone text-accent' : 'i-ph:sidebar-simple-duotone',
+              )}
+              onClick={() => sidebarStore.set(!sidebarStore.get())}
             />
           )}
           <div className="text-2xl font-semibold text-accent flex items-center">
@@ -170,7 +170,7 @@ export function Header() {
                   <MotionDropdown
                     align="center"
                     trigger={
-                      <div 
+                      <div
                         className="flex-1 pr-4 truncate text-lg text-bolt-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
                         style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
                       >

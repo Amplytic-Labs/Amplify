@@ -14,6 +14,8 @@ import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
+import { SkillLoader } from '~/lib/services/skillLoader';
+import { memoryStore } from '~/lib/persistence/memoryStore';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -58,6 +60,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     designScheme,
     maxLLMSteps,
     apiKeys: bodyApiKeys,
+    userContext,
+    projectContext,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -75,6 +79,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     };
     maxLLMSteps: number;
     apiKeys?: Record<string, string>;
+    userContext?: string;
+    projectContext?: string;
   }>();
 
   const cookieHeader = request.headers.get('Cookie');
@@ -291,6 +297,10 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               summary,
               messageSliceId,
               dataStream,
+              skills,
+              memory,
+              userContext,
+              projectContext,
             });
 
             result.mergeIntoDataStream(dataStream, { sendReasoning: true });
@@ -318,6 +328,11 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           message: 'Generating Response',
         } satisfies ProgressAnnotation);
 
+        // Load skills and memory for prompt injection
+        const skillLoader = SkillLoader.getInstance();
+        const skills = skillLoader.getRelevantSkills();
+        const memory = memoryStore.formatForPrompt();
+
         const result = await streamText({
           messages: [...processedMessages],
           env: context.cloudflare?.env,
@@ -333,6 +348,10 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           summary,
           messageSliceId,
           dataStream,
+          skills,
+          memory,
+          userContext,
+          projectContext,
         });
 
         (async () => {
