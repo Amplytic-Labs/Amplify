@@ -36,6 +36,13 @@
   }
 }
 
+/* ===== Spin keyframe (for in-flight thinking icons) ===== */
+@keyframes chat-thinking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ===== Tool invocation wrapper ===== */
 /* .value > .chat-tool-invocation-part — no card, just a block. */
 .toolInvocationPart {
@@ -106,6 +113,13 @@
   /* hide spinner icon for shimmer progress — the shimmer IS the indicator */
   &.shimmerProgress > .icon {
     display: none;
+  }
+
+  /* When rendered inside the chain-of-thought thinking list, the wrapper
+   * handles left padding for the icon + line. Drop the row's own margin. */
+  &.inThinkingList {
+    margin: 0 0 2px 6px;
+    padding-top: 0;
   }
 
   /* shimmer animation on text */
@@ -421,6 +435,19 @@
     pointer-events: none;
   }
 
+  /*
+   * The collapsible list holds the chain-of-thought steps. Each direct
+   * child is one of:
+   *   .chatThinkingItemMarkdown   — a reasoning text step
+   *   .chatThinkingToolWrapper    — a tool invocation (wraps .toolInvocationPart)
+   *   .chatThinkingSpinnerItem    — the live "Working…" pulse
+   *
+   * Each child gets a vertical connector line (::before) on its left edge
+   * with a mask-image gap where the step's .chatThinkingIcon sits — so the
+   * icons appear as nodes ON the line, exactly like VS Code Copilot's
+   * `.chat-thinking-collapsible` chain-of-thought rendering
+   * (chatThinkingContent.css lines 274-321).
+   */
   .collapsibleList {
     border: none;
     border-radius: 0;
@@ -430,49 +457,152 @@
     padding-top: 0;
     margin-left: 5px;
 
-    .thinkingItem {
-      &.markdownContent {
-        padding: 6px 12px 6px 18px;
-        position: relative;
+    /* ===== Chain-of-thought wrappers — the vertical line + icon node ===== */
+    .chatThinkingToolWrapper,
+    .chatThinkingItemMarkdown,
+    .chatThinkingSpinnerItem {
+      position: relative;
+
+      /* The vertical connector line. mask-image carves a gap (5px→25px)
+       * where the icon sits, so the line appears to pass BEHIND the icon. */
+      &::before {
+        content: '';
+        position: absolute;
+        left: 10.5px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        border-radius: 0;
+        background-color: var(--bolt-elements-borderColor);
+        mask-image: linear-gradient(to bottom, #000 0 5px, transparent 5px 25px, #000 24px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 5px, transparent 5px 25px, #000 24px 100%);
+        mask-mode: alpha;
+        -webkit-mask-mode: alpha;
+        pointer-events: none;
+      }
+
+      /* First step: no line above the icon (only the curved header connector
+       * lives there). Line starts below the icon and runs to the next step. */
+      &:first-child::before {
+        mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
+      }
+
+      /* Last step: line comes from the previous step and stops at this icon. */
+      &:last-child::before {
+        mask-image: linear-gradient(to bottom, #000 0 5px, transparent 5px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 5px, transparent 5px 100%);
+      }
+
+      /* Only step: no line at all. */
+      &:only-child::before {
+        background: none;
+        mask-image: none;
+        -webkit-mask-image: none;
+      }
+
+      /* The icon node — sits ON the vertical line (left:5px, the line is at 10.5px).
+       * Sized 12x12px to match Copilot's .chat-thinking-icon. */
+      > .chatThinkingIcon {
+        position: absolute;
+        left: 5px;
+        top: 9px;
+        width: 12px;
+        height: 12px;
         font-size: 12px;
+        line-height: 12px;
+        text-align: center;
         color: var(--bolt-elements-textSecondary);
-        line-height: 1.5;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+        flex-shrink: 0;
 
-        p {
-          margin: 0 0 6px 0;
-
-          &:last-child {
-            margin-bottom: 0;
-          }
+        /* Error state — red icon (terminal failure, blocked hook, etc.) */
+        &.error {
+          color: var(--bolt-elements-icon-error);
         }
 
-        code {
-          font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
-          font-size: 11px;
-          background-color: var(--bolt-elements-messages-inlineCode-background);
-          padding: 1px 3px;
-          border-radius: 4px;
-          border: 1px solid var(--bolt-elements-borderColor);
-          white-space: pre-wrap;
+        /* In-flight spinner — rotates (matches Copilot's codicon-loading spin) */
+        &.spinning {
+          animation: chat-thinking-spin 1s linear infinite;
         }
       }
     }
 
-    /* Tool invocations inside the thinking list get tighter spacing */
-    .toolInvocationPart {
-      padding: 4px 12px 4px 18px;
-      position: relative;
+    /* ===== Reasoning text step (.chat-thinking-item.markdown-content) ===== */
+    .chatThinkingItemMarkdown {
+      padding: 6px 12px 6px 24px;
+      font-size: 12px;
+      color: var(--bolt-elements-textSecondary);
+      line-height: 1.5;
 
-      &:not(:last-child) {
+      p {
+        margin: 0 0 6px 0;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      code {
+        font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        background-color: var(--bolt-elements-messages-inlineCode-background);
+        padding: 1px 3px;
+        border-radius: 4px;
+        border: 1px solid var(--bolt-elements-borderColor);
+        white-space: pre-wrap;
+      }
+    }
+
+    /* ===== Tool invocation step (.chat-thinking-tool-wrapper) ===== */
+    /* Wraps the flat .toolInvocationPart. The chain icon represents the step,
+     * so the inner progress-container hides its own status icon. */
+    .chatThinkingToolWrapper {
+      .toolInvocationPart {
+        padding: 4px 12px 4px 18px;
+        position: relative;
         margin-bottom: 0;
-      }
+        display: block;
 
-      .progressContainer {
-        margin: 0 0 2px 6px;
-      }
+        .progressContainer {
+          margin: 0 0 2px 6px;
+        }
 
-      .chatConfirmationWidget {
-        margin: 4px 6px;
+        .chatConfirmationWidget {
+          margin: 4px 6px;
+        }
+      }
+    }
+
+    /* ===== Working spinner step (.chat-thinking-spinner-item) ===== */
+    /* The live "Working…" pulse at the bottom of the chain while streaming. */
+    .chatThinkingSpinnerItem {
+      padding: 6px 12px 6px 24px;
+      font-size: 12px;
+      color: var(--bolt-elements-textSecondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      .spinnerLabel {
+        background: linear-gradient(
+          90deg,
+          var(--bolt-elements-textSecondary) 0%,
+          var(--bolt-elements-textSecondary) 30%,
+          var(--bolt-elements-textPrimary) 50%,
+          var(--bolt-elements-textSecondary) 70%,
+          var(--bolt-elements-textSecondary) 100%
+        );
+        background-size: 400% 100%;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: chat-thinking-shimmer 2s linear infinite;
+        will-change: background-position;
+        font-size: 12px;
       }
     }
   }
@@ -494,38 +624,5 @@
   }
 }
 
-/* ===== Working progress (the live "Working…" pulse at the bottom of the panel) ===== */
-.workingProgress {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  padding-top: 2px;
-  color: var(--bolt-elements-textSecondary);
-  margin: 0 0 2px 6px;
-
-  .icon {
-    font-size: 12px;
-    color: var(--bolt-elements-textSecondary);
-    margin: 0 0.2em;
-    display: inline-flex;
-  }
-
-  .label {
-    background: linear-gradient(
-      90deg,
-      var(--bolt-elements-textSecondary) 0%,
-      var(--bolt-elements-textSecondary) 30%,
-      var(--bolt-elements-textPrimary) 50%,
-      var(--bolt-elements-textSecondary) 70%,
-      var(--bolt-elements-textSecondary) 100%
-    );
-    background-size: 400% 100%;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: chat-thinking-shimmer 2s linear infinite;
-    will-change: background-position;
-    font-size: 12px;
-  }
-}
+/* (The working-progress pulse now lives inside .collapsibleList as
+ * .chatThinkingSpinnerItem, so it joins the chain-of-thought line.) */

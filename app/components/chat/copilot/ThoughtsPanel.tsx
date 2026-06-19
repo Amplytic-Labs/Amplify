@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import { classNames } from '~/utils/classNames';
-import { ToolProgress } from './ToolProgress';
+import { ToolProgress, getToolIcon, classifyResult } from './ToolProgress';
 import { ThinkingBox } from './ThinkingBox';
 import { ReasoningMarkdown } from '~/components/chat/ReasoningMarkdown';
 import type {
@@ -18,7 +18,11 @@ import styles from './chat-copilot.module.scss';
  * parts (reasoning + tool-invocation) plus any `<thought>`-tag text into an
  * ordered list of steps so the UI can interleave them like Copilot does.
  *
- * Each step renders INLINE inside the .chat-thinking-box — no cards.
+ * Each step renders as a NODE on the vertical chain-of-thought line —
+ * exactly like VS Code Copilot's `.chat-thinking-collapsible`:
+ *   .chat-thinking-item.markdown-content  (reasoning — book icon)
+ *   .chat-thinking-tool-wrapper           (tool — tool-type icon)
+ *   .chat-thinking-spinner-item           (working — spinner icon)
  */
 type ThoughtStep =
   | { kind: 'reasoning'; text: string; key: string }
@@ -44,13 +48,21 @@ interface ThoughtsPanelProps {
 }
 
 /**
- * Copilot-exact collapsible "Thought for Ns" panel.
+ * Copilot-exact collapsible "Thought for Ns" panel with the chain-of-thought
+ * vertical line + step icons.
  *
- * Wraps `ThinkingBox` and renders each step INLINE — exactly like VS Code
- * Copilot's `.chat-thinking-box`:
- *   - Reasoning text → `.chat-thinking-item.markdown-content` (muted text)
- *   - Tool invocations → `.chat-tool-invocation-part` containing a flat
- *     `.progress-container` row (NO CARD)
+ * Wraps `ThinkingBox` and renders each step as a NODE on the vertical
+ * connector line — exactly like VS Code Copilot's `.chat-thinking-box`:
+ *   - The `.chatThinkingBox::after` curved connector joins the header to the
+ *     first step's icon.
+ *   - Each step's `::before` draws a vertical line with a mask-image gap
+ *     where the step's `.chatThinkingIcon` sits (so icons appear ON the line).
+ *   - Reasoning text → `.chatThinkingItemMarkdown` with a book icon.
+ *   - Tool invocations → `.chatThinkingToolWrapper` with a tool-type icon
+ *     (search/book/pencil/terminal/wrench — mirrors VS Code's
+ *     `getToolInvocationIcon`). The inner progress-container hides its own
+ *     status icon; the chain icon represents the step.
+ *   - Live "Working…" → `.chatThinkingSpinnerItem` with a spinning icon.
  *
  * The whole panel collapses to a single shimmering "Thinking…" label while
  * streaming, and to "Thought for Ns" when done.
@@ -61,8 +73,8 @@ export const ThoughtsPanel = memo(
 
     /**
      * Flatten parts + thought text into ordered steps. Tools stay as
-     * individual steps (Copilot shows each tool call as its own row inside
-     * the thinking list, not grouped into a card).
+     * individual steps (Copilot shows each tool call as its own node on the
+     * chain, not grouped into a card).
      */
     const steps = useMemo<ThoughtStep[]>(() => {
       const out: ThoughtStep[] = [];
@@ -100,7 +112,7 @@ export const ThoughtsPanel = memo(
       return out;
     }, [thoughtText, parts]);
 
-    if (steps.length === 0) {
+    if (steps.length === 0 && !isActive) {
       return null;
     }
 
@@ -109,25 +121,36 @@ export const ThoughtsPanel = memo(
         {steps.map((step) => {
           if (step.kind === 'reasoning') {
             return (
-              <div key={step.key} className={classNames(styles.thinkingItem, styles.markdownContent)}>
+              <div key={step.key} className={styles.chatThinkingItemMarkdown}>
+                {/* Reasoning node — book icon on the chain line (Copilot uses codicon-book) */}
+                <span className={classNames(styles.chatThinkingIcon, 'i-ph:book-open')} aria-hidden />
                 <ReasoningMarkdown html>{step.text}</ReasoningMarkdown>
               </div>
             );
           }
 
-          // Tool step — flat inline progress row, NO CARD
+          // Tool node — tool-type icon on the chain line.
+          const { toolInvocation } = step.item as any;
+          const { toolName, state, result } = toolInvocation || {};
+          const isError = state === 'result' && classifyResult(result) === 'error';
+          const toolIcon = getToolIcon(toolName);
+
           return (
-            <div key={step.key} className={styles.toolInvocationPart}>
-              <ToolProgress part={step.item} addToolResult={addToolResult} />
+            <div key={step.key} className={styles.chatThinkingToolWrapper}>
+              <span className={classNames(styles.chatThinkingIcon, toolIcon, isError && styles.error)} aria-hidden />
+              <ToolProgress part={step.item} addToolResult={addToolResult} inThinkingList />
             </div>
           );
         })}
 
-        {/* Live "Working…" pulse while streaming — Copilot's .chat-working-progress-step */}
+        {/*
+         * Live "Working…" node — spinning icon on the chain line. This is the
+         * last node in the chain while streaming (Copilot's .chat-thinking-spinner-item).
+         */}
         {isActive && (
-          <div className={styles.workingProgress}>
-            <span className={classNames(styles.icon, 'i-ph:spinner-gap')} aria-label="loading" />
-            <span className={styles.label}>Working…</span>
+          <div className={styles.chatThinkingSpinnerItem}>
+            <span className={classNames(styles.chatThinkingIcon, styles.spinning, 'i-ph:spinner-gap')} aria-hidden />
+            <span className={styles.spinnerLabel}>Working…</span>
           </div>
         )}
       </ThinkingBox>

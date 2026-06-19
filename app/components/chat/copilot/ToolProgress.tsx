@@ -45,6 +45,63 @@ export function getMeta(toolName: string): ToolMeta {
 }
 
 /**
+ * Map a tool name to a Phosphor icon class that sits ON the chain-of-thought
+ * line. This mirrors VS Code Copilot's `getToolInvocationIcon` (chatThinkingContentPart.ts L93-133):
+ *   - search/grep/find/list/semantic/changes/codebase → magnifying glass
+ *   - read/get_file/problems → book
+ *   - edit/insert/create/replace → pencil
+ *   - terminal → terminal
+ *   - default → wrench (Copilot uses codicon-tools)
+ *
+ * The icon represents the TOOL TYPE (not the status). Status (in-flight vs
+ * done vs error) is conveyed by the inline label shimmer + error coloring.
+ */
+export function getToolIcon(toolName: string): string {
+  const lower = (toolName || '').toLowerCase();
+
+  if (
+    lower.includes('search') ||
+    lower.includes('grep') ||
+    lower.includes('find') ||
+    lower.includes('list') ||
+    lower.includes('semantic') ||
+    lower.includes('changes') ||
+    lower.includes('codebase') ||
+    lower.includes('checked')
+  ) {
+    return 'i-ph:magnifying-glass';
+  }
+
+  if (lower.includes('read') || lower.includes('get_file') || lower.includes('problems')) {
+    return 'i-ph:book-open';
+  }
+
+  if (
+    lower.includes('edit') ||
+    lower.includes('insert') ||
+    lower.includes('create') ||
+    lower.includes('replace') ||
+    lower.includes('multi_replace')
+  ) {
+    return 'i-ph:pencil-simple';
+  }
+
+  if (lower.includes('terminal') || lower.includes('run_in')) {
+    return 'i-ph:terminal-window';
+  }
+
+  if (lower.includes('plan') || lower.includes('execute_plan')) {
+    return 'i-ph:list-checks';
+  }
+
+  if (lower.includes('memory')) {
+    return 'i-ph:brain';
+  }
+
+  return 'i-ph:wrench';
+}
+
+/**
  * Pull a one-line summary of a tool's args for the inline progress row.
  * For native tools this mimics Copilot's "Editing <file>" / "Reading <file>"
  * suffix — much more useful than the raw JSON.
@@ -87,7 +144,7 @@ function summarizeArgs(toolName: string, args: any): string {
  */
 type ResultStatus = 'success' | 'error' | 'unknown';
 
-function classifyResult(result: any): ResultStatus {
+export function classifyResult(result: any): ResultStatus {
   if (result == null) {
     return 'unknown';
   }
@@ -170,6 +227,15 @@ function renderResult(toolName: string, result: any): { summary: string[]; previ
 interface ToolProgressProps {
   part: ToolInvocationUIPart;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
+
+  /**
+   * True when this row renders INSIDE the chain-of-thought thinking list.
+   * When true, the inline status icon is hidden (the chain's .chatThinkingIcon
+   * represents the step instead) — exactly matching VS Code's rule:
+   *   .chat-thinking-tool-wrapper .codicon.codicon-check,
+   *   .chat-thinking-tool-wrapper .codicon.codicon-loading { display: none !important; }
+   */
+  inThinkingList?: boolean;
 }
 
 /**
@@ -189,7 +255,7 @@ interface ToolProgressProps {
  * Clicking the row toggles a collapsible `.tool-input-output-part` that shows
  * the args and the result — exactly like Copilot's expando.
  */
-export const ToolProgress = memo(({ part, addToolResult }: ToolProgressProps) => {
+export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false }: ToolProgressProps) => {
   const [showDetails, setShowDetails] = useState(false);
   const { toolInvocation } = part;
   const { toolName, args, state, result } = toolInvocation as any;
@@ -213,26 +279,37 @@ export const ToolProgress = memo(({ part, addToolResult }: ToolProgressProps) =>
   }
 
   const label = isPending ? meta.pendingLabel : meta.label;
-  const shimmer = isPending; // shimmer the text while in flight
+
+  /*
+   * Shimmer the text while in flight — matches VS Code's .shimmer-progress,
+   * which animates the label inside the thinking list too.
+   */
+  const shimmer = isPending;
 
   return (
     <div className={styles.toolInvocationPart}>
-      {/* The flat inline progress row — exactly Copilot's .progress-container */}
+      {/* The flat inline progress row — exactly Copilot's .progress-container.
+           When inside the thinking list, hide the inline status icon: the
+           chain-of-thought .chatThinkingIcon already represents the step
+           (VS Code: .chat-thinking-tool-wrapper .codicon-check/.codicon-loading
+           { display: none !important }). The label still shimmers while pending. */}
       <div
         className={classNames(
           styles.progressContainer,
           shimmer && styles.shimmerProgress,
           !isPending && !isError && styles.showCheckmarks,
+          inThinkingList && styles.inThinkingList,
         )}
       >
-        {/* Icon: spinner while pending, error icon on error, check on success (hidden by default) */}
-        {isPending ? (
-          <span className={classNames(styles.icon, 'i-ph:spinner-gap')} aria-label="loading" />
-        ) : isError ? (
-          <span className={classNames(styles.icon, styles.error, 'i-ph:x-circle')} aria-label="error" />
-        ) : (
-          <span className={classNames(styles.icon, styles.check, 'i-ph:check-circle')} aria-label="done" />
-        )}
+        {/* Icon: only render when NOT inside the thinking list (the chain icon handles it there) */}
+        {!inThinkingList &&
+          (isPending ? (
+            <span className={classNames(styles.icon, 'i-ph:spinner-gap')} aria-label="loading" />
+          ) : isError ? (
+            <span className={classNames(styles.icon, styles.error, 'i-ph:x-circle')} aria-label="error" />
+          ) : (
+            <span className={classNames(styles.icon, styles.check, 'i-ph:check-circle')} aria-label="done" />
+          ))}
 
         {/* Message + args summary — clickable to toggle details */}
         <button
