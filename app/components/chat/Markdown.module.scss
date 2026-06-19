@@ -8,20 +8,22 @@ $code-font-size: 13px;
 }
 
 /*
- * Copilot-style markdown typography for the assistant answer body.
- * Tuned to match VS Code Copilot Chat: a compact 15px base, clean headings
- * (no GitHub-style underlines), subtle inline code, and tidy code blocks.
+ * Copilot-exact markdown typography for the assistant answer body.
+ * Ported from VS Code's chat.css `.interactive-item-container .value >
+ * .rendered-markdown` rules: 14px base (body-m), 16px paragraph spacing,
+ * clean headings (no GitHub-style underlines), subtle inline code with
+ * 1px border, and tidy code blocks.
  */
 .MarkdownContent {
   font-family: 'Almarai', sans-serif;
-  font-size: 15px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--bolt-elements-textPrimary);
   word-wrap: break-word;
   overflow-wrap: anywhere;
 
   > *:not(:last-child) {
-    margin-block-end: 14px;
+    margin-block-end: 16px;
   }
 
   :global(.artifact) {
@@ -73,7 +75,7 @@ $code-font-size: 13px;
     margin-block-start: 0;
 
     &:not(:last-of-type) {
-      margin-block-end: 14px;
+      margin-block-end: 16px;
     }
   }
 

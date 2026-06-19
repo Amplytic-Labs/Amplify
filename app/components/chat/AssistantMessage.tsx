@@ -18,6 +18,7 @@ import type {
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
+import { AnswerActions } from './copilot/AnswerActions';
 
 interface AssistantMessageProps {
   content: string;
@@ -62,15 +63,17 @@ function normalizedFilePath(path: string) {
 }
 
 /**
- * Assistant message — reinvented Copilot-style layout.
+ * Assistant message — Copilot-exact layout.
  *
  *   ┌─────────────────────────────────────────────┐
- *   │ ✦ Thought for 4s  ▾                         │  ← collapsible panel
- *   │   ┌ reasoning text (muted) ┐                │
- *   │   ┌ tool card: Read file ✓ ┐                │
- *   │   ┌ tool card: Edited file ✓ ┐              │
- *   └─────────────────────────────────────────────┘
- *   │ <final answer markdown>                     │  ← the answer body
+ *   │ ▾ Thought for 4s                            │  ← .chat-thinking-box
+ *   │   reasoning text (muted, 12px)              │     (curved connector)
+ *   │   [icon] Read file  src/index.ts            │  ← .progress-container (flat, NO card)
+ *   │   [icon] Edited file  src/index.ts          │  ← .progress-container (flat, NO card)
+ *   │   Working…                                  │  ← shimmer while streaming
+ *   ├─────────────────────────────────────────────┤
+ *   │ <final answer markdown>                     │  ← .rendered-markdown (14px, 16px p-spacing)
+ *   │ 👍 👎 | 📋 ↻ 🔊              1.2k tokens    │  ← hover action bar (AnswerActions)
  *   └─────────────────────────────────────────────┘
  *
  * The thought panel pulls from TWO sources:
@@ -79,9 +82,9 @@ function normalizedFilePath(path: string) {
  *   2. Native AI-SDK `reasoning` parts (for models that use a dedicated
  *      reasoning channel).
  *
- * Tool invocations (from `parts`) render as compact Copilot-style cards
- * inside the panel. The final answer is the text OUTSIDE the thought tags,
- * smooth-streamed with a typewriter effect.
+ * Tool invocations (from `parts`) render as flat inline `.progress-container`
+ * rows inside the panel — NO CARDS. The final answer is the text OUTSIDE the
+ * thought tags, smooth-streamed with a typewriter effect.
  */
 export const AssistantMessage = memo(
   ({
@@ -127,6 +130,12 @@ export const AssistantMessage = memo(
     if (filteredAnnotations.find((annotation) => annotation.type === 'codeContext')) {
       codeContext = filteredAnnotations.find((annotation) => annotation.type === 'codeContext')?.files;
     }
+
+    // Token usage from the `usage` annotation (written by api.chat.ts on completion).
+    const usageAnnotation = filteredAnnotations.find((a) => a.type === 'usage') as
+      | { type: 'usage'; value?: { completionTokens?: number; promptTokens?: number; totalTokens?: number } }
+      | undefined;
+    const usage = usageAnnotation?.value;
 
     /**
      * Native reasoning + tool-invocation parts from the AI SDK. These are
@@ -215,9 +224,10 @@ export const AssistantMessage = memo(
         </>
 
         {/*
-         * Copilot-style collapsible "Thought for Ns" panel. Sits ABOVE the
-         * final answer. Contains reasoning (from <thought> tags and/or native
-         * reasoning parts) plus tool invocation cards.
+         * Copilot-exact collapsible "Thought for Ns" panel (.chat-thinking-box).
+         * Sits ABOVE the final answer. Contains reasoning (from <thought> tags
+         * and/or native reasoning parts) plus tool invocations rendered as
+         * FLAT INLINE .progress-container rows — NO CARDS.
          */}
         {hasPanelContent && (
           <ThoughtsPanel
@@ -232,21 +242,18 @@ export const AssistantMessage = memo(
         {/*
          * Final answer markdown — the user-facing response. Renders BELOW the
          * thought panel, exactly like VS Code Copilot's answer area.
+         * Typography: 14px base, 16px p-spacing, 1.6 line-height (matches
+         * Copilot's .rendered-markdown body-m sizing).
          */}
         <Markdown append={append} chatMode={chatMode} setChatMode={setChatMode} model={model} provider={provider} html>
           {smoothAnswer}
         </Markdown>
 
-        <div className="flex justify-start mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <WithTooltip tooltip="Copy raw markdown">
-            <button
-              onClick={() => navigator.clipboard.writeText(content)}
-              className="p-1.5 rounded-md bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors"
-            >
-              <div className="i-ph:copy text-sm" />
-            </button>
-          </WithTooltip>
-        </div>
+        {/*
+         * Copilot-style hover action bar: 👍 👎 | 📋 ↻ 🔊 + token-usage pill.
+         * Hidden while streaming; fades in on group-hover.
+         */}
+        <AnswerActions content={content} usage={usage} isStreaming={isStreaming} />
       </div>
     );
   },
