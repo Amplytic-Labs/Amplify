@@ -27,7 +27,20 @@ export const Markdown = memo(
   ({ children, html = false, limitedMarkdown = false, append, setChatMode, model, provider }: MarkdownProps) => {
     logger.trace('Render');
 
-    const parsedChildren = useMemo(() => stripCodeFenceFromArtifact(children), [children]);
+    /*
+     * Preprocess content:
+     *   1. Strip code fences around boltArtifact (existing behaviour)
+     *   2. Convert <thought>...</thought> blocks into collapsible
+     *      <details class="__boltThought__"> elements so the AI's
+     *      chain-of-thought renders Copilot-style (collapsible, dimmed,
+     *      with a "Thought process" summary). The `<thought>` tag is not
+     *      a real HTML element so we transform it BEFORE markdown parsing
+     *      rather than relying on rehype-raw to recognise it.
+     */
+    const parsedChildren = useMemo(() => {
+      const stripped = stripCodeFenceFromArtifact(children);
+      return transformThoughtBlocks(stripped);
+    }, [children]);
 
     const childrenRef = useRef(parsedChildren);
     childrenRef.current = parsedChildren;
@@ -50,6 +63,10 @@ export const Markdown = memo(
             }
 
             return <Artifact messageId={messageId} artifactId={artifactId} />;
+          }
+
+          if (className?.includes('__boltThought__')) {
+            return <div className="__boltThought__">{children}</div>;
           }
 
           if (className?.includes('__boltSelectedElement__')) {
@@ -233,6 +250,55 @@ export const Markdown = memo(
             </a>
           );
         },
+
+        /*
+         * Copilot-style <thought> block — rendered as a collapsible
+         * "Thought process" panel. The preprocessor converts
+         * `<thought>content</thought>` into
+         * `<details class="__boltThought__"><summary>Thought process</summary>content</details>`.
+         */
+        details: ({ className, children, node, ...props }) => {
+          if (className?.includes('__boltThought__')) {
+            return (
+              <details
+                className="__boltThought__ my-3 border border-bolt-elements-borderColor rounded-lg bg-bolt-elements-background-depth-2 overflow-hidden"
+                {...props}
+              >
+                {children}
+              </details>
+            );
+          }
+
+          return (
+            <details className={className} {...props}>
+              {children}
+            </details>
+          );
+        },
+        summary: ({ className, children, node, ...props }) => {
+          // Style the summary differently inside a thought block
+          const isThought =
+            className?.includes('__boltThought__') ||
+            (node?.properties as any)?.className?.toString().includes('__boltThought__');
+
+          if (isThought) {
+            return (
+              <summary
+                className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-bolt-elements-textSecondary bg-bolt-elements-background-depth-3 hover:bg-bolt-elements-artifacts-backgroundHover transition-colors flex items-center gap-2"
+                {...props}
+              >
+                <span className="i-ph:brain text-base" />
+                <span>Thought process</span>
+              </summary>
+            );
+          }
+
+          return (
+            <summary className={className} {...props}>
+              {children}
+            </summary>
+          );
+        },
       } satisfies Components;
     }, [append, setChatMode, model, provider]);
 
@@ -295,4 +361,48 @@ export const stripCodeFenceFromArtifact = (content: string) => {
   }
 
   return lines.join('\n');
+};
+
+/**
+ * Convert `<thought>...</thought>` blocks emitted by the AI into a
+ * collapsible `<details class="__boltThought__">` element so they render
+ * Copilot-style (collapsible, dimmed, "Thought process" summary).
+ *
+ * This runs BEFORE markdown parsing because `<thought>` is not a real HTML
+ * element and would be stripped by rehype-sanitize. By rewriting it to a
+ * standard `<details>` element we get:
+ *   - Native browser collapse/expand behaviour
+ *   - Compatibility with the existing sanitisation allow-list
+ *   - A clear visual separation between reasoning and the answer
+ *
+ * The transformation is a non-greedy regex match across newlines. We
+ * preserve the inner content verbatim (it can itself contain markdown).
+ * We also handle the streaming case where `</thought>` has not yet been
+ * emitted — a lone `<thought>` opens a block that stays open until the
+ * next `</thought>` or end-of-string, so partial thoughts render
+ * incrementally as the AI streams tokens.
+ */
+export const transformThoughtBlocks = (content: string): string => {
+  if (!content || !content.includes('<thought>')) {
+    return content;
+  }
+
+  // First, replace complete <thought>...</thought> blocks
+  let out = content.replace(
+    /<thought>([\s\S]*?)<\/thought>/g,
+    (_, inner: string) =>
+      `\n\n<details class="__boltThought__"><summary>Thought process</summary>\n\n${inner.trim()}\n\n</details>\n\n`,
+  );
+
+  /*
+   * Streaming case: a <thought> tag with no closing tag yet. Render it as
+   * an open <details> so the user sees the chain-of-thought live.
+   */
+  out = out.replace(
+    /<thought>([\s\S]*)$/g,
+    (_, inner: string) =>
+      `\n\n<details class="__boltThought__" open><summary>Thought process</summary>\n\n${inner.trim()}\n\n</details>\n\n`,
+  );
+
+  return out;
 };
