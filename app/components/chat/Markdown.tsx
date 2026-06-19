@@ -6,6 +6,7 @@ import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markd
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
+import { FilePill } from './copilot/FilePill';
 import type { Message } from 'ai';
 import styles from './Markdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
@@ -69,12 +70,14 @@ export const Markdown = memo(
           }
 
           if (className?.includes('__boltThought__')) {
-            // Legacy path — the new ThoughtProcess component renders
-            // reasoning outside the markdown body. If a stray
-            // __boltThought__ details element ever shows up here we
-            // render it as plain muted text so it doesn't break, but
-            // stripResidualThoughtTags should already have removed
-            // the source `<thought>` tags before markdown parsing.
+            /*
+             * Legacy path — the new ThoughtProcess component renders
+             * reasoning outside the markdown body. If a stray
+             * __boltThought__ details element ever shows up here we
+             * render it as plain muted text so it doesn't break, but
+             * stripResidualThoughtTags should already have removed
+             * the source `<thought>` tags before markdown parsing.
+             */
             return <div className="text-bolt-elements-textTertiary text-xs italic">{children}</div>;
           }
 
@@ -275,6 +278,31 @@ export const Markdown = memo(
             </details>
           );
         },
+
+        /*
+         * Inline code renderer — detects file paths (`app/_layout.jsx`) and
+         * folder paths (`components/ui/`) and renders them as clickable pills
+         * with colorized file-type icons. Falls back to a plain <code> for
+         * non-path inline code (e.g. `useState`, `npm install`).
+         *
+         * Block code (inside ``` fences) is intercepted by the `pre` handler
+         * above which renders <CodeBlock> directly, so this `code` handler
+         * only ever sees INLINE code in practice.
+         */
+        code: ({ className, children }) => {
+          /*
+           * Code blocks have a `language-xxx` class — let the default <code>
+           * render them (the `pre` handler wraps them in <CodeBlock>).
+           */
+          if (className && /language-/.test(className)) {
+            return <code className={className}>{children}</code>;
+          }
+
+          // Inline code — try the file/folder pill.
+          const text = typeof children === 'string' ? children : (children?.toString() ?? '');
+
+          return <FilePill raw={text} />;
+        },
       } satisfies Components;
     }, [append, setChatMode, model, provider]);
 
@@ -374,8 +402,10 @@ export const stripResidualThoughtTags = (content: string): string => {
   // 3. Orphan closing tag
   out = out.replace(/<\/thought>/g, '');
 
-  // Tidy up leading whitespace so the answer's first paragraph
-  // isn't pushed down by an empty line left behind by a stripped block.
+  /*
+   * Tidy up leading whitespace so the answer's first paragraph
+   * isn't pushed down by an empty line left behind by a stripped block.
+   */
   return out.replace(/^\s+/, '');
 };
 

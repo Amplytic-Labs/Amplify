@@ -17,7 +17,7 @@ import type {
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
-import { stripBoltArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
+import { stripBoltArtifacts } from '~/lib/chat/artifact-stripper';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -118,22 +118,22 @@ export const AssistantMessage = memo(
     const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
 
     /*
-     * When the model called `inject_template`, the tool writes a full
-     * `<boltArtifact>` document (template files + `npm install`) into the
-     * message text as a side-effect. The "Created N files" / "Ran N command"
-     * trace tree that artifact renders holds no value for a template injection
-     * — it should happen silently. So we strip the artifact blocks from the
+     * SEVER the boltArtifact trace-tree UI from the chat completely.
+     *
+     * When the model calls `inject_template` (or writes a `<boltArtifact>`
+     * block for any reason), the tool writes a full artifact document
+     * (template files + `npm install` shell action) into the message text.
+     * That artifact rendered the "Created N files" / "Ran N command" trace
+     * tree in the chat — which the user explicitly hates and wants gone.
+     *
+     * So we ALWAYS strip `<boltArtifact>…</boltArtifact>` blocks from the
      * DISPLAY text. The message parser still sees the raw `message.content`
      * (it runs independently in useMessageParser), so the files are still
-     * created and the commands still run — only the visual trace tree is
-     * suppressed. The "Used inject_template" step in the thinking panel is
-     * preserved (it's useful — shows what template was injected).
+     * created and the commands still run silently — only the visual trace
+     * tree is severed from the chat UI. The "Used inject_template" step in
+     * the thinking panel is preserved (it shows what template was injected).
      */
-    const suppressArtifact = useMemo(() => hasInjectTemplateCall(parts as any), [parts]);
-    const answerText = useMemo(
-      () => (suppressArtifact ? stripBoltArtifacts(rawAnswerText) : rawAnswerText),
-      [rawAnswerText, suppressArtifact],
-    );
+    const answerText = useMemo(() => stripBoltArtifacts(rawAnswerText), [rawAnswerText]);
 
     /*
      * Smooth-stream only the visible answer so we never animate thought chars

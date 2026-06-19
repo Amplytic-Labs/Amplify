@@ -365,7 +365,7 @@
   .headerButton {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     background: transparent;
     border: none;
     padding: 0;
@@ -374,11 +374,23 @@
     font-size: 14px;
     line-height: 1.5em;
 
+    /* Brain icon sits on the LEFT of the label — signals "reasoning". */
+    .brainIcon {
+      font-size: 16px;
+      color: var(--bolt-elements-textSecondary);
+      display: inline-flex;
+      flex-shrink: 0;
+      transition: color 0.15s ease;
+    }
+
+    /* Chevron sits on the RIGHT of the label — the expand/collapse affordance. */
     .chevron {
       font-size: 14px;
       color: var(--bolt-elements-textTertiary);
       transition: transform 0.15s ease;
       display: inline-flex;
+      flex-shrink: 0;
+      margin-left: 2px;
 
       &.open {
         transform: rotate(0deg);
@@ -390,12 +402,17 @@
     }
 
     .label {
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 600;
       color: var(--bolt-elements-textSecondary);
     }
 
     &:hover {
       color: var(--bolt-elements-textPrimary);
+
+      .brainIcon {
+        color: var(--bolt-elements-textPrimary);
+      }
 
       .chevron {
         color: var(--bolt-elements-textPrimary);
@@ -463,10 +480,9 @@
     .chatThinkingSpinnerItem {
       position: relative;
 
-      /* The vertical connector line. mask-image carves a gap (6px→24px)
-       * where the 14px icon sits (icon spans y=8→22), so the line appears
-       * to pass BEHIND the icon. Icon + gap scaled up from Copilot's 12px
-       * defaults for improved reasoning-content legibility. */
+      /* The vertical connector line. mask-image carves a gap (7px→25px)
+       * where the 16px icon sits (icon spans y=7→23), so the line appears
+       * to pass BEHIND the icon. Icon + gap scaled for the 16px chain icons. */
       &::before {
         content: '';
         position: absolute;
@@ -476,8 +492,8 @@
         width: 1px;
         border-radius: 0;
         background-color: var(--bolt-elements-borderColor);
-        mask-image: linear-gradient(to bottom, #000 0 6px, transparent 6px 24px, #000 24px 100%);
-        -webkit-mask-image: linear-gradient(to bottom, #000 0 6px, transparent 6px 24px, #000 24px 100%);
+        mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
         mask-mode: alpha;
         -webkit-mask-mode: alpha;
         pointer-events: none;
@@ -486,14 +502,14 @@
       /* First step: no line above the icon (only the curved header connector
        * lives there). Line starts below the icon and runs to the next step. */
       &:first-child::before {
-        mask-image: linear-gradient(to bottom, transparent 0 24px, #000 24px 100%);
-        -webkit-mask-image: linear-gradient(to bottom, transparent 0 24px, #000 24px 100%);
+        mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
       }
 
       /* Last step: line comes from the previous step and stops at this icon. */
       &:last-child::before {
-        mask-image: linear-gradient(to bottom, #000 0 6px, transparent 6px 100%);
-        -webkit-mask-image: linear-gradient(to bottom, #000 0 6px, transparent 6px 100%);
+        mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 100%);
       }
 
       /* Only step: no line at all. */
@@ -503,18 +519,17 @@
         -webkit-mask-image: none;
       }
 
-      /* The icon node — sits ON the vertical line (left:4px, the line is at 11px,
-       * icon center is at 4+7=11px so the line passes through the icon center).
-       * Sized 14x14px (bumped from Copilot's 12px for better legibility in the
-       * reasoning panel). */
+      /* The icon node — sits ON the vertical line (left:3px, the line is at 11px,
+       * icon center is at 3+8=11px so the line passes through the icon center).
+       * Sized 16x16px (bumped again for maximum reasoning-content legibility). */
       > .chatThinkingIcon {
         position: absolute;
-        left: 4px;
-        top: 8px;
-        width: 14px;
-        height: 14px;
-        font-size: 14px;
-        line-height: 14px;
+        left: 3px;
+        top: 7px;
+        width: 16px;
+        height: 16px;
+        font-size: 16px;
+        line-height: 16px;
         text-align: center;
         color: var(--bolt-elements-textSecondary);
         display: inline-flex;
@@ -536,11 +551,12 @@
     }
 
     /* ===== Reasoning text step (.chat-thinking-item.markdown-content) ===== */
-    /* Font + icon bumped to 14px (from Copilot's 12px) for markedly better
-     * legibility of the chain-of-thought reasoning content. */
+    /* Font bumped to 16px (semibold) for markedly better legibility of the
+     * chain-of-thought reasoning content. Icons bumped to 16px to match. */
     .chatThinkingItemMarkdown {
-      padding: 8px 12px 8px 26px;
-      font-size: 14px;
+      padding: 8px 12px 8px 28px;
+      font-size: 16px;
+      font-weight: 600;
       color: var(--bolt-elements-textSecondary);
       line-height: 1.6;
 
@@ -554,7 +570,7 @@
 
       code {
         font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
-        font-size: 12.5px;
+        font-size: 14px;
         background-color: var(--bolt-elements-messages-inlineCode-background);
         padding: 1px 4px;
         border-radius: 4px;
@@ -566,10 +582,10 @@
     /* ===== Tool invocation step (.chat-thinking-tool-wrapper) ===== */
     /* Wraps the flat .toolInvocationPart. The chain icon represents the step,
      * so the inner progress-container hides its own status icon. Left padding
-     * bumped to 26px to clear the larger 14px chain icon + line. */
+     * bumped to 28px to clear the larger 16px chain icon + line. */
     .chatThinkingToolWrapper {
       .toolInvocationPart {
-        padding: 4px 12px 4px 20px;
+        padding: 4px 12px 4px 22px;
         position: relative;
         margin-bottom: 0;
         display: block;
@@ -577,13 +593,14 @@
         .progressContainer {
           margin: 0 0 2px 6px;
 
-          /* Slightly larger label inside the chain to match the bumped
-           * reasoning typography (13px → 14px container, 12px → 13px step). */
+          /* Larger label inside the chain to match the bumped reasoning
+           * typography (16px container, 14px step — semibold for emphasis). */
           &.inThinkingList {
-            font-size: 14px;
+            font-size: 16px;
 
             .progressStep {
-              font-size: 13px;
+              font-size: 14px;
+              font-weight: 600;
             }
           }
         }
@@ -596,10 +613,11 @@
 
     /* ===== Working spinner step (.chat-thinking-spinner-item) ===== */
     /* The live "Working…" pulse at the bottom of the chain while streaming.
-     * Label bumped to 13px to match the larger reasoning typography. */
+     * Label bumped to 14px semibold to match the larger reasoning typography. */
     .chatThinkingSpinnerItem {
-      padding: 8px 12px 8px 26px;
-      font-size: 13px;
+      padding: 8px 12px 8px 28px;
+      font-size: 14px;
+      font-weight: 600;
       color: var(--bolt-elements-textSecondary);
       display: flex;
       align-items: center;
@@ -620,7 +638,8 @@
         -webkit-text-fill-color: transparent;
         animation: chat-thinking-shimmer 2s linear infinite;
         will-change: background-position;
-        font-size: 13px;
+        font-size: 14px;
+        font-weight: 600;
       }
     }
   }
@@ -805,4 +824,129 @@
       }
     }
   }
+}
+
+/* ===== Inline code fallback (used by FilePill when the code text isn't a path) ===== */
+/* Matches the existing Markdown.module.scss inline-code look so non-path inline
+ * code (e.g. `useState`, `npm install`) renders identically whether it flows
+ * through FilePill or the default renderer. */
+.inlineCode {
+  font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--bolt-elements-messages-inlineCode-text);
+  background-color: var(--bolt-elements-messages-inlineCode-background);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--bolt-elements-borderColor);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== File / folder pill (replaces inline <code> for path mentions) ===== */
+/*
+ * When the AI mentions a file (`app/_layout.jsx`) or folder (`components/ui/`)
+ * inside backticks, we render a clickable pill with a colorized file-type icon
+ * instead of plain monospace text.
+ *
+ *   [⚛ _layout.jsx]   ← React logo (cyan) + basename, clickable → focus file
+ *   [📁 ui]           ← folder icon + final segment, clickable → show workbench
+ *
+ * When the path doesn't exist in the live workspace, the pill renders as a
+ * non-interactive chip (still styled, but dimmed + no pointer cursor).
+ */
+.filePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  border: 1px solid var(--bolt-elements-borderColor);
+  background: var(--bolt-elements-messages-inlineCode-background);
+  font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.5;
+  color: var(--bolt-elements-textSecondary);
+  cursor: pointer;
+  vertical-align: baseline;
+  text-decoration: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+  user-select: none;
+  -webkit-user-select: none;
+
+  /* The colorized file-type / folder icon. For Phosphor-based icons (folder,
+   * generic file) this uses a CSS mask. For brand file-type icons (React, JS,
+   * TS, …) the parent uses an inline SVG background-image (see .filePillIconSvg). */
+  .filePillIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  /* Inline-SVG brand icon (React atom, JS yellow, TS blue, …). Rendered as a
+   * background-image so the multi-colour SVG shows with no CSS masking. */
+  .filePillIconSvg {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+  .filePillName {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+  }
+
+  &:hover {
+    background: var(--bolt-elements-background-depth-2);
+    border-color: var(--bolt-elements-textTertiary);
+    color: var(--bolt-elements-textPrimary);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bolt-elements-textLink, #3794ff);
+    outline-offset: 1px;
+  }
+
+  /* Disabled state — path doesn't exist in the workspace. Still styled as a
+   * chip (so it looks distinctive) but non-interactive. */
+  &.filePillDisabled {
+    cursor: default;
+    opacity: 0.75;
+
+    &:hover {
+      background: var(--bolt-elements-messages-inlineCode-background);
+      border-color: var(--bolt-elements-borderColor);
+      color: var(--bolt-elements-textSecondary);
+      transform: none;
+    }
+  }
+}
+
+/* Folder pill — slight amber tint on the icon area to distinguish folders
+ * from files at a glance. */
+.folderPill {
+  .filePillIcon {
+    color: #d9a300;
+  }
+}
+
+/* File pill — no extra tint (the inline SVG icon already carries brand colour). */
+.filePillFile {
+  /* intentionally empty — icon colour comes from the inline SVG */
 }

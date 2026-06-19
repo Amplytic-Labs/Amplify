@@ -85,10 +85,13 @@ export const ThinkingBox = memo(({ isActive, duration, thoughtStreaming, childre
         !isOpen && styles.thinkingCollapsed,
       )}
     >
-      {/* Header button (chevron + label) */}
+      {/* Header button — brain icon on the LEFT, chevron on the RIGHT.
+           The brain signals "reasoning" (Copilot uses a spark/thinking icon);
+           the chevron on the right is the expand/collapse affordance. */}
       <button type="button" onClick={() => setIsOpen((v) => !v)} className={styles.headerButton} aria-expanded={isOpen}>
-        <span className={classNames(styles.chevron, isOpen ? styles.open : styles.closed, 'i-ph:caret-down-bold')} />
+        <span className={classNames(styles.brainIcon, 'i-ph:brain')} aria-hidden />
         <span className={styles.label}>{label}</span>
+        <span className={classNames(styles.chevron, isOpen ? styles.open : styles.closed, 'i-ph:caret-down-bold')} />
       </button>
 
       {/* Collapsible list (with curved connector drawn by ::after) */}
