@@ -3,6 +3,10 @@ import {
   isFileMutationSignal,
   parseFileMutationSignal,
   buildNativeTools,
+  isReadOnlyNativeTool,
+  isMutatingNativeTool,
+  READ_ONLY_NATIVE_TOOLS,
+  NATIVE_TOOL_NAMES,
   type NativeFileMap,
 } from './nativeTools';
 
@@ -87,6 +91,7 @@ describe('parseFileMutationSignal', () => {
     const parsed = parseFileMutationSignal(signal);
 
     expect(parsed?.operations[0].op).toBe('multi_replace');
+
     if (parsed?.operations[0].op === 'multi_replace') {
       expect(parsed.operations[0].edits).toHaveLength(2);
     }
@@ -110,6 +115,7 @@ describe('native tools — read_file', () => {
     expect(result).toContain('line one');
     expect(result).toContain('line two');
     expect(result).toContain('line three');
+
     // Line numbers are 1-indexed and padded
     expect(result).toMatch(/\s*1: line one/);
   });
@@ -236,10 +242,7 @@ describe('native tools — grep_search', () => {
 
   it('should be case-insensitive when caseSensitive is false', async () => {
     const files = makeFileMap({ 'a.ts': 'Hello\nHELLO\nhello\n' });
-    const result = await tools.grep_search.execute(
-      { pattern: 'hello', caseSensitive: false },
-      { files },
-    );
+    const result = await tools.grep_search.execute({ pattern: 'hello', caseSensitive: false }, { files });
 
     // All three lines should match
     const matches = (result.match(/a\.ts:\d+/g) || []).length;
@@ -252,10 +255,7 @@ describe('native tools — grep_search', () => {
       'b.ts': 'match\n',
       'c.md': 'match\n',
     });
-    const result = await tools.grep_search.execute(
-      { pattern: 'match', includePattern: '*.ts' },
-      { files },
-    );
+    const result = await tools.grep_search.execute({ pattern: 'match', includePattern: '*.ts' }, { files });
 
     expect(result).toContain('a.ts');
     expect(result).toContain('b.ts');
@@ -312,6 +312,7 @@ describe('native tools — replace_string_in_file', () => {
     );
 
     expect(isFileMutationSignal(result)).toBe(true);
+
     const parsed = parseFileMutationSignal(result);
 
     expect(parsed?.operations).toHaveLength(1);
@@ -353,9 +354,11 @@ describe('native tools — multi_replace_string_in_file', () => {
     );
 
     expect(isFileMutationSignal(result)).toBe(true);
+
     const parsed = parseFileMutationSignal(result);
 
     expect(parsed?.operations[0].op).toBe('multi_replace');
+
     if (parsed?.operations[0].op === 'multi_replace') {
       expect(parsed.operations[0].edits).toHaveLength(2);
     }
@@ -367,10 +370,7 @@ describe('native tools — create_file', () => {
 
   it('should fail if the file already exists', async () => {
     const files = makeFileMap({ 'a.ts': 'existing' });
-    const result = await tools.create_file.execute(
-      { filePath: 'a.ts', content: 'new' },
-      { files },
-    );
+    const result = await tools.create_file.execute({ filePath: 'a.ts', content: 'new' }, { files });
     expect(result).toContain('already exists');
   });
 
@@ -381,9 +381,69 @@ describe('native tools — create_file', () => {
     );
 
     expect(isFileMutationSignal(result)).toBe(true);
+
     const parsed = parseFileMutationSignal(result);
 
     expect(parsed?.operations).toHaveLength(1);
     expect(parsed?.operations[0].op).toBe('create');
+  });
+});
+
+describe('isReadOnlyNativeTool / isMutatingNativeTool', () => {
+  it('should classify read-only tools correctly', () => {
+    expect(isReadOnlyNativeTool('read_file')).toBe(true);
+    expect(isReadOnlyNativeTool('list_dir')).toBe(true);
+    expect(isReadOnlyNativeTool('find_files')).toBe(true);
+    expect(isReadOnlyNativeTool('grep_search')).toBe(true);
+    expect(isReadOnlyNativeTool('web_search')).toBe(true);
+  });
+
+  it('should classify mutating tools correctly', () => {
+    expect(isMutatingNativeTool('replace_string_in_file')).toBe(true);
+    expect(isMutatingNativeTool('multi_replace_string_in_file')).toBe(true);
+    expect(isMutatingNativeTool('create_file')).toBe(true);
+  });
+
+  it('should NOT classify mutating tools as read-only', () => {
+    expect(isReadOnlyNativeTool('replace_string_in_file')).toBe(false);
+    expect(isReadOnlyNativeTool('multi_replace_string_in_file')).toBe(false);
+    expect(isReadOnlyNativeTool('create_file')).toBe(false);
+  });
+
+  it('should NOT classify read-only tools as mutating', () => {
+    expect(isMutatingNativeTool('read_file')).toBe(false);
+    expect(isMutatingNativeTool('list_dir')).toBe(false);
+    expect(isMutatingNativeTool('find_files')).toBe(false);
+    expect(isMutatingNativeTool('grep_search')).toBe(false);
+    expect(isMutatingNativeTool('web_search')).toBe(false);
+  });
+
+  it('should return false for unknown tools', () => {
+    expect(isReadOnlyNativeTool('unknown_tool')).toBe(false);
+    expect(isMutatingNativeTool('unknown_tool')).toBe(false);
+    expect(isReadOnlyNativeTool('')).toBe(false);
+    expect(isMutatingNativeTool('')).toBe(false);
+  });
+
+  it('should return false for legacy / non-native tools', () => {
+    expect(isReadOnlyNativeTool('request_capabilities')).toBe(false);
+    expect(isReadOnlyNativeTool('list_skills')).toBe(false);
+    expect(isMutatingNativeTool('request_capabilities')).toBe(false);
+    expect(isMutatingNativeTool('list_skills')).toBe(false);
+  });
+
+  it('READ_ONLY_NATIVE_TOOLS should be a subset of NATIVE_TOOL_NAMES', () => {
+    for (const name of READ_ONLY_NATIVE_TOOLS) {
+      expect(NATIVE_TOOL_NAMES).toContain(name);
+    }
+  });
+
+  it('every native tool should be either read-only OR mutating (not both, not neither)', () => {
+    for (const name of NATIVE_TOOL_NAMES) {
+      const ro = isReadOnlyNativeTool(name);
+      const mut = isMutatingNativeTool(name);
+
+      expect(ro !== mut).toBe(true); // exactly one of the two
+    }
   });
 });

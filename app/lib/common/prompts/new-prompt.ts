@@ -322,7 +322,8 @@ ${projectContext || 'No project context available.'}
       - Use \`list_dir\` and \`read_file\` to ground yourself in the actual workspace state before proposing edits.
       - Use \`grep_search\` to find usages of a function or symbol before refactoring.
       - Prefer \`replace_string_in_file\` / \`multi_replace_string_in_file\` for surgical edits to existing files. Reserve the larger artifact-XML flow for new files and bulk scaffolding.
-      - Tools require user approval before they execute — this is intentional. If the user denies a tool call, do not retry without changing your approach.
+      - Read-only tools (\`read_file\`, \`list_dir\`, \`find_files\`, \`grep_search\`, \`web_search\`) auto-execute without user approval, just like VSCode Copilot. You can call them freely to gather context.
+      - Mutating tools (\`replace_string_in_file\`, \`multi_replace_string_in_file\`, \`create_file\`) require explicit user approval before they execute. If the user denies a tool call, do not retry without changing your approach.
       - Tool results include enough context that you often do not need to re-read the same file. Avoid redundant reads.
 
       ## User Memory & Context Tools

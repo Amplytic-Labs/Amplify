@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useEffect } from 'react';
+import { memo, useMemo, useRef, Children } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { BundledLanguage } from 'shiki';
 import { createScopedLogger } from '~/utils/logger';
@@ -256,15 +256,32 @@ export const Markdown = memo(
          * "Thought process" panel. The preprocessor converts
          * `<thought>content</thought>` into
          * `<details class="__boltThought__"><summary>Thought process</summary>content</details>`.
+         *
+         * Visual styling (border, background, animated pulse, italic body)
+         * lives in Markdown.module.scss under `:global(.__boltThought__)`.
+         * We inject a brain icon into the summary here so it matches
+         * Copilot's "thinking" affordance.
          */
-        details: ({ className, children, node, ...props }) => {
+        details: ({ className, children, ...props }) => {
           if (className?.includes('__boltThought__')) {
+            const kids = Children.toArray(children);
+            const modified = kids.map((k, i) => {
+              if (k && typeof k === 'object' && (k as any).type === 'summary') {
+                const summaryChildren = (k as any).props?.children;
+                return (
+                  <summary key={`thought-summary-${i}`} {...(k as any).props}>
+                    <span className="i-ph:brain text-base shrink-0" />
+                    <span>{summaryChildren}</span>
+                  </summary>
+                );
+              }
+
+              return k;
+            });
+
             return (
-              <details
-                className="__boltThought__ my-3 border border-bolt-elements-borderColor rounded-lg bg-bolt-elements-background-depth-2 overflow-hidden"
-                {...props}
-              >
-                {children}
+              <details className="__boltThought__" {...props}>
+                {modified}
               </details>
             );
           }
@@ -273,30 +290,6 @@ export const Markdown = memo(
             <details className={className} {...props}>
               {children}
             </details>
-          );
-        },
-        summary: ({ className, children, node, ...props }) => {
-          // Style the summary differently inside a thought block
-          const isThought =
-            className?.includes('__boltThought__') ||
-            (node?.properties as any)?.className?.toString().includes('__boltThought__');
-
-          if (isThought) {
-            return (
-              <summary
-                className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-bolt-elements-textSecondary bg-bolt-elements-background-depth-3 hover:bg-bolt-elements-artifacts-backgroundHover transition-colors flex items-center gap-2"
-                {...props}
-              >
-                <span className="i-ph:brain text-base" />
-                <span>Thought process</span>
-              </summary>
-            );
-          }
-
-          return (
-            <summary className={className} {...props}>
-              {children}
-            </summary>
           );
         },
       } satisfies Components;

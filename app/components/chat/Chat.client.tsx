@@ -9,7 +9,14 @@ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } from '~/utils/constants';
+import { isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  PROMPT_COOKIE_KEY,
+  PROVIDER_LIST,
+  TOOL_EXECUTION_APPROVAL,
+} from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
@@ -444,6 +451,69 @@ export const ChatImpl = memo(
         })();
       }
     }, [messages]);
+
+    /*
+     * ───────────────────────────────────────────────────────────────────
+     * Auto-approve read-only native tools (Copilot-style frictionless reads)
+     *
+     * Copilot in VS Code does NOT prompt the user every time the AI wants
+     * to read a file, list a directory, or run a grep — it just does it.
+     * Only mutating operations (edits, creates, terminal commands) prompt
+     * the user for consent. We mirror that behaviour here.
+     *
+     * When the AI emits a tool call with state='call' for any of the
+     * read-only native tools below, we immediately call `addToolResult`
+     * with `TOOL_EXECUTION_APPROVAL.APPROVE`. The next /api/chat request
+     * then runs the server-side execute function and the actual result
+     * (file contents, grep matches, web results, …) is streamed back.
+     *
+     * Mutating tools (replace_string_in_file, multi_replace_string_in_file,
+     * create_file) are intentionally NOT in this list — they still show
+     * the Approve/Reject UI so the user stays in control of file edits.
+     * ───────────────────────────────────────────────────────────────────
+     */
+    const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!p || p.type !== 'tool-invocation' || !p.toolInvocation) {
+            continue;
+          }
+
+          const inv = p.toolInvocation as any;
+
+          if (inv.state !== 'call') {
+            continue;
+          }
+
+          if (!isReadOnlyNativeTool(inv.toolName)) {
+            continue;
+          }
+
+          if (autoApprovedToolCallIdsRef.current.has(inv.toolCallId)) {
+            continue;
+          }
+
+          autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+          logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
+          addToolResult({
+            toolCallId: inv.toolCallId,
+            result: TOOL_EXECUTION_APPROVAL.APPROVE,
+          });
+        }
+      }
+    }, [messages, addToolResult]);
 
     const handlePlanExecution = async (signal: any) => {
       setPlanExecuting(true);

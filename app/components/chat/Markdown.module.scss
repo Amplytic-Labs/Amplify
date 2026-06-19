@@ -170,4 +170,102 @@ $code-font-size: 13px;
       background-color: var(--bolt-elements-background-depth-2);
     }
   }
+
+  /*
+   * Copilot-style <thought> block rendering.
+   * The preprocessor in Markdown.tsx converts <thought>...</thought>
+   * into <details class="__boltThought__"><summary>Thought process</summary>...</details>.
+   * These styles give it the polished look familiar from VSCode Copilot:
+   *   - subtle border + tinted background
+   *   - small italic dimmed body text
+   *   - animated "thinking..." indicator while streaming
+   *   - smooth expand/collapse
+   */
+  :global(.__boltThought__) {
+    margin: 12px 0;
+    border: 1px solid var(--bolt-elements-borderColor);
+    border-radius: 8px;
+    background: var(--bolt-elements-background-depth-2);
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+
+    &:hover {
+      border-color: var(--bolt-elements-textTertiary);
+    }
+
+    > summary {
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--bolt-elements-textSecondary);
+      background: var(--bolt-elements-background-depth-3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s ease;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      &:hover {
+        background: var(--bolt-elements-artifacts-backgroundHover);
+      }
+    }
+
+    /*
+     * When the details element is open (i.e. streaming thought or
+     * user-expanded), show an animated "thinking..." pulse next to the
+     * summary label. This mirrors Copilot's behaviour where reasoning
+     * streams in live.
+     */
+    &[open] > summary::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--bolt-elements-textSecondary);
+      margin-left: auto;
+      animation: bolt-thought-pulse 1.4s ease-in-out infinite;
+    }
+
+    /*
+     * Inner thought body — dimmed, slightly smaller, italic to clearly
+     * separate reasoning from the final answer.
+     */
+    > *:not(summary) {
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--bolt-elements-textSecondary);
+      font-style: italic;
+
+      &:last-child {
+        padding-block-end: 14px;
+      }
+    }
+
+    /*
+     * Code blocks inside a thought should NOT be italic — they're code.
+     */
+    pre,
+    code {
+      font-style: normal;
+    }
+  }
+}
+
+@keyframes bolt-thought-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
 }

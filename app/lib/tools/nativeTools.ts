@@ -636,3 +636,37 @@ export const NATIVE_TOOL_NAMES = [
 ] as const;
 
 export type NativeToolName = (typeof NATIVE_TOOL_NAMES)[number];
+
+/**
+ * Read-only native tools — these auto-execute without user approval,
+ * mirroring VSCode Copilot's behaviour where the AI can freely read
+ * files, list directories, search the codebase, and run web searches
+ * without prompting the user for each call.
+ *
+ * Mutating tools (replace_string_in_file, multi_replace_string_in_file,
+ * create_file) are intentionally NOT in this list — they still show
+ * the Approve/Reject UI so the user stays in control of file edits.
+ */
+export const READ_ONLY_NATIVE_TOOLS: ReadonlySet<string> = new Set([
+  'read_file',
+  'list_dir',
+  'find_files',
+  'grep_search',
+  'web_search',
+]);
+
+/**
+ * Returns true if the given tool name is a read-only native tool that
+ * should auto-execute without user approval.
+ */
+export function isReadOnlyNativeTool(toolName: string): boolean {
+  return READ_ONLY_NATIVE_TOOLS.has(toolName);
+}
+
+/**
+ * Returns true if the given tool name is a mutating native tool that
+ * requires explicit user approval before execution.
+ */
+export function isMutatingNativeTool(toolName: string): boolean {
+  return NATIVE_TOOL_NAMES.includes(toolName as NativeToolName) && !READ_ONLY_NATIVE_TOOLS.has(toolName);
+}
