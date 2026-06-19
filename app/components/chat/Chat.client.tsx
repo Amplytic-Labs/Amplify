@@ -188,6 +188,17 @@ export const ChatImpl = memo(
         projectContext: vectorProjectContext || undefined,
       },
       sendExtraMessageFields: true,
+      /*
+       * Enable client-side multi-step continuation. Without this, calling
+       * `addToolResult` (used for native-tool auto-approve + mutating-tool
+       * approval) would only update local state and NEVER send the result
+       * back to the server — so the server-side `execute` would never run
+       * and tools would appear to "do nothing". With maxSteps set, the AI
+       * SDK automatically fires a follow-up /api/chat request carrying the
+       * tool result, `processToolInvocations` runs the real execute, and
+       * the actual result is streamed back. Mirrors the server's maxLLMSteps.
+       */
+      maxSteps: mcpSettings.maxLLMSteps,
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');

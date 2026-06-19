@@ -7,44 +7,49 @@ $code-font-size: 13px;
   }
 }
 
+/*
+ * Copilot-style markdown typography for the assistant answer body.
+ * Tuned to match VS Code Copilot Chat: a compact 15px base, clean headings
+ * (no GitHub-style underlines), subtle inline code, and tidy code blocks.
+ */
 .MarkdownContent {
   font-family: 'Almarai', sans-serif;
-  font-size: 18px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.65;
   color: var(--bolt-elements-textPrimary);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 
   > *:not(:last-child) {
-    margin-block-end: 16px;
+    margin-block-end: 14px;
   }
 
   :global(.artifact) {
-    margin: 1.5em 0;
+    margin: 1.25em 0;
   }
 
   :is(h1, h2, h3, h4, h5, h6) {
     @include not-inside-actions {
-      margin-block-start: 24px;
-      margin-block-end: 16px;
-      font-weight: 600;
-      line-height: 1.25;
+      margin-block-start: 22px;
+      margin-block-end: 10px;
+      font-weight: 650;
+      line-height: 1.3;
       color: var(--bolt-elements-textPrimary);
     }
   }
 
   h1 {
-    font-size: 2em;
-    border-bottom: 1px solid var(--bolt-elements-borderColor);
-    padding-bottom: 0.3em;
+    font-size: 1.5em;
+    letter-spacing: -0.01em;
   }
 
   h2 {
-    font-size: 1.5em;
-    border-bottom: 1px solid var(--bolt-elements-borderColor);
-    padding-bottom: 0.3em;
+    font-size: 1.3em;
+    letter-spacing: -0.01em;
   }
 
   h3 {
-    font-size: 1.25em;
+    font-size: 1.15em;
   }
 
   h4 {
@@ -52,20 +57,23 @@ $code-font-size: 13px;
   }
 
   h5 {
-    font-size: 0.875em;
+    font-size: 0.9em;
+    color: var(--bolt-elements-textSecondary);
   }
 
   h6 {
     font-size: 0.85em;
-    color: #6a737d;
+    color: var(--bolt-elements-textTertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   p {
     white-space: pre-wrap;
+    margin-block-start: 0;
 
     &:not(:last-of-type) {
-      margin-block-start: 0;
-      margin-block-end: 16px;
+      margin-block-end: 14px;
     }
   }
 
@@ -79,21 +87,26 @@ $code-font-size: 13px;
     }
   }
 
+  strong {
+    font-weight: 650;
+    color: var(--bolt-elements-textPrimary);
+  }
+
   :not(pre) > code {
     font-family: $font-mono;
     font-size: $code-font-size;
 
     @include not-inside-actions {
-      border-radius: 6px;
-      padding: 0.2em 0.4em;
+      border-radius: 5px;
+      padding: 0.12em 0.38em;
       background-color: var(--bolt-elements-messages-inlineCode-background);
       color: var(--bolt-elements-messages-inlineCode-text);
     }
   }
 
   pre {
-    padding: 20px 16px;
-    border-radius: 6px;
+    padding: 16px 14px;
+    border-radius: 8px;
   }
 
   pre:has(> code) {
@@ -106,16 +119,18 @@ $code-font-size: 13px;
 
   blockquote {
     margin: 0;
-    padding: 0 1em;
-    color: var(--bolt-elements-textTertiary);
-    border-left: 0.25em solid var(--bolt-elements-borderColor);
+    padding: 2px 1em;
+    color: var(--bolt-elements-textSecondary);
+    border-left: 3px solid var(--bolt-elements-borderColor);
+    background: var(--bolt-elements-background-depth-2);
+    border-radius: 0 6px 6px 0;
   }
 
   :is(ul, ol) {
     @include not-inside-actions {
-      padding-left: 2em;
+      padding-left: 1.6em;
       margin-block-start: 0;
-      margin-block-end: 16px;
+      margin-block-end: 14px;
     }
   }
 
@@ -134,36 +149,56 @@ $code-font-size: 13px;
   li {
     @include not-inside-actions {
       & + li {
-        margin-block-start: 8px;
+        margin-block-start: 6px;
       }
 
       > *:not(:last-child) {
-        margin-block-end: 16px;
+        margin-block-end: 14px;
       }
+    }
+  }
+
+  /* Tighter checkbox list items (GFM task lists) */
+  li:has(> input[type='checkbox']) {
+    list-style: none;
+    margin-left: -1.2em;
+
+    input[type='checkbox'] {
+      margin-right: 0.5em;
+      vertical-align: middle;
     }
   }
 
   img {
     max-width: 100%;
     box-sizing: border-box;
+    border-radius: 8px;
   }
 
   hr {
-    height: 0.25em;
+    height: 1px;
     padding: 0;
-    margin: 24px 0;
+    margin: 22px 0;
     background-color: var(--bolt-elements-borderColor);
     border: 0;
+    border-radius: 1px;
   }
 
   table {
     border-collapse: collapse;
     width: 100%;
-    margin-block-end: 16px;
+    margin-block-end: 14px;
+    font-size: 0.92em;
 
     :is(th, td) {
-      padding: 6px 13px;
+      padding: 8px 12px;
       border: 1px solid var(--bolt-elements-borderColor);
+      text-align: left;
+    }
+
+    th {
+      background-color: var(--bolt-elements-background-depth-2);
+      font-weight: 600;
     }
 
     tr:nth-child(2n) {
@@ -171,15 +206,26 @@ $code-font-size: 13px;
     }
   }
 
-  /*
-   * Note: The legacy `.__boltThought__` styling block has been
-   * removed. Reasoning is now rendered ABOVE the markdown body by
-   * the ThoughtProcess component (which uses the Reasoning +
-   * ReasoningContent components from ~/components/ai-elements).
-   * If a stray __boltThought__ element ever appears here it is
-   * rendered as plain muted italic text by Markdown.tsx — no
-   * dedicated SCSS needed.
-   */
+  kbd {
+    font-family: $font-mono;
+    font-size: 0.85em;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    background-color: var(--bolt-elements-background-depth-2);
+    border: 1px solid var(--bolt-elements-borderColor);
+    border-bottom-width: 2px;
+    color: var(--bolt-elements-textSecondary);
+  }
+
+  /* Nested lists inside a list item shouldn't get the bottom margin. */
+  li > :is(ul, ol) {
+    margin-block-end: 0;
+  }
+
+  /* The first child shouldn't have a top margin (avoids gap under heading). */
+  > *:first-child {
+    margin-block-start: 0;
+  }
 }
 
 @keyframes bolt-thought-pulse {

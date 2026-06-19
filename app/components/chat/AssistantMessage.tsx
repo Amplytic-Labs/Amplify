@@ -16,7 +16,8 @@ import type {
   FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
-import { ThoughtProcess } from './ThoughtProcess';
+import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
+import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 
 interface AssistantMessageProps {
   content: string;
@@ -61,40 +62,27 @@ function normalizedFilePath(path: string) {
 }
 
 /**
- * Strip any residual `<thought>...</thought>` tags from the visible
- * markdown content. The system prompt instructs the AI to use its
- * native reasoning channel (which arrives as `parts[].type ===
- * 'reasoning'`) instead of emitting `<thought>` tags into the
- * response text — but we keep this defensive filter so a misbehaving
- * model cannot accidentally render stray thought blocks inside the
- * final answer.
+ * Assistant message — reinvented Copilot-style layout.
  *
- * Handles three cases:
- *   1. Complete `<thought>…</thought>` blocks → removed entirely
- *   2. Streaming `<thought>…` (no closing tag yet) → removed
- *   3. Orphan `</thought>` → removed
+ *   ┌─────────────────────────────────────────────┐
+ *   │ ✦ Thought for 4s  ▾                         │  ← collapsible panel
+ *   │   ┌ reasoning text (muted) ┐                │
+ *   │   ┌ tool card: Read file ✓ ┐                │
+ *   │   ┌ tool card: Edited file ✓ ┐              │
+ *   └─────────────────────────────────────────────┘
+ *   │ <final answer markdown>                     │  ← the answer body
+ *   └─────────────────────────────────────────────┘
+ *
+ * The thought panel pulls from TWO sources:
+ *   1. `<thought>…</thought>` tags the model emits in its text response
+ *      (parsed streaming-safe by `parseThoughts`).
+ *   2. Native AI-SDK `reasoning` parts (for models that use a dedicated
+ *      reasoning channel).
+ *
+ * Tool invocations (from `parts`) render as compact Copilot-style cards
+ * inside the panel. The final answer is the text OUTSIDE the thought tags,
+ * smooth-streamed with a typewriter effect.
  */
-function stripResidualThoughtTags(content: string): string {
-  if (!content || !content.includes('<thought>') && !content.includes('</thought>')) {
-    return content;
-  }
-
-  let out = content;
-
-  // 1. Complete blocks
-  out = out.replace(/<thought>[\s\S]*?<\/thought>/g, '');
-
-  // 2. Streaming-open block (no closing tag yet)
-  out = out.replace(/<thought>[\s\S]*$/g, '');
-
-  // 3. Orphan closing tag
-  out = out.replace(/<\/thought>/g, '');
-
-  // Tidy up any leading whitespace left behind so the first paragraph
-  // of the real answer doesn't get pushed down by an empty line.
-  return out.replace(/^\s+/, '');
-}
-
 export const AssistantMessage = memo(
   ({
     content,
@@ -116,10 +104,17 @@ export const AssistantMessage = memo(
         annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
     ) || []) as { type: string; value: any } & { [key: string]: any }[];
 
-    // Strip residual thought tags BEFORE smooth-stream so the typewriter
-    // effect doesn't waste cycles animating characters we'll hide anyway.
-    const cleanedContent = useMemo(() => stripResidualThoughtTags(content), [content]);
-    const smoothContent = useSmoothStream(cleanedContent, isStreaming, 25);
+    /*
+     * Parse `<thought>` tags out of the streamed content. The answer text
+     * (everything outside the tags) feeds the typewriter + markdown body;
+     * the thought text feeds the collapsible panel. Re-runs every tick
+     * during streaming — cheap (a single indexOf scan).
+     */
+    const { thoughtText, answerText, hasThoughts } = useMemo(() => parseThoughts(content), [content]);
+    const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
+
+    // Smooth-stream only the visible answer so we never animate thought chars.
+    const smoothAnswer = useSmoothStream(answerText, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
 
@@ -134,26 +129,20 @@ export const AssistantMessage = memo(
     }
 
     /**
-     * Collect every "thought" part — reasoning + tool invocations —
-     * for the single Copilot-style collapsible at the top. Text parts
-     * are NOT included here because they belong to the final answer
-     * (rendered below the collapsible).
-     *
-     * Tool approval is handled inline by ToolInvocationChip via
-     * `addToolResult` — the legacy toolCallAnnotations flow is no
-     * longer consumed by this component.
+     * Native reasoning + tool-invocation parts from the AI SDK. These are
+     * interleaved with the `<thought>`-tag text inside the panel.
      */
-    const thoughtParts = useMemo(() => {
+    const reasoningAndToolParts = useMemo(() => {
       if (!parts) {
-        return [];
+        return undefined;
       }
 
-      return parts.filter(
-        (p) => p.type === 'reasoning' || p.type === 'tool-invocation',
-      ) as (ReasoningUIPart | ToolInvocationUIPart)[];
+      const filtered = parts.filter((p) => p.type === 'reasoning' || p.type === 'tool-invocation');
+
+      return filtered.length > 0 ? filtered : undefined;
     }, [parts]);
 
-    const hasThoughtContent = thoughtParts.length > 0;
+    const hasPanelContent = hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
 
     return (
       <div className="group relative overflow-hidden w-full">
@@ -226,27 +215,26 @@ export const AssistantMessage = memo(
         </>
 
         {/*
-         * ONE single Copilot-style "Thought for Ns" collapsible.
-         * Contains ALL reasoning segments + ALL tool invocations as
-         * interleaved steps. Renders ABOVE the final answer markdown.
-         * The collapsible auto-collapses when streaming finishes
-         * (handled by the Reasoning component).
+         * Copilot-style collapsible "Thought for Ns" panel. Sits ABOVE the
+         * final answer. Contains reasoning (from <thought> tags and/or native
+         * reasoning parts) plus tool invocation cards.
          */}
-        {hasThoughtContent && (
-          <ThoughtProcess
-            parts={thoughtParts}
+        {hasPanelContent && (
+          <ThoughtsPanel
+            thoughtText={thoughtText}
+            thoughtStreaming={thoughtStreaming}
+            parts={reasoningAndToolParts}
             isStreaming={isStreaming}
             addToolResult={addToolResult}
           />
         )}
 
         {/*
-         * Final answer markdown — the user-facing response. Renders
-         * BELOW the thought panel, exactly like VSCode Copilot's
-         * "answer" area.
+         * Final answer markdown — the user-facing response. Renders BELOW the
+         * thought panel, exactly like VS Code Copilot's answer area.
          */}
         <Markdown append={append} chatMode={chatMode} setChatMode={setChatMode} model={model} provider={provider} html>
-          {smoothContent}
+          {smoothAnswer}
         </Markdown>
 
         <div className="flex justify-start mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -263,3 +251,5 @@ export const AssistantMessage = memo(
     );
   },
 );
+
+AssistantMessage.displayName = 'AssistantMessage';
