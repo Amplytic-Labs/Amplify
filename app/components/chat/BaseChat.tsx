@@ -529,7 +529,11 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 </PanelResizeHandle>
               )}
               {showChat && (
-                <Panel defaultSize={20} minSize={15} collapsible>
+                <Panel
+                  defaultSize={showWorkbench ? 20 : 100}
+                  minSize={showWorkbench ? 15 : 100}
+                  collapsible={showWorkbench}
+                >
                   <div className={classNames(styles.Chat, 'flex flex-col h-full w-full')}>
                     {!chatStarted && (
                       <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">

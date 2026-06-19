@@ -17,6 +17,7 @@ import type {
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
+import { stripBoltArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -113,10 +114,31 @@ export const AssistantMessage = memo(
      * the thought text feeds the collapsible panel. Re-runs every tick
      * during streaming — cheap (a single indexOf scan).
      */
-    const { thoughtText, answerText, hasThoughts } = useMemo(() => parseThoughts(content), [content]);
+    const { thoughtText, answerText: rawAnswerText, hasThoughts } = useMemo(() => parseThoughts(content), [content]);
     const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
 
-    // Smooth-stream only the visible answer so we never animate thought chars.
+    /*
+     * When the model called `inject_template`, the tool writes a full
+     * `<boltArtifact>` document (template files + `npm install`) into the
+     * message text as a side-effect. The "Created N files" / "Ran N command"
+     * trace tree that artifact renders holds no value for a template injection
+     * — it should happen silently. So we strip the artifact blocks from the
+     * DISPLAY text. The message parser still sees the raw `message.content`
+     * (it runs independently in useMessageParser), so the files are still
+     * created and the commands still run — only the visual trace tree is
+     * suppressed. The "Used inject_template" step in the thinking panel is
+     * preserved (it's useful — shows what template was injected).
+     */
+    const suppressArtifact = useMemo(() => hasInjectTemplateCall(parts as any), [parts]);
+    const answerText = useMemo(
+      () => (suppressArtifact ? stripBoltArtifacts(rawAnswerText) : rawAnswerText),
+      [rawAnswerText, suppressArtifact],
+    );
+
+    /*
+     * Smooth-stream only the visible answer so we never animate thought chars
+     * (or stripped artifact chars).
+     */
     const smoothAnswer = useSmoothStream(answerText, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
