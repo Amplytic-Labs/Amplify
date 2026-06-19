@@ -29,13 +29,20 @@ $code-font-size: 13px;
 }
 
 .MarkdownContent {
+  /*
+   * Copilot-style reasoning typography:
+   *   - smaller font (13px) than the main answer (18px) so reasoning
+   *     reads as secondary/supporting text
+   *   - tighter line height for density
+   *   - dimmed color (textSecondary) to visually separate from the answer
+   */
   font-family: 'Almarai', sans-serif;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--bolt-elements-textPrimary);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--bolt-elements-textSecondary);
 
   > *:not(:last-child) {
-    margin-block-end: 16px;
+    margin-block-end: 10px;
   }
 
   :global(.artifact) {
@@ -44,8 +51,8 @@ $code-font-size: 13px;
 
   :is(h1, h2, h3, h4, h5, h6) {
     @include not-inside-actions {
-      margin-block-start: 24px;
-      margin-block-end: 16px;
+      margin-block-start: 16px;
+      margin-block-end: 10px;
       font-weight: 600;
       line-height: 1.25;
       color: var(--bolt-elements-textPrimary);
@@ -53,19 +60,19 @@ $code-font-size: 13px;
   }
 
   h1 {
-    font-size: 2em;
+    font-size: 1.4em;
     border-bottom: 1px solid var(--bolt-elements-borderColor);
     padding-bottom: 0.3em;
   }
 
   h2 {
-    font-size: 1.5em;
+    font-size: 1.25em;
     border-bottom: 1px solid var(--bolt-elements-borderColor);
     padding-bottom: 0.3em;
   }
 
   h3 {
-    font-size: 1.25em;
+    font-size: 1.1em;
   }
 
   h4 {
@@ -73,7 +80,7 @@ $code-font-size: 13px;
   }
 
   h5 {
-    font-size: 0.875em;
+    font-size: 0.9em;
   }
 
   h6 {
@@ -86,7 +93,7 @@ $code-font-size: 13px;
 
     &:not(:last-of-type) {
       margin-block-start: 0;
-      margin-block-end: 16px;
+      margin-block-end: 10px;
     }
   }
 
@@ -134,9 +141,9 @@ $code-font-size: 13px;
 
   :is(ul, ol) {
     @include not-inside-actions {
-      padding-left: 2em;
+      padding-left: 1.5em;
       margin-block-start: 0;
-      margin-block-end: 16px;
+      margin-block-end: 10px;
     }
   }
 
@@ -155,11 +162,11 @@ $code-font-size: 13px;
   li {
     @include not-inside-actions {
       & + li {
-        margin-block-start: 8px;
+        margin-block-start: 4px;
       }
 
       > *:not(:last-child) {
-        margin-block-end: 16px;
+        margin-block-end: 10px;
       }
     }
   }

@@ -134,6 +134,30 @@ export const AssistantMessage = memo(
       return result;
     }, [parts]);
 
+    /*
+     * Find the index of the last reasoning part so we can pass
+     * `isStreaming` only to it. Previous reasoning blocks are
+     * already finished and should immediately show "Thought for Xs"
+     * instead of "Thinking...".
+     */
+    const lastReasoningIndex = useMemo(() => {
+      if (!groupedParts) {
+        return -1;
+      }
+
+      let last = -1;
+
+      for (let i = 0; i < groupedParts.length; i++) {
+        const part = groupedParts[i];
+
+        if (!Array.isArray(part) && (part as any).type === 'reasoning') {
+          last = i;
+        }
+      }
+
+      return last;
+    }, [groupedParts]);
+
     return (
       <div className="group relative overflow-hidden w-full">
         <>
@@ -204,37 +228,48 @@ export const AssistantMessage = memo(
           </div>
         </>
         {groupedParts && groupedParts.length > 0 && (
-          <Reasoning isStreaming={isStreaming}>
-            <ReasoningTrigger />
-            <ReasoningContent>
-              <div className="flex flex-col gap-4">
-                {groupedParts.map((part, index) => {
-                  if (Array.isArray(part)) {
-                    return <ToolInvocationGroup key={index} parts={part} />;
-                  }
+          <div className="flex flex-col gap-3 mb-3">
+            {groupedParts.map((part, index) => {
+              if (Array.isArray(part)) {
+                return <ToolInvocationGroup key={`tool-group-${index}`} parts={part} />;
+              }
 
-                  if ((part as any).type === 'reasoning') {
-                    const reasoningPart = part as ReasoningUIPart;
-                    const text = reasoningPart.details
-                      ? reasoningPart.details.map((d: any) => d.text || '').join('')
-                      : (reasoningPart as any).textDelta || (reasoningPart as any).text || '';
+              if ((part as any).type === 'reasoning') {
+                const reasoningPart = part as ReasoningUIPart;
+                const text = reasoningPart.details
+                  ? reasoningPart.details.map((d: any) => d.text || '').join('')
+                  : (reasoningPart as any).textDelta || (reasoningPart as any).text || '';
 
-                    if (!text) {
-                      return null;
-                    }
-
-                    return (
-                      <div key={index} className="text-sm text-bolt-elements-textSecondary leading-relaxed">
-                        <ReasoningMarkdown>{text}</ReasoningMarkdown>
-                      </div>
-                    );
-                  }
-
+                if (!text) {
                   return null;
-                })}
-              </div>
-            </ReasoningContent>
-          </Reasoning>
+                }
+
+                /*
+                 * Only the LAST reasoning block gets `isStreaming=true`.
+                 * Previous blocks are finished and should show
+                 * "Thought for Xs" immediately.
+                 */
+                const isLastReasoning = index === lastReasoningIndex;
+
+                return (
+                  <Reasoning
+                    key={`reasoning-${index}`}
+                    isStreaming={isStreaming && isLastReasoning}
+                    defaultOpen={isStreaming && isLastReasoning}
+                  >
+                    <ReasoningTrigger />
+                    <ReasoningContent>
+                      <div className="text-sm text-bolt-elements-textSecondary leading-relaxed">
+                        <ReasoningMarkdown html>{text}</ReasoningMarkdown>
+                      </div>
+                    </ReasoningContent>
+                  </Reasoning>
+                );
+              }
+
+              return null;
+            })}
+          </div>
         )}
         <Markdown append={append} chatMode={chatMode} setChatMode={setChatMode} model={model} provider={provider} html>
           {smoothContent}

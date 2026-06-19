@@ -263,16 +263,13 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
             transition: { duration: 0.25, ease: 'easeInOut' },
           }}
           style={{ overflow: 'hidden' }}
-          className={classNames(
-            'mt-4 rounded-lg relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-bolt-elements-textTertiary',
-            className,
-          )}
+          className={classNames('mt-2 rounded-lg', className)}
           {...props}
         >
           <div
             ref={contentRef}
             className={classNames(
-              'text-sm text-bolt-elements-textPrimary outline-none max-h-96 overflow-y-auto pl-4 py-2 bg-[#f5f4ef] dark:bg-[#2c2c2b] rounded-lg',
+              'text-[13px] leading-relaxed text-bolt-elements-textSecondary outline-none max-h-96 overflow-y-auto px-4 py-3 bg-bolt-elements-background-depth-2/60 border border-bolt-elements-borderColor/50 rounded-lg',
               styles.ReasoningScrollbar,
             )}
           >
