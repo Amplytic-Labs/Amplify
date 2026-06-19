@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, Children } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { BundledLanguage } from 'shiki';
 import { createScopedLogger } from '~/utils/logger';
@@ -30,16 +30,19 @@ export const Markdown = memo(
     /*
      * Preprocess content:
      *   1. Strip code fences around boltArtifact (existing behaviour)
-     *   2. Convert <thought>...</thought> blocks into collapsible
-     *      <details class="__boltThought__"> elements so the AI's
-     *      chain-of-thought renders Copilot-style (collapsible, dimmed,
-     *      with a "Thought process" summary). The `<thought>` tag is not
-     *      a real HTML element so we transform it BEFORE markdown parsing
-     *      rather than relying on rehype-raw to recognise it.
+     *   2. Strip residual `<thought>...</thought>` tags. The system
+     *      prompt forbids the AI from emitting these (it should use
+     *      its native reasoning channel instead, which arrives as
+     *      `parts[].type === 'reasoning'` and is rendered by the
+     *      ThoughtProcess component). We strip them here as a
+     *      defence-in-depth so a misbehaving model cannot re-introduce
+     *      the old multi-panel "thought block" UI inside the answer.
+     *      `transformThoughtBlocks` is kept as a no-op safety net for
+     *      any external callers that still rely on it.
      */
     const parsedChildren = useMemo(() => {
       const stripped = stripCodeFenceFromArtifact(children);
-      return transformThoughtBlocks(stripped);
+      return stripResidualThoughtTags(stripped);
     }, [children]);
 
     const childrenRef = useRef(parsedChildren);
@@ -66,7 +69,13 @@ export const Markdown = memo(
           }
 
           if (className?.includes('__boltThought__')) {
-            return <div className="__boltThought__">{children}</div>;
+            // Legacy path — the new ThoughtProcess component renders
+            // reasoning outside the markdown body. If a stray
+            // __boltThought__ details element ever shows up here we
+            // render it as plain muted text so it doesn't break, but
+            // stripResidualThoughtTags should already have removed
+            // the source `<thought>` tags before markdown parsing.
+            return <div className="text-bolt-elements-textTertiary text-xs italic">{children}</div>;
           }
 
           if (className?.includes('__boltSelectedElement__')) {
@@ -252,40 +261,14 @@ export const Markdown = memo(
         },
 
         /*
-         * Copilot-style <thought> block — rendered as a collapsible
-         * "Thought process" panel. The preprocessor converts
-         * `<thought>content</thought>` into
-         * `<details class="__boltThought__"><summary>Thought process</summary>content</details>`.
-         *
-         * Visual styling (border, background, animated pulse, italic body)
-         * lives in Markdown.module.scss under `:global(.__boltThought__)`.
-         * We inject a brain icon into the summary here so it matches
-         * Copilot's "thinking" affordance.
+         * Plain <details> elements from user-supplied markdown are
+         * rendered as-is. The legacy `__boltThought__` class path
+         * that used to inject a brain icon into the summary has been
+         * removed — reasoning now flows through the ThoughtProcess
+         * component via the AI SDK's native `reasoning` parts, not
+         * through `<thought>` tags in the markdown body.
          */
         details: ({ className, children, ...props }) => {
-          if (className?.includes('__boltThought__')) {
-            const kids = Children.toArray(children);
-            const modified = kids.map((k, i) => {
-              if (k && typeof k === 'object' && (k as any).type === 'summary') {
-                const summaryChildren = (k as any).props?.children;
-                return (
-                  <summary key={`thought-summary-${i}`} {...(k as any).props}>
-                    <span className="i-ph:brain text-base shrink-0" />
-                    <span>{summaryChildren}</span>
-                  </summary>
-                );
-              }
-
-              return k;
-            });
-
-            return (
-              <details className="__boltThought__" {...props}>
-                {modified}
-              </details>
-            );
-          }
-
           return (
             <details className={className} {...props}>
               {children}
@@ -357,45 +340,50 @@ export const stripCodeFenceFromArtifact = (content: string) => {
 };
 
 /**
- * Convert `<thought>...</thought>` blocks emitted by the AI into a
- * collapsible `<details class="__boltThought__">` element so they render
- * Copilot-style (collapsible, dimmed, "Thought process" summary).
+ * Strip residual `<thought>...</thought>` tags from the visible
+ * markdown content.
  *
- * This runs BEFORE markdown parsing because `<thought>` is not a real HTML
- * element and would be stripped by rehype-sanitize. By rewriting it to a
- * standard `<details>` element we get:
- *   - Native browser collapse/expand behaviour
- *   - Compatibility with the existing sanitisation allow-list
- *   - A clear visual separation between reasoning and the answer
+ * The system prompt now instructs the AI to use its native reasoning
+ * channel (rendered as `parts[].type === 'reasoning'` → ThoughtProcess
+ * component) instead of emitting `<thought>` tags into the response
+ * text. We keep this filter as defence-in-depth so a misbehaving model
+ * cannot re-introduce the old multi-panel "thought block" UI inside
+ * the final answer markdown.
  *
- * The transformation is a non-greedy regex match across newlines. We
- * preserve the inner content verbatim (it can itself contain markdown).
- * We also handle the streaming case where `</thought>` has not yet been
- * emitted — a lone `<thought>` opens a block that stays open until the
- * next `</thought>` or end-of-string, so partial thoughts render
- * incrementally as the AI streams tokens.
+ * Handles three cases:
+ *   1. Complete `<thought>…</thought>` blocks → removed entirely
+ *   2. Streaming `<thought>…` (no closing tag yet) → removed
+ *   3. Orphan `</thought>` → removed
+ *
+ * Leading whitespace left behind by a stripped block is trimmed so
+ * the first paragraph of the real answer doesn't get pushed down.
  */
-export const transformThoughtBlocks = (content: string): string => {
-  if (!content || !content.includes('<thought>')) {
+export const stripResidualThoughtTags = (content: string): string => {
+  if (!content || (!content.includes('<thought>') && !content.includes('</thought>'))) {
     return content;
   }
 
-  // First, replace complete <thought>...</thought> blocks
-  let out = content.replace(
-    /<thought>([\s\S]*?)<\/thought>/g,
-    (_, inner: string) =>
-      `\n\n<details class="__boltThought__"><summary>Thought process</summary>\n\n${inner.trim()}\n\n</details>\n\n`,
-  );
+  let out = content;
 
-  /*
-   * Streaming case: a <thought> tag with no closing tag yet. Render it as
-   * an open <details> so the user sees the chain-of-thought live.
-   */
-  out = out.replace(
-    /<thought>([\s\S]*)$/g,
-    (_, inner: string) =>
-      `\n\n<details class="__boltThought__" open><summary>Thought process</summary>\n\n${inner.trim()}\n\n</details>\n\n`,
-  );
+  // 1. Complete blocks
+  out = out.replace(/<thought>[\s\S]*?<\/thought>/g, '');
 
-  return out;
+  // 2. Streaming-open block (no closing tag yet)
+  out = out.replace(/<thought>[\s\S]*$/g, '');
+
+  // 3. Orphan closing tag
+  out = out.replace(/<\/thought>/g, '');
+
+  // Tidy up leading whitespace so the answer's first paragraph
+  // isn't pushed down by an empty line left behind by a stripped block.
+  return out.replace(/^\s+/, '');
 };
+
+/**
+ * @deprecated Kept only for backward compatibility with any external
+ * callers. The new pipeline uses `stripResidualThoughtTags` instead
+ * — `<thought>` tags are no longer rendered as collapsible panels
+ * inside the answer markdown. They are rendered via the ThoughtProcess
+ * component from the AI SDK's native `reasoning` parts.
+ */
+export const transformThoughtBlocks = (content: string): string => stripResidualThoughtTags(content);

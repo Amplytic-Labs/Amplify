@@ -1,6 +1,5 @@
 import { memo, Fragment, useMemo } from 'react';
 import { Markdown } from './Markdown';
-import { Reasoning, ReasoningTrigger, ReasoningContent } from '~/components/ai-elements/reasoning';
 import type { JSONValue } from 'ai';
 import Popover from '~/components/ui/Popover';
 import { useSmoothStream } from '~/utils/useSmoothStream';
@@ -17,11 +16,7 @@ import type {
   FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
-import { ToolInvocations } from './ToolInvocations';
-import { ToolInvocationItem } from './ToolInvocationItem';
-import { ToolInvocationGroup } from './ToolInvocationGroup';
-import { ReasoningMarkdown } from './ReasoningMarkdown';
-import type { ToolCallAnnotation } from '~/types/context';
+import { ThoughtProcess } from './ThoughtProcess';
 
 interface AssistantMessageProps {
   content: string;
@@ -65,6 +60,41 @@ function normalizedFilePath(path: string) {
   return normalizedPath;
 }
 
+/**
+ * Strip any residual `<thought>...</thought>` tags from the visible
+ * markdown content. The system prompt instructs the AI to use its
+ * native reasoning channel (which arrives as `parts[].type ===
+ * 'reasoning'`) instead of emitting `<thought>` tags into the
+ * response text — but we keep this defensive filter so a misbehaving
+ * model cannot accidentally render stray thought blocks inside the
+ * final answer.
+ *
+ * Handles three cases:
+ *   1. Complete `<thought>…</thought>` blocks → removed entirely
+ *   2. Streaming `<thought>…` (no closing tag yet) → removed
+ *   3. Orphan `</thought>` → removed
+ */
+function stripResidualThoughtTags(content: string): string {
+  if (!content || !content.includes('<thought>') && !content.includes('</thought>')) {
+    return content;
+  }
+
+  let out = content;
+
+  // 1. Complete blocks
+  out = out.replace(/<thought>[\s\S]*?<\/thought>/g, '');
+
+  // 2. Streaming-open block (no closing tag yet)
+  out = out.replace(/<thought>[\s\S]*$/g, '');
+
+  // 3. Orphan closing tag
+  out = out.replace(/<\/thought>/g, '');
+
+  // Tidy up any leading whitespace left behind so the first paragraph
+  // of the real answer doesn't get pushed down by an empty line.
+  return out.replace(/^\s+/, '');
+}
+
 export const AssistantMessage = memo(
   ({
     content,
@@ -86,7 +116,10 @@ export const AssistantMessage = memo(
         annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
     ) || []) as { type: string; value: any } & { [key: string]: any }[];
 
-    const smoothContent = useSmoothStream(content, isStreaming, 25);
+    // Strip residual thought tags BEFORE smooth-stream so the typewriter
+    // effect doesn't waste cycles animating characters we'll hide anyway.
+    const cleanedContent = useMemo(() => stripResidualThoughtTags(content), [content]);
+    const smoothContent = useSmoothStream(cleanedContent, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
 
@@ -100,63 +133,27 @@ export const AssistantMessage = memo(
       codeContext = filteredAnnotations.find((annotation) => annotation.type === 'codeContext')?.files;
     }
 
-    const toolInvocations = parts?.filter((part) => part.type === 'tool-invocation');
-    const reasoningParts = parts?.filter((part) => part.type === 'reasoning') as ReasoningUIPart[];
-    const toolCallAnnotations = filteredAnnotations.filter(
-      (annotation) => annotation.type === 'toolCall',
-    ) as ToolCallAnnotation[];
-
-    const groupedParts = useMemo(() => {
+    /**
+     * Collect every "thought" part — reasoning + tool invocations —
+     * for the single Copilot-style collapsible at the top. Text parts
+     * are NOT included here because they belong to the final answer
+     * (rendered below the collapsible).
+     *
+     * Tool approval is handled inline by ToolInvocationChip via
+     * `addToolResult` — the legacy toolCallAnnotations flow is no
+     * longer consumed by this component.
+     */
+    const thoughtParts = useMemo(() => {
       if (!parts) {
         return [];
       }
 
-      const result: any[] = [];
-      let currentToolGroup: ToolInvocationUIPart[] | null = null;
-
-      for (const part of parts) {
-        if (part.type === 'tool-invocation') {
-          if (currentToolGroup) {
-            currentToolGroup.push(part as ToolInvocationUIPart);
-          } else {
-            currentToolGroup = [part as ToolInvocationUIPart];
-            result.push(currentToolGroup);
-          }
-        } else {
-          if (currentToolGroup) {
-            currentToolGroup = null;
-          }
-
-          result.push(part);
-        }
-      }
-
-      return result;
+      return parts.filter(
+        (p) => p.type === 'reasoning' || p.type === 'tool-invocation',
+      ) as (ReasoningUIPart | ToolInvocationUIPart)[];
     }, [parts]);
 
-    /*
-     * Find the index of the last reasoning part so we can pass
-     * `isStreaming` only to it. Previous reasoning blocks are
-     * already finished and should immediately show "Thought for Xs"
-     * instead of "Thinking...".
-     */
-    const lastReasoningIndex = useMemo(() => {
-      if (!groupedParts) {
-        return -1;
-      }
-
-      let last = -1;
-
-      for (let i = 0; i < groupedParts.length; i++) {
-        const part = groupedParts[i];
-
-        if (!Array.isArray(part) && (part as any).type === 'reasoning') {
-          last = i;
-        }
-      }
-
-      return last;
-    }, [groupedParts]);
+    const hasThoughtContent = thoughtParts.length > 0;
 
     return (
       <div className="group relative overflow-hidden w-full">
@@ -227,53 +224,31 @@ export const AssistantMessage = memo(
             </div>
           </div>
         </>
-        {groupedParts && groupedParts.length > 0 && (
-          <div className="flex flex-col gap-3 mb-3">
-            {groupedParts.map((part, index) => {
-              if (Array.isArray(part)) {
-                return <ToolInvocationGroup key={`tool-group-${index}`} parts={part} />;
-              }
 
-              if ((part as any).type === 'reasoning') {
-                const reasoningPart = part as ReasoningUIPart;
-                const text = reasoningPart.details
-                  ? reasoningPart.details.map((d: any) => d.text || '').join('')
-                  : (reasoningPart as any).textDelta || (reasoningPart as any).text || '';
-
-                if (!text) {
-                  return null;
-                }
-
-                /*
-                 * Only the LAST reasoning block gets `isStreaming=true`.
-                 * Previous blocks are finished and should show
-                 * "Thought for Xs" immediately.
-                 */
-                const isLastReasoning = index === lastReasoningIndex;
-
-                return (
-                  <Reasoning
-                    key={`reasoning-${index}`}
-                    isStreaming={isStreaming && isLastReasoning}
-                    defaultOpen={isStreaming && isLastReasoning}
-                  >
-                    <ReasoningTrigger />
-                    <ReasoningContent>
-                      <div className="text-sm text-bolt-elements-textSecondary leading-relaxed">
-                        <ReasoningMarkdown html>{text}</ReasoningMarkdown>
-                      </div>
-                    </ReasoningContent>
-                  </Reasoning>
-                );
-              }
-
-              return null;
-            })}
-          </div>
+        {/*
+         * ONE single Copilot-style "Thought for Ns" collapsible.
+         * Contains ALL reasoning segments + ALL tool invocations as
+         * interleaved steps. Renders ABOVE the final answer markdown.
+         * The collapsible auto-collapses when streaming finishes
+         * (handled by the Reasoning component).
+         */}
+        {hasThoughtContent && (
+          <ThoughtProcess
+            parts={thoughtParts}
+            isStreaming={isStreaming}
+            addToolResult={addToolResult}
+          />
         )}
+
+        {/*
+         * Final answer markdown — the user-facing response. Renders
+         * BELOW the thought panel, exactly like VSCode Copilot's
+         * "answer" area.
+         */}
         <Markdown append={append} chatMode={chatMode} setChatMode={setChatMode} model={model} provider={provider} html>
           {smoothContent}
         </Markdown>
+
         <div className="flex justify-start mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <WithTooltip tooltip="Copy raw markdown">
             <button

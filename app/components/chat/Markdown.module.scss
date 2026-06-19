@@ -172,79 +172,14 @@ $code-font-size: 13px;
   }
 
   /*
-   * Copilot-style <thought> block rendering.
-   * The preprocessor in Markdown.tsx converts <thought>...</thought>
-   * into <details class="__boltThought__"><summary>Thought process</summary>...</details>.
-   * These styles match the Reasoning component's look for consistency:
-   *   - subtle tinted background + thin border
-   *   - smaller (13px) non-italic body text in secondary color
-   *   - clean summary bar with brain icon
-   *   - no left accent border (Copilot doesn't use one)
+   * Note: The legacy `.__boltThought__` styling block has been
+   * removed. Reasoning is now rendered ABOVE the markdown body by
+   * the ThoughtProcess component (which uses the Reasoning +
+   * ReasoningContent components from ~/components/ai-elements).
+   * If a stray __boltThought__ element ever appears here it is
+   * rendered as plain muted italic text by Markdown.tsx — no
+   * dedicated SCSS needed.
    */
-  :global(.__boltThought__) {
-    margin: 8px 0 12px;
-    border: 1px solid var(--bolt-elements-borderColor);
-    border-radius: 8px;
-    background: var(--bolt-elements-background-depth-2);
-    overflow: hidden;
-    transition: border-color 0.2s ease;
-
-    &:hover {
-      border-color: var(--bolt-elements-textTertiary);
-    }
-
-    > summary {
-      cursor: pointer;
-      user-select: none;
-      list-style: none;
-      padding: 6px 12px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--bolt-elements-textTertiary);
-      background: transparent;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: color 0.15s ease;
-
-      &::-webkit-details-marker {
-        display: none;
-      }
-
-      &:hover {
-        color: var(--bolt-elements-textSecondary);
-      }
-    }
-
-    /*
-     * Inner thought body — matches the Reasoning component styling:
-     *   - 13px font, non-italic
-     *   - dimmed secondary color
-     *   - tight line height for density
-     */
-    > *:not(summary) {
-      padding: 10px 14px;
-      font-size: 13px;
-      line-height: 1.55;
-      color: var(--bolt-elements-textSecondary);
-
-      &:last-child {
-        padding-block-end: 12px;
-      }
-
-      &:first-of-type {
-        padding-block-start: 0;
-      }
-    }
-
-    /*
-     * Code blocks inside a thought keep their normal styling.
-     */
-    pre,
-    code {
-      font-size: 12px;
-    }
-  }
 }
 
 @keyframes bolt-thought-pulse {
