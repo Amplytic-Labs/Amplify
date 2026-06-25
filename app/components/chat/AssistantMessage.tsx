@@ -17,7 +17,7 @@ import type {
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
-import { stripBoltArtifacts } from '~/lib/chat/artifact-stripper';
+import { stripBoltArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -118,22 +118,40 @@ export const AssistantMessage = memo(
     const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
 
     /*
-     * SEVER the boltArtifact trace-tree UI from the chat completely.
+     * SEVER the template-injected artifact trace-tree from the chat while
+     * keeping AI-created artifact trace trees visible.
      *
-     * When the model calls `inject_template` (or writes a `<boltArtifact>`
-     * block for any reason), the tool writes a full artifact document
-     * (template files + `npm install` shell action) into the message text.
-     * That artifact rendered the "Created N files" / "Ran N command" trace
-     * tree in the chat — which the user explicitly hates and wants gone.
+     * Two-layer stripping:
+     *   1. `stripBoltArtifacts` removes raw `<boltArtifact>…</boltArtifact>`
+     *      XML blocks (the model's original text, still present before the
+     *      message parser runs on it).
+     *   2. When the message contains an `inject_template` tool call, we also
+     *      strip ONLY the `<div class="__boltArtifact__" data-type="template">`
+     *      placeholder elements. Template artifacts use `type="template"`
+     *      (set in selectStarterTemplate.ts), while normal AI-created artifacts
+     *      use `type="bundled"`. The parser propagates the type attribute onto
+     *      the div as `data-type`, so we can selectively strip.
      *
-     * So we ALWAYS strip `<boltArtifact>…</boltArtifact>` blocks from the
-     * DISPLAY text. The message parser still sees the raw `message.content`
-     * (it runs independently in useMessageParser), so the files are still
-     * created and the commands still run silently — only the visual trace
-     * tree is severed from the chat UI. The "Used inject_template" step in
-     * the thinking panel is preserved (it shows what template was injected).
+     * Result: "Created 50 files" / "Ran 1 command" trace trees from the
+     * template injection are hidden (silent scaffolding), but subsequent
+     * AI-created file traces and npm start commands remain visible.
+     *
+     * The parser callbacks (onArtifactOpen / onActionClose) already fired
+     * during `useMessageParser`, so the workbench received all files and
+     * commands. The "Used inject_template" step in the thinking panel is
+     * preserved (it shows what template was injected).
      */
-    const answerText = useMemo(() => stripBoltArtifacts(rawAnswerText), [rawAnswerText]);
+    const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
+
+    const answerText = useMemo(() => {
+      const stripped = stripBoltArtifacts(rawAnswerText);
+
+      if (isTemplateInjection) {
+        return stripArtifactDivs(stripped);
+      }
+
+      return stripped;
+    }, [rawAnswerText, isTemplateInjection]);
 
     /*
      * Smooth-stream only the visible answer so we never animate thought chars
@@ -174,6 +192,22 @@ export const AssistantMessage = memo(
     }, [parts]);
 
     const hasPanelContent = hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
+
+    /*
+     * Thinking is "done" when the `</thought>` tag has been received and the
+     * next parts are a normal response (no tool calls). This triggers the
+     * "Done" node at the end of the chain-of-thought panel, signalling
+     * that the AI has moved past reasoning to its final answer.
+     */
+    const hasToolCalls = useMemo(() => {
+      if (!parts) {
+        return false;
+      }
+
+      return parts.some((p) => p.type === 'tool-invocation');
+    }, [parts]);
+
+    const thinkingDone = hasThoughts && !thoughtStreaming && !hasToolCalls;
 
     return (
       <div className="group relative overflow-hidden w-full">
@@ -255,6 +289,7 @@ export const AssistantMessage = memo(
           <ThoughtsPanel
             thoughtText={thoughtText}
             thoughtStreaming={thoughtStreaming}
+            thinkingDone={thinkingDone}
             parts={reasoningAndToolParts}
             isStreaming={isStreaming}
             addToolResult={addToolResult}
@@ -282,3 +317,36 @@ export const AssistantMessage = memo(
 );
 
 AssistantMessage.displayName = 'AssistantMessage';
+
+/**
+ * Remove `<div class="__boltArtifact__" data-type="template" …></div>` placeholder
+ * elements that the message parser inserts for template-injected artifacts.
+ *
+ * The parser (`StreamingMessageParser.createArtifactElement`) now propagates
+ * the `<boltArtifact type="…">` attribute onto the div as `data-type`. Template
+ * artifacts (from `inject_template`) use `type="template"`, while normal AI-
+ * created artifacts use `type="bundled"`.
+ *
+ * We ONLY strip divs with `data-type="template"` so AI-created file trace
+ * trees and shell command trace trees remain visible in the chat.
+ *
+ * The regex matches both self-closing and paired forms, and relies on the
+ * deterministic attribute order produced by `createArtifactElement`
+ * (class → messageId → artifactId → type).
+ */
+function stripArtifactDivs(text: string): string {
+  if (!text || !text.includes('__boltArtifact__')) {
+    return text;
+  }
+
+  // Self-closing form: <div class="__boltArtifact__" ... data-type="template"></div>
+  let out = text.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*><\/div>/g, '');
+
+  // Void-element form: <div class="__boltArtifact__" ... data-type="template" />
+  out = out.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*\/>/g, '');
+
+  // Collapse blank lines left behind.
+  out = out.replace(/\n{3,}/g, '\n\n').trimEnd();
+
+  return out;
+}

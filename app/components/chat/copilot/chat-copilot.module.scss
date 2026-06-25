@@ -324,7 +324,9 @@
     font-weight: 500;
     cursor: pointer;
     border: 1px solid transparent;
-    transition: background-color 0.1s, border-color 0.1s;
+    transition:
+      background-color 0.1s,
+      border-color 0.1s;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -376,11 +378,13 @@
 
     /* Brain icon sits on the LEFT of the label — signals "reasoning". */
     .brainIcon {
-      font-size: 16px;
+      font-size: 20px;
       color: var(--bolt-elements-textSecondary);
       display: inline-flex;
       flex-shrink: 0;
       transition: color 0.15s ease;
+      bottom: 2px;
+      position: relative;
     }
 
     /* Chevron sits on the RIGHT of the label — the expand/collapse affordance. */
@@ -402,8 +406,8 @@
     }
 
     .label {
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 400;
       color: var(--bolt-elements-textSecondary);
     }
 
@@ -477,7 +481,8 @@
     /* ===== Chain-of-thought wrappers — the vertical line + icon node ===== */
     .chatThinkingToolWrapper,
     .chatThinkingItemMarkdown,
-    .chatThinkingSpinnerItem {
+    .chatThinkingSpinnerItem,
+    .chatThinkingDoneItem {
       position: relative;
 
       /* The vertical connector line. mask-image carves a gap (7px→25px)
@@ -524,12 +529,12 @@
        * Sized 16x16px (bumped again for maximum reasoning-content legibility). */
       > .chatThinkingIcon {
         position: absolute;
-        left: 3px;
+        left: 2px;
         top: 7px;
-        width: 16px;
-        height: 16px;
-        font-size: 16px;
-        line-height: 16px;
+        width: 20px;
+        height: 20px;
+        font-size: 20px;
+        line-height: 20px;
         text-align: center;
         color: var(--bolt-elements-textSecondary);
         display: inline-flex;
@@ -556,7 +561,7 @@
     .chatThinkingItemMarkdown {
       padding: 8px 12px 8px 28px;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--bolt-elements-textSecondary);
       line-height: 1.6;
 
@@ -589,6 +594,9 @@
         position: relative;
         margin-bottom: 0;
         display: block;
+        top: 3px;
+        left: 3px;
+        padding-bottom: 10px;
 
         .progressContainer {
           margin: 0 0 2px 6px;
@@ -599,8 +607,8 @@
             font-size: 16px;
 
             .progressStep {
-              font-size: 14px;
-              font-weight: 600;
+              font-size: 16px;
+              font-weight: 400;
             }
           }
         }
@@ -617,7 +625,7 @@
     .chatThinkingSpinnerItem {
       padding: 8px 12px 8px 28px;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 400;
       color: var(--bolt-elements-textSecondary);
       display: flex;
       align-items: center;
@@ -640,6 +648,29 @@
         will-change: background-position;
         font-size: 14px;
         font-weight: 600;
+      }
+    }
+
+    /* ===== Done step (.chat-thinking-done-item) ===== */
+    /* Static "Done" node at the end of the chain when thinking concludes and
+     * the AI moves on to its final answer. Green check icon + muted label. */
+    .chatThinkingDoneItem {
+      padding: 8px 12px 8px 28px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--bolt-elements-textSecondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      .doneIcon {
+        color: var(--bolt-elements-icon-success, #22c55e);
+      }
+
+      .doneLabel {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--bolt-elements-textSecondary);
       }
     }
   }
@@ -701,7 +732,9 @@
       line-height: 1.5em;
       color: var(--bolt-elements-textSecondary);
       cursor: pointer;
-      transition: color 0.1s, background-color 0.1s;
+      transition:
+        color 0.1s,
+        background-color 0.1s;
 
       .checkIcon {
         font-size: 12px;
@@ -870,7 +903,11 @@
   cursor: pointer;
   vertical-align: baseline;
   text-decoration: none;
-  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
   user-select: none;
   -webkit-user-select: none;
 

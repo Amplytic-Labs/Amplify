@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
 import styles from './chat-copilot.module.scss';
+import ShinyText from '~/components/ui/Shimmer';
 
 interface ThinkingBoxProps {
   /** True while the panel is actively streaming (drives shimmer + auto-collapse). */
@@ -90,7 +91,9 @@ export const ThinkingBox = memo(({ isActive, duration, thoughtStreaming, childre
            the chevron on the right is the expand/collapse affordance. */}
       <button type="button" onClick={() => setIsOpen((v) => !v)} className={styles.headerButton} aria-expanded={isOpen}>
         <span className={classNames(styles.brainIcon, 'i-ph:brain')} aria-hidden />
-        <span className={styles.label}>{label}</span>
+
+        {/* <span className={styles.label}>{label}</span> */}
+        <ShinyText text={label} loading={isActive || thoughtStreaming} />
         <span className={classNames(styles.chevron, isOpen ? styles.open : styles.closed, 'i-ph:caret-down-bold')} />
       </button>
 

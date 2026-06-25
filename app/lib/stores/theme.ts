@@ -24,10 +24,7 @@ function initStore() {
   return DEFAULT_THEME;
 }
 
-export function toggleTheme() {
-  const currentTheme = themeStore.get();
-  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
+export function setTheme(newTheme: Theme) {
   // Update the theme store
   themeStore.set(newTheme);
 
@@ -51,4 +48,11 @@ export function toggleTheme() {
   }
 
   logStore.logSystem(`Theme changed to ${newTheme} mode`);
+}
+
+export function toggleTheme() {
+  const currentTheme = themeStore.get();
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+  setTheme(newTheme);
 }

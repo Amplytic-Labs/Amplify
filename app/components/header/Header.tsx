@@ -15,6 +15,8 @@ import { DeployButton } from '~/components/deploy/DeployButton';
 import { PreviewHeader } from '~/components/workbench/PreviewHeader';
 import SvgGradientText from '~/components/ui/SVGgradient';
 import { MobileWorkbenchTabBar } from '~/components/ui/MobileWorkbenchTabBar';
+import { findRenderableFiles } from '~/lib/renderable/registry';
+import { SidebarTrigger } from '~/components/ui/shadcn/sidebar';
 
 export function Header() {
   const chat = useStore(chatStore);
@@ -24,21 +26,27 @@ export function Header() {
   const selectedView = useStore(workbenchStore.currentView);
   const fileHistory = useStore(workbenchStore.fileHistory);
   const workbenchLeftPosition = useStore(workbenchStore.workbenchLeftPosition);
+  const files = useStore(workbenchStore.files);
+
+  // Only show Render tab when at least one renderable file exists
+  const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
 
   const sliderOptions = useMemo((): SliderOption<WorkbenchViewType>[] => {
-    // Always show all tabs so users can navigate freely; content loads when available
     const options: SliderOption<WorkbenchViewType>[] = [
       { value: 'code', text: 'Code' },
       { value: 'preview', text: 'Preview' },
-      { value: 'render', text: 'Render' },
     ];
+
+    if (hasRenderableFiles) {
+      options.push({ value: 'render', text: 'Render' });
+    }
 
     if (Object.keys(fileHistory).length > 1) {
       options.push({ value: 'diff', text: 'Diff' });
     }
 
     return options;
-  }, [fileHistory]);
+  }, [fileHistory, hasRenderableFiles]);
 
   const setSelectedView = (view: WorkbenchViewType) => {
     workbenchStore.currentView.set(view);
@@ -48,7 +56,7 @@ export function Header() {
 
   return (
     <header
-      className={classNames('flex items-center px-4 justify-between h-[var(--header-height)] relative', {
+      className={classNames('flex items-center  justify-between h-[var(--header-height)] relative z-[10]', {
         'border-transparent': !chat.started,
         'border-bolt-elements-borderColor': chat.started,
       })}
@@ -74,35 +82,11 @@ export function Header() {
             <DeployButton />
           </>
         ) : (
-          // Chat view: Logo + Title | Preview button
+          // Chat view: SidebarTrigger + Logo + Title | Preview button
           <>
             <div className="flex items-center gap-2 min-w-0">
-              <a href="/">
-                <div className="w-[40px] inline-block hidden dark:hidden">
-                  <SvgGradientText
-                    viewBox="0 0 1080 1080"
-                    className="w-[40px] "
-                    colors={['#5227FF', '#FF9FFC', '#00f2fa']}
-                  >
-                    <path
-                      d="M883.298 822H643.396V468.006L500.374 581.424L197 820.746V549.975L332.349 443.244H646.476L882.619 257L883.298 449.095L883.298 822Z"
-                      fill="#09090B"
-                    />
-                  </SvgGradientText>
-                </div>
-                <div className="w-[40px] inline-block hidden dark:block">
-                  <SvgGradientText
-                    viewBox="0 0 1080 1080"
-                    className="w-[40px] "
-                    colors={['#5227FF', '#FF9FFC', '#00f2fa']}
-                  >
-                    <path
-                      d="M883.298 822H643.396V468.006L500.374 581.424L197 820.746V549.975L332.349 443.244H646.476L882.619 257L883.298 449.095L883.298 822Z"
-                      fill="#ffffff"
-                    />
-                  </SvgGradientText>
-                </div>
-              </a>
+              <SidebarTrigger />
+
               <div
                 className="flex-1 truncate text-lg text-bolt-elements-textPrimary flex items-center"
                 style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
@@ -125,56 +109,27 @@ export function Header() {
       {/* Desktop Layout */}
       <div className={classNames('hidden lg:flex items-center justify-between w-full')}>
         <div className="flex items-center gap-2 z-logo text-bolt-elements-textPrimary cursor-pointer">
-          {!showWorkbench && (
-            <div
-              className={classNames(
-                'text-xl cursor-pointer hover:text-accent transition-colors',
-                sidebarOpen ? 'i-ph:sidebar-simple-duotone text-accent' : 'i-ph:sidebar-simple-duotone',
-              )}
-              onClick={() => sidebarStore.set(!sidebarStore.get())}
-            />
-          )}
           <div className="text-2xl font-semibold text-accent flex items-center">
-            <a href="/">
-              <div className="w-[40px] inline-block hidden dark:hidden">
-                <SvgGradientText
-                  viewBox="0 0 1080 1080"
-                  className="w-[40px] "
-                  colors={['#5227FF', '#FF9FFC', '#00f2fa']}
-                >
-                  <path
-                    d="M883.298 822H643.396V468.006L500.374 581.424L197 820.746V549.975L332.349 443.244H646.476L882.619 257L883.298 449.095L883.298 822Z"
-                    fill="#09090B"
-                  />
-                </SvgGradientText>
-              </div>
-              <div className="w-[40px] inline-block hidden dark:block">
-                <SvgGradientText
-                  viewBox="0 0 1080 1080"
-                  className="w-[40px] "
-                  colors={['#5227FF', '#FF9FFC', '#00f2fa']}
-                >
-                  <path
-                    d="M883.298 822H643.396V468.006L500.374 581.424L197 820.746V549.975L332.349 443.244H646.476L882.619 257L883.298 449.095L883.298 822Z"
-                    fill="#ffffff"
-                  />
-                </SvgGradientText>
-              </div>
-            </a>
+            <SidebarTrigger />
             {showWorkbench && (
               <>
-                <div className="h-6 w-0.7 rounded-full bg-gray-300 dark:bg-gray-600 rotate-15 mx-3" />
-                <UserDropdown />
-                <div className="h-6 w-0.7 rounded-full bg-gray-300 dark:bg-gray-600 rotate-15 mx-3" />
+                
+                <div
+                  data-orientation="vertical"
+                  role="none"
+                  data-slot="separator"
+                  className="shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px mr-2 data-[orientation=vertical]:h-4"
+                />
                 {chat.started ? (
                   <MotionDropdown
                     align="center"
                     trigger={
                       <div
-                        className="flex-1 pr-4 truncate text-lg text-bolt-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center"
-                        style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
+                        className="flex-1 pr-4 truncate text-[16px] text-bolt-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center gap-1.5"
+                        style={{ fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
                       >
                         <ClientOnly>{() => <ChatDescription />}</ClientOnly>
+                        <div className="i-ph:caret-down-bold text-[16px] opacity-100 relative top-0.7" />
                       </div>
                     }
                   >
@@ -190,10 +145,10 @@ export function Header() {
                 )}
               </>
             )}
-            {/* Slider positioned absolutely to align with workbench left edge (desktop only) */}
+            {/* Slider positioned fixed to align with workbench left edge (desktop only) */}
             {showWorkbench &&
               (workbenchLeftPosition !== null ? (
-                <div className="absolute hidden md:block" style={{ left: workbenchLeftPosition }}>
+                <div className="fixed top-4 hidden md:block" style={{ left: workbenchLeftPosition }}>
                   <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
                 </div>
               ) : (

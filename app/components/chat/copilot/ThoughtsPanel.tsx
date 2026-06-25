@@ -35,6 +35,13 @@ interface ThoughtsPanelProps {
   /** True while the `<thought>` block is still streaming (no close tag yet). */
   thoughtStreaming: boolean;
 
+  /**
+   * True when thinking is complete (`</thought>` received) and the AI has moved
+   * on to its final answer (no tool calls pending). Triggers the "Done" node
+   * at the end of the chain-of-thought.
+   */
+  thinkingDone?: boolean;
+
   /** Native reasoning + tool-invocation parts from the AI SDK. */
   parts:
     | (TextUIPart | ReasoningUIPart | ToolInvocationUIPart | SourceUIPart | FileUIPart | StepStartUIPart)[]
@@ -68,7 +75,14 @@ interface ThoughtsPanelProps {
  * streaming, and to "Thought for Ns" when done.
  */
 export const ThoughtsPanel = memo(
-  ({ thoughtText, thoughtStreaming, parts, isStreaming = false, addToolResult }: ThoughtsPanelProps) => {
+  ({
+    thoughtText,
+    thoughtStreaming,
+    thinkingDone = false,
+    parts,
+    isStreaming = false,
+    addToolResult,
+  }: ThoughtsPanelProps) => {
     const isActive = isStreaming || thoughtStreaming;
 
     /**
@@ -112,7 +126,7 @@ export const ThoughtsPanel = memo(
       return out;
     }, [thoughtText, parts]);
 
-    if (steps.length === 0 && !isActive) {
+    if (steps.length === 0 && !isActive && !thinkingDone) {
       return null;
     }
 
@@ -147,10 +161,23 @@ export const ThoughtsPanel = memo(
          * Live "Working…" node — spinning icon on the chain line. This is the
          * last node in the chain while streaming (Copilot's .chat-thinking-spinner-item).
          */}
-        {isActive && (
+        {isActive && !thinkingDone && (
           <div className={styles.chatThinkingSpinnerItem}>
             <span className={classNames(styles.chatThinkingIcon, styles.spinning, 'i-ph:spinner-gap')} aria-hidden />
             <span className={styles.spinnerLabel}>Working…</span>
+          </div>
+        )}
+
+        {/*
+         * "Done" node — static check icon on the chain line. Appears when
+         * `</thought>` has been received and the AI has moved on to its
+         * final answer (no pending tool calls). Signals to the user that
+         * the thinking phase is complete.
+         */}
+        {!isActive && thinkingDone && (
+          <div className={styles.chatThinkingDoneItem}>
+            <span className={classNames(styles.chatThinkingIcon, styles.doneIcon, 'i-ph:check-circle')} aria-hidden />
+            <span className={styles.doneLabel}>Done</span>
           </div>
         )}
       </ThinkingBox>

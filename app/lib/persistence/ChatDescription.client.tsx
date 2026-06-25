@@ -11,5 +11,5 @@ export function ChatDescription() {
     return null;
   }
 
-  return <div className="flex items-center justify-center">{initialDescription}</div>;
+  return <div className="flex items-center justify-center top-0.4 relative">{initialDescription}</div>;
 }

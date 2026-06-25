@@ -33,30 +33,30 @@ const InjectThemeStyles = () => {
       @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
 
       :root {
-        --background: oklch(0.9818 0.0054 95.0986);
-        --foreground: oklch(0.3438 0.0269 95.7226);
-        --card: oklch(0.9665 0.0067 97.3521);
-        --card-foreground: oklch(0.1908 0.0020 106.5859);
-        --popover: oklch(1.0000 0 0);
-        --popover-foreground: oklch(0.2671 0.0196 98.9390);
-        --primary: oklch(0.6171 0.1375 39.0427);
-        --primary-foreground: oklch(1.0000 0 0);
-        --secondary: oklch(0.9245 0.0138 92.9892);
-        --secondary-foreground: oklch(0.4334 0.0177 98.6048);
-        --muted: oklch(0.9341 0.0153 90.2390);
-        --muted-foreground: oklch(0.5341 0.0078 97.4503);
-        --accent: oklch(0.9245 0.0138 92.9892);
-        --accent-foreground: oklch(0.2671 0.0196 98.9390);
-        --destructive: oklch(0.1908 0.0020 106.5859);
-        --destructive-foreground: oklch(1.0000 0 0);
-        --border: oklch(0.8847 0.0069 97.3627);
-        --input: oklch(0.7621 0.0156 98.3528);
-        --ring: oklch(0.6171 0.1375 39.0427);
+        --background: oklch(1 0 0);
+        --foreground: oklch(0.145 0 0);
+        --card: oklch(1 0 0);
+        --card-foreground: oklch(0.145 0 0);
+        --popover: oklch(1 0 0);
+        --popover-foreground: oklch(0.145 0 0);
+        --primary: oklch(0.205 0 0);
+        --primary-foreground: oklch(0.985 0 0);
+        --secondary: oklch(0.97 0 0);
+        --secondary-foreground: oklch(0.205 0 0);
+        --muted: oklch(0.97 0 0);
+        --muted-foreground: oklch(0.556 0 0);
+        --accent: oklch(0.97 0 0);
+        --accent-foreground: oklch(0.205 0 0);
+        --destructive: oklch(0.577 0.245 27.325);
+        --destructive-foreground: oklch(0.577 0.245 27.325);
+        --border: oklch(0.922 0 0);
+        --input: oklch(0.922 0 0);
+        --ring: oklch(0.708 0 0);
         
         --font-sans: Almarai, sans-serif;
         --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
         --font-mono: Geist Mono, ui-monospace, monospace;
-        --radius: 1.25rem;
+        --radius: 0.625rem;
         
         --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.03), 0 1px 2px -1px rgba(0,0,0,0.03);
         --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.05), 0 2px 6px -1px rgba(0,0,0,0.03);
@@ -65,23 +65,25 @@ const InjectThemeStyles = () => {
       }
 
       .dark {
-        --background: oklch(0.18 0.002 240);
-        --foreground: oklch(0.92 0.004 240);
-        --card: oklch(0.22 0.003 240);
-        --card-foreground: oklch(0.98 0.002 240);
-        --popover: oklch(0.20 0.003 240);
-        --popover-foreground: oklch(0.94 0.003 240);
-        --primary: oklch(0.6724 0.1308 38.7559);
-        --primary-foreground: oklch(0.98 0.002 240);
-        --secondary: oklch(0.25 0.003 240);
-        --secondary-foreground: oklch(0.85 0.003 240);
-        --muted: oklch(0.22 0.003 240);
-        --muted-foreground: oklch(0.65 0.003 240);
-        --accent: oklch(0.25 0.004 240);
-        --accent-foreground: oklch(0.95 0.004 240);
-        --border: oklch(0.26 0.003 240);
-        --input: oklch(0.28 0.003 240);
-        --ring: oklch(0.6724 0.1308 38.7559);
+        --background: oklch(0.145 0 0);
+        --foreground: oklch(0.985 0 0);
+        --card: oklch(0.145 0 0);
+        --card-foreground: oklch(0.985 0 0);
+        --popover: oklch(0.145 0 0);
+        --popover-foreground: oklch(0.985 0 0);
+        --primary: oklch(0.985 0 0);
+        --primary-foreground: oklch(0.205 0 0);
+        --secondary: oklch(0.269 0 0);
+        --secondary-foreground: oklch(0.985 0 0);
+        --muted: oklch(0.269 0 0);
+        --muted-foreground: oklch(0.708 0 0);
+        --accent: oklch(0.269 0 0);
+        --accent-foreground: oklch(0.985 0 0);
+        --destructive: oklch(0.396 0.141 25.723);
+        --destructive-foreground: oklch(0.637 0.237 25.331);
+        --border: oklch(0.269 0 0);
+        --input: oklch(0.269 0 0);
+        --ring: oklch(0.439 0 0);
         
         --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.3);
         --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.4);

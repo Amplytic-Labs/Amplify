@@ -1,5 +1,5 @@
 $font-mono: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-$code-font-size: 13px;
+$code-font-size: 16px;
 
 .ReasoningScrollbar {
   &::-webkit-scrollbar {
@@ -31,13 +31,13 @@ $code-font-size: 13px;
 .MarkdownContent {
   /*
    * Copilot-style reasoning typography:
-   *   - smaller font (13px) than the main answer (18px) so reasoning
+   *   - smaller font (16px) than the main answer (18px) so reasoning
    *     reads as secondary/supporting text
    *   - tighter line height for density
    *   - dimmed color (textSecondary) to visually separate from the answer
    */
   font-family: 'Almarai', sans-serif;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.55;
   color: var(--bolt-elements-textSecondary);
 
@@ -190,7 +190,7 @@ $code-font-size: 13px;
     margin-block-end: 16px;
 
     :is(th, td) {
-      padding: 6px 13px;
+      padding: 6px 16px;
       border: 1px solid var(--bolt-elements-borderColor);
     }
 

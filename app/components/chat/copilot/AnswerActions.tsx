@@ -131,8 +131,8 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
         active={feedback === 'up'}
         onClick={() => handleFeedback('up')}
       >
-        <span
-          className={classNames('i-ph:thumbs-up text-sm', feedback === 'up' && 'text-bolt-elements-icon-success')}
+        <div
+          className={classNames('i-ph:thumbs-up text-lg', feedback === 'up' && 'text-bolt-elements-icon-success')}
         />
       </ActionButton>
 
@@ -142,8 +142,8 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
         active={feedback === 'down'}
         onClick={() => handleFeedback('down')}
       >
-        <span
-          className={classNames('i-ph:thumbs-down text-sm', feedback === 'down' && 'text-bolt-elements-icon-error')}
+        <div
+          className={classNames('i-ph:thumbs-down text-lg', feedback === 'down' && 'text-bolt-elements-icon-error')}
         />
       </ActionButton>
 
@@ -151,19 +151,19 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
 
       {/* Copy */}
       <ActionButton label={copied ? 'Copied!' : 'Copy'} active={copied} onClick={handleCopy}>
-        <span className={classNames(copied ? 'i-ph:check' : 'i-ph:copy', 'text-sm')} />
+        <div className={classNames(copied ? 'i-ph:check' : 'i-ph:copy', 'text-lg')} />
       </ActionButton>
 
       {/* Regenerate */}
       {onRegenerate && (
         <ActionButton label="Regenerate" onClick={onRegenerate}>
-          <span className="i-ph:arrow-counter-clockwise text-sm" />
+          <div className="i-ph:arrow-counter-clockwise text-lg" />
         </ActionButton>
       )}
 
       {/* Read aloud */}
       <ActionButton label={speaking ? 'Stop reading' : 'Read aloud'} active={speaking} onClick={handleSpeak}>
-        <span className={classNames(speaking ? 'i-ph:stop-circle' : 'i-ph:speaker-high', 'text-sm')} />
+        <div className={classNames(speaking ? 'i-ph:stop-circle' : 'i-ph:speaker-high', 'text-lg')} />
       </ActionButton>
 
       {/* Token usage pill (right-aligned) */}
@@ -203,7 +203,7 @@ const ActionButton = memo(({ label, active, onClick, children }: ActionButtonPro
         aria-label={label}
         aria-pressed={active}
         className={classNames(
-          'p-1.5 rounded-md transition-colors cursor-pointer',
+          'p-1.5 rounded-md transition-colors cursor-pointer bg-transparent',
           'text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2',
           active && 'text-bolt-elements-textPrimary bg-bolt-elements-background-depth-2',
         )}

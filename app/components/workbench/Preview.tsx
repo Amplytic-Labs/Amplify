@@ -455,7 +455,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
 
   return (
     <div ref={containerRef} className="w-full h-full flex flex-col relative">
-      <div className="flex-1 border-t border-bolt-elements-borderColor flex justify-center items-center overflow-auto">
+      <div className="flex-1  flex justify-center items-center overflow-auto">
         <div
           style={{
             width: isDeviceModeOn ? (showDeviceFrameInPreview ? '100%' : `${widthPercent}%`) : '100%',

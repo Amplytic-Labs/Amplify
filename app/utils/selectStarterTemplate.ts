@@ -206,7 +206,7 @@ export async function getTemplates(templateName: string, title?: string) {
   const devCommand = isExpo ? 'npm start' : 'npm run dev';
 
   const assistantMessage = `
-<boltArtifact id="imported-files" title="${title || 'Create initial files'}" type="bundled">
+<boltArtifact id="imported-files" title="${title || 'Create initial files'}" type="template">
 ${filesToImport.files
   .map(
     (file) =>

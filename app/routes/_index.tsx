@@ -1,15 +1,25 @@
 import { json, type MetaFunction } from '@remix-run/cloudflare';
 import { ClientOnly } from 'remix-utils/client-only';
+import { SidebarProvider, SidebarInset, Sidebar, useSidebar } from '~/components/ui/shadcn/sidebar';
+import { ProjectSidebar } from '~/components/sidebar/ProjectSidebar';
 import { BaseChat } from '~/components/chat/BaseChat';
 import { Chat } from '~/components/chat/Chat.client';
 import { Header } from '~/components/header/Header';
-import BackgroundRays from '~/components/ui/BackgroundRays';
-
+import Background from '~/components/ui/Background';
+import { themeStore, setTheme } from '~/lib/stores/theme';
+import { chatStore } from '~/lib/stores/chat';
+import { useStore } from '@nanostores/react';
 export const meta: MetaFunction = () => {
   return [{ title: 'Bolt' }, { name: 'description', content: 'Talk with Bolt, an AI assistant from StackBlitz' }];
 };
 
 export const loader = () => json({});
+
+const user = {
+  name: 'John Doe',
+  email: 'john@example.com',
+  avatar: '',
+};
 
 /**
  * Landing page component for Bolt
@@ -19,11 +29,51 @@ export const loader = () => json({});
  */
 export default function Index() {
   return (
-    <div className="flex flex-col h-screen w-full bg-bolt-elements-background-depth-1 overflow-hidden">
-      <Header />
-      <div className="flex-1 overflow-hidden">
-        <ClientOnly fallback={<BaseChat />}>{() => <Chat />}</ClientOnly>
-      </div>
-    </div>
+    <ClientOnly fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      {() => <MainLayout />}
+    </ClientOnly>
+  );
+}
+
+import { useEffect } from 'react';
+
+function SidebarStateEffect({ chatStarted }: { chatStarted: boolean }) {
+  const { setOpen } = useSidebar();
+  useEffect(() => {
+    if (chatStarted) {
+      setOpen(false);
+    }
+  }, [chatStarted, setOpen]);
+  return null;
+}
+
+function MainLayout() {
+  const theme = useStore(themeStore);
+  const chat = useStore(chatStore);
+  return (
+    <SidebarProvider>
+      <SidebarStateEffect chatStarted={chat.started} />
+      <AppSidebar />
+      <SidebarInset variant="inset">
+        <Background mode={theme} transparent={chat.started}>
+          <header className="flex h-12 shrink-0 items-center  px-4 w-full">
+            <div className="flex-1 min-w-0">
+              <Header />
+            </div>
+          </header>
+          <div className="flex-1 overflow-hidden">
+            <ClientOnly fallback={<BaseChat />}>{() => <Chat />}</ClientOnly>
+          </div>
+        </Background>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+function AppSidebar() {
+  return (
+    <Sidebar variant="inset">
+      <ProjectSidebar user={user} />
+    </Sidebar>
   );
 }
