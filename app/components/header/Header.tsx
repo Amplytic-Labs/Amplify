@@ -188,8 +188,10 @@ export function Header() {
             {/* Slider positioned fixed to align with workbench left edge (desktop only) */}
             {showWorkbench &&
               (workbenchLeftPosition !== null ? (
-                <div className="fixed top-4 hidden md:block" style={{ left: workbenchLeftPosition }}>
+                <div className="fixed  hidden md:flex items-center " style={{ left: workbenchLeftPosition }}>
                   <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
+
+                  {showWorkbench && selectedView === 'preview' && <PreviewHeader />}
                 </div>
               ) : (
                 <div className="hidden md:block">
@@ -200,11 +202,6 @@ export function Header() {
         </div>
 
         {/* Preview toolbar — centered horizontally in the header */}
-        {showWorkbench && selectedView === 'preview' && (
-          <div className="absolute left-1/2 -translate-x-1/2 flex justify-center">
-            <PreviewHeader />
-          </div>
-        )}
 
         {showWorkbench && <DeployButton />}
       </div>

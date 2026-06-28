@@ -23,7 +23,7 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
   };
 
   return (
-    <div className={`relative ${isSidebarOpen ? 'bottom-0.5' : 'bottom-2.5'} inline-flex items-center gap-1 p-0.5 bg-bolt-elements-background-depth-3 rounded-full border border-bolt-elements-borderColor transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]`}>
+    <div className="inline-flex items-center gap-1 p-0.5 bg-bolt-elements-background-depth-3 rounded-full border border-bolt-elements-borderColor transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
       <LayoutGroup id="minimal-toggle-preset-two">
         {options.map((option) => {
           const isActive = option.value === selected;
@@ -37,14 +37,17 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
               style={{ WebkitTapHighlightColor: 'transparent' }}
               aria-pressed={isActive}
             >
-              {/* Active Slider Indicator */}
-              {isActive && (
-                <motion.div
-                  layoutId="activeIndicator"
-                  className="absolute inset-0 bg-white dark:bg-zinc-700/50 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)]"
-                  transition={smoothSpring}
-                />
-              )}
+              {/* Active Slider Indicator — always rendered to avoid mount/unmount vertical jump */}
+              <div className="absolute inset-0 pointer-events-none">
+                {isActive && (
+                  <motion.div
+                    layoutId="activeIndicator"
+                    className="absolute inset-0 bg-white dark:bg-zinc-700/50 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)]"
+                    transition={smoothSpring}
+                    style={{ originX: 0.5, originY: 0.5 }}
+                  />
+                )}
+              </div>
 
               {/* Component Content Wrapper */}
               <div className="relative z-10 flex items-center justify-center">

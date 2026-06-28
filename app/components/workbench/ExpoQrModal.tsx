@@ -12,6 +12,15 @@ interface ExpoQrModalProps {
 export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
   const expoUrl = useStore(expoUrlAtom);
 
+  const getExpoGoUrl = (url: string | null) => {
+    if (!url) return null;
+    if (url.startsWith('exp://')) return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url.replace(/^https?:\/\//, 'exp://');
+    }
+    return url;
+  };
+
   return (
     <DialogRoot open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog
@@ -30,7 +39,7 @@ export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
           <div className="my-6 flex flex-col items-center">
             {expoUrl ? (
               <QRCode
-                logoImage="/favicon.svg"
+                logoImage="/Amplify.png"
                 removeQrCodeBehindLogo={true}
                 logoPadding={3}
                 logoHeight={50}
@@ -41,7 +50,7 @@ export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
                   padding: 2,
                   backgroundColor: '#8a5fff',
                 }}
-                value={expoUrl}
+                value={getExpoGoUrl(expoUrl) || ''}
                 size={200}
               />
             ) : (

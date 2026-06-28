@@ -180,7 +180,7 @@ export class BoltShell {
   private async _watchExpoUrlInBackground(stream: ReadableStream<string>) {
     const reader = stream.getReader();
     let buffer = '';
-    const expoUrlRegex = /(exp:\/\/[^\s]+)/;
+    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -277,7 +277,7 @@ export class BoltShell {
     const tappedStream = this.#outputStream;
 
     // Regex for Expo URL
-    const expoUrlRegex = /(exp:\/\/[^\s]+)/;
+    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
     while (true) {
       const { value, done } = await tappedStream.read();
