@@ -68,7 +68,7 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
     div: [
       ...(defaultSchema.attributes?.div ?? []),
       'data*',
-      ['className', '__boltArtifact__', '__boltQuickAction', '__boltSelectedElement__'],
+      ['className', '__boltArtifact__', '__boltQuickAction', '__boltSelectedElement__', '__boltThought__'],
     ],
     button: [
       ...(defaultSchema.attributes?.button ?? []),
@@ -79,6 +79,13 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
       'value',
       ['className', '__boltArtifact__', '__boltQuickAction'],
     ],
+
+    /*
+     * Allow class on details/summary so the <thought> block preprocessor
+     * can mark them with __boltThought__ for Copilot-style rendering.
+     */
+    details: [...(defaultSchema.attributes?.details ?? []), ['className', '__boltThought__'], 'open'],
+    summary: [...(defaultSchema.attributes?.summary ?? [])],
   },
   strip: [],
 };

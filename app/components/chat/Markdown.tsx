@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useEffect } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import type { BundledLanguage } from 'shiki';
 import { createScopedLogger } from '~/utils/logger';
@@ -6,6 +6,7 @@ import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markd
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
+import { FilePill } from './copilot/FilePill';
 import type { Message } from 'ai';
 import styles from './Markdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
@@ -27,7 +28,23 @@ export const Markdown = memo(
   ({ children, html = false, limitedMarkdown = false, append, setChatMode, model, provider }: MarkdownProps) => {
     logger.trace('Render');
 
-    const parsedChildren = useMemo(() => stripCodeFenceFromArtifact(children), [children]);
+    /*
+     * Preprocess content:
+     *   1. Strip code fences around boltArtifact (existing behaviour)
+     *   2. Strip residual `<thought>...</thought>` tags. The system
+     *      prompt forbids the AI from emitting these (it should use
+     *      its native reasoning channel instead, which arrives as
+     *      `parts[].type === 'reasoning'` and is rendered by the
+     *      ThoughtProcess component). We strip them here as a
+     *      defence-in-depth so a misbehaving model cannot re-introduce
+     *      the old multi-panel "thought block" UI inside the answer.
+     *      `transformThoughtBlocks` is kept as a no-op safety net for
+     *      any external callers that still rely on it.
+     */
+    const parsedChildren = useMemo(() => {
+      const stripped = stripCodeFenceFromArtifact(children);
+      return stripResidualThoughtTags(stripped);
+    }, [children]);
 
     const childrenRef = useRef(parsedChildren);
     childrenRef.current = parsedChildren;
@@ -50,6 +67,18 @@ export const Markdown = memo(
             }
 
             return <Artifact messageId={messageId} artifactId={artifactId} />;
+          }
+
+          if (className?.includes('__boltThought__')) {
+            /*
+             * Legacy path — the new ThoughtProcess component renders
+             * reasoning outside the markdown body. If a stray
+             * __boltThought__ details element ever shows up here we
+             * render it as plain muted text so it doesn't break, but
+             * stripResidualThoughtTags should already have removed
+             * the source `<thought>` tags before markdown parsing.
+             */
+            return <div className="text-bolt-elements-textTertiary text-xs italic">{children}</div>;
           }
 
           if (className?.includes('__boltSelectedElement__')) {
@@ -233,6 +262,47 @@ export const Markdown = memo(
             </a>
           );
         },
+
+        /*
+         * Plain <details> elements from user-supplied markdown are
+         * rendered as-is. The legacy `__boltThought__` class path
+         * that used to inject a brain icon into the summary has been
+         * removed — reasoning now flows through the ThoughtProcess
+         * component via the AI SDK's native `reasoning` parts, not
+         * through `<thought>` tags in the markdown body.
+         */
+        details: ({ className, children, ...props }) => {
+          return (
+            <details className={className} {...props}>
+              {children}
+            </details>
+          );
+        },
+
+        /*
+         * Inline code renderer — detects file paths (`app/_layout.jsx`) and
+         * folder paths (`components/ui/`) and renders them as clickable pills
+         * with colorized file-type icons. Falls back to a plain <code> for
+         * non-path inline code (e.g. `useState`, `npm install`).
+         *
+         * Block code (inside ``` fences) is intercepted by the `pre` handler
+         * above which renders <CodeBlock> directly, so this `code` handler
+         * only ever sees INLINE code in practice.
+         */
+        code: ({ className, children }) => {
+          /*
+           * Code blocks have a `language-xxx` class — let the default <code>
+           * render them (the `pre` handler wraps them in <CodeBlock>).
+           */
+          if (className && /language-/.test(className)) {
+            return <code className={className}>{children}</code>;
+          }
+
+          // Inline code — try the file/folder pill.
+          const text = typeof children === 'string' ? children : (children?.toString() ?? '');
+
+          return <FilePill raw={text} />;
+        },
       } satisfies Components;
     }, [append, setChatMode, model, provider]);
 
@@ -296,3 +366,54 @@ export const stripCodeFenceFromArtifact = (content: string) => {
 
   return lines.join('\n');
 };
+
+/**
+ * Strip residual `<thought>...</thought>` tags from the visible
+ * markdown content.
+ *
+ * The system prompt now instructs the AI to use its native reasoning
+ * channel (rendered as `parts[].type === 'reasoning'` → ThoughtProcess
+ * component) instead of emitting `<thought>` tags into the response
+ * text. We keep this filter as defence-in-depth so a misbehaving model
+ * cannot re-introduce the old multi-panel "thought block" UI inside
+ * the final answer markdown.
+ *
+ * Handles three cases:
+ *   1. Complete `<thought>…</thought>` blocks → removed entirely
+ *   2. Streaming `<thought>…` (no closing tag yet) → removed
+ *   3. Orphan `</thought>` → removed
+ *
+ * Leading whitespace left behind by a stripped block is trimmed so
+ * the first paragraph of the real answer doesn't get pushed down.
+ */
+export const stripResidualThoughtTags = (content: string): string => {
+  if (!content || (!content.includes('<thought>') && !content.includes('</thought>'))) {
+    return content;
+  }
+
+  let out = content;
+
+  // 1. Complete blocks
+  out = out.replace(/<thought>[\s\S]*?<\/thought>/g, '');
+
+  // 2. Streaming-open block (no closing tag yet)
+  out = out.replace(/<thought>[\s\S]*$/g, '');
+
+  // 3. Orphan closing tag
+  out = out.replace(/<\/thought>/g, '');
+
+  /*
+   * Tidy up leading whitespace so the answer's first paragraph
+   * isn't pushed down by an empty line left behind by a stripped block.
+   */
+  return out.replace(/^\s+/, '');
+};
+
+/**
+ * @deprecated Kept only for backward compatibility with any external
+ * callers. The new pipeline uses `stripResidualThoughtTags` instead
+ * — `<thought>` tags are no longer rendered as collapsible panels
+ * inside the answer markdown. They are rendered via the ThoughtProcess
+ * component from the AI SDK's native `reasoning` parts.
+ */
+export const transformThoughtBlocks = (content: string): string => stripResidualThoughtTags(content);

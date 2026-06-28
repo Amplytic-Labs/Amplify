@@ -115,7 +115,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         let summary: string | undefined = undefined;
         let messageSliceId = 0;
 
-        const processedMessages = await mcpService.processToolInvocations(messages, dataStream);
+        const processedMessages = await mcpService.processToolInvocations(messages, dataStream, files);
 
         if (processedMessages.length > 3) {
           messageSliceId = processedMessages.length - 3;

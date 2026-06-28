@@ -356,7 +356,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 </div>
               )}
               <StickToBottom
-                className={classNames('pt-6 px-2 sm:px-0 relative', {
+                className={classNames('pt-2 px-2 sm:px-0 relative', {
                   'h-full flex flex-col chat-scrollbar-hide': chatStarted,
                 })}
                 resize="smooth"
@@ -466,26 +466,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   />
                 </div>
               </StickToBottom>
-              <div className="flex flex-col justify-center">
-                {!chatStarted && (
-                  <div className="flex justify-center gap-2">
-                    {ImportButtons(importChat)}
-                    <GitCloneButton importChat={importChat} />
-                  </div>
-                )}
-                <div className="flex flex-col gap-5">
-                  {!chatStarted &&
-                    ExamplePrompts((event, messageInput) => {
-                      if (isStreaming) {
-                        handleStop?.();
-                        return;
-                      }
-
-                      handleSendMessage?.(event, messageInput);
-                    })}
-                  {!chatStarted && <StarterTemplates />}
-                </div>
-              </div>
             </div>
             <ClientOnly>
               {() => (
@@ -506,7 +486,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
             */}
             <PanelGroup direction="horizontal" style={{ flexDirection: 'row-reverse', overflow: 'visible' }}>
               {showWorkbench && (
-                <Panel defaultSize={80} minSize={20} style={{ overflow: 'visible' }}>
+                <Panel defaultSize={70} minSize={30} style={{ overflow: 'visible' }}>
                   <div className="relative h-full w-full">
                     <ClientOnly>
                       {() => (
@@ -523,13 +503,16 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
               {showChat && showWorkbench && (
                 <PanelResizeHandle className="relative flex items-center justify-center w-[0px] cursor-col-resize group z-10">
                   {/* visible line border between chat and workbench */}
-                  <div className="absolute inset-y-0 right-0 w-[0px] bg-bolt-elements-borderColor" />
+
                   {/* Invisible hit area for easier dragging without adding layout gap */}
-                  <div className="absolute inset-y-0 left-[-6px] right-[-6px] z-20 cursor-col-resize" />
                 </PanelResizeHandle>
               )}
               {showChat && (
-                <Panel defaultSize={20} minSize={15} collapsible>
+                <Panel
+                  defaultSize={showWorkbench ? 20 : 100}
+                  minSize={showWorkbench ? 15 : 100}
+                  collapsible={showWorkbench}
+                >
                   <div className={classNames(styles.Chat, 'flex flex-col h-full w-full')}>
                     {!chatStarted && (
                       <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
@@ -654,26 +637,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         />
                       </div>
                     </StickToBottom>
-                    <div className="flex flex-col justify-center">
-                      {!chatStarted && (
-                        <div className="flex justify-center gap-2">
-                          {ImportButtons(importChat)}
-                          <GitCloneButton importChat={importChat} />
-                        </div>
-                      )}
-                      <div className="flex flex-col gap-5">
-                        {!chatStarted &&
-                          ExamplePrompts((event, messageInput) => {
-                            if (isStreaming) {
-                              handleStop?.();
-                              return;
-                            }
-
-                            handleSendMessage?.(event, messageInput);
-                          })}
-                        {!chatStarted && <StarterTemplates />}
-                      </div>
-                    </div>
                   </div>
                 </Panel>
               )}
@@ -699,7 +662,7 @@ function ScrollToBottom() {
   return (
     !isAtBottom && (
       <>
-        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-bolt-elements-background-depth-1 to-transparent h-20 z-10" />
+        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-card to-transparent h-20 z-10" />
         <button
           className="sticky z-50 bottom-0 left-0 right-0 text-4xl rounded-lg px-1.5 py-0.5 flex items-center justify-center mx-auto gap-2 bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor text-bolt-elements-textPrimary text-sm"
           onClick={() => scrollToBottom()}

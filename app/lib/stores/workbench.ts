@@ -5,6 +5,7 @@ import type { ActionCallbackData, ArtifactCallbackData } from '~/lib/runtime/mes
 import { webcontainer } from '~/lib/webcontainer';
 import type { ITerminal } from '~/types/terminal';
 import { unreachable } from '~/utils/unreachable';
+import { WORK_DIR } from '~/utils/constants';
 import { EditorStore } from './editor';
 import { FilesStore, type FileMap } from './files';
 import { PreviewsStore } from './previews';
@@ -376,6 +377,82 @@ export class WorkbenchStore {
     }
   }
 
+  /**
+   * Write content directly to a file (creates or overwrites).
+   *
+   * Used by the native Copilot-style tool mutation handler in Chat.client.tsx
+   * to apply `replace_string_in_file`, `multi_replace_string_in_file`, and
+   * `create_file` tool results to the workspace. This delegates to the
+   * underlying FilesStore which writes to WebContainer and updates the
+   * reactive file map atomically.
+   */
+  async writeFile(filePath: string, content: string): Promise<void> {
+    try {
+      await this.#filesStore.saveFile(filePath, content);
+    } catch (error) {
+      console.error('Failed to write file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply a single native-tool file mutation operation to the workspace.
+   *
+   * This is the browser-side counterpart to the `FileMutationOperation`
+   * type defined in `app/lib/tools/nativeTools.ts`. The server-side tool
+   * `execute` produces a mutation signal (a JSON string), and
+   * `Chat.client.tsx` parses that signal and calls this method for each
+   * operation in the signal.
+   *
+   * Returns a short human-readable summary that the UI can surface.
+   */
+  async applyFileMutation(
+    op:
+      | { op: 'create'; filePath: string; content: string }
+      | { op: 'replace'; filePath: string; oldString: string; newString: string }
+      | { op: 'multi_replace'; filePath: string; edits: Array<{ oldString: string; newString: string }> },
+  ): Promise<string> {
+    const fullPath = op.filePath.startsWith('/home/') ? op.filePath : `${WORK_DIR}/${op.filePath}`;
+
+    try {
+      if (op.op === 'create') {
+        await this.createFile(fullPath, op.content);
+        return `Created ${op.filePath}`;
+      }
+
+      // For replace / multi_replace: read current content, apply edits, write back
+      const current = this.#filesStore.getFile(fullPath);
+
+      if (!current) {
+        return `Cannot edit — file not found: ${op.filePath}`;
+      }
+
+      let newContent = current.content;
+
+      if (op.op === 'replace') {
+        if (!newContent.includes(op.oldString)) {
+          return `Edit failed — oldString not found in ${op.filePath}`;
+        }
+
+        newContent = newContent.replace(op.oldString, op.newString);
+      } else {
+        for (const [i, edit] of op.edits.entries()) {
+          if (!newContent.includes(edit.oldString)) {
+            return `Edit #${i + 1} failed — oldString not found in ${op.filePath}`;
+          }
+
+          newContent = newContent.replace(edit.oldString, edit.newString);
+        }
+      }
+
+      await this.#filesStore.saveFile(fullPath, newContent);
+
+      return op.op === 'replace' ? `Edited ${op.filePath}` : `Applied ${op.edits.length} edit(s) to ${op.filePath}`;
+    } catch (error: any) {
+      return `Mutation failed for ${op.filePath}: ${error?.message || String(error)}`;
+    }
+  }
+
   async createFolder(folderPath: string) {
     try {
       return await this.#filesStore.createFolder(folderPath);
@@ -586,8 +663,10 @@ export class WorkbenchStore {
         this.showWorkbench.set(true);
       }
 
-      // Skip per-file focus/view switching for bundled artifacts (e.g. git clone imports)
-      // to avoid rapidly cycling through every imported file in the editor.
+      /*
+       * Skip per-file focus/view switching for bundled artifacts (e.g. git clone imports)
+       * to avoid rapidly cycling through every imported file in the editor.
+       */
       if (!isBundled) {
         if (this.selectedFile.value !== fullPath) {
           this.setSelectedFile(fullPath);
@@ -601,11 +680,13 @@ export class WorkbenchStore {
       }
 
       if (isBundled) {
-        // For bundled artifacts (git clone / template imports):
-        // - Always run the action to write the file to WebContainer
-        // - Skip all editor-level updates (focus, save, document sync)
-        //   to avoid the distracting per-file editor re-renders.
-        //   The file watcher picks up changes from WebContainer naturally.
+        /*
+         * For bundled artifacts (git clone / template imports):
+         * - Always run the action to write the file to WebContainer
+         * - Skip all editor-level updates (focus, save, document sync)
+         *   to avoid the distracting per-file editor re-renders.
+         *   The file watcher picks up changes from WebContainer naturally.
+         */
         await artifact.runner.runAction(data);
       } else {
         const doc = this.#editorStore.documents.get()[fullPath];

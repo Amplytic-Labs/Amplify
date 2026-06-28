@@ -9,7 +9,14 @@ import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROMPT_COOKIE_KEY, PROVIDER_LIST } from '~/utils/constants';
+import { isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  PROMPT_COOKIE_KEY,
+  PROVIDER_LIST,
+  TOOL_EXECUTION_APPROVAL,
+} from '~/utils/constants';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import { BaseChat } from './BaseChat';
@@ -181,6 +188,17 @@ export const ChatImpl = memo(
         projectContext: vectorProjectContext || undefined,
       },
       sendExtraMessageFields: true,
+      /*
+       * Enable client-side multi-step continuation. Without this, calling
+       * `addToolResult` (used for native-tool auto-approve + mutating-tool
+       * approval) would only update local state and NEVER send the result
+       * back to the server — so the server-side `execute` would never run
+       * and tools would appear to "do nothing". With maxSteps set, the AI
+       * SDK automatically fires a follow-up /api/chat request carrying the
+       * tool result, `processToolInvocations` runs the real execute, and
+       * the actual result is streamed back. Mirrors the server's maxLLMSteps.
+       */
+      maxSteps: mcpSettings.maxLLMSteps,
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');
@@ -204,6 +222,7 @@ export const ChatImpl = memo(
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
         const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+
         if (lastUserMsg?.content) {
           import('~/lib/hooks/useVectorContext')
             .then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
@@ -211,8 +230,10 @@ export const ChatImpl = memo(
 
               const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
                 const cid = chatId.get();
+
                 if (cid) {
                   const project = projectStore.getProjectByChat(cid);
+
                   if (project) {
                     extractAndStoreProjectContext(
                       project.id,
@@ -278,14 +299,17 @@ export const ChatImpl = memo(
           // Get last user message for context query
           const userMessages = messages.filter((m) => m.role === 'user');
           const lastMsg = userMessages[userMessages.length - 1]?.content || '';
+
           if (!lastMsg) {
             setVectorUserContext('');
             setVectorProjectContext('');
+
             return;
           }
 
           // Query user profile
           const userCtx = await userProfileStore.formatContextForPrompt(lastMsg, 500);
+
           if (!cancelled) {
             setVectorUserContext(userCtx);
           }
@@ -293,8 +317,10 @@ export const ChatImpl = memo(
           // Check if this is a project chat and query project context
           const currentChatId = chatId.get();
           const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+
           if (project) {
             const projCtx = await projectContextStore.formatContextForPrompt(project.id, lastMsg, 1000);
+
             if (!cancelled) {
               setVectorProjectContext(projCtx);
             }
@@ -310,6 +336,7 @@ export const ChatImpl = memo(
       }
 
       updateVectorContext();
+
       return () => {
         cancelled = true;
       };
@@ -318,17 +345,24 @@ export const ChatImpl = memo(
     // Detect execute_plan signal from AI responses and show approval dialog
     useEffect(() => {
       const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
-      if (!lastAssistantMessage?.content) return;
+
+      if (!lastAssistantMessage?.content) {
+        return;
+      }
 
       const content = lastAssistantMessage.content.trim();
-      // M-4 fix: Check for the signal marker before attempting JSON.parse
-      // to avoid wasting cycles parsing normal conversational text.
+
+      /*
+       * M-4 fix: Check for the signal marker before attempting JSON.parse
+       * to avoid wasting cycles parsing normal conversational text.
+       */
       if (!content.startsWith('{') || !content.includes('execute_plan_signal')) {
         return;
       }
 
       try {
         const signal = JSON.parse(content);
+
         if (signal.type === 'execute_plan_signal' && !planExecuting && !planSignal) {
           setPlanSignal(signal);
         }
@@ -337,8 +371,164 @@ export const ChatImpl = memo(
       }
     }, [messages, planExecuting, planSignal]);
 
+    /*
+     * ───────────────────────────────────────────────────────────────────
+     * Native Copilot-style tool mutation handler
+     *
+     * When the AI calls one of the native tools (replace_string_in_file,
+     * multi_replace_string_in_file, create_file), the server-side execute
+     * function returns a JSON "mutation signal" rather than mutating the
+     * file system directly. This effect scans the latest assistant message
+     * for tool-call results that contain such a signal and applies each
+     * operation to the workbench file store, which writes through to the
+     * WebContainer.
+     *
+     * We track processed toolCallIds in a ref so we never apply the same
+     * mutation twice (the effect re-runs on every `messages` change).
+     * ───────────────────────────────────────────────────────────────────
+     */
+    const processedMutationToolCallIdsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+      const lastAssistant = messages.filter((m) => m.role === 'assistant').pop();
+
+      if (!lastAssistant) {
+        return;
+      }
+
+      /*
+       * Tool invocations can live either on `toolInvocations` (legacy) or
+       * inside `parts` (current ai-sdk shape). Check both.
+       */
+      const allInvocations: any[] = [];
+
+      if (Array.isArray((lastAssistant as any).parts)) {
+        for (const p of (lastAssistant as any).parts) {
+          if (p?.type === 'tool-invocation' && p?.toolInvocation) {
+            allInvocations.push(p.toolInvocation);
+          }
+        }
+      }
+
+      if (Array.isArray((lastAssistant as any).toolInvocations)) {
+        allInvocations.push(...(lastAssistant as any).toolInvocations);
+      }
+
+      for (const inv of allInvocations) {
+        if (inv.state !== 'result') {
+          continue;
+        }
+
+        const toolCallId: string = inv.toolCallId;
+
+        if (processedMutationToolCallIdsRef.current.has(toolCallId)) {
+          continue;
+        }
+
+        const result = inv.result;
+
+        if (typeof result !== 'string') {
+          continue;
+        }
+
+        if (!result.includes('open_claude_file_mutation')) {
+          continue;
+        }
+
+        let parsed: any = null;
+
+        try {
+          parsed = JSON.parse(result);
+        } catch {
+          continue;
+        }
+
+        if (!parsed || parsed.type !== 'open_claude_file_mutation' || !Array.isArray(parsed.operations)) {
+          continue;
+        }
+
+        processedMutationToolCallIdsRef.current.add(toolCallId);
+
+        // Fire-and-forget — apply each operation in order
+        (async () => {
+          for (const op of parsed.operations) {
+            try {
+              const summary = await workbenchStore.applyFileMutation(op);
+              logger.info(`[native-tool] ${summary}`);
+            } catch (e: any) {
+              logger.error('[native-tool] mutation failed', e);
+            }
+          }
+        })();
+      }
+    }, [messages]);
+
+    /*
+     * ───────────────────────────────────────────────────────────────────
+     * Auto-approve read-only native tools (Copilot-style frictionless reads)
+     *
+     * Copilot in VS Code does NOT prompt the user every time the AI wants
+     * to read a file, list a directory, or run a grep — it just does it.
+     * Only mutating operations (edits, creates, terminal commands) prompt
+     * the user for consent. We mirror that behaviour here.
+     *
+     * When the AI emits a tool call with state='call' for any of the
+     * read-only native tools below, we immediately call `addToolResult`
+     * with `TOOL_EXECUTION_APPROVAL.APPROVE`. The next /api/chat request
+     * then runs the server-side execute function and the actual result
+     * (file contents, grep matches, web results, …) is streamed back.
+     *
+     * Mutating tools (replace_string_in_file, multi_replace_string_in_file,
+     * create_file) are intentionally NOT in this list — they still show
+     * the Approve/Reject UI so the user stays in control of file edits.
+     * ───────────────────────────────────────────────────────────────────
+     */
+    const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!p || p.type !== 'tool-invocation' || !p.toolInvocation) {
+            continue;
+          }
+
+          const inv = p.toolInvocation as any;
+
+          if (inv.state !== 'call') {
+            continue;
+          }
+
+          if (!isReadOnlyNativeTool(inv.toolName)) {
+            continue;
+          }
+
+          if (autoApprovedToolCallIdsRef.current.has(inv.toolCallId)) {
+            continue;
+          }
+
+          autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+          logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
+          addToolResult({
+            toolCallId: inv.toolCallId,
+            result: TOOL_EXECUTION_APPROVAL.APPROVE,
+          });
+        }
+      }
+    }, [messages, addToolResult]);
+
     const handlePlanExecution = async (signal: any) => {
       setPlanExecuting(true);
+
       try {
         const { executePlan } = await import('~/lib/planning/sub-chat-engine');
         const { getSystemPrompt } = await import('~/lib/common/prompts/new-prompt');
@@ -346,6 +536,7 @@ export const ChatImpl = memo(
 
         const currentChatId = chatIdAtom.get();
         const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+
         if (!project) {
           setPlanExecuting(false);
           return;
@@ -368,8 +559,10 @@ export const ChatImpl = memo(
 
         activePlanIdRef.current = plan.id;
 
-        // M-2 fix: Get the full system prompt with ALL context injections
-        // Sub-chats must receive the same rich prompt as the main chat.
+        /*
+         * M-2 fix: Get the full system prompt with ALL context injections
+         * Sub-chats must receive the same rich prompt as the main chat.
+         */
         const { SkillLoader } = await import('~/lib/services/skillLoader');
         const { memoryStore } = await import('~/lib/persistence/memoryStore');
         const skillLoader = SkillLoader.getInstance();
@@ -379,6 +572,7 @@ export const ChatImpl = memo(
         // Query vector stores for current context
         let currentUserContext = vectorUserContext || '';
         let currentProjectContext = vectorProjectContext || '';
+
         try {
           const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
           const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
@@ -445,22 +639,30 @@ export const ChatImpl = memo(
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
-            let toolInvocations: any[] = [];
+            const toolInvocations: any[] = [];
             let buffer = '';
 
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+
+              if (done) {
+                break;
+              }
 
               buffer += decoder.decode(value, { stream: true });
+
               const lines = buffer.split('\n');
               buffer = lines.pop() || '';
 
               for (const line of lines) {
-                if (!line.startsWith('0:')) continue;
+                if (!line.startsWith('0:')) {
+                  continue;
+                }
+
                 try {
                   const jsonStr = line.slice(2);
                   const parsed = JSON.parse(jsonStr);
+
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
                   }
@@ -478,16 +680,18 @@ export const ChatImpl = memo(
             };
           },
           runShellCommand: async (cmd) => {
-            // M-3 fix: Execute shell commands through the WebContainer API.
-            // We spawn a new process for each verification command rather than
-            // going through the terminal UI, which could interfere with the
-            // user's interactive session.
+            /*
+             * M-3 fix: Execute shell commands through the WebContainer API.
+             * We spawn a new process for each verification command rather than
+             * going through the terminal UI, which could interfere with the
+             * user's interactive session.
+             */
             try {
               const { webcontainer } = await import('~/lib/webcontainer');
               const wc = await webcontainer;
               const process = await wc.spawn('sh', ['-c', cmd]);
               let stdout = '';
-              let stderr = '';
+              const stderr = '';
               process.output.pipeTo(
                 new WritableStream({
                   write(data) {
@@ -495,7 +699,9 @@ export const ChatImpl = memo(
                   },
                 }),
               );
+
               const exitCode = await process.exit;
+
               return { stdout, stderr, exitCode: exitCode ?? 0 };
             } catch (e: any) {
               return { stdout: '', stderr: e.message || 'Shell command failed', exitCode: 1 };
@@ -504,14 +710,18 @@ export const ChatImpl = memo(
           readFile: async (path) => {
             const currentFiles = workbenchStore.files.get();
             const file = currentFiles[path];
+
             if (file && file.type === 'file') {
               return file.content;
             }
+
             return null;
           },
           writeFile: async (path, content) => {
-            // M-3 fix: Write file through the workbench store which syncs
-            // to both the editor state and WebContainer filesystem.
+            /*
+             * M-3 fix: Write file through the workbench store which syncs
+             * to both the editor state and WebContainer filesystem.
+             */
             try {
               await workbenchStore.createFile(path, content);
             } catch (e: any) {
@@ -655,19 +865,39 @@ export const ChatImpl = memo(
       }
     }, [input, textareaRef]);
 
+    useEffect(() => {
+      const handleQuoteText = (e: Event) => {
+        const customEvent = e as CustomEvent<string>;
+        const quotedText = `"${customEvent.detail}"`;
+        const currentInput = input || '';
+        const newInput = currentInput.length > 0 ? `${currentInput}\n\n${quotedText}` : quotedText;
+        
+        const syntheticEvent = {
+          target: { value: newInput },
+        } as React.ChangeEvent<HTMLTextAreaElement>;
+        handleInputChange(syntheticEvent);
+        
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 10);
+      };
+
+      window.addEventListener('bolt:quote-text', handleQuoteText);
+      return () => window.removeEventListener('bolt:quote-text', handleQuoteText);
+    }, [input, handleInputChange]);
+
     const runAnimation = async () => {
       if (chatStarted) {
         return;
       }
 
       setChatStarted(true);
+      chatStore.setKey('started', true);
 
       await Promise.all([
         animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
         animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
       ]);
-
-      chatStore.setKey('started', true);
     };
 
     // Helper function to create message parts array from text and images
@@ -882,7 +1112,10 @@ export const ChatImpl = memo(
     );
 
     const handleApprovePlan = useCallback(() => {
-      if (!planSignal) return;
+      if (!planSignal) {
+        return;
+      }
+
       const signalToExecute = { ...planSignal };
       setPlanSignal(null);
       handlePlanExecution(signalToExecute);
@@ -898,7 +1131,10 @@ export const ChatImpl = memo(
 
     const handleModifyPlan = useCallback(
       (modifiedPoints: Array<{ title: string; description: string }>) => {
-        if (!planSignal) return;
+        if (!planSignal) {
+          return;
+        }
+
         const modifiedSignal = {
           ...planSignal,
           planPoints: modifiedPoints,

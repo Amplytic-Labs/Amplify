@@ -12,10 +12,13 @@ import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { memoryStore } from '~/lib/persistence/memoryStore';
-// NOTE: userProfileStore, projectContextStore, and projectStore use browser-only APIs
-// (IndexedDB, localStorage). They CANNOT be statically imported in mcpService.ts
-// which runs on the server. Instead, they are lazily imported inside tool execute
-// functions that are only invoked client-side, or guarded with typeof window checks.
+
+/*
+ * NOTE: userProfileStore, projectContextStore, and projectStore use browser-only APIs
+ * (IndexedDB, localStorage). They CANNOT be statically imported in mcpService.ts
+ * which runs on the server. Instead, they are lazily imported inside tool execute
+ * functions that are only invoked client-side, or guarded with typeof window checks.
+ */
 import {
   TOOL_EXECUTION_APPROVAL,
   TOOL_EXECUTION_DENIED,
@@ -23,6 +26,7 @@ import {
   TOOL_NO_EXECUTE_FUNCTION,
 } from '~/utils/constants';
 import { createScopedLogger } from '~/utils/logger';
+import { buildNativeTools, type NativeFileMap } from '~/lib/tools/nativeTools';
 
 const logger = createScopedLogger('mcp-service');
 
@@ -131,14 +135,32 @@ export class MCPService {
   }
 
   private _registerInternalTools() {
-    // NOTE: list_skills, get_skill, read_skill, list_design_systems, get_design_system,
-    // and inject_template are NOT registered here because they are already defined
-    // with full execute implementations in stream-text.ts. Defining them here would
-    // cause tool name conflicts (mcpService tools get overridden by stream-text tools
-    // anyway, but the param name mismatches — e.g. "skillId" vs "name" — would
-    // confuse the AI when it sees the toolWithoutExecute schema).
+    /*
+     * NOTE: list_skills, get_skill, read_skill, list_design_systems, get_design_system,
+     * and inject_template are NOT registered here because they are already defined
+     * with full execute implementations in stream-text.ts. Defining them here would
+     * cause tool name conflicts (mcpService tools get overridden by stream-text tools
+     * anyway, but the param name mismatches — e.g. "skillId" vs "name" — would
+     * confuse the AI when it sees the toolWithoutExecute schema).
+     */
 
     const internalTools: ToolSet = {
+      /*
+       * ─────────────────────────────────────────────────────────────
+       * Native Copilot-style tools (read_file, list_dir, grep_search,
+       * replace_string_in_file, multi_replace_string_in_file,
+       * create_file, find_files, web_search).
+       *
+       * These give the AI the same power over the workspace that
+       * VSCode Copilot's built-in tools give it over the IDE:
+       *   - read-only tools operate on the `files` map shipped with
+       *     every /api/chat request (see processToolInvocations below)
+       *   - mutating tools return a JSON "mutation signal" that the
+       *     browser applies to the workbench store (see Chat.client.tsx)
+       * ─────────────────────────────────────────────────────────────
+       */
+      ...buildNativeTools(),
+
       update_user_memory: {
         description: "Updates or adds a fact about the user to the AI's long-term memory.",
         parameters: z.object({
@@ -176,12 +198,20 @@ export class MCPService {
           if (typeof window === 'undefined') {
             return 'User context search is not available on the server. This tool can only be used client-side.';
           }
+
           try {
             const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
             await userProfileStore.initialize();
+
             const results = await userProfileStore.search(query, { limit: 5 });
-            if (results.length === 0) return 'No relevant user context found.';
-            return results.map((r) => `[${r.entry.category}] ${r.entry.content} (score: ${r.score?.toFixed(2) || 'N/A'})`).join('\n');
+
+            if (results.length === 0) {
+              return 'No relevant user context found.';
+            }
+
+            return results
+              .map((r) => `[${r.entry.category}] ${r.entry.content} (score: ${r.score?.toFixed(2) || 'N/A'})`)
+              .join('\n');
           } catch (e: any) {
             return `Error searching user context: ${e.message}`;
           }
@@ -202,6 +232,7 @@ export class MCPService {
           if (typeof window === 'undefined') {
             return 'User fact storage is not available on the server. This tool can only be used client-side.';
           }
+
           try {
             const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
             await userProfileStore.initialize();
@@ -211,6 +242,7 @@ export class MCPService {
               source: 'conversation',
               confidence: 0.8,
             });
+
             return `User fact stored successfully: "${content}" (category: ${category || 'general'})`;
           } catch (e: any) {
             return `Error storing user fact: ${e.message}`;
@@ -229,11 +261,19 @@ export class MCPService {
           if (typeof window === 'undefined') {
             return 'Project context search is not available on the server. This tool can only be used client-side.';
           }
+
           try {
-            if (!projectId) return 'No project ID provided. Project context requires an explicit projectId.';
+            if (!projectId) {
+              return 'No project ID provided. Project context requires an explicit projectId.';
+            }
+
             const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
             const results = await projectContextStore.search(projectId, query, { limit: 5 });
-            if (results.length === 0) return 'No relevant project context found.';
+
+            if (results.length === 0) {
+              return 'No relevant project context found.';
+            }
+
             return results.map((r) => `[${r.entry.type}] ${r.entry.content}`).join('\n');
           } catch (e: any) {
             return `Error searching project context: ${e.message}`;
@@ -246,7 +286,20 @@ export class MCPService {
         parameters: z.object({
           content: z.string().describe('The context to store'),
           type: z
-            .enum(['requirement', 'decision', 'error', 'fix', 'pattern', 'architecture', 'constraint', 'file_context', 'conversation_summary', 'tool_usage', 'flow_definition', 'screen_connection'])
+            .enum([
+              'requirement',
+              'decision',
+              'error',
+              'fix',
+              'pattern',
+              'architecture',
+              'constraint',
+              'file_context',
+              'conversation_summary',
+              'tool_usage',
+              'flow_definition',
+              'screen_connection',
+            ])
             .describe('Type of context entry'),
           projectId: z.string().describe('The project ID to store context in. Must be provided explicitly.'),
         }),
@@ -255,10 +308,15 @@ export class MCPService {
           if (typeof window === 'undefined') {
             return 'Project context storage is not available on the server. This tool can only be used client-side.';
           }
+
           try {
-            if (!projectId) return 'No project ID provided. Cannot store project context.';
+            if (!projectId) {
+              return 'No project ID provided. Cannot store project context.';
+            }
+
             const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
             await projectContextStore.add(projectId, { projectId, content, type: type as any });
+
             return `Project context stored: [${type}] ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`;
           } catch (e: any) {
             return `Error storing project context: ${e.message}`;
@@ -271,15 +329,28 @@ export class MCPService {
         parameters: z.object({
           taskDescription: z.string().describe('The overall task to plan and execute'),
           planPoints: z
-            .array(z.object({
-              title: z.string().describe('Short title for this plan point'),
-              description: z.string().describe('What this plan point should accomplish'),
-              expectedFiles: z.array(z.string()).optional().describe('Files this point will create or modify'),
-              verificationRules: z.array(z.string()).optional().describe('Rules to verify after this point'),
-            }))
+            .array(
+              z.object({
+                title: z.string().describe('Short title for this plan point'),
+                description: z.string().describe('What this plan point should accomplish'),
+                expectedFiles: z.array(z.string()).optional().describe('Files this point will create or modify'),
+                verificationRules: z.array(z.string()).optional().describe('Rules to verify after this point'),
+              }),
+            )
             .describe('Array of plan points to execute in order'),
         }),
-        execute: async ({ taskDescription, planPoints }: { taskDescription: string; planPoints: Array<{ title: string; description: string; expectedFiles?: string[]; verificationRules?: string[] }> }) => {
+        execute: async ({
+          taskDescription,
+          planPoints,
+        }: {
+          taskDescription: string;
+          planPoints: Array<{
+            title: string;
+            description: string;
+            expectedFiles?: string[];
+            verificationRules?: string[];
+          }>;
+        }) => {
           // Return a structured signal that the client-side will detect and execute
           const planSignal = {
             type: 'execute_plan_signal',
@@ -543,21 +614,37 @@ export class MCPService {
 
     if (this.isValidToolName(toolName)) {
       const { description = 'No description available' } = this.toolsWithoutExecute[toolName];
-      const serverName = this._toolNamesToServerNames.get(toolName);
+      const serverName = this._toolNamesToServerNames.get(toolName) || 'open_claude';
 
-      if (serverName) {
-        dataStream.writeMessageAnnotation({
-          type: 'toolCall',
-          toolCallId,
-          serverName,
-          toolName,
-          toolDescription: description,
-        } satisfies ToolCallAnnotation);
-      }
+      dataStream.writeMessageAnnotation({
+        type: 'toolCall',
+        toolCallId,
+        serverName,
+        toolName,
+        toolDescription: description,
+      } satisfies ToolCallAnnotation);
     }
   }
 
-  async processToolInvocations(messages: Message[], dataStream: DataStreamWriter): Promise<Message[]> {
+  /**
+   * Process tool invocations in the last message.
+   *
+   * For each tool-call result, if the user approved the call, we invoke the
+   * tool's `execute` function on the server. The `files` map shipped with
+   * the request is passed through to the execute function so native
+   * Copilot-style tools (read_file, list_dir, grep_search, etc.) can
+   * operate on the workspace snapshot.
+   *
+   * Mutating tools do NOT touch the file system directly — they return a
+   * structured "mutation signal" that the browser applies to the workbench
+   * store. This keeps the server stateless and the browser authoritative
+   * for file state, matching the existing `execute_plan` pattern.
+   */
+  async processToolInvocations(
+    messages: Message[],
+    dataStream: DataStreamWriter,
+    files?: NativeFileMap,
+  ): Promise<Message[]> {
     const lastMessage = messages[messages.length - 1];
     const parts = lastMessage.parts;
 
@@ -589,10 +676,12 @@ export class MCPService {
             logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolInvocation.args)}`);
 
             try {
-              result = await toolInstance.execute(toolInvocation.args, {
-                messages: convertToCoreMessages(messages),
+              const toolContext = {
+                files,
                 toolCallId,
-              });
+                messages: convertToCoreMessages(messages),
+              };
+              result = await toolInstance.execute(toolInvocation.args, toolContext);
             } catch (error) {
               logger.error(`error while calling tool "${toolName}":`, error);
               result = TOOL_EXECUTION_ERROR;

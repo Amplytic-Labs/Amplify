@@ -368,12 +368,19 @@ export const Workbench = memo(
      * (only if no preview is active, so preview takes priority).
      */
     useEffect(() => {
-      if (hasRenderableFiles && !hasPreview) {
-        const currentView = workbenchStore.currentView.get();
+      const currentView = workbenchStore.currentView.get();
 
+      if (hasRenderableFiles && !hasPreview) {
+        // Auto-switch to the Render tab when renderable files first appear
+        // (only if no preview is active, so preview takes priority).
         if (currentView === 'code') {
           setSelectedView('render');
         }
+      }
+
+      // If all renderable files are removed while on the render tab, fall back to code
+      if (!hasRenderableFiles && currentView === 'render') {
+        setSelectedView('code');
       }
     }, [hasRenderableFiles, hasPreview]);
 

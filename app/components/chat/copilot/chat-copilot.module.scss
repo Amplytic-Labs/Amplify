@@ -1,0 +1,989 @@
+/*
+ * Copilot-exact chat rendering styles.
+ *
+ * Ported 1:1 from VS Code's chat CSS at:
+ *   src/vs/workbench/contrib/chat/browser/widget/media/chat.css
+ *   src/vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatConfirmationWidget.css
+ *   src/vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatThinkingContent.css
+ *
+ * Mapping (VS Code var → bolt-elements var):
+ *   --vscode-descriptionForeground     → --bolt-elements-textSecondary
+ *   --vscode-foreground                → --bolt-elements-textPrimary
+ *   --vscode-icon-foreground           → --bolt-elements-textSecondary
+ *   --vscode-editorError-foreground    → --bolt-elements-icon-error
+ *   --vscode-chat-requestBorder        → --bolt-elements-borderColor
+ *   --vscode-editorWidget-background   → --bolt-elements-background-depth-2
+ *   --vscode-widget-border             → --bolt-elements-borderColor
+ *   --vscode-editor-background         → --bolt-elements-background-depth-1
+ *   --vscode-cornerRadius-medium       → 4px
+ *   --vscode-chat-font-size-body-m     → 14px
+ *   --vscode-chat-font-size-body-s     → 12px
+ *   --vscode-chat-font-size-body-xs    → 11px
+ *   --vscode-chat-thinkingShimmer      → var(--bolt-elements-textPrimary)
+ *   --vscode-textPreformat-foreground  → --bolt-elements-messages-inlineCode-text
+ *   --vscode-textPreformat-background  → --bolt-elements-messages-inlineCode-background
+ *   --vscode-textPreformat-border      → --bolt-elements-borderColor
+ *   --vscode-textLink-foreground       → --bolt-elements-messages-linkColor
+ */
+
+/* ===== Shimmer keyframe (used by both thinking + progress) ===== */
+@keyframes chat-thinking-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ===== Spin keyframe (for in-flight thinking icons) ===== */
+@keyframes chat-thinking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== Tool invocation wrapper ===== */
+/* .value > .chat-tool-invocation-part — no card, just a block. */
+.toolInvocationPart {
+  display: block;
+
+  &:not(:last-child) {
+    margin-bottom: 14px;
+  }
+}
+
+/* ===== Progress container (flat inline row — NO CARD) ===== */
+/* This is the default rendering for a tool call. Icon + past-tense message. */
+.progressContainer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  padding-top: 2px;
+
+  .icon {
+    font-size: 12px;
+    color: var(--bolt-elements-textSecondary);
+    margin: 0 0.2em;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+
+    &.error {
+      color: var(--bolt-elements-icon-error);
+    }
+  }
+
+  /* Hide the check icon by default (Copilot behaviour — only shows with .show-checkmarks) */
+  .icon.check {
+    display: none;
+  }
+
+  &.showCheckmarks .icon.check {
+    display: inline-flex;
+    margin-left: 4px;
+  }
+
+  .progressStep {
+    white-space: normal;
+    color: var(--bolt-elements-textSecondary);
+    font-size: 12px;
+    margin: 0;
+    line-height: 1.5;
+    flex: 1;
+    min-width: 0;
+
+    code {
+      font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      color: var(--bolt-elements-messages-inlineCode-text);
+      background-color: var(--bolt-elements-messages-inlineCode-background);
+      padding: 1px 3px;
+      border-radius: 4px;
+      border: 1px solid var(--bolt-elements-borderColor);
+      margin-left: 0.25em;
+    }
+  }
+
+  /* hide spinner icon for shimmer progress — the shimmer IS the indicator */
+  &.shimmerProgress > .icon {
+    display: none;
+  }
+
+  /* When rendered inside the chain-of-thought thinking list, the wrapper
+   * handles left padding for the icon + line. Drop the row's own margin. */
+  &.inThinkingList {
+    margin: 0 0 2px 6px;
+    padding-top: 0;
+  }
+
+  /* shimmer animation on text */
+  &.shimmerProgress .progressStep {
+    background: linear-gradient(
+      90deg,
+      var(--bolt-elements-textSecondary) 0%,
+      var(--bolt-elements-textSecondary) 30%,
+      var(--bolt-elements-textPrimary) 50%,
+      var(--bolt-elements-textSecondary) 70%,
+      var(--bolt-elements-textSecondary) 100%
+    );
+    background-size: 400% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: chat-thinking-shimmer 2s linear infinite;
+    will-change: background-position;
+  }
+}
+
+/* ===== Tool input/output (collapsible details — NOT a card around the call) ===== */
+.toolInputOutputPart {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 2px;
+
+  .expando {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    color: var(--bolt-elements-textTertiary);
+    font-size: 11px;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+
+    &:hover {
+      color: var(--bolt-elements-textPrimary);
+      background: var(--bolt-elements-background-depth-2);
+    }
+
+    .chevron {
+      transition: transform 0.15s ease;
+      font-size: 10px;
+
+      &.open {
+        transform: rotate(90deg);
+      }
+    }
+  }
+
+  .inputOutput {
+    display: none;
+    padding: 6px 0;
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  &.expanded .inputOutput {
+    display: block;
+  }
+
+  .ioBlock {
+    border: 1px solid var(--bolt-elements-borderColor);
+    border-radius: 4px;
+    background: var(--bolt-elements-background-depth-1);
+    margin: 4px 0;
+    overflow: hidden;
+
+    .ioTitle {
+      padding: 6px 10px;
+      background: var(--bolt-elements-background-depth-2);
+      border-bottom: 1px solid var(--bolt-elements-borderColor);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--bolt-elements-textSecondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .ioContent {
+      padding: 8px 10px;
+      font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--bolt-elements-textSecondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+
+      &.error {
+        color: var(--bolt-elements-icon-error);
+      }
+    }
+  }
+
+  .mutationSummary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-basis: 100%;
+    padding: 4px 0;
+    font-size: 12px;
+    color: var(--bolt-elements-textSecondary);
+
+    .checkIcon {
+      color: var(--bolt-elements-icon-success);
+      font-size: 11px;
+    }
+  }
+}
+
+/* ===== Chat confirmation widget (for pending mutating tool approval) ===== */
+/* Match .chat-confirmation-widget: flat (no outer border), with a bordered message container. */
+.chatConfirmationWidget {
+  border: none;
+  border-radius: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  position: relative;
+
+  &:not(:last-child) {
+    margin-bottom: 16px;
+  }
+
+  .title {
+    width: 100%;
+    border-radius: 3px;
+    padding: 2px 6px 2px 2px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--bolt-elements-textSecondary);
+    font-size: 13px;
+
+    .titleIcon {
+      font-size: 14px;
+      color: var(--bolt-elements-textSecondary);
+      display: inline-flex;
+    }
+
+    .titleText {
+      flex: 1;
+      font-weight: 500;
+    }
+  }
+
+  .messageContainer {
+    border: 1px solid var(--bolt-elements-borderColor);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--bolt-elements-background-depth-1);
+    flex-basis: 100%;
+    margin: 8px 0;
+    overflow: hidden;
+  }
+
+  .message {
+    padding: 8px 12px;
+    color: var(--bolt-elements-textSecondary);
+    font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+
+    h3 {
+      font-weight: 600;
+      margin: 4px 0 6px;
+      font-size: 12px;
+      color: var(--bolt-elements-textPrimary);
+    }
+  }
+
+  .buttonsContainer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-basis: 100%;
+    padding: 0 8px;
+    margin-bottom: 8px;
+  }
+
+  .buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .button {
+    padding: 4px 14px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition:
+      background-color 0.1s,
+      border-color 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.4;
+
+    &.primary {
+      background: var(--bolt-elements-button-primary-background);
+      color: var(--bolt-elements-button-primary-text);
+      border-color: var(--bolt-elements-button-primary-background);
+
+      &:hover {
+        background: var(--bolt-elements-button-primary-backgroundHover);
+      }
+    }
+
+    &.secondary {
+      background: transparent;
+      color: var(--bolt-elements-textSecondary);
+      border-color: var(--bolt-elements-borderColor);
+
+      &:hover {
+        background: var(--bolt-elements-background-depth-2);
+        color: var(--bolt-elements-textPrimary);
+      }
+    }
+  }
+}
+
+/* ===== Thinking box (collapsible reasoning panel) ===== */
+/* Match .chat-thinking-box: header button with chevron + shimmering label, collapsible list below. */
+.chatThinkingBox {
+  outline: none;
+  position: relative;
+  color: var(--bolt-elements-textSecondary);
+  contain: layout style;
+  margin-bottom: 14px;
+
+  .headerButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--bolt-elements-textSecondary);
+    font-size: 14px;
+    line-height: 1.5em;
+
+    /* Brain icon sits on the LEFT of the label — signals "reasoning". */
+    .brainIcon {
+      font-size: 20px;
+      color: var(--bolt-elements-textSecondary);
+      display: inline-flex;
+      flex-shrink: 0;
+      transition: color 0.15s ease;
+      bottom: 2px;
+      position: relative;
+    }
+
+    /* Chevron sits on the RIGHT of the label — the expand/collapse affordance. */
+    .chevron {
+      font-size: 14px;
+      color: var(--bolt-elements-textTertiary);
+      transition: transform 0.15s ease;
+      display: inline-flex;
+      flex-shrink: 0;
+      margin-left: 2px;
+
+      &.open {
+        transform: rotate(0deg);
+      }
+
+      &.closed {
+        transform: rotate(-90deg);
+      }
+    }
+
+    .label {
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--bolt-elements-textSecondary);
+    }
+
+    &:hover {
+      color: var(--bolt-elements-textPrimary);
+
+      .brainIcon {
+        color: var(--bolt-elements-textPrimary);
+      }
+
+      .chevron {
+        color: var(--bolt-elements-textPrimary);
+      }
+    }
+  }
+
+  /* When active + collapsed, shimmer the label */
+  &.thinkingActive.thinkingCollapsed .headerButton .label {
+    background: linear-gradient(
+      90deg,
+      var(--bolt-elements-textSecondary) 0%,
+      var(--bolt-elements-textSecondary) 30%,
+      var(--bolt-elements-textPrimary) 50%,
+      var(--bolt-elements-textSecondary) 70%,
+      var(--bolt-elements-textSecondary) 100%
+    );
+    background-size: 400% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: chat-thinking-shimmer 2s linear infinite;
+    will-change: background-position;
+  }
+
+  /* Curved connector from header to first thinking item */
+  &:not(.thinkingCollapsed)::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 24px;
+    height: 16px;
+    width: 8px;
+    border-left: 1px solid var(--bolt-elements-borderColor);
+    border-bottom: 1px solid var(--bolt-elements-borderColor);
+    border-bottom-left-radius: 6px;
+    pointer-events: none;
+  }
+
+  /*
+   * The collapsible list holds the chain-of-thought steps. Each direct
+   * child is one of:
+   *   .chatThinkingItemMarkdown   — a reasoning text step
+   *   .chatThinkingToolWrapper    — a tool invocation (wraps .toolInvocationPart)
+   *   .chatThinkingSpinnerItem    — the live "Working…" pulse
+   *
+   * Each child gets a vertical connector line (::before) on its left edge
+   * with a mask-image gap where the step's .chatThinkingIcon sits — so the
+   * icons appear as nodes ON the line, exactly like VS Code Copilot's
+   * `.chat-thinking-collapsible` chain-of-thought rendering
+   * (chatThinkingContent.css lines 274-321).
+   */
+  .collapsibleList {
+    border: none;
+    border-radius: 0;
+    margin-bottom: 0;
+    position: relative;
+    overflow: hidden;
+    padding-top: 0;
+    margin-left: 5px;
+
+    /* ===== Chain-of-thought wrappers — the vertical line + icon node ===== */
+    .chatThinkingToolWrapper,
+    .chatThinkingItemMarkdown,
+    .chatThinkingSpinnerItem,
+    .chatThinkingDoneItem {
+      position: relative;
+
+      /* The vertical connector line. mask-image carves a gap (7px→25px)
+       * where the 16px icon sits (icon spans y=7→23), so the line appears
+       * to pass BEHIND the icon. Icon + gap scaled for the 16px chain icons. */
+      &::before {
+        content: '';
+        position: absolute;
+        left: 11px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        border-radius: 0;
+        background-color: var(--bolt-elements-borderColor);
+        mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
+        mask-mode: alpha;
+        -webkit-mask-mode: alpha;
+        pointer-events: none;
+      }
+
+      /* First step: no line above the icon (only the curved header connector
+       * lives there). Line starts below the icon and runs to the next step. */
+      &:first-child::before {
+        mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0 25px, #000 25px 100%);
+      }
+
+      /* Last step: line comes from the previous step and stops at this icon. */
+      &:last-child::before {
+        mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 100%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 100%);
+      }
+
+      /* Only step: no line at all. */
+      &:only-child::before {
+        background: none;
+        mask-image: none;
+        -webkit-mask-image: none;
+      }
+
+      /* The icon node — sits ON the vertical line (left:3px, the line is at 11px,
+       * icon center is at 3+8=11px so the line passes through the icon center).
+       * Sized 16x16px (bumped again for maximum reasoning-content legibility). */
+      > .chatThinkingIcon {
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 20px;
+        height: 20px;
+        font-size: 20px;
+        line-height: 20px;
+        text-align: center;
+        color: var(--bolt-elements-textSecondary);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+        flex-shrink: 0;
+
+        /* Error state — red icon (terminal failure, blocked hook, etc.) */
+        &.error {
+          color: var(--bolt-elements-icon-error);
+        }
+
+        /* In-flight spinner — rotates (matches Copilot's codicon-loading spin) */
+        &.spinning {
+          animation: chat-thinking-spin 1s linear infinite;
+        }
+      }
+    }
+
+    /* ===== Reasoning text step (.chat-thinking-item.markdown-content) ===== */
+    /* Font bumped to 16px (semibold) for markedly better legibility of the
+     * chain-of-thought reasoning content. Icons bumped to 16px to match. */
+    .chatThinkingItemMarkdown {
+      padding: 8px 12px 8px 28px;
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--bolt-elements-textSecondary);
+      line-height: 1.6;
+
+      p {
+        margin: 0 0 8px 0;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      code {
+        font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+        font-size: 14px;
+        background-color: var(--bolt-elements-messages-inlineCode-background);
+        padding: 1px 4px;
+        border-radius: 4px;
+        border: 1px solid var(--bolt-elements-borderColor);
+        white-space: pre-wrap;
+      }
+    }
+
+    /* ===== Tool invocation step (.chat-thinking-tool-wrapper) ===== */
+    /* Wraps the flat .toolInvocationPart. The chain icon represents the step,
+     * so the inner progress-container hides its own status icon. Left padding
+     * bumped to 28px to clear the larger 16px chain icon + line. */
+    .chatThinkingToolWrapper {
+      .toolInvocationPart {
+        padding: 4px 12px 4px 22px;
+        position: relative;
+        margin-bottom: 0;
+        display: block;
+        top: 3px;
+        left: 3px;
+        padding-bottom: 10px;
+
+        .progressContainer {
+          margin: 0 0 2px 6px;
+
+          /* Larger label inside the chain to match the bumped reasoning
+           * typography (16px container, 14px step — semibold for emphasis). */
+          &.inThinkingList {
+            font-size: 16px;
+
+            .progressStep {
+              font-size: 16px;
+              font-weight: 400;
+            }
+          }
+        }
+
+        .chatConfirmationWidget {
+          margin: 4px 6px;
+        }
+      }
+    }
+
+    /* ===== Working spinner step (.chat-thinking-spinner-item) ===== */
+    /* The live "Working…" pulse at the bottom of the chain while streaming.
+     * Label bumped to 14px semibold to match the larger reasoning typography. */
+    .chatThinkingSpinnerItem {
+      padding: 8px 12px 8px 28px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--bolt-elements-textSecondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      .spinnerLabel {
+        background: linear-gradient(
+          90deg,
+          var(--bolt-elements-textSecondary) 0%,
+          var(--bolt-elements-textSecondary) 30%,
+          var(--bolt-elements-textPrimary) 50%,
+          var(--bolt-elements-textSecondary) 70%,
+          var(--bolt-elements-textSecondary) 100%
+        );
+        background-size: 400% 100%;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: chat-thinking-shimmer 2s linear infinite;
+        will-change: background-position;
+        font-size: 14px;
+        font-weight: 600;
+      }
+    }
+
+    /* ===== Done step (.chat-thinking-done-item) ===== */
+    /* Static "Done" node at the end of the chain when thinking concludes and
+     * the AI moves on to its final answer. Green check icon + muted label. */
+    .chatThinkingDoneItem {
+      padding: 8px 12px 8px 28px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--bolt-elements-textSecondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+
+      .doneIcon {
+        color: var(--bolt-elements-icon-success, #22c55e);
+      }
+
+      .doneLabel {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--bolt-elements-textSecondary);
+      }
+    }
+  }
+}
+
+/* ===== Answer area (the final markdown answer below the thinking box) ===== */
+.answer {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bolt-elements-textPrimary);
+
+  /* Tighter p spacing than the old markdown (Copilot uses 16px) */
+  > p {
+    margin: 0 0 16px 0;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+/*
+ * (The working-progress pulse now lives inside .collapsibleList as
+ * .chatThinkingSpinnerItem, so it joins the chain-of-thought line.)
+ */
+
+/* ===== Used references row (VS Code .chat-used-context) ===== */
+/*
+ * Ported 1:1 from chat.css lines 2937-3062. Appears BELOW the assistant's
+ * markdown answer. A flat collapsible row:
+ *   [check icon] Used N references [chevron]
+ * When expanded, shows a bordered list (.chatUsedContextList) of file
+ * references — each row 22px tall, max 6 visible.
+ */
+.chatUsedContext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.5em;
+  margin-top: 8px;
+
+  /* The label button — flat, inline-flex, no border. */
+  .chatUsedContextLabel {
+    font-size: 13px;
+    color: var(--bolt-elements-textSecondary);
+    user-select: none;
+    width: fit-content;
+
+    .labelButton {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      padding: 2px 6px 2px 2px;
+      margin-left: -2px;
+      font-size: 12px;
+      line-height: 1.5em;
+      color: var(--bolt-elements-textSecondary);
+      cursor: pointer;
+      transition:
+        color 0.1s,
+        background-color 0.1s;
+
+      .checkIcon {
+        font-size: 12px;
+        color: var(--bolt-elements-icon-success);
+        display: inline-flex;
+      }
+
+      .chevron {
+        font-size: 12px;
+        color: var(--bolt-elements-textTertiary);
+        transition: transform 0.15s ease;
+        display: inline-flex;
+
+        &.open {
+          transform: rotate(0deg);
+        }
+
+        &.closed {
+          transform: rotate(-90deg);
+        }
+      }
+
+      &:hover {
+        background: var(--bolt-elements-background-depth-2);
+        color: var(--bolt-elements-textPrimary);
+      }
+    }
+
+    /* When expanded (not collapsed), label text turns primary */
+    &.expanded .labelButton {
+      color: var(--bolt-elements-textPrimary);
+    }
+  }
+
+  /* The bordered list — hidden when collapsed. */
+  .chatUsedContextList {
+    border: 1px solid var(--bolt-elements-borderColor);
+    border-radius: 4px;
+    padding: 4px 3px;
+    margin-bottom: 8px;
+    background: var(--bolt-elements-background-depth-1);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 264px; /* 6 items * 22px + padding * 2 ≈ 140px; allow scroll for more */
+    overflow-y: auto;
+
+    /* Custom scrollbar (matches the chat list) */
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--bolt-elements-borderColor);
+      border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  }
+
+  &.collapsed .chatUsedContextList {
+    display: none;
+  }
+
+  /* Each reference row — 22px tall, file icon + name + optional range. */
+  .refRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-size: 12px;
+    color: var(--bolt-elements-textSecondary);
+    cursor: pointer;
+    user-select: none;
+    min-height: 22px;
+    line-height: 22px;
+    transition: background-color 0.08s;
+
+    .refIcon {
+      font-size: 14px;
+      color: var(--bolt-elements-textSecondary);
+      display: inline-flex;
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      align-items: center;
+      justify-content: center;
+
+      &.web {
+        color: var(--bolt-elements-textLink, #3794ff);
+      }
+    }
+
+    .refName {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+      font-size: 11.5px;
+    }
+
+    .refRange {
+      color: var(--bolt-elements-textTertiary);
+      font-size: 11px;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    &:hover {
+      background: var(--bolt-elements-background-depth-2);
+      color: var(--bolt-elements-textPrimary);
+
+      .refIcon {
+        color: var(--bolt-elements-textPrimary);
+      }
+    }
+  }
+}
+
+/* ===== Inline code fallback (used by FilePill when the code text isn't a path) ===== */
+/* Matches the existing Markdown.module.scss inline-code look so non-path inline
+ * code (e.g. `useState`, `npm install`) renders identically whether it flows
+ * through FilePill or the default renderer. */
+.inlineCode {
+  font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--bolt-elements-messages-inlineCode-text);
+  background-color: var(--bolt-elements-messages-inlineCode-background);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--bolt-elements-borderColor);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== File / folder pill (replaces inline <code> for path mentions) ===== */
+/*
+ * When the AI mentions a file (`app/_layout.jsx`) or folder (`components/ui/`)
+ * inside backticks, we render a clickable pill with a colorized file-type icon
+ * instead of plain monospace text.
+ *
+ *   [⚛ _layout.jsx]   ← React logo (cyan) + basename, clickable → focus file
+ *   [📁 ui]           ← folder icon + final segment, clickable → show workbench
+ *
+ * When the path doesn't exist in the live workspace, the pill renders as a
+ * non-interactive chip (still styled, but dimmed + no pointer cursor).
+ */
+.filePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  border: 1px solid var(--bolt-elements-borderColor);
+  background: var(--bolt-elements-messages-inlineCode-background);
+  font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  line-height: 1.5;
+  color: var(--bolt-elements-textSecondary);
+  cursor: pointer;
+  vertical-align: baseline;
+  text-decoration: none;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
+  user-select: none;
+  -webkit-user-select: none;
+
+  /* The colorized file-type / folder icon. For Phosphor-based icons (folder,
+   * generic file) this uses a CSS mask. For brand file-type icons (React, JS,
+   * TS, …) the parent uses an inline SVG background-image (see .filePillIconSvg). */
+  .filePillIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  /* Inline-SVG brand icon (React atom, JS yellow, TS blue, …). Rendered as a
+   * background-image so the multi-colour SVG shows with no CSS masking. */
+  .filePillIconSvg {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+  .filePillName {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+  }
+
+  &:hover {
+    background: var(--bolt-elements-background-depth-2);
+    border-color: var(--bolt-elements-textTertiary);
+    color: var(--bolt-elements-textPrimary);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bolt-elements-textLink, #3794ff);
+    outline-offset: 1px;
+  }
+
+  /* Disabled state — path doesn't exist in the workspace. Still styled as a
+   * chip (so it looks distinctive) but non-interactive. */
+  &.filePillDisabled {
+    cursor: default;
+    opacity: 0.75;
+
+    &:hover {
+      background: var(--bolt-elements-messages-inlineCode-background);
+      border-color: var(--bolt-elements-borderColor);
+      color: var(--bolt-elements-textSecondary);
+      transform: none;
+    }
+  }
+}
+
+/* Folder pill — slight amber tint on the icon area to distinguish folders
+ * from files at a glance. */
+.folderPill {
+  .filePillIcon {
+    color: #d9a300;
+  }
+}
+
+/* File pill — no extra tint (the inline SVG icon already carries brand colour). */
+.filePillFile {
+  /* intentionally empty — icon colour comes from the inline SVG */
+}

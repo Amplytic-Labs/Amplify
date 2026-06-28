@@ -1,6 +1,5 @@
 import { memo, Fragment, useMemo } from 'react';
 import { Markdown } from './Markdown';
-import { Reasoning, ReasoningTrigger, ReasoningContent } from '~/components/ai-elements/reasoning';
 import type { JSONValue } from 'ai';
 import Popover from '~/components/ui/Popover';
 import { useSmoothStream } from '~/utils/useSmoothStream';
@@ -17,11 +16,10 @@ import type {
   FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
-import { ToolInvocations } from './ToolInvocations';
-import { ToolInvocationItem } from './ToolInvocationItem';
-import { ToolInvocationGroup } from './ToolInvocationGroup';
-import { ReasoningMarkdown } from './ReasoningMarkdown';
-import type { ToolCallAnnotation } from '~/types/context';
+import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
+import { stripBoltArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
+import { ThoughtsPanel } from './copilot/ThoughtsPanel';
+import { AnswerActions } from './copilot/AnswerActions';
 
 interface AssistantMessageProps {
   content: string;
@@ -65,6 +63,30 @@ function normalizedFilePath(path: string) {
   return normalizedPath;
 }
 
+/**
+ * Assistant message — Copilot-exact layout.
+ *
+ *   ┌─────────────────────────────────────────────┐
+ *   │ ▾ Thought for 4s                            │  ← .chat-thinking-box
+ *   │   reasoning text (muted, 12px)              │     (curved connector)
+ *   │   [icon] Read file  src/index.ts            │  ← .progress-container (flat, NO card)
+ *   │   [icon] Edited file  src/index.ts          │  ← .progress-container (flat, NO card)
+ *   │   Working…                                  │  ← shimmer while streaming
+ *   ├─────────────────────────────────────────────┤
+ *   │ <final answer markdown>                     │  ← .rendered-markdown (14px, 16px p-spacing)
+ *   │ 👍 👎 | 📋 ↻ 🔊              1.2k tokens    │  ← hover action bar (AnswerActions)
+ *   └─────────────────────────────────────────────┘
+ *
+ * The thought panel pulls from TWO sources:
+ *   1. `<thought>…</thought>` tags the model emits in its text response
+ *      (parsed streaming-safe by `parseThoughts`).
+ *   2. Native AI-SDK `reasoning` parts (for models that use a dedicated
+ *      reasoning channel).
+ *
+ * Tool invocations (from `parts`) render as flat inline `.progress-container`
+ * rows inside the panel — NO CARDS. The final answer is the text OUTSIDE the
+ * thought tags, smooth-streamed with a typewriter effect.
+ */
 export const AssistantMessage = memo(
   ({
     content,
@@ -86,7 +108,56 @@ export const AssistantMessage = memo(
         annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
     ) || []) as { type: string; value: any } & { [key: string]: any }[];
 
-    const smoothContent = useSmoothStream(content, isStreaming, 25);
+    /*
+     * Parse `<thought>` tags out of the streamed content. The answer text
+     * (everything outside the tags) feeds the typewriter + markdown body;
+     * the thought text feeds the collapsible panel. Re-runs every tick
+     * during streaming — cheap (a single indexOf scan).
+     */
+    const { thoughtText, answerText: rawAnswerText, hasThoughts } = useMemo(() => parseThoughts(content), [content]);
+    const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
+
+    /*
+     * SEVER the template-injected artifact trace-tree from the chat while
+     * keeping AI-created artifact trace trees visible.
+     *
+     * Two-layer stripping:
+     *   1. `stripBoltArtifacts` removes raw `<boltArtifact>…</boltArtifact>`
+     *      XML blocks (the model's original text, still present before the
+     *      message parser runs on it).
+     *   2. When the message contains an `inject_template` tool call, we also
+     *      strip ONLY the `<div class="__boltArtifact__" data-type="template">`
+     *      placeholder elements. Template artifacts use `type="template"`
+     *      (set in selectStarterTemplate.ts), while normal AI-created artifacts
+     *      use `type="bundled"`. The parser propagates the type attribute onto
+     *      the div as `data-type`, so we can selectively strip.
+     *
+     * Result: "Created 50 files" / "Ran 1 command" trace trees from the
+     * template injection are hidden (silent scaffolding), but subsequent
+     * AI-created file traces and npm start commands remain visible.
+     *
+     * The parser callbacks (onArtifactOpen / onActionClose) already fired
+     * during `useMessageParser`, so the workbench received all files and
+     * commands. The "Used inject_template" step in the thinking panel is
+     * preserved (it shows what template was injected).
+     */
+    const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
+
+    const answerText = useMemo(() => {
+      const stripped = stripBoltArtifacts(rawAnswerText);
+
+      if (isTemplateInjection) {
+        return stripArtifactDivs(stripped);
+      }
+
+      return stripped;
+    }, [rawAnswerText, isTemplateInjection]);
+
+    /*
+     * Smooth-stream only the visible answer so we never animate thought chars
+     * (or stripped artifact chars).
+     */
+    const smoothAnswer = useSmoothStream(answerText, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
 
@@ -100,39 +171,43 @@ export const AssistantMessage = memo(
       codeContext = filteredAnnotations.find((annotation) => annotation.type === 'codeContext')?.files;
     }
 
-    const toolInvocations = parts?.filter((part) => part.type === 'tool-invocation');
-    const reasoningParts = parts?.filter((part) => part.type === 'reasoning') as ReasoningUIPart[];
-    const toolCallAnnotations = filteredAnnotations.filter(
-      (annotation) => annotation.type === 'toolCall',
-    ) as ToolCallAnnotation[];
+    // Token usage from the `usage` annotation (written by api.chat.ts on completion).
+    const usageAnnotation = filteredAnnotations.find((a) => a.type === 'usage') as
+      | { type: 'usage'; value?: { completionTokens?: number; promptTokens?: number; totalTokens?: number } }
+      | undefined;
+    const usage = usageAnnotation?.value;
 
-    const groupedParts = useMemo(() => {
+    /**
+     * Native reasoning + tool-invocation parts from the AI SDK. These are
+     * interleaved with the `<thought>`-tag text inside the panel.
+     */
+    const reasoningAndToolParts = useMemo(() => {
       if (!parts) {
-        return [];
+        return undefined;
       }
 
-      const result: any[] = [];
-      let currentToolGroup: ToolInvocationUIPart[] | null = null;
+      const filtered = parts.filter((p) => p.type === 'reasoning' || p.type === 'tool-invocation');
 
-      for (const part of parts) {
-        if (part.type === 'tool-invocation') {
-          if (currentToolGroup) {
-            currentToolGroup.push(part as ToolInvocationUIPart);
-          } else {
-            currentToolGroup = [part as ToolInvocationUIPart];
-            result.push(currentToolGroup);
-          }
-        } else {
-          if (currentToolGroup) {
-            currentToolGroup = null;
-          }
-
-          result.push(part);
-        }
-      }
-
-      return result;
+      return filtered.length > 0 ? filtered : undefined;
     }, [parts]);
+
+    const hasPanelContent = hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
+
+    /*
+     * Thinking is "done" when the `</thought>` tag has been received and the
+     * next parts are a normal response (no tool calls). This triggers the
+     * "Done" node at the end of the chain-of-thought panel, signalling
+     * that the AI has moved past reasoning to its final answer.
+     */
+    const hasToolCalls = useMemo(() => {
+      if (!parts) {
+        return false;
+      }
+
+      return parts.some((p) => p.type === 'tool-invocation');
+    }, [parts]);
+
+    const thinkingDone = hasThoughts && !thoughtStreaming && !hasToolCalls;
 
     return (
       <div className="group relative overflow-hidden w-full">
@@ -203,53 +278,75 @@ export const AssistantMessage = memo(
             </div>
           </div>
         </>
-        {groupedParts && groupedParts.length > 0 && (
-          <Reasoning isStreaming={isStreaming}>
-            <ReasoningTrigger />
-            <ReasoningContent>
-              <div className="flex flex-col gap-4">
-                {groupedParts.map((part, index) => {
-                  if (Array.isArray(part)) {
-                    return <ToolInvocationGroup key={index} parts={part} />;
-                  }
 
-                  if ((part as any).type === 'reasoning') {
-                    const reasoningPart = part as ReasoningUIPart;
-                    const text = reasoningPart.details
-                      ? reasoningPart.details.map((d: any) => d.text || '').join('')
-                      : (reasoningPart as any).textDelta || (reasoningPart as any).text || '';
-
-                    if (!text) {
-                      return null;
-                    }
-
-                    return (
-                      <div key={index} className="text-sm text-bolt-elements-textSecondary leading-relaxed">
-                        <ReasoningMarkdown>{text}</ReasoningMarkdown>
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-              </div>
-            </ReasoningContent>
-          </Reasoning>
+        {/*
+         * Copilot-exact collapsible "Thought for Ns" panel (.chat-thinking-box).
+         * Sits ABOVE the final answer. Contains reasoning (from <thought> tags
+         * and/or native reasoning parts) plus tool invocations rendered as
+         * FLAT INLINE .progress-container rows — NO CARDS.
+         */}
+        {hasPanelContent && (
+          <ThoughtsPanel
+            thoughtText={thoughtText}
+            thoughtStreaming={thoughtStreaming}
+            thinkingDone={thinkingDone}
+            parts={reasoningAndToolParts}
+            isStreaming={isStreaming}
+            addToolResult={addToolResult}
+          />
         )}
+
+        {/*
+         * Final answer markdown — the user-facing response. Renders BELOW the
+         * thought panel, exactly like VS Code Copilot's answer area.
+         * Typography: 14px base, 16px p-spacing, 1.6 line-height (matches
+         * Copilot's .rendered-markdown body-m sizing).
+         */}
         <Markdown append={append} chatMode={chatMode} setChatMode={setChatMode} model={model} provider={provider} html>
-          {smoothContent}
+          {smoothAnswer}
         </Markdown>
-        <div className="flex justify-start mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <WithTooltip tooltip="Copy raw markdown">
-            <button
-              onClick={() => navigator.clipboard.writeText(content)}
-              className="p-1.5 rounded-md bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors"
-            >
-              <div className="i-ph:copy text-sm" />
-            </button>
-          </WithTooltip>
-        </div>
+
+        {/*
+         * Copilot-style hover action bar: 👍 👎 | 📋 ↻ 🔊 + token-usage pill.
+         * Hidden while streaming; fades in on group-hover.
+         */}
+        <AnswerActions content={content} usage={usage} isStreaming={isStreaming} />
       </div>
     );
   },
 );
+
+AssistantMessage.displayName = 'AssistantMessage';
+
+/**
+ * Remove `<div class="__boltArtifact__" data-type="template" …></div>` placeholder
+ * elements that the message parser inserts for template-injected artifacts.
+ *
+ * The parser (`StreamingMessageParser.createArtifactElement`) now propagates
+ * the `<boltArtifact type="…">` attribute onto the div as `data-type`. Template
+ * artifacts (from `inject_template`) use `type="template"`, while normal AI-
+ * created artifacts use `type="bundled"`.
+ *
+ * We ONLY strip divs with `data-type="template"` so AI-created file trace
+ * trees and shell command trace trees remain visible in the chat.
+ *
+ * The regex matches both self-closing and paired forms, and relies on the
+ * deterministic attribute order produced by `createArtifactElement`
+ * (class → messageId → artifactId → type).
+ */
+function stripArtifactDivs(text: string): string {
+  if (!text || !text.includes('__boltArtifact__')) {
+    return text;
+  }
+
+  // Self-closing form: <div class="__boltArtifact__" ... data-type="template"></div>
+  let out = text.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*><\/div>/g, '');
+
+  // Void-element form: <div class="__boltArtifact__" ... data-type="template" />
+  out = out.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*\/>/g, '');
+
+  // Collapse blank lines left behind.
+  out = out.replace(/\n{3,}/g, '\n\n').trimEnd();
+
+  return out;
+}

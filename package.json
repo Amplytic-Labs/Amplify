@@ -46,6 +46,7 @@
     "node": ">=18.18.0"
   },
   "dependencies": {
+    "@iconify-json/vscode-icons": "^1.2.62",
     "@ai-sdk/amazon-bedrock": "1.0.6",
     "@ai-sdk/anthropic": "0.0.39",
     "@ai-sdk/cerebras": "^0.2.16",
@@ -172,6 +173,7 @@
     "@blitz/eslint-plugin": "0.1.0",
     "@cloudflare/workers-types": "^4.20251011.0",
     "@electron/notarize": "^2.5.0",
+    "@iconify-json/logos": "^1.2.11",
     "@iconify-json/ph": "^1.2.1",
     "@iconify/types": "^2.0.0",
     "@remix-run/dev": "^2.15.2",
