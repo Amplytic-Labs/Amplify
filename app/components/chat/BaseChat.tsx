@@ -466,7 +466,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   />
                 </div>
               </StickToBottom>
-             
             </div>
             <ClientOnly>
               {() => (
@@ -504,9 +503,8 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
               {showChat && showWorkbench && (
                 <PanelResizeHandle className="relative flex items-center justify-center w-[0px] cursor-col-resize group z-10">
                   {/* visible line border between chat and workbench */}
-                  <div className="absolute inset-y-0 right-0 w-[0px] bg-bolt-elements-borderColor" />
+
                   {/* Invisible hit area for easier dragging without adding layout gap */}
-                  <div className="absolute inset-y-0 left-[-6px] right-[-6px] z-20 cursor-col-resize" />
                 </PanelResizeHandle>
               )}
               {showChat && (
@@ -639,7 +637,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         />
                       </div>
                     </StickToBottom>
-                   
                   </div>
                 </Panel>
               )}

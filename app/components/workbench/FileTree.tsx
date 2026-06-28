@@ -7,6 +7,7 @@ import type { FileHistory } from '~/types/actions';
 import { diffLines, type Change } from 'diff';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { toast } from 'react-toastify';
+import { getFileTypeIconClass } from './file-icon-map';
 import { path } from '~/utils/path';
 
 const logger = createScopedLogger('FileTree');
@@ -692,7 +693,7 @@ function File({
           'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent': selected,
         })}
         depth={depth}
-        iconClasses={classNames('i-ph:file-duotone scale-98', {
+        iconClasses={classNames(getFileTypeIconClass(name), 'scale-98', {
           'group-hover:text-bolt-elements-item-contentActive': !selected,
         })}
         onClick={onClick}
