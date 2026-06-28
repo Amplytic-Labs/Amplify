@@ -865,6 +865,27 @@ export const ChatImpl = memo(
       }
     }, [input, textareaRef]);
 
+    useEffect(() => {
+      const handleQuoteText = (e: Event) => {
+        const customEvent = e as CustomEvent<string>;
+        const quotedText = `"${customEvent.detail}"`;
+        const currentInput = input || '';
+        const newInput = currentInput.length > 0 ? `${currentInput}\n\n${quotedText}` : quotedText;
+        
+        const syntheticEvent = {
+          target: { value: newInput },
+        } as React.ChangeEvent<HTMLTextAreaElement>;
+        handleInputChange(syntheticEvent);
+        
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 10);
+      };
+
+      window.addEventListener('bolt:quote-text', handleQuoteText);
+      return () => window.removeEventListener('bolt:quote-text', handleQuoteText);
+    }, [input, handleInputChange]);
+
     const runAnimation = async () => {
       if (chatStarted) {
         return;

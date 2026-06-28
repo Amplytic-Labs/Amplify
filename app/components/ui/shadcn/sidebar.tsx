@@ -261,7 +261,7 @@ function Sidebar({
 /* ================================================================== */
 
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<'button'>) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, open } = useSidebar();
 
   return (
     <button
@@ -269,7 +269,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<'
       data-slot="sidebar-trigger"
       className={classNames(
         'inline-flex items-center justify-center rounded-md p-2 ',
-        'text-muted-foreground bg-card hover:text-sidebar-accent-foreground',
+        'text-[#09090b] dark:text-white bg-transparent hover:text-[#09090b]/80 dark:hover:text-white/80',
         'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
         className,
       )}
@@ -279,7 +279,41 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<'
       }}
       {...props}
     >
-      <PanelLeftIcon className="w-4 h-4" />
+      <svg
+        viewBox="0 0 32 32"
+        className="w-7 h-7"
+        style={{
+          transform: open ? 'rotate(-45deg)' : 'rotate(0deg)',
+          transition: 'transform 600ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <path
+          d="M27 10 13 10C10.8 10 9 8.2 9 6 9 3.5 10.8 2 13 2 15.2 2 17 3.8 17 6L17 26C17 28.2 18.8 30 21 30 23.2 30 25 28.2 25 26 25 23.8 23.2 22 21 22L7 22"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={3}
+          strokeDasharray={open ? '20 300' : '12 63'}
+          strokeDashoffset={open ? -32.42 : 0}
+          style={{
+            transition:
+              'stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 600ms cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        />
+        <path
+          d="M7 16 27 16"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={3}
+          style={{
+            transition:
+              'stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1), stroke-dashoffset 600ms cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        />
+      </svg>
       <span className="sr-only">Toggle Sidebar</span>
     </button>
   );
@@ -324,14 +358,19 @@ function SidebarInset({
 }: React.ComponentProps<'main'> & {
   variant?: 'sidebar' | 'floating' | 'inset';
 }) {
+  const { state } = useSidebar();
+
   return (
     <main
       data-slot="sidebar-inset"
       data-variant={variant}
       className={classNames(
-        'relative flex w-full flex-1 flex-col',
+        'relative flex w-full flex-1 flex-col transition-[margin,border-radius] duration-200 ease',
         variant === 'inset'
-          ? 'bg-card md:m-2 md:rounded-xl shadow-sm overflow-hidden'
+          ? classNames(
+              'bg-card shadow-sm overflow-hidden',
+              state === 'collapsed' ? 'md:m-0 md:rounded-none' : 'md:m-2 md:rounded-xl',
+            )
           : variant === 'floating'
             ? 'bg-card rounded-xl shadow-sm'
             : 'bg-card',

@@ -35,15 +35,19 @@ export default function Index() {
   );
 }
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 function SidebarStateEffect({ chatStarted }: { chatStarted: boolean }) {
   const { setOpen } = useSidebar();
+  const prevChatStarted = useRef(chatStarted);
+
   useEffect(() => {
-    if (chatStarted) {
+    if (chatStarted && !prevChatStarted.current) {
       setOpen(false);
     }
+    prevChatStarted.current = chatStarted;
   }, [chatStarted, setOpen]);
+  
   return null;
 }
 

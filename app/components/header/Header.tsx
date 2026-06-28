@@ -18,6 +18,51 @@ import { MobileWorkbenchTabBar } from '~/components/ui/MobileWorkbenchTabBar';
 import { findRenderableFiles } from '~/lib/renderable/registry';
 import { SidebarTrigger } from '~/components/ui/shadcn/sidebar';
 
+const CodeIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth="2.5"
+    stroke="currentColor"
+    className={className}
+  >
+    <polyline points="16 18 22 12 16 6" strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="8 6 2 12 8 18" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const EyeIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth="2.5"
+    stroke="currentColor"
+    className={className}
+  >
+    <path
+      d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0z"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const RenderIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth="2.5"
+    stroke="currentColor"
+    className={className}
+  >
+    <polygon points="5 3 19 12 5 21 5 3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export function Header() {
   const chat = useStore(chatStore);
   const showWorkbench = useStore(workbenchStore.showWorkbench);
@@ -33,20 +78,16 @@ export function Header() {
 
   const sliderOptions = useMemo((): SliderOption<WorkbenchViewType>[] => {
     const options: SliderOption<WorkbenchViewType>[] = [
-      { value: 'code', text: 'Code' },
-      { value: 'preview', text: 'Preview' },
+      { value: 'code', text: 'Code', icon: CodeIcon },
+      { value: 'preview', text: 'Preview', icon: EyeIcon },
     ];
 
     if (hasRenderableFiles) {
-      options.push({ value: 'render', text: 'Render' });
-    }
-
-    if (Object.keys(fileHistory).length > 1) {
-      options.push({ value: 'diff', text: 'Diff' });
+      options.push({ value: 'render', text: 'Render', icon: RenderIcon });
     }
 
     return options;
-  }, [fileHistory, hasRenderableFiles]);
+  }, [hasRenderableFiles]);
 
   const setSelectedView = (view: WorkbenchViewType) => {
     workbenchStore.currentView.set(view);
@@ -68,7 +109,7 @@ export function Header() {
           <>
             <button
               onClick={() => workbenchStore.showWorkbench.set(false)}
-              className="flex items-center gap-1 text-sm shrink-0 bg-bolt-elements-background-depth-1  text-bolt-elements-textPrimary hover:text-accent transition-colors"
+              className="flex items-center gap-1 text-sm shrink-0 bg-transparent  text-bolt-elements-textPrimary hover:text-accent transition-colors"
             >
               <div className="i-ph:caret-left text-lg" />
               <span className=" xs:inline">Back</span>
@@ -113,7 +154,6 @@ export function Header() {
             <SidebarTrigger />
             {showWorkbench && (
               <>
-                
                 <div
                   data-orientation="vertical"
                   role="none"
