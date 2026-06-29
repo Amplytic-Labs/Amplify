@@ -13,9 +13,9 @@ export const UnsupportedRenderer = memo(({ filePath }: UnsupportedRendererProps)
   const extension = getFileExtension(filePath);
 
   return (
-    <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
+    <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary">
       <div className="text-center">
-        <div className="i-ph:file-question text-4xl mb-2 text-bolt-elements-textTertiary" />
+        <div className="i-ph:file-question text-4xl mb-2 text-amplify-elements-textTertiary" />
         <p className="text-sm">No renderer available for .{extension} files.</p>
       </div>
     </div>

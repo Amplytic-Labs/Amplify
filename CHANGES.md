@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation adds persistent file and folder locking functionality to the BoltDIY project. When a file or folder is locked, it cannot be modified by either the user or the AI until it is unlocked. All locks are scoped to the current chat/project to prevent locks from one project affecting files with matching names in other projects.
+This implementation adds persistent file and folder locking functionality to the Amplify project. When a file or folder is locked, it cannot be modified by either the user or the AI until it is unlocked. All locks are scoped to the current chat/project to prevent locks from one project affecting files with matching names in other projects.
 
 ## New Files
 

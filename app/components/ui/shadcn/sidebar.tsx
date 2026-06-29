@@ -529,7 +529,7 @@ const sidebarMenuButtonVariants = cva(
       variant: {
         default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         outline:
-          'bg-bolt-elements-bg-depth-1 shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+          'bg-amplify-elements-bg-depth-1 shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
       },
       size: {
         default: 'h-8 text-sm',
@@ -587,8 +587,8 @@ function SidebarMenuButton({
           align="center"
           hidden={state !== 'collapsed' || isMobile}
           className={classNames(
-            'z-50 overflow-hidden rounded-md bg-bolt-elements-bg-depth-3 px-3 py-1.5 text-xs',
-            'text-bolt-elements-textPrimary shadow-md',
+            'z-50 overflow-hidden rounded-md bg-amplify-elements-bg-depth-3 px-3 py-1.5 text-xs',
+            'text-amplify-elements-textPrimary shadow-md',
           )}
           sideOffset={5}
           {...tooltipProps}
@@ -732,7 +732,7 @@ function SidebarInput({ className, ...props }: React.ComponentProps<'input'>) {
       data-slot="sidebar-input"
       data-sidebar="input"
       className={classNames(
-        'h-8 w-full rounded-md border border-sidebar-border bg-bolt-elements-bg-depth-1 px-3 py-1 text-sm',
+        'h-8 w-full rounded-md border border-sidebar-border bg-amplify-elements-bg-depth-1 px-3 py-1 text-sm',
         'text-sidebar-foreground placeholder:text-sidebar-foreground/50',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
         className,

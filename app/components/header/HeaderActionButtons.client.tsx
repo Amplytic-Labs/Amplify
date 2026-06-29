@@ -31,7 +31,7 @@ export function HeaderActionButtonsContent() {
       <MotionDropdownSeparator />
       <MotionDropdownItem
         onSelect={() =>
-          window.open('https://github.com/stackblitz-labs/bolt.diy/issues/new?template=bug_report.yml', '_blank')
+          window.open('https://github.com/amplify/amplify/issues/new?template=bug_report.yml', '_blank')
         }
         className="gap-2"
       >

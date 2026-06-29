@@ -59,7 +59,7 @@ export interface ProjectStoreData {
 // Constants
 // ============================================================
 
-const PROJECT_STORE_KEY = 'bolt_projects';
+const PROJECT_STORE_KEY = 'amplify_projects';
 
 // ============================================================
 // Store Implementation

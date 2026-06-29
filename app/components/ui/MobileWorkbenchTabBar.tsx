@@ -37,12 +37,12 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
       // Flex grows wider for the active pill
       animate={{ flex: isActive ? 2.2 : 1 }}
       transition={{ duration: 0.25, ease: cubicEasingFn }}
-      className="relative flex items-center justify-center overflow-hidden rounded-full bg-bolt-elements-background-depth-1"
+      className="relative flex items-center justify-center overflow-hidden rounded-full bg-amplify-elements-background-depth-1"
       style={{ minWidth: 0 }}
     >
       {/* Pill background (active only) */}
       <motion.span
-        className="absolute inset-0  bg-bolt-elements-background-depth-1"
+        className="absolute inset-0  bg-amplify-elements-background-depth-1"
         animate={{
           
           scale: isActive ? 1 : 0.9,
@@ -52,7 +52,7 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
 
       {/* Inner row */}
       <motion.span
-        className="relative z-10 flex items-center gap-1.5 px-2 h-full bg-bolt-elements-background-depth-1"
+        className="relative z-10 flex items-center gap-1.5 px-2 h-full bg-amplify-elements-background-depth-1"
         animate={{ paddingLeft: isActive ? 10 : 0, paddingRight: isActive ? 10 : 0 }}
         transition={{ duration: 0.15, ease: cubicEasingFn }}
       >
@@ -60,7 +60,7 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
         <motion.span
           className={classNames(tab.icon, 'text-lg shrink-0')}
           animate={{
-            color: isActive ? tab.color : 'var(--bolt-elements-item-contentDefault, #94a3b8)',
+            color: isActive ? tab.color : 'var(--amplify-elements-item-contentDefault, #94a3b8)',
            
           }}
           transition={{ duration: 0.2, ease: cubicEasingFn }}
@@ -98,8 +98,8 @@ export const MobileWorkbenchTabBar = memo(
       <div
         className={classNames(
           'flex items-center gap-1 px-2 py-1 rounded-lg h-8 w-[130px]',
-          'bg-bolt-elements-background-depth-1 backdrop-blur-sm',
-          'border border-bolt-elements-borderColor/40',
+          'bg-amplify-elements-background-depth-1 backdrop-blur-sm',
+          'border border-amplify-elements-borderColor/40',
           className,
         )}
       >

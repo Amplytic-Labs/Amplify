@@ -1,24 +1,24 @@
 import type { WebContainer } from '@webcontainer/api';
 import { path as nodePath } from '~/utils/path';
 import { atom, map, type MapStore } from 'nanostores';
-import type { ActionAlert, BoltAction, DeployAlert, FileHistory, SupabaseAction, SupabaseAlert } from '~/types/actions';
+import type { ActionAlert, AmplifyAction, DeployAlert, FileHistory, SupabaseAction, SupabaseAlert } from '~/types/actions';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 import type { ActionCallbackData } from './message-parser';
-import type { BoltShell } from '~/utils/shell';
+import type { AmplifyShell } from '~/utils/shell';
 
 const logger = createScopedLogger('ActionRunner');
 
 export type ActionStatus = 'pending' | 'running' | 'complete' | 'aborted' | 'failed';
 
-export type BaseActionState = BoltAction & {
+export type BaseActionState = AmplifyAction & {
   status: Exclude<ActionStatus, 'failed'>;
   abort: () => void;
   executed: boolean;
   abortSignal: AbortSignal;
 };
 
-export type FailedActionState = BoltAction &
+export type FailedActionState = AmplifyAction &
   Omit<BaseActionState, 'status'> & {
     status: Extract<ActionStatus, 'failed'>;
     error: string;
@@ -66,7 +66,7 @@ class ActionCommandError extends Error {
 export class ActionRunner {
   #webcontainer: Promise<WebContainer>;
   #currentExecutionPromise: Promise<void> = Promise.resolve();
-  #shellTerminal: () => BoltShell;
+  #shellTerminal: () => AmplifyShell;
   runnerId = atom<string>(`${Date.now()}`);
   actions: ActionsMap = map({});
   onAlert?: (alert: ActionAlert) => void;
@@ -77,7 +77,7 @@ export class ActionRunner {
 
   constructor(
     webcontainerPromise: Promise<WebContainer>,
-    getShellTerminal: () => BoltShell,
+    getShellTerminal: () => AmplifyShell,
     onAlert?: (alert: ActionAlert) => void,
     onSupabaseAlert?: (alert: SupabaseAlert) => void,
     onDeployAlert?: (alert: DeployAlert) => void,
@@ -350,16 +350,16 @@ export class ActionRunner {
     }
 
     try {
-      // Guard rail: strip any leaked bolt artifact/action tags from file content
+      // Guard rail: strip any leaked amplify artifact/action tags from file content
       let fileContent = action.content;
 
       if (typeof fileContent === 'string') {
         fileContent = fileContent
-          .replace(/<boltArtifact\b[^>]*>[\s\S]*?<\/boltArtifact>/g, '')
-          .replace(/<\/?boltArtifact\b[^>]*>/g, '')
-          .replace(/<\/?boltAction\b[^>]*>/g, '')
-          .replace(/<\/?bolt-quick-actions>/g, '')
-          .replace(/<bolt-quick-action\b[^>]*>[\s\S]*?<\/bolt-quick-action>/g, '');
+          .replace(/<amplifyArtifact\b[^>]*>[\s\S]*?<\/amplifyArtifact>/g, '')
+          .replace(/<\/?amplifyArtifact\b[^>]*>/g, '')
+          .replace(/<\/?amplifyAction\b[^>]*>/g, '')
+          .replace(/<\/?amplify-quick-actions>/g, '')
+          .replace(/<amplify-quick-action\b[^>]*>[\s\S]*?<\/amplify-quick-action>/g, '');
       }
 
       await webcontainer.fs.writeFile(relativePath, fileContent);

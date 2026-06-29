@@ -58,8 +58,8 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
   if (!plan) {
     return (
       <div className="flex items-center gap-3 px-4 py-3">
-        <div className="i-ph:spinner animate-spin h-5 w-5 text-bolt-elements-textSecondary" />
-        <span className="text-sm text-bolt-elements-textSecondary">Loading plan...</span>
+        <div className="i-ph:spinner animate-spin h-5 w-5 text-amplify-elements-textSecondary" />
+        <span className="text-sm text-amplify-elements-textSecondary">Loading plan...</span>
       </div>
     );
   }
@@ -178,7 +178,7 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
       {/* Progress message */}
       {progress?.message && (
         <div className="px-4 py-2">
-          <p className="text-xs text-bolt-elements-textSecondary truncate">{progress.message}</p>
+          <p className="text-xs text-amplify-elements-textSecondary truncate">{progress.message}</p>
         </div>
       )}
 

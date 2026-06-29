@@ -23,8 +23,8 @@ DATA INTEGRITY IS HIGHEST PRIORITY — users must NEVER lose data.
 
 For EVERY database change, provide TWO actions:
 
-1. **Migration File**: `<boltAction type="supabase" operation="migration" filePath="/supabase/migrations/name.sql">`
-2. **Query Execution**: `<boltAction type="supabase" operation="query" projectId="${projectId}">`
+1. **Migration File**: `<amplifyAction type="supabase" operation="migration" filePath="/supabase/migrations/name.sql">`
+2. **Query Execution**: `<amplifyAction type="supabase" operation="query" projectId="${projectId}">`
 
 ### Migration Rules
 

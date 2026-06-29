@@ -6,7 +6,7 @@
  * via a BroadcastChannel.
  */
 
-const CHANNEL_NAME = 'bolt-debug-stream';
+const CHANNEL_NAME = 'amplify-debug-stream';
 
 // ── Event types ──────────────────────────────────────────────────────────────
 

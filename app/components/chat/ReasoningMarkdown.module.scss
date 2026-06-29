@@ -9,17 +9,17 @@ $code-font-size: 16px;
     background: transparent;
   }
   &::-webkit-scrollbar-thumb {
-    background: var(--bolt-elements-textTertiary);
+    background: var(--amplify-elements-textTertiary);
     border-radius: 10px;
   }
   &::-webkit-scrollbar-thumb:hover {
-    background: var(--bolt-elements-textSecondary);
+    background: var(--amplify-elements-textSecondary);
   }
   &::-webkit-scrollbar-button {
     display: none;
   }
   scrollbar-width: thin;
-  scrollbar-color: var(--bolt-elements-textTertiary) transparent;
+  scrollbar-color: var(--amplify-elements-textTertiary) transparent;
 }
 
 @mixin not-inside-actions {
@@ -39,7 +39,7 @@ $code-font-size: 16px;
   font-family: 'Almarai', sans-serif;
   font-size: 16px;
   line-height: 1.55;
-  color: var(--bolt-elements-textSecondary);
+  color: var(--amplify-elements-textSecondary);
 
   > *:not(:last-child) {
     margin-block-end: 10px;
@@ -55,19 +55,19 @@ $code-font-size: 16px;
       margin-block-end: 10px;
       font-weight: 600;
       line-height: 1.25;
-      color: var(--bolt-elements-textPrimary);
+      color: var(--amplify-elements-textPrimary);
     }
   }
 
   h1 {
     font-size: 1.4em;
-    border-bottom: 1px solid var(--bolt-elements-borderColor);
+    border-bottom: 1px solid var(--amplify-elements-borderColor);
     padding-bottom: 0.3em;
   }
 
   h2 {
     font-size: 1.25em;
-    border-bottom: 1px solid var(--bolt-elements-borderColor);
+    border-bottom: 1px solid var(--amplify-elements-borderColor);
     padding-bottom: 0.3em;
   }
 
@@ -98,7 +98,7 @@ $code-font-size: 16px;
   }
 
   a {
-    color: var(--bolt-elements-messages-linkColor);
+    color: var(--amplify-elements-messages-linkColor);
     text-decoration: none;
     cursor: pointer;
 
@@ -114,8 +114,8 @@ $code-font-size: 16px;
     @include not-inside-actions {
       border-radius: 6px;
       padding: 0.2em 0.4em;
-      background-color: var(--bolt-elements-messages-inlineCode-background);
-      color: var(--bolt-elements-messages-inlineCode-text);
+      background-color: var(--amplify-elements-messages-inlineCode-background);
+      color: var(--amplify-elements-messages-inlineCode-text);
     }
   }
 
@@ -135,8 +135,8 @@ $code-font-size: 16px;
   blockquote {
     margin: 0;
     padding: 0 1em;
-    color: var(--bolt-elements-textTertiary);
-    border-left: 0.25em solid var(--bolt-elements-borderColor);
+    color: var(--amplify-elements-textTertiary);
+    border-left: 0.25em solid var(--amplify-elements-borderColor);
   }
 
   :is(ul, ol) {
@@ -180,7 +180,7 @@ $code-font-size: 16px;
     height: 0.25em;
     padding: 0;
     margin: 24px 0;
-    background-color: var(--bolt-elements-borderColor);
+    background-color: var(--amplify-elements-borderColor);
     border: 0;
   }
 
@@ -191,11 +191,11 @@ $code-font-size: 16px;
 
     :is(th, td) {
       padding: 6px 16px;
-      border: 1px solid var(--bolt-elements-borderColor);
+      border: 1px solid var(--amplify-elements-borderColor);
     }
 
     tr:nth-child(2n) {
-      background-color: var(--bolt-elements-background-depth-2);
+      background-color: var(--amplify-elements-background-depth-2);
     }
   }
 }

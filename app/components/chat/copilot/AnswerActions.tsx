@@ -132,7 +132,7 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
         onClick={() => handleFeedback('up')}
       >
         <div
-          className={classNames('i-ph:thumbs-up text-lg', feedback === 'up' && 'text-bolt-elements-icon-success')}
+          className={classNames('i-ph:thumbs-up text-lg', feedback === 'up' && 'text-amplify-elements-icon-success')}
         />
       </ActionButton>
 
@@ -143,7 +143,7 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
         onClick={() => handleFeedback('down')}
       >
         <div
-          className={classNames('i-ph:thumbs-down text-lg', feedback === 'down' && 'text-bolt-elements-icon-error')}
+          className={classNames('i-ph:thumbs-down text-lg', feedback === 'down' && 'text-amplify-elements-icon-error')}
         />
       </ActionButton>
 
@@ -171,7 +171,7 @@ export const AnswerActions = memo(({ content, onRegenerate, usage, isStreaming }
         <>
           <div className="ml-auto" />
           <span
-            className="flex items-center gap-1 text-[11px] text-bolt-elements-textTertiary px-1.5 py-0.5 rounded-md bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor/60 font-mono"
+            className="flex items-center gap-1 text-[11px] text-amplify-elements-textTertiary px-1.5 py-0.5 rounded-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor/60 font-mono"
             title={`Prompt: ${usage?.promptTokens ?? 0} · Completion: ${usage?.completionTokens ?? 0}`}
           >
             <span className="i-ph:cpu text-[10px]" />
@@ -204,8 +204,8 @@ const ActionButton = memo(({ label, active, onClick, children }: ActionButtonPro
         aria-pressed={active}
         className={classNames(
           'p-1.5 rounded-md transition-colors cursor-pointer bg-transparent',
-          'text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2',
-          active && 'text-bolt-elements-textPrimary bg-bolt-elements-background-depth-2',
+          'text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2',
+          active && 'text-amplify-elements-textPrimary bg-amplify-elements-background-depth-2',
         )}
       >
         {children}
@@ -216,5 +216,5 @@ const ActionButton = memo(({ label, active, onClick, children }: ActionButtonPro
 
 ActionButton.displayName = 'ActionButton';
 
-const Divider = memo(() => <span className="w-px h-4 bg-bolt-elements-borderColor/60 mx-0.5" />);
+const Divider = memo(() => <span className="w-px h-4 bg-amplify-elements-borderColor/60 mx-0.5" />);
 Divider.displayName = 'Divider';

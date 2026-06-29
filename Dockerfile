@@ -37,7 +37,7 @@ RUN pnpm prune --prod --ignore-scripts
 
 
 # ---- production stage ----
-FROM prod-deps AS bolt-ai-production
+FROM prod-deps AS amplify-ai-production
 WORKDIR /app
 
 ENV NODE_ENV=production

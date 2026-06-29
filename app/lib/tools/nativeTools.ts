@@ -1,5 +1,5 @@
 /**
- * Native Copilot-style tools for Open_Claude.
+ * Native Copilot-style tools for Amplify.
  *
  * These tools mirror the design of VSCode Copilot's built-in tools
  * (see vscode/extensions/copilot/src/extension/tools/node/):
@@ -14,7 +14,7 @@
  *
  * IMPORTANT — execution model
  * --------------------------
- * The Open_Claude chat pipeline runs on the server (api.chat.ts) but the
+ * The Amplify chat pipeline runs on the server (api.chat.ts) but the
  * authoritative file system lives in the browser (WebContainer + workbench
  * store). To bridge the two:
  *
@@ -204,7 +204,7 @@ function globToRegex(pattern: string): RegExp {
 
 /* ----------------------------------------------------------- mutation signal */
 /**
- * Mutation signals are JSON strings with `type: 'open_claude_file_mutation'`.
+ * Mutation signals are JSON strings with `type: 'amplify_file_mutation'`.
  * The browser-side Chat.client.tsx parses them out of tool results and
  * applies the operations to the workbench store.
  */
@@ -214,7 +214,7 @@ export type FileMutationOperation =
   | { op: 'multi_replace'; filePath: string; edits: Array<{ oldString: string; newString: string }> };
 
 export interface FileMutationSignal {
-  type: 'open_claude_file_mutation';
+  type: 'amplify_file_mutation';
   operations: FileMutationOperation[];
 }
 
@@ -223,13 +223,13 @@ export function isFileMutationSignal(value: unknown): value is FileMutationSigna
     return false;
   }
 
-  if (!value.includes('open_claude_file_mutation')) {
+  if (!value.includes('amplify_file_mutation')) {
     return false;
   }
 
   try {
     const parsed = JSON.parse(value);
-    return parsed && parsed.type === 'open_claude_file_mutation' && Array.isArray(parsed.operations);
+    return parsed && parsed.type === 'amplify_file_mutation' && Array.isArray(parsed.operations);
   } catch {
     return false;
   }
@@ -239,7 +239,7 @@ export function parseFileMutationSignal(value: string): FileMutationSignal | nul
   try {
     const parsed = JSON.parse(value);
 
-    if (parsed && parsed.type === 'open_claude_file_mutation' && Array.isArray(parsed.operations)) {
+    if (parsed && parsed.type === 'amplify_file_mutation' && Array.isArray(parsed.operations)) {
       return parsed as FileMutationSignal;
     }
   } catch {
@@ -526,7 +526,7 @@ export function buildNativeTools(): Record<string, any> {
         }
 
         const signal: FileMutationSignal = {
-          type: 'open_claude_file_mutation',
+          type: 'amplify_file_mutation',
           operations: [{ op: 'replace', filePath: rel, oldString, newString }],
         };
 
@@ -584,7 +584,7 @@ export function buildNativeTools(): Record<string, any> {
         }
 
         const signal: FileMutationSignal = {
-          type: 'open_claude_file_mutation',
+          type: 'amplify_file_mutation',
           operations: [{ op: 'multi_replace', filePath: rel, edits }],
         };
 
@@ -610,7 +610,7 @@ export function buildNativeTools(): Record<string, any> {
         }
 
         const signal: FileMutationSignal = {
-          type: 'open_claude_file_mutation',
+          type: 'amplify_file_mutation',
           operations: [{ op: 'create', filePath: rel, content }],
         };
 

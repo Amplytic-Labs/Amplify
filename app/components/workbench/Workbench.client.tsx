@@ -96,7 +96,7 @@ const FileModifiedDropdown = memo(
         <Popover className="relative">
           {({ open }: { open: boolean }) => (
             <>
-              <Popover.Button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-bolt-elements-background-depth-2 hover:bg-bolt-elements-background-depth-3 transition-colors text-bolt-elements-item-contentDefault">
+              <Popover.Button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-background-depth-3 transition-colors text-amplify-elements-item-contentDefault">
                 <span>File Changes</span>
                 {hasChanges && (
                   <span className="w-5 h-5 rounded-full bg-accent-500/20 text-accent-500 text-xs flex items-center justify-center border border-accent-500/30">
@@ -113,7 +113,7 @@ const FileModifiedDropdown = memo(
                 leaveFrom="transform scale-100 opacity-100"
                 leaveTo="transform scale-95 opacity-0"
               >
-                <Popover.Panel className="absolute right-0 z-20 mt-2 w-80 origin-top-right rounded-xl bg-bolt-elements-background-depth-2 shadow-xl border border-bolt-elements-borderColor">
+                <Popover.Panel className="absolute right-0 z-20 mt-2 w-80 origin-top-right rounded-xl bg-amplify-elements-background-depth-2 shadow-xl border border-amplify-elements-borderColor">
                   <div className="p-2">
                     <div className="relative mx-2 mb-2">
                       <input
@@ -121,9 +121,9 @@ const FileModifiedDropdown = memo(
                         placeholder="Search files..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-bolt-elements-background-depth-1 border border-bolt-elements-borderColor focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       />
-                      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-bolt-elements-textTertiary">
+                      <div className="absolute left-2 top-1/2 -translate-y-1/2 text-amplify-elements-textTertiary">
                         <div className="i-ph:magnifying-glass" />
                       </div>
                     </div>
@@ -138,10 +138,10 @@ const FileModifiedDropdown = memo(
                             <button
                               key={filePath}
                               onClick={() => onSelectFile(filePath)}
-                              className="w-full px-3 py-2 text-left rounded-md hover:bg-bolt-elements-background-depth-1 transition-colors group bg-transparent"
+                              className="w-full px-3 py-2 text-left rounded-md hover:bg-amplify-elements-background-depth-1 transition-colors group bg-transparent"
                             >
                               <div className="flex items-center gap-2">
-                                <div className="shrink-0 w-5 h-5 text-bolt-elements-textTertiary">
+                                <div className="shrink-0 w-5 h-5 text-amplify-elements-textTertiary">
                                   {['typescript', 'javascript', 'jsx', 'tsx'].includes(language) && (
                                     <div className="i-ph:file-js" />
                                   )}
@@ -176,10 +176,10 @@ const FileModifiedDropdown = memo(
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex flex-col min-w-0">
-                                      <span className="truncate text-sm font-medium text-bolt-elements-textPrimary">
+                                      <span className="truncate text-sm font-medium text-amplify-elements-textPrimary">
                                         {filePath.split('/').pop()}
                                       </span>
-                                      <span className="truncate text-xs text-bolt-elements-textTertiary">
+                                      <span className="truncate text-xs text-amplify-elements-textTertiary">
                                         {filePath}
                                       </span>
                                     </div>
@@ -242,13 +242,13 @@ const FileModifiedDropdown = memo(
                         })
                       ) : (
                         <div className="flex flex-col items-center justify-center p-4 text-center">
-                          <div className="w-12 h-12 mb-2 text-bolt-elements-textTertiary">
+                          <div className="w-12 h-12 mb-2 text-amplify-elements-textTertiary">
                             <div className="i-ph:file-dashed" />
                           </div>
-                          <p className="text-sm font-medium text-bolt-elements-textPrimary">
+                          <p className="text-sm font-medium text-amplify-elements-textPrimary">
                             {searchQuery ? 'No matching files' : 'No modified files'}
                           </p>
-                          <p className="text-xs text-bolt-elements-textTertiary mt-1">
+                          <p className="text-xs text-amplify-elements-textTertiary mt-1">
                             {searchQuery ? 'Try another search' : 'Changes will appear here as you edit'}
                           </p>
                         </div>
@@ -257,7 +257,7 @@ const FileModifiedDropdown = memo(
                   </div>
 
                   {hasChanges && (
-                    <div className="border-t border-bolt-elements-borderColor p-2">
+                    <div className="border-t border-amplify-elements-borderColor p-2">
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(filteredFiles.map(([filePath]) => filePath).join('\n'));
@@ -265,7 +265,7 @@ const FileModifiedDropdown = memo(
                             icon: <div className="i-ph:check-circle text-accent-500" />,
                           });
                         }}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-bolt-elements-background-depth-1 hover:bg-bolt-elements-background-depth-3 transition-colors text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-1 hover:bg-amplify-elements-background-depth-3 transition-colors text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary"
                       >
                         Copy File List
                       </button>
@@ -452,9 +452,9 @@ export const Workbench = memo(
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center bg-bolt-elements-background-depth-2/60 backdrop-blur-sm"
+              className="absolute inset-0 z-50 flex items-center justify-center bg-amplify-elements-background-depth-2/60 backdrop-blur-sm"
             >
-              <div className="flex flex-col items-center gap-3 text-bolt-elements-textSecondary">
+              <div className="flex flex-col items-center gap-3 text-amplify-elements-textSecondary">
                 <div className="i-ph:spinner animate-spin text-3xl text-accent-500" />
                 <p className="text-sm font-medium animate-pulse">Initializing project…</p>
               </div>
@@ -462,16 +462,16 @@ export const Workbench = memo(
           )}
           <div
             className={classNames(
-              'z-0 h-full w-full lg:rounded-2xl border border-bolt-elements-borderColor overflow-hidden',
+              'z-0 h-full w-full lg:rounded-2xl border border-amplify-elements-borderColor overflow-hidden',
               {
-                'transition-[left,width] duration-200 bolt-ease-cubic-bezier': isSmallViewport,
+                'transition-[left,width] duration-200 amplify-ease-cubic-bezier': isSmallViewport,
                 'left-0': showWorkbench && isSmallViewport,
                 'left-[100%]': !showWorkbench && isSmallViewport,
               },
             )}
           >
             <div className="h-full ">
-              <div className="h-full flex flex-col bg-bolt-elements-background-depth-2  overflow-hidden">
+              <div className="h-full flex flex-col bg-amplify-elements-background-depth-2  overflow-hidden">
                 <div className="relative flex-1 overflow-hidden">
                   <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
                     <EditorPanel

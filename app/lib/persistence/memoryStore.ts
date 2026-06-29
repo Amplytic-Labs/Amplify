@@ -7,7 +7,7 @@ export interface Memory {
   category?: string;
 }
 
-const MEMORY_STORAGE_KEY = 'bolt_user_memories';
+const MEMORY_STORAGE_KEY = 'amplify_user_memories';
 
 export class MemoryStore {
   private static instance: MemoryStore;

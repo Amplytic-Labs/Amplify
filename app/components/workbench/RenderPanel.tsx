@@ -71,11 +71,11 @@ export const RenderPanel = memo(() => {
 
   if (renderableFiles.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
+      <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary">
         <div className="text-center">
-          <div className="i-ph:file-x text-4xl mb-2 text-bolt-elements-textTertiary" />
-          <p className="text-sm font-medium text-bolt-elements-textPrimary">No renderable files found</p>
-          <p className="text-xs text-bolt-elements-textTertiary mt-1">
+          <div className="i-ph:file-x text-4xl mb-2 text-amplify-elements-textTertiary" />
+          <p className="text-sm font-medium text-amplify-elements-textPrimary">No renderable files found</p>
+          <p className="text-xs text-amplify-elements-textTertiary mt-1">
             Add an .html or .docx file to your project to preview it here.
           </p>
         </div>
@@ -86,10 +86,10 @@ export const RenderPanel = memo(() => {
   return (
     <div className="flex flex-col h-full w-full">
       {/* Toolbar */}
-      <div className="bg-bolt-elements-background-depth-2 px-3 py-2 flex items-center gap-2 border-b border-bolt-elements-borderColor">
+      <div className="bg-amplify-elements-background-depth-2 px-3 py-2 flex items-center gap-2 border-b border-amplify-elements-borderColor">
         {/* Active file name (click to re-render) */}
         <button
-          className="flex items-center gap-1.5 text-sm font-medium text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentAccent transition-colors bg-transparent"
+          className="flex items-center gap-1.5 text-sm font-medium text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentAccent transition-colors bg-transparent"
           onClick={() => {
             // Force a re-render by toggling to null and back
             setSelectedFilePath(null);
@@ -101,7 +101,7 @@ export const RenderPanel = memo(() => {
             <div
               className={classNames(
                 getIconForExtension(getFileExtension(activeFile)),
-                'text-base text-bolt-elements-textTertiary',
+                'text-base text-amplify-elements-textTertiary',
               )}
             />
           )}
@@ -111,13 +111,13 @@ export const RenderPanel = memo(() => {
         {/* Chevron dropdown trigger */}
         <div className="relative">
           <button
-            className="flex items-center justify-center w-6 h-6 rounded hover:bg-bolt-elements-background-depth-3 transition-colors bg-transparent"
+            className="flex items-center justify-center w-6 h-6 rounded hover:bg-amplify-elements-background-depth-3 transition-colors bg-transparent"
             onClick={() => setIsDropdownOpen((prev) => !prev)}
             title="Select a renderable file"
           >
             <div
               className={classNames(
-                'i-ph:caret-down text-sm text-bolt-elements-textTertiary transition-transform',
+                'i-ph:caret-down text-sm text-amplify-elements-textTertiary transition-transform',
                 isDropdownOpen ? 'rotate-180' : '',
               )}
             />
@@ -129,11 +129,11 @@ export const RenderPanel = memo(() => {
               {/* Backdrop to close */}
               <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
 
-              <div className="absolute left-0 top-full mt-1 z-50 w-80 max-h-80 overflow-hidden bg-bolt-elements-background-depth-2 shadow-xl border border-bolt-elements-borderColor rounded-xl">
+              <div className="absolute left-0 top-full mt-1 z-50 w-80 max-h-80 overflow-hidden bg-amplify-elements-background-depth-2 shadow-xl border border-amplify-elements-borderColor rounded-xl">
                 {/* Search input */}
-                <div className="p-2 border-b border-bolt-elements-borderColor">
+                <div className="p-2 border-b border-amplify-elements-borderColor">
                   <div className="relative">
-                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-bolt-elements-textTertiary">
+                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-amplify-elements-textTertiary">
                       <div className="i-ph:magnifying-glass text-sm" />
                     </div>
                     <input
@@ -141,7 +141,7 @@ export const RenderPanel = memo(() => {
                       placeholder="Search renderable files..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-bolt-elements-background-depth-1 border border-bolt-elements-borderColor focus:outline-none focus:ring-2 focus:ring-accent-500/50 text-bolt-elements-textPrimary"
+                      className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor focus:outline-none focus:ring-2 focus:ring-accent-500/50 text-amplify-elements-textPrimary"
                       autoFocus
                     />
                   </div>
@@ -163,8 +163,8 @@ export const RenderPanel = memo(() => {
                           className={classNames(
                             'w-full px-3 py-2.5 text-left flex items-center gap-2.5 transition-colors bg-transparent group',
                             isActive
-                              ? 'bg-bolt-elements-item-backgroundActive text-bolt-elements-item-contentAccent'
-                              : 'hover:bg-bolt-elements-background-depth-1 text-bolt-elements-textPrimary',
+                              ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-item-contentAccent'
+                              : 'hover:bg-amplify-elements-background-depth-1 text-amplify-elements-textPrimary',
                           )}
                         >
                           <div
@@ -172,8 +172,8 @@ export const RenderPanel = memo(() => {
                               getIconForExtension(ext),
                               'text-base shrink-0',
                               isActive
-                                ? 'text-bolt-elements-item-contentAccent'
-                                : 'text-bolt-elements-textTertiary group-hover:text-bolt-elements-item-contentActive',
+                                ? 'text-amplify-elements-item-contentAccent'
+                                : 'text-amplify-elements-textTertiary group-hover:text-amplify-elements-item-contentActive',
                             )}
                           />
                           <div className="flex-1 min-w-0">
@@ -182,15 +182,15 @@ export const RenderPanel = memo(() => {
                               className={classNames(
                                 'text-xs truncate',
                                 isActive
-                                  ? 'text-bolt-elements-item-contentAccent/70'
-                                  : 'text-bolt-elements-textTertiary',
+                                  ? 'text-amplify-elements-item-contentAccent/70'
+                                  : 'text-amplify-elements-textTertiary',
                               )}
                             >
                               {relPath}
                             </p>
                           </div>
                           {isActive && (
-                            <div className="shrink-0 text-bolt-elements-item-contentAccent">
+                            <div className="shrink-0 text-amplify-elements-item-contentAccent">
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
                                 width="14"
@@ -211,8 +211,8 @@ export const RenderPanel = memo(() => {
                     })
                   ) : (
                     <div className="flex flex-col items-center justify-center p-4 text-center">
-                      <div className="i-ph:file-dashed text-3xl text-bolt-elements-textTertiary mb-1" />
-                      <p className="text-xs text-bolt-elements-textTertiary">No matching files</p>
+                      <div className="i-ph:file-dashed text-3xl text-amplify-elements-textTertiary mb-1" />
+                      <p className="text-xs text-amplify-elements-textTertiary">No matching files</p>
                     </div>
                   )}
                 </div>
@@ -227,7 +227,7 @@ export const RenderPanel = memo(() => {
         {Renderer && activeFile ? (
           <Renderer filePath={activeFile} content={activeFileContent} />
         ) : (
-          <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
+          <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary">
             Select a file to render.
           </div>
         )}

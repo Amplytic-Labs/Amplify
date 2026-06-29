@@ -59,9 +59,9 @@ function AppSidebar() {
 
 function InfoCard({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-4">
-      <h3 className="text-sm font-semibold text-bolt-elements-textPrimary">{title}</h3>
-      <p className="text-xs text-bolt-elements-textSecondary mt-1">{description}</p>
+    <div className="rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 p-4">
+      <h3 className="text-sm font-semibold text-amplify-elements-textPrimary">{title}</h3>
+      <p className="text-xs text-amplify-elements-textSecondary mt-1">{description}</p>
     </div>
   );
 }

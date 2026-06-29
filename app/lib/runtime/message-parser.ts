@@ -1,18 +1,18 @@
-import type { ActionType, BoltAction, BoltActionData, FileAction, ShellAction, SupabaseAction } from '~/types/actions';
-import type { BoltArtifactData } from '~/types/artifact';
+import type { ActionType, AmplifyAction, AmplifyActionData, FileAction, ShellAction, SupabaseAction } from '~/types/actions';
+import type { AmplifyArtifactData } from '~/types/artifact';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 
-const ARTIFACT_TAG_OPEN = '<boltArtifact';
-const ARTIFACT_TAG_CLOSE = '</boltArtifact>';
-const ARTIFACT_ACTION_TAG_OPEN = '<boltAction';
-const ARTIFACT_ACTION_TAG_CLOSE = '</boltAction>';
-const BOLT_QUICK_ACTIONS_OPEN = '<bolt-quick-actions>';
-const BOLT_QUICK_ACTIONS_CLOSE = '</bolt-quick-actions>';
+const ARTIFACT_TAG_OPEN = '<amplifyArtifact';
+const ARTIFACT_TAG_CLOSE = '</amplifyArtifact>';
+const ARTIFACT_ACTION_TAG_OPEN = '<amplifyAction';
+const ARTIFACT_ACTION_TAG_CLOSE = '</amplifyAction>';
+const AMPLIFY_QUICK_ACTIONS_OPEN = '<amplify-quick-actions>';
+const AMPLIFY_QUICK_ACTIONS_CLOSE = '</amplify-quick-actions>';
 
 const logger = createScopedLogger('MessageParser');
 
-export interface ArtifactCallbackData extends BoltArtifactData {
+export interface ArtifactCallbackData extends AmplifyArtifactData {
   messageId: string;
   artifactId?: string;
 }
@@ -21,7 +21,7 @@ export interface ActionCallbackData {
   artifactId: string;
   messageId: string;
   actionId: string;
-  action: BoltAction;
+  action: AmplifyAction;
 }
 
 export type ArtifactCallback = (data: ArtifactCallbackData) => void;
@@ -53,8 +53,8 @@ interface MessageState {
   insideArtifact: boolean;
   insideAction: boolean;
   artifactCounter: number;
-  currentArtifact?: BoltArtifactData;
-  currentAction: BoltActionData;
+  currentArtifact?: AmplifyArtifactData;
+  currentAction: AmplifyActionData;
   actionId: number;
 }
 
@@ -76,21 +76,21 @@ function cleanEscapedTags(content: string) {
 }
 
 /**
- * Strips any boltArtifact / boltAction XML tags from file content.
+ * Strips any amplifyArtifact / amplifyAction XML tags from file content.
  * AI models sometimes leak these control tags into file output during streaming.
- * This acts as a guard rail so project files never contain bolt-internal markup.
+ * This acts as a guard rail so project files never contain amplify-internal markup.
  */
-function stripBoltArtifactTags(content: string): string {
-  // Remove complete <boltArtifact ...>...</boltArtifact> blocks (with any inner content)
-  let cleaned = content.replace(/<boltArtifact\b[^>]*>[\s\S]*?<\/boltArtifact>/g, '');
+function stripAmplifyArtifactTags(content: string): string {
+  // Remove complete <amplifyArtifact ...>...</amplifyArtifact> blocks (with any inner content)
+  let cleaned = content.replace(/<amplifyArtifact\b[^>]*>[\s\S]*?<\/amplifyArtifact>/g, '');
 
   // Remove any remaining orphan open/close tags
-  cleaned = cleaned.replace(/<\/?boltArtifact\b[^>]*>/g, '');
-  cleaned = cleaned.replace(/<\/?boltAction\b[^>]*>/g, '');
+  cleaned = cleaned.replace(/<\/?amplifyArtifact\b[^>]*>/g, '');
+  cleaned = cleaned.replace(/<\/?amplifyAction\b[^>]*>/g, '');
 
-  // Remove bolt-quick-actions tags
-  cleaned = cleaned.replace(/<\/?bolt-quick-actions>/g, '');
-  cleaned = cleaned.replace(/<bolt-quick-action\b[^>]*>[\s\S]*?<\/bolt-quick-action>/g, '');
+  // Remove amplify-quick-actions tags
+  cleaned = cleaned.replace(/<\/?amplify-quick-actions>/g, '');
+  cleaned = cleaned.replace(/<amplify-quick-action\b[^>]*>[\s\S]*?<\/amplify-quick-action>/g, '');
 
   return cleaned;
 }
@@ -121,14 +121,14 @@ export class StreamingMessageParser {
     let earlyBreak = false;
 
     while (i < input.length) {
-      if (input.startsWith(BOLT_QUICK_ACTIONS_OPEN, i)) {
-        const actionsBlockEnd = input.indexOf(BOLT_QUICK_ACTIONS_CLOSE, i);
+      if (input.startsWith(AMPLIFY_QUICK_ACTIONS_OPEN, i)) {
+        const actionsBlockEnd = input.indexOf(AMPLIFY_QUICK_ACTIONS_CLOSE, i);
 
         if (actionsBlockEnd !== -1) {
-          const actionsBlockContent = input.slice(i + BOLT_QUICK_ACTIONS_OPEN.length, actionsBlockEnd);
+          const actionsBlockContent = input.slice(i + AMPLIFY_QUICK_ACTIONS_OPEN.length, actionsBlockEnd);
 
-          // Find all <bolt-quick-action ...>label</bolt-quick-action> inside
-          const quickActionRegex = /<bolt-quick-action([^>]*)>([\s\S]*?)<\/bolt-quick-action>/g;
+          // Find all <amplify-quick-action ...>label</amplify-quick-action> inside
+          const quickActionRegex = /<amplify-quick-action([^>]*)>([\s\S]*?)<\/amplify-quick-action>/g;
           let match;
           const buttons = [];
 
@@ -147,7 +147,7 @@ export class StreamingMessageParser {
             );
           }
           output += createQuickActionGroup(buttons);
-          i = actionsBlockEnd + BOLT_QUICK_ACTIONS_CLOSE.length;
+          i = actionsBlockEnd + AMPLIFY_QUICK_ACTIONS_CLOSE.length;
           continue;
         }
       }
@@ -176,8 +176,8 @@ export class StreamingMessageParser {
                 content = cleanEscapedTags(content);
               }
 
-              // Guard rail: strip any leaked bolt artifact/action tags from file content
-              content = stripBoltArtifactTags(content);
+              // Guard rail: strip any leaked amplify artifact/action tags from file content
+              content = stripAmplifyArtifactTags(content);
 
               content += '\n';
             }
@@ -195,7 +195,7 @@ export class StreamingMessageParser {
                */
               actionId: String(state.actionId - 1),
 
-              action: currentAction as BoltAction,
+              action: currentAction as AmplifyAction,
             });
 
             state.insideAction = false;
@@ -211,8 +211,8 @@ export class StreamingMessageParser {
                 content = cleanEscapedTags(content);
               }
 
-              // Guard rail: strip leaked bolt tags (preserve potential partial tag at end)
-              content = stripBoltArtifactTags(content);
+              // Guard rail: strip leaked amplify tags (preserve potential partial tag at end)
+              content = stripAmplifyArtifactTags(content);
 
               this._options.callbacks?.onActionStream?.({
                 artifactId: currentArtifact.id,
@@ -244,7 +244,7 @@ export class StreamingMessageParser {
                 artifactId: currentArtifact.id,
                 messageId,
                 actionId: String(state.actionId++),
-                action: state.currentAction as BoltAction,
+                action: state.currentAction as AmplifyAction,
               });
 
               i = actionEndIndex + 1;
@@ -307,7 +307,7 @@ export class StreamingMessageParser {
                 id: artifactId,
                 title: artifactTitle,
                 type,
-              } satisfies BoltArtifactData;
+              } satisfies AmplifyArtifactData;
 
               state.currentArtifact = currentArtifact;
 
@@ -415,7 +415,7 @@ export class StreamingMessageParser {
 
 const createArtifactElement: ElementFactory = (props) => {
   const elementProps = [
-    'class="__boltArtifact__"',
+    'class="__amplifyArtifact__"',
     ...Object.entries(props).map(([key, value]) => {
       return `data-${camelToDashCase(key)}=${JSON.stringify(value)}`;
     }),
@@ -430,8 +430,8 @@ function camelToDashCase(input: string) {
 
 function createQuickActionElement(props: Record<string, string>, label: string) {
   const elementProps = [
-    'class="__boltQuickAction__"',
-    'data-bolt-quick-action="true"',
+    'class="__amplifyQuickAction__"',
+    'data-amplify-quick-action="true"',
     ...Object.entries(props).map(([key, value]) => `data-${camelToDashCase(key)}=${JSON.stringify(value)}`),
   ];
 
@@ -439,5 +439,5 @@ function createQuickActionElement(props: Record<string, string>, label: string) 
 }
 
 function createQuickActionGroup(buttons: string[]) {
-  return `<div class=\"__boltQuickAction__\" data-bolt-quick-action=\"true\">${buttons.join('')}</div>`;
+  return `<div class=\"__amplifyQuickAction__\" data-amplify-quick-action=\"true\">${buttons.join('')}</div>`;
 }

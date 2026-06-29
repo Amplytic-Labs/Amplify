@@ -1,6 +1,6 @@
 # Vector DB + Planning Architecture Implementation Plan
 
-## Open_Claude (Bolt.diy fork) — Detailed Implementation Guide
+## Amplify (Amplify) — Detailed Implementation Guide
 
 **Version:** 1.0  
 **Date:** 2026-06-13  
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-This document details the implementation of five interconnected systems for Open_Claude:
+This document details the implementation of five interconnected systems for Amplify:
 
 1. **Vector DB (Orama)** — Replaces localStorage substring matching with BM25 full-text search for user profiles and project context. Dramatically reduces token consumption by sending only relevant context to the LLM instead of full data dumps.
 
@@ -400,9 +400,9 @@ All points completed → AI returns to main chat with summary
 ### 8.2 Chat History Persistence
 
 - No changes to the IndexedDB schema for `chats` and `snapshots` stores
-- The vector store uses its own separate IndexedDB database (`bolt_vector_stores`)
-- Project categorization uses localStorage (`bolt_projects`)
-- Plan data uses localStorage (`bolt_plans`)
+- The vector store uses its own separate IndexedDB database (`amplify_vector_stores`)
+- Project categorization uses localStorage (`amplify_projects`)
+- Plan data uses localStorage (`amplify_plans`)
 
 ### 8.3 WebContainer Integration
 

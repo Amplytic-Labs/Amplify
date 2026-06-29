@@ -8,7 +8,7 @@ interface ToolInvocationGroupProps {
 
 export const ToolInvocationGroup = memo(({ parts }: ToolInvocationGroupProps) => {
   return (
-    <div className="my-2 border border-bolt-elements-borderColor rounded-md overflow-hidden">
+    <div className="my-2 border border-amplify-elements-borderColor rounded-md overflow-hidden">
       {parts.map((part, index) => (
         <ToolInvocationItem key={index} part={part} grouped />
       ))}

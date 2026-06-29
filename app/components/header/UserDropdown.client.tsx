@@ -10,7 +10,7 @@ export function UserDropdown() {
   return (
     <MotionDropdown
       trigger={
-        <div className="p-2 rounded-full hover:bg-bolt-elements-background-depth-1 cursor-pointer text-bolt-elements-textPrimary transition-colors">
+        <div className="p-2 rounded-full hover:bg-amplify-elements-background-depth-1 cursor-pointer text-amplify-elements-textPrimary transition-colors">
           <div className="i-ph:user-circle text-2xl" />
         </div>
       }

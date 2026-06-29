@@ -99,23 +99,23 @@ export const DocxRenderer = memo(({ filePath, content }: DocxRendererProps) => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary p-6">
+      <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary p-6">
         <div className="text-center">
-          <div className="i-ph:warning text-4xl mb-2 text-bolt-elements-textTertiary" />
-          <p className="text-sm font-medium text-bolt-elements-textPrimary mb-1">DOCX Render Error</p>
-          <p className="text-xs text-bolt-elements-textTertiary">{error}</p>
+          <div className="i-ph:warning text-4xl mb-2 text-amplify-elements-textTertiary" />
+          <p className="text-sm font-medium text-amplify-elements-textPrimary mb-1">DOCX Render Error</p>
+          <p className="text-xs text-amplify-elements-textTertiary">{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full overflow-auto bg-bolt-elements-background-depth-1 relative">
+    <div className="h-full w-full overflow-auto bg-amplify-elements-background-depth-1 relative">
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-bolt-elements-background-depth-1/80 z-10">
+        <div className="absolute inset-0 flex items-center justify-center bg-amplify-elements-background-depth-1/80 z-10">
           <div className="flex flex-col items-center gap-2">
-            <div className="i-ph:spinner-gap text-3xl animate-spin text-bolt-elements-item-contentAccent" />
-            <span className="text-sm text-bolt-elements-textSecondary">Rendering document...</span>
+            <div className="i-ph:spinner-gap text-3xl animate-spin text-amplify-elements-item-contentAccent" />
+            <span className="text-sm text-amplify-elements-textSecondary">Rendering document...</span>
           </div>
         </div>
       )}

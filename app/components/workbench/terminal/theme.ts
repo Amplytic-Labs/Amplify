@@ -1,6 +1,6 @@
 import type { ITheme } from '@xterm/xterm';
 
-const boltLightTheme = {
+const amplifyLightTheme = {
   // Core colors
   background: '#f3f0f5',
   foreground: '#333333',
@@ -27,7 +27,7 @@ const boltLightTheme = {
   brightWhite: '#a5a5a5',
 };
 
-const boltTheme = {
+const amplifyTheme = {
   // Core colors
   background: '#1e1e21',
   foreground: '#eff0eb',
@@ -55,7 +55,7 @@ const boltTheme = {
 };
 
 export function getTerminalTheme(theme: 'light' | 'dark', overrides?: ITheme): ITheme {
-  const baseTheme = theme === 'light' ? boltLightTheme : boltTheme;
+  const baseTheme = theme === 'light' ? amplifyLightTheme : amplifyTheme;
 
   return {
     ...baseTheme,

@@ -51,7 +51,7 @@ export function NavUser({
             <DropdownMenu.Content
               className={classNames(
                 'min-w-56 rounded-lg p-1.5',
-                'bg-bolt-elements-bg-depth-2 border border-bolt-elements-borderColor',
+                'bg-amplify-elements-bg-depth-2 border border-amplify-elements-borderColor',
                 'shadow-lg z-50',
                 'animate-in fade-in-80 zoom-in-95',
               )}
@@ -64,19 +64,19 @@ export function NavUser({
                 <div className="flex items-center gap-2 px-2 py-1.5 text-left text-sm">
                   {avatarEl}
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium text-bolt-elements-textPrimary">{user.name}</span>
-                    <span className="truncate text-xs text-bolt-elements-textSecondary">{user.email}</span>
+                    <span className="truncate font-medium text-amplify-elements-textPrimary">{user.name}</span>
+                    <span className="truncate text-xs text-amplify-elements-textSecondary">{user.email}</span>
                   </div>
                 </div>
               </DropdownMenu.Label>
 
-              <DropdownMenu.Separator className="h-px bg-bolt-elements-borderColor my-1" />
+              <DropdownMenu.Separator className="h-px bg-amplify-elements-borderColor my-1" />
 
               <DropdownMenu.Group>
                 <DropdownMenuItem icon={<Sparkles className="size-4" />}>Upgrade to Pro</DropdownMenuItem>
               </DropdownMenu.Group>
 
-              <DropdownMenu.Separator className="h-px bg-bolt-elements-borderColor my-1" />
+              <DropdownMenu.Separator className="h-px bg-amplify-elements-borderColor my-1" />
 
               <DropdownMenu.Group>
                 <DropdownMenuItem icon={<BadgeCheck className="size-4" />}>Account</DropdownMenuItem>
@@ -84,7 +84,7 @@ export function NavUser({
                 <DropdownMenuItem icon={<Bell className="size-4" />}>Notifications</DropdownMenuItem>
               </DropdownMenu.Group>
 
-              <DropdownMenu.Separator className="h-px bg-bolt-elements-borderColor my-1" />
+              <DropdownMenu.Separator className="h-px bg-amplify-elements-borderColor my-1" />
 
               <DropdownMenuItem icon={<LogOut className="size-4" />}>Log out</DropdownMenuItem>
             </DropdownMenu.Content>
@@ -109,7 +109,7 @@ function DropdownMenuItem({
     <DropdownMenu.Item
       className={classNames(
         'relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
-        'text-bolt-elements-textPrimary cursor-pointer outline-none',
+        'text-amplify-elements-textPrimary cursor-pointer outline-none',
         'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
         'transition-colors select-none',
       )}

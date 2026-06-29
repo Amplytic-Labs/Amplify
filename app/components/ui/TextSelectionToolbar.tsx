@@ -551,7 +551,7 @@ export function TextSelectionToolbar({
     if (!selection) return;
     // Dispatch a custom event that Chat.client.tsx listens for
     window.dispatchEvent(
-      new CustomEvent('bolt:quote-text', { detail: selection.text }),
+      new CustomEvent('amplify:quote-text', { detail: selection.text }),
     );
     // Clear the selection so the toolbar disappears
     window.getSelection()?.removeAllRanges();

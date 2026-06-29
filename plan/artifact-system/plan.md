@@ -2,7 +2,7 @@
 
 ## Overview
 
-bolt.diy already has a sophisticated artifact system using `<boltArtifact>` and `<boltAction>` tags. Instead of rebuilding it, we will extend the existing infrastructure to support a wider range of renderable types and add versioning.
+Amplify already has a sophisticated artifact system using `<amplifyArtifact>` and `<amplifyAction>` tags. Instead of rebuilding it, we will extend the existing infrastructure to support a wider range of renderable types and add versioning.
 
 ## Implementation Details
 
@@ -44,7 +44,7 @@ Ensure that when the LLM creates a file that is designated as an "artifact" (e.g
 
 ### 2. Integration Tests
 
-- **Parser $\rightarrow$ UI**: Verify that a `<boltArtifact>` tag in the LLM stream triggers the opening of the Artifact panel with the correct content.
+- **Parser $\rightarrow$ UI**: Verify that a `<amplifyArtifact>` tag in the LLM stream triggers the opening of the Artifact panel with the correct content.
 - **ActionRunner $\rightarrow$ Versioning**: Verify that every `file` action targeting an artifact path creates a new version in the store.
 - **Renderer Sandbox**: Verify that HTML artifacts are rendered in a sandboxed iframe and cannot access the parent window's cookies or localStorage.
 

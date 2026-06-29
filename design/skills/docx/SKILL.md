@@ -11,7 +11,7 @@ description: >
 
 # DOCX Generation Skill
 
-> For WebContainer / bolt.diy environments using the `docx` npm package
+> For WebContainer / Amplify environments using the `docx` npm package
 
 ---
 

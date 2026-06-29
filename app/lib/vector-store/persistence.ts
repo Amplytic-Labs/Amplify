@@ -6,7 +6,7 @@
  * browser sessions without requiring any server-side storage.
  */
 
-const VECTOR_DB_NAME = 'bolt_vector_stores';
+const VECTOR_DB_NAME = 'amplify_vector_stores';
 const VECTOR_DB_VERSION = 1;
 
 /**

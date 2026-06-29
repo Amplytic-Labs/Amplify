@@ -2,7 +2,7 @@
  * Plan Store
  *
  * Manages the lifecycle of Plans and their PlanPoints.
- * Persists everything to IndexedDB (bolt_plans_db) for reliable storage
+ * Persists everything to IndexedDB (amplify_plans_db) for reliable storage
  * beyond the ~5MB localStorage limit.
  *
  * Key operations:
@@ -28,7 +28,7 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('PlanStore');
 
-const PLAN_DB_NAME = 'bolt_plans_db';
+const PLAN_DB_NAME = 'amplify_plans_db';
 const PLAN_DB_VERSION = 1;
 const PLAN_STORE_NAME = 'plans';
 const PLAN_DATA_KEY = 'plan_store_data';

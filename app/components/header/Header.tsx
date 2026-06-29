@@ -99,7 +99,7 @@ export function Header() {
     <header
       className={classNames('flex items-center  justify-between h-[var(--header-height)] relative z-[10]', {
         'border-transparent': !chat.started,
-        'border-bolt-elements-borderColor': chat.started,
+        'border-amplify-elements-borderColor': chat.started,
       })}
     >
       {/* Mobile Layout */}
@@ -109,7 +109,7 @@ export function Header() {
           <>
             <button
               onClick={() => workbenchStore.showWorkbench.set(false)}
-              className="flex items-center gap-1 text-sm shrink-0 bg-transparent  text-bolt-elements-textPrimary hover:text-accent transition-colors"
+              className="flex items-center gap-1 text-sm shrink-0 bg-transparent  text-amplify-elements-textPrimary hover:text-accent transition-colors"
             >
               <div className="i-ph:caret-left text-lg" />
               <span className=" xs:inline">Back</span>
@@ -129,7 +129,7 @@ export function Header() {
               <SidebarTrigger />
 
               <div
-                className="flex-1 truncate text-lg text-bolt-elements-textPrimary flex items-center"
+                className="flex-1 truncate text-lg text-amplify-elements-textPrimary flex items-center"
                 style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
               >
                 <ClientOnly>{() => <ChatDescription />}</ClientOnly>
@@ -149,7 +149,7 @@ export function Header() {
 
       {/* Desktop Layout */}
       <div className={classNames('hidden lg:flex items-center justify-between w-full')}>
-        <div className="flex items-center gap-2 z-logo text-bolt-elements-textPrimary cursor-pointer">
+        <div className="flex items-center gap-2 z-logo text-amplify-elements-textPrimary cursor-pointer">
           <div className="text-2xl font-semibold text-accent flex items-center">
             <SidebarTrigger />
             {showWorkbench && (
@@ -165,7 +165,7 @@ export function Header() {
                     align="center"
                     trigger={
                       <div
-                        className="flex-1 pr-4 truncate text-[16px] text-bolt-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center gap-1.5"
+                        className="flex-1 pr-4 truncate text-[16px] text-amplify-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center gap-1.5"
                         style={{ fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
                       >
                         <ClientOnly>{() => <ChatDescription />}</ClientOnly>
@@ -177,7 +177,7 @@ export function Header() {
                   </MotionDropdown>
                 ) : (
                   <div
-                    className="flex-1 pr-4 top-5 truncate text-lg text-bolt-elements-textPrimary flex items-center justify-center"
+                    className="flex-1 pr-4 top-5 truncate text-lg text-amplify-elements-textPrimary flex items-center justify-center"
                     style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
                   >
                     <ClientOnly>{() => <ChatDescription />}</ClientOnly>

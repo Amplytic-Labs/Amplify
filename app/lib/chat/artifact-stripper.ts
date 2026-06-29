@@ -1,10 +1,10 @@
 /**
- * Artifact stripper — removes `<boltArtifact>…</boltArtifact>` blocks from a
+ * Artifact stripper — removes `<amplifyArtifact>…</amplifyArtifact>` blocks from a
  * streamed assistant response so the "Created N files" / "Ran N command" trace
  * trees never render in the chat.
  *
  * WHY: when the model calls the `inject_template` tool, the tool's `execute`
- * writes a full `<boltArtifact>` document (template files + `npm install`
+ * writes a full `<amplifyArtifact>` document (template files + `npm install`
  * shell action) into the message text as a side-effect. That artifact is then
  * parsed by the message parser (which actually creates the files and runs the
  * commands via the action runner) AND rendered by the Markdown component
@@ -19,23 +19,23 @@
  * still run — only the visual trace tree is suppressed.
  *
  * The stripper is STREAMING-SAFE: while the artifact is still streaming the
- * closing `</boltArtifact>` tag may not have arrived yet. We treat an unclosed
- * `<boltArtifact>` as an in-progress artifact and strip from the opener to the
+ * closing `</amplifyArtifact>` tag may not have arrived yet. We treat an unclosed
+ * `<amplifyArtifact>` as an in-progress artifact and strip from the opener to the
  * end so the partial artifact never flashes in the UI.
  */
 
-const ARTIFACT_OPEN_TAG = '<boltArtifact';
-const ARTIFACT_CLOSE_TAG = '</boltArtifact>';
+const ARTIFACT_OPEN_TAG = '<amplifyArtifact';
+const ARTIFACT_CLOSE_TAG = '</amplifyArtifact>';
 
 /**
- * Remove every `<boltArtifact …>…</boltArtifact>` block (and any in-progress
+ * Remove every `<amplifyArtifact …>…</amplifyArtifact>` block (and any in-progress
  * unclosed opener) from `text`. Also collapses the blank lines a stripped
  * block leaves behind so the surrounding answer text stays tidy.
  *
  * This is O(n) and allocation-light; it re-runs on every streaming tick so it
  * must stay cheap. The input is typically a few KB at most.
  */
-export function stripBoltArtifacts(text: string): string {
+export function stripAmplifyArtifacts(text: string): string {
   if (!text || typeof text !== 'string') {
     return text || '';
   }
@@ -62,7 +62,7 @@ export function stripBoltArtifacts(text: string): string {
       out += text.slice(cursor, openIdx);
     }
 
-    // Find the matching `</boltArtifact>` closer.
+    // Find the matching `</amplifyArtifact>` closer.
     const closeIdx = text.indexOf(ARTIFACT_CLOSE_TAG, openIdx);
 
     /*

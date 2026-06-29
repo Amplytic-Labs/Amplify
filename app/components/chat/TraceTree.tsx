@@ -97,7 +97,7 @@ export function TraceTree({
           setIsOpen(!isOpen);
           onHeaderClick?.();
         }}
-        className="inline-flex items-center gap-2 text-sm text-left cursor-pointer group px-4 py-0 transition-colors bg-bolt-elements-background-depth-1 rounded-lg"
+        className="inline-flex items-center gap-2 text-sm text-left cursor-pointer group px-4 py-0 transition-colors bg-amplify-elements-background-depth-1 rounded-lg"
       >
         {/* Header icon */}
         {headerIcon === 'plan' ? (

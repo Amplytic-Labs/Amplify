@@ -1,5 +1,5 @@
 import ignore from 'ignore';
-import { escapeBoltTags } from './projectCommands';
+import { escapeAmplifyTags } from './projectCommands';
 
 // Common patterns to ignore, similar to .gitignore
 export const IGNORE_PATTERNS = [
@@ -107,16 +107,16 @@ export const detectProjectType = async (
 
 export const filesToArtifacts = (files: { [path: string]: { content: string } }, id: string): string => {
   return `
-<boltArtifact id="${id}" title="User Updated Files">
+<amplifyArtifact id="${id}" title="User Updated Files">
 ${Object.keys(files)
   .map(
     (filePath) => `
-<boltAction type="file" filePath="${filePath}">
-${escapeBoltTags(files[filePath].content)}
-</boltAction>
+<amplifyAction type="file" filePath="${filePath}">
+${escapeAmplifyTags(files[filePath].content)}
+</amplifyAction>
 `,
   )
   .join('\n')}
-</boltArtifact>
+</amplifyArtifact>
   `;
 };

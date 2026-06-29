@@ -23,7 +23,7 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
   };
 
   return (
-    <div className="inline-flex items-center gap-1 p-0.5 bg-bolt-elements-background-depth-3 rounded-full border border-bolt-elements-borderColor transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+    <div className="inline-flex items-center gap-1 p-0.5 bg-amplify-elements-background-depth-3 rounded-full border border-amplify-elements-borderColor transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
       <LayoutGroup id="minimal-toggle-preset-two">
         {options.map((option) => {
           const isActive = option.value === selected;
@@ -55,8 +55,8 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
                   <IconComponent
                     className={`transition-colors duration-200 w-3.5 h-3.5 ${
                       isActive
-                        ? 'text-bolt-elements-item-contentAccent'
-                        : 'text-bolt-elements-item-contentDefault hover:text-bolt-elements-item-contentActive'
+                        ? 'text-amplify-elements-item-contentAccent'
+                        : 'text-amplify-elements-item-contentDefault hover:text-amplify-elements-item-contentActive'
                     }`}
                   />
                 )}
@@ -73,7 +73,7 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
                     transition={smoothSpring}
                     className="overflow-hidden whitespace-nowrap"
                   >
-                    <span className="font-semibold tracking-wide text-bolt-elements-item-contentAccent uppercase text-[10px]">
+                    <span className="font-semibold tracking-wide text-amplify-elements-item-contentAccent uppercase text-[10px]">
                       {option.text}
                     </span>
                   </motion.div>
@@ -81,8 +81,8 @@ export const Slider = genericMemo(<T,>({ selected, options, setSelected }: Slide
                   <span
                     className={`font-semibold tracking-wide uppercase text-[10px] px-1 transition-colors duration-200 ${
                       isActive
-                        ? 'text-bolt-elements-item-contentAccent'
-                        : 'text-bolt-elements-item-contentDefault hover:text-bolt-elements-item-contentActive'
+                        ? 'text-amplify-elements-item-contentAccent'
+                        : 'text-amplify-elements-item-contentDefault hover:text-amplify-elements-item-contentActive'
                     }`}
                   >
                     {option.text}

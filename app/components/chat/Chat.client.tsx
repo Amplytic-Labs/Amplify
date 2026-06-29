@@ -431,7 +431,7 @@ export const ChatImpl = memo(
           continue;
         }
 
-        if (!result.includes('open_claude_file_mutation')) {
+        if (!result.includes('amplify_file_mutation')) {
           continue;
         }
 
@@ -443,7 +443,7 @@ export const ChatImpl = memo(
           continue;
         }
 
-        if (!parsed || parsed.type !== 'open_claude_file_mutation' || !Array.isArray(parsed.operations)) {
+        if (!parsed || parsed.type !== 'amplify_file_mutation' || !Array.isArray(parsed.operations)) {
           continue;
         }
 
@@ -590,7 +590,7 @@ export const ChatImpl = memo(
         const fullSystemPrompt = getSystemPrompt({
           cwd: '/home/project',
           allowedHtmlElements: [] as any[],
-          modificationTagName: 'boltArtifact',
+          modificationTagName: 'amplifyArtifact',
           skills,
           memory,
           userContext: currentUserContext,
@@ -882,8 +882,8 @@ export const ChatImpl = memo(
         }, 10);
       };
 
-      window.addEventListener('bolt:quote-text', handleQuoteText);
-      return () => window.removeEventListener('bolt:quote-text', handleQuoteText);
+      window.addEventListener('amplify:quote-text', handleQuoteText);
+      return () => window.removeEventListener('amplify:quote-text', handleQuoteText);
     }, [input, handleInputChange]);
 
     const runAnimation = async () => {
@@ -970,7 +970,7 @@ export const ChatImpl = memo(
       if (selectedElement) {
         console.log('Selected Element:', selectedElement);
 
-        const elementInfo = `<div class=\"__boltSelectedElement__\" data-element='${JSON.stringify(selectedElement)}'>${JSON.stringify(`${selectedElement.displayText}`)}</div>`;
+        const elementInfo = `<div class=\"__amplifySelectedElement__\" data-element='${JSON.stringify(selectedElement)}'>${JSON.stringify(`${selectedElement.displayText}`)}</div>`;
         finalMessageContent = messageContent + elementInfo;
       }
 

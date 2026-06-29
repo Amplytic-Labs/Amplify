@@ -179,11 +179,11 @@ export async function getTemplates(templateName: string, title?: string) {
      */
   }
 
-  // exclude    .bolt
-  filteredFiles = filteredFiles.filter((x) => x.path.startsWith('.bolt') == false);
+  // exclude    .amplify
+  filteredFiles = filteredFiles.filter((x) => x.path.startsWith('.amplify') == false);
 
-  // check for ignore file in .bolt folder
-  const templateIgnoreFile = files.find((x) => x.path.startsWith('.bolt') && x.name == 'ignore');
+  // check for ignore file in .amplify folder
+  const templateIgnoreFile = files.find((x) => x.path.startsWith('.amplify') && x.name == 'ignore');
 
   const filesToImport = {
     files: filteredFiles,
@@ -206,22 +206,22 @@ export async function getTemplates(templateName: string, title?: string) {
   const devCommand = isExpo ? 'npm start' : 'npm run dev';
 
   const assistantMessage = `
-<boltArtifact id="imported-files" title="${title || 'Create initial files'}" type="template">
+<amplifyArtifact id="imported-files" title="${title || 'Create initial files'}" type="template">
 ${filesToImport.files
   .map(
     (file) =>
-      `<boltAction type="file" filePath="${file.path}">
+      `<amplifyAction type="file" filePath="${file.path}">
 ${file.content}
-</boltAction>`,
+</amplifyAction>`,
   )
   .join('\n')}
-<boltAction type="shell">
+<amplifyAction type="shell">
 npm install
-</boltAction>
-</boltArtifact>
+</amplifyAction>
+</amplifyArtifact>
 `;
   let userMessage = ``;
-  const templatePromptFile = files.filter((x) => x.path.startsWith('.bolt')).find((x) => x.name == 'prompt');
+  const templatePromptFile = files.filter((x) => x.path.startsWith('.amplify')).find((x) => x.name == 'prompt');
 
   if (templatePromptFile) {
     userMessage = `

@@ -125,7 +125,7 @@ export const MotionDropdown = ({
             style={positionStyle}
             className={classNames(
               'absolute top-full mt-2 z-[1000] min-w-[200px] p-2 rounded-lg shadow-lg',
-              'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
+              'bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor',
               // Only apply static alignment classes if we didn't compute an inline position
               Object.keys(positionStyle).length === 0 ? alignmentClasses[align] : '',
               className,
@@ -155,7 +155,7 @@ export const MotionDropdownItem = ({
     }}
     className={classNames(
       'flex items-center gap-2 px-3 py-2 rounded-lg text-sm',
-      'text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-3',
+      'text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-3',
       'transition-colors cursor-pointer outline-none',
       className,
     )}
@@ -164,4 +164,4 @@ export const MotionDropdownItem = ({
   </div>
 );
 
-export const MotionDropdownSeparator = () => <div className="h-px bg-bolt-elements-borderColor my-1" />;
+export const MotionDropdownSeparator = () => <div className="h-px bg-amplify-elements-borderColor my-1" />;

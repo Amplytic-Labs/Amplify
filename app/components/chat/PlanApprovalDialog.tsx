@@ -86,22 +86,22 @@ export const PlanApprovalDialog = memo(function PlanApprovalDialog({
       <Dialog className="w-[560px] max-h-[80vh] flex flex-col" showCloseButton={false}>
         <div className="p-6 bg-white dark:bg-gray-950 relative z-10 flex flex-col max-h-[80vh]">
           <DialogTitle className="flex items-center gap-2">
-            <div className="i-ph:list-checks h-5 w-5 text-bolt-elements-buttonPrimaryColor" />
+            <div className="i-ph:list-checks h-5 w-5 text-amplify-elements-buttonPrimaryColor" />
             Review Plan
           </DialogTitle>
           <DialogDescription className="mt-1 line-clamp-2">{signal.taskDescription}</DialogDescription>
 
           {/* Plan points list */}
-          <div className="mt-4 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-rounded scrollbar-thumb-bolt-elements-bg-depth-3 pr-1">
+          <div className="mt-4 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-rounded scrollbar-thumb-amplify-elements-bg-depth-3 pr-1">
             <div className="space-y-3">
               {displayPoints.map((point, index) => (
                 <div
                   key={index}
-                  className="rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3"
+                  className="rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 p-3"
                 >
                   <div className="flex items-start gap-2.5">
                     {/* Step number */}
-                    <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent text-xs font-bold mt-0.5">
+                    <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-amplify-elements-item-backgroundAccent text-amplify-elements-item-contentAccent text-xs font-bold mt-0.5">
                       {index + 1}
                     </div>
 
@@ -112,14 +112,14 @@ export const PlanApprovalDialog = memo(function PlanApprovalDialog({
                             type="text"
                             value={point.title}
                             onChange={(e) => handlePointTitleChange(index, e.target.value)}
-                            className="w-full text-sm font-medium bg-transparent border border-bolt-elements-borderColor rounded px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-bolt-elements-buttonPrimaryColor"
+                            className="w-full text-sm font-medium bg-transparent border border-amplify-elements-borderColor rounded px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amplify-elements-buttonPrimaryColor"
                             placeholder="Step title"
                           />
                           <textarea
                             value={point.description}
                             onChange={(e) => handlePointDescriptionChange(index, e.target.value)}
                             rows={2}
-                            className="w-full text-xs bg-transparent border border-bolt-elements-borderColor rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-bolt-elements-buttonPrimaryColor resize-none"
+                            className="w-full text-xs bg-transparent border border-amplify-elements-borderColor rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-amplify-elements-buttonPrimaryColor resize-none"
                             placeholder="Step description"
                           />
                         </>
@@ -154,7 +154,7 @@ export const PlanApprovalDialog = memo(function PlanApprovalDialog({
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-bolt-elements-borderColor">
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-amplify-elements-borderColor">
             <button
               onClick={onReject}
               className={classNames(

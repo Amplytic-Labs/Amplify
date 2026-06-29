@@ -16,7 +16,7 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
 
   if (!file || file.type !== 'file') {
     return (
-      <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
+      <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary">
         File not found or is not a file.
       </div>
     );
@@ -27,11 +27,11 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
 
   if (extension === 'md') {
     return (
-      <div className="h-full overflow-auto p-6 modern-scrollbar bg-bolt-elements-background">
+      <div className="h-full overflow-auto p-6 modern-scrollbar bg-amplify-elements-background">
         <ReactMarkdown
           remarkPlugins={remarkPlugins(false)}
           rehypePlugins={rehypePlugins(false)}
-          className="prose prose-sm max-w-none text-bolt-elements-textPrimary"
+          className="prose prose-sm max-w-none text-amplify-elements-textPrimary"
         >
           {content}
         </ReactMarkdown>
@@ -41,7 +41,7 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
 
   if (extension === 'mermaid') {
     return (
-      <div className="h-full overflow-auto flex items-center justify-center p-6 bg-bolt-elements-background">
+      <div className="h-full overflow-auto flex items-center justify-center p-6 bg-amplify-elements-background">
         <Mermaid chart={content} />
       </div>
     );
@@ -49,7 +49,7 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
 
   if (extension === 'svg') {
     return (
-      <div className="h-full overflow-auto flex items-center justify-center p-6 bg-bolt-elements-background">
+      <div className="h-full overflow-auto flex items-center justify-center p-6 bg-amplify-elements-background">
         <div className="max-w-full max-h-full" dangerouslySetInnerHTML={{ __html: content }} />
       </div>
     );
@@ -68,7 +68,7 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
   }
 
   return (
-    <div className="flex items-center justify-center h-full text-bolt-elements-textSecondary">
+    <div className="flex items-center justify-center h-full text-amplify-elements-textSecondary">
       No renderer available for .{extension} files.
     </div>
   );

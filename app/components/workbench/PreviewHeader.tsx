@@ -37,7 +37,7 @@ const InjectFonts = () => (
       background: transparent;
     }
     .custom-scroll::-webkit-scrollbar-thumb {
-      background: var(--bolt-elements-borderColor);
+      background: var(--amplify-elements-borderColor);
       border-radius: 2px;
     }
   `}</style>
@@ -85,7 +85,7 @@ const IconWithTooltip = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -4, scale: 0.95 }}
           transition={{ duration: 0.15 }}
-          className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-bolt-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-bolt-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-bolt-elements-borderColor shadow-sm"
+          className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-amplify-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-amplify-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-amplify-elements-borderColor shadow-sm"
         >
           {tooltip}
         </motion.div>
@@ -257,10 +257,10 @@ export const PreviewHeader = memo(() => {
                 borderRadius: '14px',
                 height: '38px',
               }}
-              className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-bolt-elements-background-depth-3 border border-bolt-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
+              className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
                 activePart === 'port'
                   ? 'px-[14px] w-auto cursor-pointer'
-                  : 'w-[12px] p-0 cursor-pointer hover:bg-bolt-elements-background-depth-2'
+                  : 'w-[12px] p-0 cursor-pointer hover:bg-amplify-elements-background-depth-2'
               }`}
             >
               <AnimatePresence>
@@ -270,7 +270,7 @@ export const PreviewHeader = memo(() => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-bolt-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-bolt-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-bolt-elements-borderColor shadow-sm"
+                    className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-amplify-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-amplify-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-amplify-elements-borderColor shadow-sm"
                   >
                     Ports
                   </motion.div>
@@ -285,7 +285,7 @@ export const PreviewHeader = memo(() => {
                   filter: activePart === 'port' ? 'blur(0px)' : 'blur(4px)',
                 }}
                 transition={getContentTransition(activePart === 'port')}
-                className="flex items-center text-sm font-medium text-bolt-elements-textPrimary whitespace-nowrap"
+                className="flex items-center text-sm font-medium text-amplify-elements-textPrimary whitespace-nowrap"
               >
                 <div className="i-ph:plug w-3.5 h-3.5 mr-2" />
                 <span>{selectedPort}</span>
@@ -313,7 +313,7 @@ export const PreviewHeader = memo(() => {
                   style={{
                     borderRadius: '12px',
                   }}
-                  className="absolute left-0 mt-2 w-[130px] z-50 py-1.5 custom-scroll max-h-[200px] overflow-y-auto bg-bolt-elements-background-depth-3 border border-bolt-elements-borderColor shadow-lg"
+                  className="absolute left-0 mt-2 w-[130px] z-50 py-1.5 custom-scroll max-h-[200px] overflow-y-auto bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor shadow-lg"
                 >
                   {sortedPreviews.map((preview) => (
                     <div
@@ -326,8 +326,8 @@ export const PreviewHeader = memo(() => {
                       }}
                       className={`px-3 py-1.5 text-xs text-left cursor-pointer transition-colors duration-150 flex items-center justify-between ${
                         activePreviewIndex === preview.index
-                          ? 'text-bolt-elements-item-contentAccent bg-bolt-elements-background-depth-2 font-semibold'
-                          : 'text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2 hover:text-bolt-elements-item-contentActive'
+                          ? 'text-amplify-elements-item-contentAccent bg-amplify-elements-background-depth-2 font-semibold'
+                          : 'text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2 hover:text-amplify-elements-item-contentActive'
                       }`}
                     >
                       <span>{preview.port}</span>
@@ -357,10 +357,10 @@ export const PreviewHeader = memo(() => {
               borderRadius: '14px',
               height: '38px',
             }}
-            className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-bolt-elements-background-depth-3 border border-bolt-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
+            className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
               activePart === 'tools'
                 ? 'px-[14px] w-auto cursor-default'
-                : 'w-[12px] p-0 cursor-pointer hover:bg-bolt-elements-background-depth-2'
+                : 'w-[12px] p-0 cursor-pointer hover:bg-amplify-elements-background-depth-2'
             }`}
           >
             <AnimatePresence>
@@ -370,7 +370,7 @@ export const PreviewHeader = memo(() => {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-bolt-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-bolt-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-bolt-elements-borderColor shadow-sm"
+                  className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-amplify-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-amplify-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-amplify-elements-borderColor shadow-sm"
                 >
                   Tools
                 </motion.div>
@@ -385,12 +385,12 @@ export const PreviewHeader = memo(() => {
                 filter: activePart === 'tools' ? 'blur(0px)' : 'blur(4px)',
               }}
               transition={getContentTransition(activePart === 'tools')}
-              className="flex items-center gap-3.5 text-bolt-elements-textPrimary whitespace-nowrap"
+              className="flex items-center gap-3.5 text-amplify-elements-textPrimary whitespace-nowrap"
               style={{ pointerEvents: activePart === 'tools' ? 'auto' : 'none' }}
             >
               <IconWithTooltip id="refresh" tooltip="Refresh" hoveredIcon={hoveredIcon} setHoveredIcon={setHoveredIcon}>
                 <div
-                  className="i-ph:arrow-clockwise w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer"
+                  className="i-ph:arrow-clockwise w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
                   onClick={reloadPreview}
                 />
               </IconWithTooltip>
@@ -402,7 +402,7 @@ export const PreviewHeader = memo(() => {
                 setHoveredIcon={setHoveredIcon}
               >
                 <div
-                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isSelectionMode ? 'bg-bolt-elements-background-depth-2 text-bolt-elements-item-contentAccent' : 'text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2 hover:text-bolt-elements-item-contentActive'}`}
+                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isSelectionMode ? 'bg-amplify-elements-background-depth-2 text-amplify-elements-item-contentAccent' : 'text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2 hover:text-amplify-elements-item-contentActive'}`}
                   onClick={() => isSelectionModeAtom.set(!isSelectionMode)}
                 >
                   <div className="i-ph:selection w-5 h-5" />
@@ -417,7 +417,7 @@ export const PreviewHeader = memo(() => {
                 setHoveredIcon={setHoveredIcon}
               >
                 <div
-                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isDeviceModeOn ? 'bg-bolt-elements-background-depth-2 text-bolt-elements-item-contentAccent' : 'text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2 hover:text-bolt-elements-item-contentActive'}`}
+                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isDeviceModeOn ? 'bg-amplify-elements-background-depth-2 text-amplify-elements-item-contentAccent' : 'text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2 hover:text-amplify-elements-item-contentActive'}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     isDeviceModeOnAtom.set(!isDeviceModeOn);
@@ -444,7 +444,7 @@ export const PreviewHeader = memo(() => {
                         setHoveredIcon={setHoveredIcon}
                       >
                         <div
-                          className="i-ph:device-rotate w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer"
+                          className="i-ph:device-rotate w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
                           onClick={() => isLandscapeAtom.set(!isLandscape)}
                         />
                       </IconWithTooltip>
@@ -463,7 +463,7 @@ export const PreviewHeader = memo(() => {
                         setHoveredIcon={setHoveredIcon}
                       >
                         <div
-                          className={`${showDeviceFrameInPreview ? 'i-ph:device-mobile' : 'i-ph:device-mobile-slash'} w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer`}
+                          className={`${showDeviceFrameInPreview ? 'i-ph:device-mobile' : 'i-ph:device-mobile-slash'} w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer`}
                           onClick={() => showDeviceFrameInPreviewAtom.set(!showDeviceFrameInPreview)}
                         />
                       </IconWithTooltip>
@@ -475,7 +475,7 @@ export const PreviewHeader = memo(() => {
               {expoUrl && (
                 <IconWithTooltip id="qr" tooltip="Show QR" hoveredIcon={hoveredIcon} setHoveredIcon={setHoveredIcon}>
                   <div
-                    className="i-ph:qr-code w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer"
+                    className="i-ph:qr-code w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
                     onClick={() => isExpoQrModalOpenAtom.set(true)}
                   />
                 </IconWithTooltip>
@@ -488,7 +488,7 @@ export const PreviewHeader = memo(() => {
                 setHoveredIcon={setHoveredIcon}
               >
                 <div
-                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isInspectorMode ? 'bg-bolt-elements-background-depth-2 text-bolt-elements-item-contentAccent' : 'text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-2 hover:text-bolt-elements-item-contentActive'}`}
+                  className={`flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${isInspectorMode ? 'bg-amplify-elements-background-depth-2 text-amplify-elements-item-contentAccent' : 'text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2 hover:text-amplify-elements-item-contentActive'}`}
                   onClick={toggleInspectorMode}
                 >
                   <div className="i-ph:cursor-click w-5 h-5" />
@@ -502,7 +502,7 @@ export const PreviewHeader = memo(() => {
                 setHoveredIcon={setHoveredIcon}
               >
                 <div
-                  className={`${isFullscreen ? 'i-ph:arrows-in' : 'i-ph:arrows-out'} w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer`}
+                  className={`${isFullscreen ? 'i-ph:arrows-in' : 'i-ph:arrows-out'} w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer`}
                   onClick={toggleFullscreen}
                 />
               </IconWithTooltip>
@@ -515,7 +515,7 @@ export const PreviewHeader = memo(() => {
                   setHoveredIcon={setHoveredIcon}
                 >
                   <div
-                    className="i-ph:list w-5 h-5 text-bolt-elements-textPrimary hover:text-bolt-elements-item-contentActive transition-colors cursor-pointer"
+                    className="i-ph:list w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
                       isWindowSizeDropdownOpenAtom.set(!isWindowSizeDropdownOpen);
@@ -524,23 +524,23 @@ export const PreviewHeader = memo(() => {
                 </IconWithTooltip>
 
                 {isWindowSizeDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 z-50 min-w-[240px] max-h-[400px] overflow-y-auto bg-bolt-elements-background-depth-3 rounded-xl shadow-2xl border border-bolt-elements-borderColor overflow-hidden cursor-default text-left">
-                    <div className="p-3 border-b border-bolt-elements-borderColor">
+                  <div className="absolute right-0 top-full mt-2 z-50 min-w-[240px] max-h-[400px] overflow-y-auto bg-amplify-elements-background-depth-3 rounded-xl shadow-2xl border border-amplify-elements-borderColor overflow-hidden cursor-default text-left">
+                    <div className="p-3 border-b border-amplify-elements-borderColor">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-bolt-elements-textPrimary font-sans">
+                        <span className="text-sm font-medium text-amplify-elements-textPrimary font-sans">
                           Window Options
                         </span>
                       </div>
                       <div className="flex flex-col gap-2">
                         <button
-                          className="flex w-full justify-between items-center text-start bg-transparent text-xs text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary font-sans"
+                          className="flex w-full justify-between items-center text-start bg-transparent text-xs text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary font-sans"
                           onClick={openInNewTab}
                         >
                           <span>Open in new tab</span>
                           <div className="i-ph:arrow-square-out h-5 w-4" />
                         </button>
                         <button
-                          className="flex w-full justify-between items-center text-start bg-transparent text-xs text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary font-sans"
+                          className="flex w-full justify-between items-center text-start bg-transparent text-xs text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary font-sans"
                           onClick={() => {
                             if (!activePreview?.baseUrl) return;
                             const match = activePreview.baseUrl.match(
@@ -560,9 +560,9 @@ export const PreviewHeader = memo(() => {
                           <div className="i-ph:browser h-5 w-4" />
                         </button>
                         <div className="flex items-center justify-between font-sans">
-                          <span className="text-xs text-bolt-elements-textTertiary">Show Device Frame</span>
+                          <span className="text-xs text-amplify-elements-textTertiary">Show Device Frame</span>
                           <button
-                            className={`w-10 h-5 rounded-full transition-colors duration-200 ${showDeviceFrame ? 'bg-bolt-elements-item-contentAccent' : 'bg-bolt-elements-background-depth-4'} relative`}
+                            className={`w-10 h-5 rounded-full transition-colors duration-200 ${showDeviceFrame ? 'bg-amplify-elements-item-contentAccent' : 'bg-amplify-elements-background-depth-4'} relative`}
                             onClick={(e) => {
                               e.stopPropagation();
                               showDeviceFrameAtom.set(!showDeviceFrame);
@@ -574,9 +574,9 @@ export const PreviewHeader = memo(() => {
                           </button>
                         </div>
                         <div className="flex items-center justify-between font-sans">
-                          <span className="text-xs text-bolt-elements-textTertiary">Landscape Mode</span>
+                          <span className="text-xs text-amplify-elements-textTertiary">Landscape Mode</span>
                           <button
-                            className={`w-10 h-5 rounded-full transition-colors duration-200 ${isLandscape ? 'bg-bolt-elements-item-contentAccent' : 'bg-bolt-elements-background-depth-4'} relative`}
+                            className={`w-10 h-5 rounded-full transition-colors duration-200 ${isLandscape ? 'bg-amplify-elements-item-contentAccent' : 'bg-amplify-elements-background-depth-4'} relative`}
                             onClick={(e) => {
                               e.stopPropagation();
                               isLandscapeAtom.set(!isLandscape);
@@ -592,7 +592,7 @@ export const PreviewHeader = memo(() => {
                     {WINDOW_SIZES.map((size) => (
                       <button
                         key={size.name}
-                        className="w-full px-4 py-3.5 text-left text-bolt-elements-textPrimary text-sm whitespace-nowrap flex items-center gap-3 group hover:bg-bolt-elements-background-depth-2 bg-transparent font-sans"
+                        className="w-full px-4 py-3.5 text-left text-amplify-elements-textPrimary text-sm whitespace-nowrap flex items-center gap-3 group hover:bg-amplify-elements-background-depth-2 bg-transparent font-sans"
                         onClick={() => {
                           selectedWindowSizeAtom.set(size);
                           isWindowSizeDropdownOpenAtom.set(false);
@@ -600,13 +600,13 @@ export const PreviewHeader = memo(() => {
                         }}
                       >
                         <div
-                          className={`${size.icon} w-5 h-5 text-bolt-elements-textSecondary group-hover:text-bolt-elements-item-contentAccent transition-colors duration-200`}
+                          className={`${size.icon} w-5 h-5 text-amplify-elements-textSecondary group-hover:text-amplify-elements-item-contentAccent transition-colors duration-200`}
                         />
                         <div className="flex-grow flex flex-col">
-                          <span className="font-medium group-hover:text-bolt-elements-item-contentAccent transition-colors duration-200">
+                          <span className="font-medium group-hover:text-amplify-elements-item-contentAccent transition-colors duration-200">
                             {size.name}
                           </span>
-                          <span className="text-xs text-bolt-elements-textSecondary group-hover:text-bolt-elements-item-contentAccent transition-colors duration-200">
+                          <span className="text-xs text-amplify-elements-textSecondary group-hover:text-amplify-elements-item-contentAccent transition-colors duration-200">
                             {isLandscape && (size.frameType === 'mobile' || size.frameType === 'tablet')
                               ? `${size.height} × ${size.width}`
                               : `${size.width} × ${size.height}`}
@@ -614,7 +614,7 @@ export const PreviewHeader = memo(() => {
                           </span>
                         </div>
                         {selectedWindowSize.name === size.name && (
-                          <div className="text-bolt-elements-item-contentAccent">
+                          <div className="text-amplify-elements-item-contentAccent">
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
                               width="16"
@@ -652,10 +652,10 @@ export const PreviewHeader = memo(() => {
               borderRadius: '14px',
               height: '38px',
             }}
-            className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-bolt-elements-background-depth-3 border border-bolt-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
+            className={`relative flex items-center justify-center overflow-visible transition-colors duration-200 bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor shadow-[0_1px_3px_rgba(0,0,0,0.06),0_1px_1px_rgba(0,0,0,0.04)] ${
               activePart === 'input'
                 ? 'w-[240px] px-3 cursor-default'
-                : 'w-[12px] p-0 cursor-pointer hover:bg-bolt-elements-background-depth-2'
+                : 'w-[12px] p-0 cursor-pointer hover:bg-amplify-elements-background-depth-2'
             }`}
           >
             <AnimatePresence>
@@ -665,7 +665,7 @@ export const PreviewHeader = memo(() => {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-bolt-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-bolt-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-bolt-elements-borderColor shadow-sm"
+                  className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-amplify-elements-background-depth-1 backdrop-blur-sm text-[10px] font-medium text-amplify-elements-textPrimary px-2 py-1 rounded-md whitespace-nowrap pointer-events-none z-[9999] border border-amplify-elements-borderColor shadow-sm"
                 >
                   Path
                 </motion.div>
@@ -699,7 +699,7 @@ export const PreviewHeader = memo(() => {
                     }
                   }
                 }}
-                className="w-full bg-transparent text-xs text-bolt-elements-textPrimary border-none outline-none focus:ring-0 font-medium placeholder-bolt-elements-textTertiary"
+                className="w-full bg-transparent text-xs text-amplify-elements-textPrimary border-none outline-none focus:ring-0 font-medium placeholder-amplify-elements-textTertiary"
               />
             </motion.div>
           </motion.div>

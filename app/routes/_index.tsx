@@ -10,7 +10,7 @@ import { themeStore, setTheme } from '~/lib/stores/theme';
 import { chatStore } from '~/lib/stores/chat';
 import { useStore } from '@nanostores/react';
 export const meta: MetaFunction = () => {
-  return [{ title: 'Bolt' }, { name: 'description', content: 'Talk with Bolt, an AI assistant from StackBlitz' }];
+  return [{ title: 'Amplify' }, { name: 'description', content: 'Talk with Amplify, your AI development assistant' }];
 };
 
 export const loader = () => json({});
@@ -22,7 +22,7 @@ const user = {
 };
 
 /**
- * Landing page component for Bolt
+ * Landing page component for Amplify
  * Note: Settings functionality should ONLY be accessed through the sidebar menu.
  * Do not add settings button/panel to this landing page as it was intentionally removed
  * to keep the UI clean and consistent with the design system.

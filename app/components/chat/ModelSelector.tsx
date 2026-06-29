@@ -378,7 +378,7 @@ export const ModelSelector = ({
 
   if (providerList.length === 0) {
     return (
-      <div className="mb-2 p-4 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary">
+      <div className="mb-2 p-4 rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-prompt-background text-amplify-elements-textPrimary">
         <p className="text-center">
           No providers are currently enabled. Please enable at least one provider in the settings to start using the
           chat.
@@ -392,7 +392,7 @@ export const ModelSelector = ({
       className={classNames(
         'relative',
         collapsed
-          ? 'flex items-center gap-1 px-2 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-item-backgroundAccent text-bolt-elements-textPrimary'
+          ? 'flex items-center gap-1 px-2 py-1 rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-item-backgroundAccent text-amplify-elements-textPrimary'
           : 'w-full',
       )}
       onKeyDown={handleModelKeyDown}
@@ -404,7 +404,7 @@ export const ModelSelector = ({
             'cursor-pointer transition-all',
             collapsed
               ? 'flex items-center gap-1 text-xs font-medium'
-              : 'w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus-within:outline-none focus-within:ring-2 focus-within:ring-bolt-elements-focus',
+              : 'w-full p-2 rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-prompt-background text-amplify-elements-textPrimary focus-within:outline-none focus-within:ring-2 focus-within:ring-amplify-elements-focus',
           )}
           onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
           onKeyDown={(e) => {
@@ -429,7 +429,7 @@ export const ModelSelector = ({
               <div className="truncate">{modelList.find((m) => m.name === model)?.label || 'Select model'}</div>
               <div
                 className={classNames(
-                  'i-ph:caret-down w-4 h-4 text-bolt-elements-textSecondary opacity-75',
+                  'i-ph:caret-down w-4 h-4 text-amplify-elements-textSecondary opacity-75',
                   isModelDropdownOpen ? 'rotate-180' : undefined,
                 )}
               />
@@ -448,8 +448,8 @@ export const ModelSelector = ({
               className={classNames(
                 'transition-all',
                 collapsed
-                  ? `p-1 h-5 w-5 ${isKeyMissing ? 'text-red-400 hover:text-red-300' : 'text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary'}`
-                  : `p-1.5 h-7 w-7 rounded-md ${isKeyMissing ? 'text-red-500 hover:text-red-400 bg-red-500/10' : 'text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary bg-bolt-elements-background-depth-3'}`,
+                  ? `p-1 h-5 w-5 ${isKeyMissing ? 'text-red-400 hover:text-red-300' : 'text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary'}`
+                  : `p-1.5 h-7 w-7 rounded-md ${isKeyMissing ? 'text-red-500 hover:text-red-400 bg-red-500/10' : 'text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-amplify-elements-background-depth-3'}`,
               )}
             >
               <div className="i-ph:key text-sm" />
@@ -474,7 +474,7 @@ export const ModelSelector = ({
       {isModelDropdownOpen && (
         <div
           className={classNames(
-            'absolute z-20 mt-1 py-1 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 shadow-lg',
+            'absolute z-20 mt-1 py-1 rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 shadow-lg',
             collapsed ? 'left-0 w-64' : 'w-full',
           )}
           role="listbox"
@@ -492,17 +492,17 @@ export const ModelSelector = ({
                   }}
                   className={classNames(
                     'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all',
-                    'hover:bg-bolt-elements-background-depth-3',
+                    'hover:bg-amplify-elements-background-depth-3',
                     showFreeModelsOnly
                       ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                      : 'bg-bolt-elements-background-depth-3 text-bolt-elements-textSecondary border border-bolt-elements-borderColor',
+                      : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary border border-amplify-elements-borderColor',
                   )}
                 >
                   <span className="i-ph:gift text-xs" />
                   Free models only
                 </button>
                 {showFreeModelsOnly && (
-                  <span className="text-xs text-bolt-elements-textTertiary">
+                  <span className="text-xs text-amplify-elements-textTertiary">
                     {filteredModels.length} free model{filteredModels.length !== 1 ? 's' : ''}
                   </span>
                 )}
@@ -511,7 +511,7 @@ export const ModelSelector = ({
 
             {/* Search Result Count */}
             {debouncedModelSearchQuery && filteredModels.length > 0 && (
-              <div className="text-xs text-bolt-elements-textTertiary px-1">
+              <div className="text-xs text-amplify-elements-textTertiary px-1">
                 {filteredModels.length} model{filteredModels.length !== 1 ? 's' : ''} found
               </div>
             )}
@@ -526,9 +526,9 @@ export const ModelSelector = ({
                 placeholder="Search models... (⌘K to clear)"
                 className={classNames(
                   'w-full pl-8 pr-8 py-1.5 rounded-md text-sm',
-                  'bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor',
-                  'text-bolt-elements-textPrimary placeholder:text-bolt-elements-textTertiary',
-                  'focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus',
+                  'bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor',
+                  'text-amplify-elements-textPrimary placeholder:text-amplify-elements-textTertiary',
+                  'focus:outline-none focus:ring-2 focus:ring-amplify-elements-focus',
                   'transition-all',
                 )}
                 onClick={(e) => e.stopPropagation()}
@@ -536,7 +536,7 @@ export const ModelSelector = ({
                 aria-label="Search models"
               />
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
-                <span className="i-ph:magnifying-glass text-bolt-elements-textTertiary" />
+                <span className="i-ph:magnifying-glass text-amplify-elements-textTertiary" />
               </div>
               {modelSearchQuery && (
                 <button
@@ -545,10 +545,10 @@ export const ModelSelector = ({
                     e.stopPropagation();
                     clearModelSearch();
                   }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-bolt-elements-background-depth-3 transition-colors"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-amplify-elements-background-depth-3 transition-colors"
                   aria-label="Clear search"
                 >
-                  <span className="i-ph:x text-bolt-elements-textTertiary text-xs" />
+                  <span className="i-ph:x text-amplify-elements-textTertiary text-xs" />
                 </button>
               )}
             </div>
@@ -559,27 +559,27 @@ export const ModelSelector = ({
               'max-h-60 overflow-y-auto',
               'sm:scrollbar-none',
               '[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2',
-              '[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor',
-              '[&::-webkit-scrollbar-thumb]:hover:bg-bolt-elements-borderColorHover',
+              '[&::-webkit-scrollbar-thumb]:bg-amplify-elements-borderColor',
+              '[&::-webkit-scrollbar-thumb]:hover:bg-amplify-elements-borderColorHover',
               '[&::-webkit-scrollbar-thumb]:rounded-full',
-              '[&::-webkit-scrollbar-track]:bg-bolt-elements-background-depth-2',
+              '[&::-webkit-scrollbar-track]:bg-amplify-elements-background-depth-2',
               '[&::-webkit-scrollbar-track]:rounded-full',
               'sm:[&::-webkit-scrollbar]:w-1.5 sm:[&::-webkit-scrollbar]:h-1.5',
-              'sm:hover:[&::-webkit-scrollbar-thumb]:bg-bolt-elements-borderColor/50',
-              'sm:hover:[&::-webkit-scrollbar-thumb:hover]:bg-bolt-elements-borderColor',
+              'sm:hover:[&::-webkit-scrollbar-thumb]:bg-amplify-elements-borderColor/50',
+              'sm:hover:[&::-webkit-scrollbar-thumb:hover]:bg-amplify-elements-borderColor',
               'sm:[&::-webkit-scrollbar-track]:bg-transparent',
             )}
           >
             {modelLoading === 'all' || modelLoading === provider?.name ? (
               <div className="px-3 py-3 text-sm">
-                <div className="flex items-center gap-2 text-bolt-elements-textTertiary">
+                <div className="flex items-center gap-2 text-amplify-elements-textTertiary">
                   <span className="i-ph:spinner animate-spin" />
                   Loading models...
                 </div>
               </div>
             ) : sortedProviders.length === 0 ? (
               <div className="px-3 py-3 text-sm">
-                <div className="text-bolt-elements-textTertiary mb-1">
+                <div className="text-amplify-elements-textTertiary mb-1">
                   {debouncedModelSearchQuery
                     ? `No models match "${debouncedModelSearchQuery}"${showFreeModelsOnly ? ' (free only)' : ''}`
                     : showFreeModelsOnly
@@ -590,7 +590,7 @@ export const ModelSelector = ({
             ) : (
               sortedProviders.map((providerOption) => (
                 <div key={providerOption.name} className="mb-4 last:mb-0">
-                  <div className="px-3 py-1 text-xs font-semibold text-bolt-elements-textSecondary flex items-center gap-2">
+                  <div className="px-3 py-1 text-xs font-semibold text-amplify-elements-textSecondary flex items-center gap-2">
                     {providerOption.name}
                     {LOCAL_PROVIDERS.includes(providerOption.name) && (
                       <span
@@ -600,7 +600,7 @@ export const ModelSelector = ({
                             ? 'bg-green-500'
                             : localProviderStatus[providerOption.name] === 'disconnected'
                               ? 'bg-red-400'
-                              : 'bg-bolt-elements-textTertiary',
+                              : 'bg-amplify-elements-textTertiary',
                         )}
                       />
                     )}
@@ -616,14 +616,14 @@ export const ModelSelector = ({
                           aria-selected={model === modelOption.name}
                           className={classNames(
                             'px-3 py-2 text-sm cursor-pointer',
-                            'hover:bg-bolt-elements-background-depth-3',
-                            'text-bolt-elements-textPrimary',
+                            'hover:bg-amplify-elements-background-depth-3',
+                            'text-amplify-elements-textPrimary',
                             'outline-none',
                             model === modelOption.name || focusedModelIndex === globalIndex
-                              ? 'bg-bolt-elements-background-depth-2'
+                              ? 'bg-amplify-elements-background-depth-2'
                               : undefined,
                             focusedModelIndex === globalIndex
-                              ? 'ring-1 ring-inset ring-bolt-elements-focus'
+                              ? 'ring-1 ring-inset ring-amplify-elements-focus'
                               : undefined,
                           )}
                           onClick={(e) => {
@@ -642,7 +642,7 @@ export const ModelSelector = ({
                                 />
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs text-bolt-elements-textTertiary">
+                                <span className="text-xs text-amplify-elements-textTertiary">
                                   {formatContextSize(modelOption.maxTokenAllowed)} tokens
                                 </span>
                                 {debouncedModelSearchQuery && (modelOption as any).searchScore > 70 && (

@@ -37,13 +37,13 @@ describe('isFileMutationSignal', () => {
   });
 
   it('should return false for malformed JSON containing the marker', () => {
-    expect(isFileMutationSignal('open_claude_file_mutation not json')).toBe(false);
-    expect(isFileMutationSignal('{open_claude_file_mutation')).toBe(false);
+    expect(isFileMutationSignal('amplify_file_mutation not json')).toBe(false);
+    expect(isFileMutationSignal('{amplify_file_mutation')).toBe(false);
   });
 
   it('should return true for a valid mutation signal JSON string', () => {
     const signal = JSON.stringify({
-      type: 'open_claude_file_mutation',
+      type: 'amplify_file_mutation',
       operations: [{ op: 'create', filePath: 'foo.ts', content: 'export const x = 1;' }],
     });
     expect(isFileMutationSignal(signal)).toBe(true);
@@ -57,26 +57,26 @@ describe('parseFileMutationSignal', () => {
 
   it('should return null for valid JSON that is not a mutation signal', () => {
     expect(parseFileMutationSignal('{"type":"other"}')).toBeNull();
-    expect(parseFileMutationSignal('{"type":"open_claude_file_mutation"}')).toBeNull(); // missing operations
+    expect(parseFileMutationSignal('{"type":"amplify_file_mutation"}')).toBeNull(); // missing operations
     expect(parseFileMutationSignal('{"operations":[]}')).toBeNull(); // missing type
   });
 
   it('should parse a create operation', () => {
     const signal = JSON.stringify({
-      type: 'open_claude_file_mutation',
+      type: 'amplify_file_mutation',
       operations: [{ op: 'create', filePath: 'src/foo.ts', content: 'hello' }],
     });
     const parsed = parseFileMutationSignal(signal);
 
     expect(parsed).not.toBeNull();
-    expect(parsed?.type).toBe('open_claude_file_mutation');
+    expect(parsed?.type).toBe('amplify_file_mutation');
     expect(parsed?.operations).toHaveLength(1);
     expect(parsed?.operations[0]).toEqual({ op: 'create', filePath: 'src/foo.ts', content: 'hello' });
   });
 
   it('should parse a multi_replace operation with multiple edits', () => {
     const signal = JSON.stringify({
-      type: 'open_claude_file_mutation',
+      type: 'amplify_file_mutation',
       operations: [
         {
           op: 'multi_replace',

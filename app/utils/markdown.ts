@@ -68,7 +68,7 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
     div: [
       ...(defaultSchema.attributes?.div ?? []),
       'data*',
-      ['className', '__boltArtifact__', '__boltQuickAction', '__boltSelectedElement__', '__boltThought__'],
+      ['className', '__amplifyArtifact__', '__amplifyQuickAction', '__amplifySelectedElement__', '__amplifyThought__'],
     ],
     button: [
       ...(defaultSchema.attributes?.button ?? []),
@@ -77,14 +77,14 @@ const rehypeSanitizeOptions: RehypeSanitizeOptions = {
       'disabled',
       'name',
       'value',
-      ['className', '__boltArtifact__', '__boltQuickAction'],
+      ['className', '__amplifyArtifact__', '__amplifyQuickAction'],
     ],
 
     /*
      * Allow class on details/summary so the <thought> block preprocessor
-     * can mark them with __boltThought__ for Copilot-style rendering.
+     * can mark them with __amplifyThought__ for Copilot-style rendering.
      */
-    details: [...(defaultSchema.attributes?.details ?? []), ['className', '__boltThought__'], 'open'],
+    details: [...(defaultSchema.attributes?.details ?? []), ['className', '__amplifyThought__'], 'open'],
     summary: [...(defaultSchema.attributes?.summary ?? [])],
   },
   strip: [],

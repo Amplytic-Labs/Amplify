@@ -30,7 +30,7 @@ export const Markdown = memo(
 
     /*
      * Preprocess content:
-     *   1. Strip code fences around boltArtifact (existing behaviour)
+     *   1. Strip code fences around amplifyArtifact (existing behaviour)
      *   2. Strip residual `<thought>...</thought>` tags. The system
      *      prompt forbids the AI from emitting these (it should use
      *      its native reasoning channel instead, which arrives as
@@ -54,7 +54,7 @@ export const Markdown = memo(
         div: ({ className, children, node, ...props }) => {
           const dataProps = node?.properties as Record<string, unknown>;
 
-          if (className?.includes('__boltArtifact__')) {
+          if (className?.includes('__amplifyArtifact__')) {
             const messageId = node?.properties.dataMessageId as string;
             const artifactId = node?.properties.dataArtifactId as string;
 
@@ -69,19 +69,19 @@ export const Markdown = memo(
             return <Artifact messageId={messageId} artifactId={artifactId} />;
           }
 
-          if (className?.includes('__boltThought__')) {
+          if (className?.includes('__amplifyThought__')) {
             /*
              * Legacy path — the new ThoughtProcess component renders
              * reasoning outside the markdown body. If a stray
-             * __boltThought__ details element ever shows up here we
+             * __amplifyThought__ details element ever shows up here we
              * render it as plain muted text so it doesn't break, but
              * stripResidualThoughtTags should already have removed
              * the source `<thought>` tags before markdown parsing.
              */
-            return <div className="text-bolt-elements-textTertiary text-xs italic">{children}</div>;
+            return <div className="text-amplify-elements-textTertiary text-xs italic">{children}</div>;
           }
 
-          if (className?.includes('__boltSelectedElement__')) {
+          if (className?.includes('__amplifySelectedElement__')) {
             const messageId = node?.properties.dataMessageId as string;
             const elementDataAttr = node?.properties.dataElement as string;
 
@@ -101,23 +101,23 @@ export const Markdown = memo(
             }
 
             return (
-              <div className="bg-bolt-elements-background-depth-3 border border-bolt-elements-borderColor rounded-lg p-3 my-2">
+              <div className="bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor rounded-lg p-3 my-2">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-mono bg-bolt-elements-background-depth-2 px-2 py-1 rounded text-bolt-elements-textTer">
+                  <span className="text-xs font-mono bg-amplify-elements-background-depth-2 px-2 py-1 rounded text-amplify-elements-textTer">
                     {elementData?.tagName}
                   </span>
                   {elementData?.className && (
-                    <span className="text-xs text-bolt-elements-textSecondary">.{elementData.className}</span>
+                    <span className="text-xs text-amplify-elements-textSecondary">.{elementData.className}</span>
                   )}
                 </div>
-                <code className="block text-sm !text-bolt-elements-textSecondary !bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor p-2 rounded">
+                <code className="block text-sm !text-amplify-elements-textSecondary !bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor p-2 rounded">
                   {elementData?.displayText}
                 </code>
               </div>
             );
           }
 
-          if (className?.includes('__boltQuickAction__') || dataProps?.dataBoltQuickAction) {
+          if (className?.includes('__amplifyQuickAction__') || dataProps?.dataAmplifyQuickAction) {
             return <div className="flex items-center gap-2 flex-wrap mt-3.5">{children}</div>;
           }
 
@@ -168,8 +168,8 @@ export const Markdown = memo(
           const dataProps = node?.properties as Record<string, unknown>;
 
           if (
-            dataProps?.class?.toString().includes('__boltQuickAction__') ||
-            dataProps?.dataBoltQuickAction === 'true'
+            dataProps?.class?.toString().includes('__amplifyQuickAction__') ||
+            dataProps?.dataAmplifyQuickAction === 'true'
           ) {
             const type = dataProps['data-type'] || dataProps.dataType;
             const message = dataProps['data-message'] || dataProps.dataMessage;
@@ -188,7 +188,7 @@ export const Markdown = memo(
 
             return (
               <button
-                className="rounded-md justify-center px-3 py-1.5 text-xs bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent opacity-90 hover:opacity-100 flex items-center gap-2 cursor-pointer"
+                className="rounded-md justify-center px-3 py-1.5 text-xs bg-amplify-elements-item-backgroundAccent text-amplify-elements-item-contentAccent opacity-90 hover:opacity-100 flex items-center gap-2 cursor-pointer"
                 data-type={type}
                 data-message={message}
                 data-path={path}
@@ -247,7 +247,7 @@ export const Markdown = memo(
             return (
               <a
                 {...props}
-                className="text-[10px] bg-bolt-elements-background-depth-2 px-1 py-0.5 rounded border border-bolt-elements-borderColor text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors ml-1 align-top"
+                className="text-[10px] bg-amplify-elements-background-depth-2 px-1 py-0.5 rounded border border-amplify-elements-borderColor text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors ml-1 align-top"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -265,7 +265,7 @@ export const Markdown = memo(
 
         /*
          * Plain <details> elements from user-supplied markdown are
-         * rendered as-is. The legacy `__boltThought__` class path
+         * rendered as-is. The legacy `__amplifyThought__` class path
          * that used to inject a brain icon into the summary has been
          * removed — reasoning now flows through the ThoughtProcess
          * component via the AI SDK's native `reasoning` parts, not
@@ -332,23 +332,23 @@ export const Markdown = memo(
  *
  * @example
  * // Removes code fences around artifact
- * const input = "```xml\n<div class='__boltArtifact__'></div>\n```";
+ * const input = "```xml\n<div class='__amplifyArtifact__'></div>\n```";
  * stripCodeFenceFromArtifact(input);
- * // Returns: "\n<div class='__boltArtifact__'></div>\n"
+ * // Returns: "\n<div class='__amplifyArtifact__'></div>\n"
  *
  * @remarks
- * - Only removes code fences that directly wrap an artifact (marked with __boltArtifact__ class)
+ * - Only removes code fences that directly wrap an artifact (marked with __amplifyArtifact__ class)
  * - Handles code fences with optional language specifications (e.g. ```xml, ```typescript)
  * - Preserves original content if no artifact is found
  * - Safely handles edge cases like empty input or artifacts at start/end of content
  */
 export const stripCodeFenceFromArtifact = (content: string) => {
-  if (!content || !content.includes('__boltArtifact__')) {
+  if (!content || !content.includes('__amplifyArtifact__')) {
     return content;
   }
 
   const lines = content.split('\n');
-  const artifactLineIndex = lines.findIndex((line) => line.includes('__boltArtifact__'));
+  const artifactLineIndex = lines.findIndex((line) => line.includes('__amplifyArtifact__'));
 
   // Return original content if artifact line not found
   if (artifactLineIndex === -1) {

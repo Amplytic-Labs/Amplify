@@ -3,7 +3,7 @@ import { logStore } from './logs';
 
 export type Theme = 'dark' | 'light';
 
-export const kTheme = 'bolt_theme';
+export const kTheme = 'amplify_theme';
 
 export function themeIsDark() {
   return themeStore.get() === 'dark';
@@ -36,12 +36,12 @@ export function setTheme(newTheme: Theme) {
 
   // Update user profile if it exists
   try {
-    const userProfile = localStorage.getItem('bolt_user_profile');
+    const userProfile = localStorage.getItem('amplify_user_profile');
 
     if (userProfile) {
       const profile = JSON.parse(userProfile);
       profile.theme = newTheme;
-      localStorage.setItem('bolt_user_profile', JSON.stringify(profile));
+      localStorage.setItem('amplify_user_profile', JSON.stringify(profile));
     }
   } catch (error) {
     console.error('Error updating user profile theme:', error);

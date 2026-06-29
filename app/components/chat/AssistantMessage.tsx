@@ -17,7 +17,7 @@ import type {
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
-import { stripBoltArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
+import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -122,11 +122,11 @@ export const AssistantMessage = memo(
      * keeping AI-created artifact trace trees visible.
      *
      * Two-layer stripping:
-     *   1. `stripBoltArtifacts` removes raw `<boltArtifact>…</boltArtifact>`
+     *   1. `stripAmplifyArtifacts` removes raw `<amplifyArtifact>…</amplifyArtifact>`
      *      XML blocks (the model's original text, still present before the
      *      message parser runs on it).
      *   2. When the message contains an `inject_template` tool call, we also
-     *      strip ONLY the `<div class="__boltArtifact__" data-type="template">`
+     *      strip ONLY the `<div class="__amplifyArtifact__" data-type="template">`
      *      placeholder elements. Template artifacts use `type="template"`
      *      (set in selectStarterTemplate.ts), while normal AI-created artifacts
      *      use `type="bundled"`. The parser propagates the type attribute onto
@@ -144,7 +144,7 @@ export const AssistantMessage = memo(
     const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
 
     const answerText = useMemo(() => {
-      const stripped = stripBoltArtifacts(rawAnswerText);
+      const stripped = stripAmplifyArtifacts(rawAnswerText);
 
       if (isTemplateInjection) {
         return stripArtifactDivs(stripped);
@@ -212,27 +212,27 @@ export const AssistantMessage = memo(
     return (
       <div className="group relative overflow-hidden w-full">
         <>
-          <div className=" flex gap-2 items-center text-sm text-bolt-elements-textSecondary mb-2">
+          <div className=" flex gap-2 items-center text-sm text-amplify-elements-textSecondary mb-2">
             {(codeContext || chatSummary) && (
               <Popover side="right" align="start" trigger={<div className="i-ph:info" />}>
                 {chatSummary && (
                   <div className="max-w-chat">
                     <div className="summary max-h-96 flex flex-col">
-                      <h2 className="border border-bolt-elements-borderColor rounded-md p4">Summary</h2>
+                      <h2 className="border border-amplify-elements-borderColor rounded-md p4">Summary</h2>
                       <div style={{ zoom: 0.7 }} className="overflow-y-auto m4">
                         <Markdown>{chatSummary}</Markdown>
                       </div>
                     </div>
                     {codeContext && (
-                      <div className="code-context flex flex-col p4 border border-bolt-elements-borderColor rounded-md">
+                      <div className="code-context flex flex-col p4 border border-amplify-elements-borderColor rounded-md">
                         <h2>Context</h2>
-                        <div className="flex gap-4 mt-4 bolt" style={{ zoom: 0.6 }}>
+                        <div className="flex gap-4 mt-4 amplify" style={{ zoom: 0.6 }}>
                           {codeContext.map((x) => {
                             const normalized = normalizedFilePath(x);
                             return (
                               <Fragment key={normalized}>
                                 <code
-                                  className="bg-bolt-elements-artifacts-inlineCode-background text-bolt-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-bolt-elements-item-contentAccent hover:underline cursor-pointer"
+                                  className="bg-amplify-elements-artifacts-inlineCode-background text-amplify-elements-artifacts-inlineCode-text px-1.5 py-1 rounded-md text-amplify-elements-item-contentAccent hover:underline cursor-pointer"
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -260,7 +260,7 @@ export const AssistantMessage = memo(
                       <button
                         onClick={() => onRewind(messageId)}
                         key="i-ph:arrow-u-up-left"
-                        className="i-ph:arrow-u-up-left text-xl text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors"
+                        className="i-ph:arrow-u-up-left text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                       />
                     </WithTooltip>
                   )}
@@ -269,7 +269,7 @@ export const AssistantMessage = memo(
                       <button
                         onClick={() => onFork(messageId)}
                         key="i-ph:git-fork"
-                        className="i-ph:git-fork text-xl text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary transition-colors"
+                        className="i-ph:git-fork text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                       />
                     </WithTooltip>
                   )}
@@ -319,11 +319,11 @@ export const AssistantMessage = memo(
 AssistantMessage.displayName = 'AssistantMessage';
 
 /**
- * Remove `<div class="__boltArtifact__" data-type="template" …></div>` placeholder
+ * Remove `<div class="__amplifyArtifact__" data-type="template" …></div>` placeholder
  * elements that the message parser inserts for template-injected artifacts.
  *
  * The parser (`StreamingMessageParser.createArtifactElement`) now propagates
- * the `<boltArtifact type="…">` attribute onto the div as `data-type`. Template
+ * the `<amplifyArtifact type="…">` attribute onto the div as `data-type`. Template
  * artifacts (from `inject_template`) use `type="template"`, while normal AI-
  * created artifacts use `type="bundled"`.
  *
@@ -335,15 +335,15 @@ AssistantMessage.displayName = 'AssistantMessage';
  * (class → messageId → artifactId → type).
  */
 function stripArtifactDivs(text: string): string {
-  if (!text || !text.includes('__boltArtifact__')) {
+  if (!text || !text.includes('__amplifyArtifact__')) {
     return text;
   }
 
-  // Self-closing form: <div class="__boltArtifact__" ... data-type="template"></div>
-  let out = text.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*><\/div>/g, '');
+  // Self-closing form: <div class="__amplifyArtifact__" ... data-type="template"></div>
+  let out = text.replace(/<div\s+class="__amplifyArtifact__"[^>]*data-type="template"[^>]*><\/div>/g, '');
 
-  // Void-element form: <div class="__boltArtifact__" ... data-type="template" />
-  out = out.replace(/<div\s+class="__boltArtifact__"[^>]*data-type="template"[^>]*\/>/g, '');
+  // Void-element form: <div class="__amplifyArtifact__" ... data-type="template" />
+  out = out.replace(/<div\s+class="__amplifyArtifact__"[^>]*data-type="template"[^>]*\/>/g, '');
 
   // Collapse blank lines left behind.
   out = out.replace(/\n{3,}/g, '\n\n').trimEnd();

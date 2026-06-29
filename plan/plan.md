@@ -1,6 +1,6 @@
 # Claude Capabilities System & Silent Chat Workspace Architecture
 
-> Reference doc for building a Claude alternative on bolt.diy
+> Reference doc for building a Claude alternative on Amplify
 
 ---
 
@@ -208,11 +208,11 @@ The system prompt is the "OS boot sequence" of each conversation.
 
 ## Part 2: Revised Integrated Architecture
 
-Now that we have analyzed the existing bolt.diy infrastructure, we are pivoting from a "replacement" strategy to an "integration" strategy. Instead of building a parallel system, we will extend the existing production-grade services.
+Now that we have analyzed the existing Amplify infrastructure, we are pivoting from a "replacement" strategy to an "integration" strategy. Instead of building a parallel system, we will extend the existing production-grade services.
 
 ### 2.1 Core Concept: Integration over Replacement
 
-The goal is to implement Claude-like capabilities (Skills, Memory, Artifacts) by augmenting the existing bolt.diy pipeline.
+The goal is to implement Claude-like capabilities (Skills, Memory, Artifacts) by augmenting the existing Amplify pipeline.
 
 **Key Architectural Shifts:**
 
@@ -256,7 +256,7 @@ Since WebContainer is ephemeral, memory must be stored in a persistent layer.
 
 ### 2.5 Enhanced Artifact System
 
-We will leverage the existing `<boltArtifact>` and `<boltAction>` infrastructure.
+We will leverage the existing `<amplifyArtifact>` and `<amplifyAction>` infrastructure.
 
 **Extensions:**
 
@@ -391,4 +391,4 @@ Describe what the output should look like.
 
 ---
 
-_Built as architecture reference for a bolt.diy-based Claude alternative._
+_Built as architecture reference for a Amplify-based Claude alternative._

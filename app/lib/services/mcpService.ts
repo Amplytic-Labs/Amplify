@@ -614,7 +614,7 @@ export class MCPService {
 
     if (this.isValidToolName(toolName)) {
       const { description = 'No description available' } = this.toolsWithoutExecute[toolName];
-      const serverName = this._toolNamesToServerNames.get(toolName) || 'open_claude';
+      const serverName = this._toolNamesToServerNames.get(toolName) || 'amplify';
 
       dataStream.writeMessageAnnotation({
         type: 'toolCall',

@@ -2,8 +2,8 @@
 
 ## Models and Setup
 
-??? question "What are the best models for bolt.diy?"
-For the best experience with bolt.diy, we recommend using the following models from our 19 supported providers:
+??? question "What are the best models for Amplify?"
+For the best experience with Amplify, we recommend using the following models from our 19 supported providers:
 
     **Top Recommended Models:**
     - **Claude 3.5 Sonnet** (Anthropic): Best overall coder, excellent for complex applications
@@ -54,7 +54,7 @@ You can configure API keys in two ways:
         Never commit API keys to version control. The `.env.local` file is already in `.gitignore`.
 
 ??? question "How do I add a new LLM provider?"
-bolt.diy uses a modular provider architecture. To add a new provider:
+Amplify uses a modular provider architecture. To add a new provider:
 
     1. **Create a Provider Class** in `app/lib/modules/llm/providers/your-provider.ts`
     2. **Implement the BaseProvider interface** with your provider's specific logic
@@ -101,7 +101,7 @@ xAI has released several new Grok models with enhanced capabilities:
 ## Best Practices
 
 ??? question "How do I access help and documentation?"
-bolt.diy provides multiple ways to access help and documentation:
+Amplify provides multiple ways to access help and documentation:
 
     **Help Icon in Sidebar:**
     - Look for the question mark (?) icon in the sidebar
@@ -118,7 +118,7 @@ bolt.diy provides multiple ways to access help and documentation:
     - **GitHub Issues**: Report bugs and request features
     - **Community Forum**: [thinktank.ottomator.ai](https://thinktank.ottomator.ai)
 
-??? question "How do I get the best results with bolt.diy?"
+??? question "How do I get the best results with Amplify?"
 Follow these proven strategies for optimal results:
 
     **Project Setup:**
@@ -138,7 +138,7 @@ Follow these proven strategies for optimal results:
     - **Deploy easily**: Use built-in Vercel, Netlify, or GitHub Pages deployment
 
 ??? question "How do I use MCP (Model Context Protocol) tools?"
-MCP extends bolt.diy's AI capabilities with external tools:
+MCP extends Amplify's AI capabilities with external tools:
 
     **Setting up MCP:**
     1. Go to Settings → MCP tab
@@ -154,8 +154,8 @@ MCP extends bolt.diy's AI capabilities with external tools:
 
     The MCP integration allows the AI to interact with external services and data sources during conversations.
 
-??? question "How do I deploy my bolt.diy projects?"
-bolt.diy supports one-click deployment to multiple platforms:
+??? question "How do I deploy my Amplify projects?"
+Amplify supports one-click deployment to multiple platforms:
 
     **Supported Platforms:**
     - **Vercel**: Go to Settings → Connections → Vercel, then deploy with one click
@@ -169,7 +169,7 @@ bolt.diy supports one-click deployment to multiple platforms:
     - Preview deployments for testing
 
 ??? question "How do I use Git integration features?"
-bolt.diy provides comprehensive Git and GitHub integration:
+Amplify provides comprehensive Git and GitHub integration:
 
     **Basic Git Operations:**
     - Import existing repositories by URL
@@ -185,22 +185,22 @@ bolt.diy provides comprehensive Git and GitHub integration:
 
 ## Project Information
 
-??? question "How do I contribute to bolt.diy?"
+??? question "How do I contribute to Amplify?"
 Check out our [Contribution Guide](CONTRIBUTING.md) for more details on how to get involved!
 
-??? question "What are the future plans for bolt.diy?"
+??? question "What are the future plans for Amplify?"
 Visit our [Roadmap](https://roadmap.sh/r/ottodev-roadmap-2ovzo) for the latest updates.  
  New features and improvements are on the way!
 
 ??? question "Why are there so many open issues/pull requests?"
-bolt.diy began as a small showcase project on @ColeMedin's YouTube channel to explore editing open-source projects with local LLMs. However, it quickly grew into a massive community effort!
+Amplify began as a small showcase project on @ColeMedin's YouTube channel to explore editing open-source projects with local LLMs. However, it quickly grew into a massive community effort!
 
     We're forming a team of maintainers to manage demand and streamline issue resolution. The maintainers are rockstars, and we're also exploring partnerships to help the project thrive.
 
 ## New Features & Technologies
 
-??? question "What's new in bolt.diy?"
-Recent major additions to bolt.diy include:
+??? question "What's new in Amplify?"
+Recent major additions to Amplify include:
 
     **Advanced AI Capabilities:**
     - **19 LLM Providers**: Support for Anthropic, OpenAI, Google, DeepSeek, Cohere, and more
@@ -227,10 +227,10 @@ Recent major additions to bolt.diy include:
     - **Build Optimization**: Automatic configuration for popular frameworks
 
 ??? question "How do I use the new project templates?"
-bolt.diy offers templates for popular frameworks and technologies:
+Amplify offers templates for popular frameworks and technologies:
 
     **Getting Started:**
-    1. Start a new project in bolt.diy
+    1. Start a new project in Amplify
     2. Browse available templates in the starter selection
     3. Choose your preferred technology stack
     4. The AI will scaffold your project with best practices
@@ -264,7 +264,7 @@ Use Supabase for backend database functionality:
     **Setup Process:**
     1. Create a Supabase project at supabase.com
     2. Get your project URL and API keys
-    3. Configure the connection in your bolt.diy project
+    3. Configure the connection in your Amplify project
     4. Use Supabase tools to interact with your database
 
     **Available Features:**
@@ -276,7 +276,7 @@ Use Supabase for backend database functionality:
 
 ## Model Comparisons
 
-??? question "How do local LLMs compare to larger models like Claude 3.5 Sonnet for bolt.diy?"
+??? question "How do local LLMs compare to larger models like Claude 3.5 Sonnet for Amplify?"
 While local LLMs are improving rapidly, larger models still offer the best results for complex applications. Here's the current landscape:
 
     **Recommended for Production:**
@@ -342,7 +342,7 @@ If you're having trouble with MCP integrations:
 
     - **Verify server configuration** in Settings → MCP
     - **Check server endpoints** and authentication credentials
-    - **Test server connectivity** outside of bolt.diy
+    - **Test server connectivity** outside of Amplify
     - **Review MCP server logs** for specific error messages
     - **Ensure server supports** the MCP protocol version
 
@@ -386,7 +386,7 @@ If the live preview isn't working:
 **Windows-specific issue**: Update the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
 
 ??? error "Miniflare or Wrangler errors in Windows"
-**Windows development environment**: Install Visual Studio C++ (version 14.40.33816 or later). More details in [GitHub Issues](https://github.com/stackblitz-labs/bolt.diy/issues/19)
+**Windows development environment**: Install Visual Studio C++ (version 14.40.33816 or later). More details in [GitHub Issues](https://github.com/amplify/amplify/issues/19)
 
 ??? error "Provider not showing up after adding it"
 If your custom LLM provider isn't appearing:
@@ -402,7 +402,7 @@ If your custom LLM provider isn't appearing:
 ## Get Help & Support
 
 !!! tip "Community Support"
-[Join the bolt.diy Community](https://thinktank.ottomator.ai/c/bolt-diy/17){target=\_blank} for discussions and help
+[Join the Amplify Community](https://thinktank.ottomator.ai/c/amplify/17){target=\_blank} for discussions and help
 
 !!! bug "Report Issues"
-[Open an Issue](https://github.com/stackblitz-labs/bolt.diy/issues/19){target=\_blank} in our GitHub Repository
+[Open an Issue](https://github.com/amplify/amplify/issues/19){target=\_blank} in our GitHub Repository

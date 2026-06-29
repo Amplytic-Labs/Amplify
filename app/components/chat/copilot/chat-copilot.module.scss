@@ -6,24 +6,24 @@
  *   src/vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatConfirmationWidget.css
  *   src/vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatThinkingContent.css
  *
- * Mapping (VS Code var → bolt-elements var):
- *   --vscode-descriptionForeground     → --bolt-elements-textSecondary
- *   --vscode-foreground                → --bolt-elements-textPrimary
- *   --vscode-icon-foreground           → --bolt-elements-textSecondary
- *   --vscode-editorError-foreground    → --bolt-elements-icon-error
- *   --vscode-chat-requestBorder        → --bolt-elements-borderColor
- *   --vscode-editorWidget-background   → --bolt-elements-background-depth-2
- *   --vscode-widget-border             → --bolt-elements-borderColor
- *   --vscode-editor-background         → --bolt-elements-background-depth-1
+ * Mapping (VS Code var → amplify-elements var):
+ *   --vscode-descriptionForeground     → --amplify-elements-textSecondary
+ *   --vscode-foreground                → --amplify-elements-textPrimary
+ *   --vscode-icon-foreground           → --amplify-elements-textSecondary
+ *   --vscode-editorError-foreground    → --amplify-elements-icon-error
+ *   --vscode-chat-requestBorder        → --amplify-elements-borderColor
+ *   --vscode-editorWidget-background   → --amplify-elements-background-depth-2
+ *   --vscode-widget-border             → --amplify-elements-borderColor
+ *   --vscode-editor-background         → --amplify-elements-background-depth-1
  *   --vscode-cornerRadius-medium       → 4px
  *   --vscode-chat-font-size-body-m     → 14px
  *   --vscode-chat-font-size-body-s     → 12px
  *   --vscode-chat-font-size-body-xs    → 11px
- *   --vscode-chat-thinkingShimmer      → var(--bolt-elements-textPrimary)
- *   --vscode-textPreformat-foreground  → --bolt-elements-messages-inlineCode-text
- *   --vscode-textPreformat-background  → --bolt-elements-messages-inlineCode-background
- *   --vscode-textPreformat-border      → --bolt-elements-borderColor
- *   --vscode-textLink-foreground       → --bolt-elements-messages-linkColor
+ *   --vscode-chat-thinkingShimmer      → var(--amplify-elements-textPrimary)
+ *   --vscode-textPreformat-foreground  → --amplify-elements-messages-inlineCode-text
+ *   --vscode-textPreformat-background  → --amplify-elements-messages-inlineCode-background
+ *   --vscode-textPreformat-border      → --amplify-elements-borderColor
+ *   --vscode-textLink-foreground       → --amplify-elements-messages-linkColor
  */
 
 /* ===== Shimmer keyframe (used by both thinking + progress) ===== */
@@ -65,7 +65,7 @@
 
   .icon {
     font-size: 12px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     margin: 0 0.2em;
     flex-shrink: 0;
     display: inline-flex;
@@ -75,7 +75,7 @@
     height: 14px;
 
     &.error {
-      color: var(--bolt-elements-icon-error);
+      color: var(--amplify-elements-icon-error);
     }
   }
 
@@ -91,7 +91,7 @@
 
   .progressStep {
     white-space: normal;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     font-size: 12px;
     margin: 0;
     line-height: 1.5;
@@ -101,11 +101,11 @@
     code {
       font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
-      color: var(--bolt-elements-messages-inlineCode-text);
-      background-color: var(--bolt-elements-messages-inlineCode-background);
+      color: var(--amplify-elements-messages-inlineCode-text);
+      background-color: var(--amplify-elements-messages-inlineCode-background);
       padding: 1px 3px;
       border-radius: 4px;
-      border: 1px solid var(--bolt-elements-borderColor);
+      border: 1px solid var(--amplify-elements-borderColor);
       margin-left: 0.25em;
     }
   }
@@ -126,11 +126,11 @@
   &.shimmerProgress .progressStep {
     background: linear-gradient(
       90deg,
-      var(--bolt-elements-textSecondary) 0%,
-      var(--bolt-elements-textSecondary) 30%,
-      var(--bolt-elements-textPrimary) 50%,
-      var(--bolt-elements-textSecondary) 70%,
-      var(--bolt-elements-textSecondary) 100%
+      var(--amplify-elements-textSecondary) 0%,
+      var(--amplify-elements-textSecondary) 30%,
+      var(--amplify-elements-textPrimary) 50%,
+      var(--amplify-elements-textSecondary) 70%,
+      var(--amplify-elements-textSecondary) 100%
     );
     background-size: 400% 100%;
     background-clip: text;
@@ -152,7 +152,7 @@
     display: flex;
     align-items: center;
     cursor: pointer;
-    color: var(--bolt-elements-textTertiary);
+    color: var(--amplify-elements-textTertiary);
     font-size: 11px;
     gap: 4px;
     background: transparent;
@@ -161,8 +161,8 @@
     border-radius: 4px;
 
     &:hover {
-      color: var(--bolt-elements-textPrimary);
-      background: var(--bolt-elements-background-depth-2);
+      color: var(--amplify-elements-textPrimary);
+      background: var(--amplify-elements-background-depth-2);
     }
 
     .chevron {
@@ -187,19 +187,19 @@
   }
 
   .ioBlock {
-    border: 1px solid var(--bolt-elements-borderColor);
+    border: 1px solid var(--amplify-elements-borderColor);
     border-radius: 4px;
-    background: var(--bolt-elements-background-depth-1);
+    background: var(--amplify-elements-background-depth-1);
     margin: 4px 0;
     overflow: hidden;
 
     .ioTitle {
       padding: 6px 10px;
-      background: var(--bolt-elements-background-depth-2);
-      border-bottom: 1px solid var(--bolt-elements-borderColor);
+      background: var(--amplify-elements-background-depth-2);
+      border-bottom: 1px solid var(--amplify-elements-borderColor);
       font-size: 11px;
       font-weight: 600;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
@@ -209,14 +209,14 @@
       font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
       font-size: 11.5px;
       line-height: 1.5;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       white-space: pre-wrap;
       word-break: break-word;
       max-height: 280px;
       overflow-y: auto;
 
       &.error {
-        color: var(--bolt-elements-icon-error);
+        color: var(--amplify-elements-icon-error);
       }
     }
   }
@@ -228,10 +228,10 @@
     flex-basis: 100%;
     padding: 4px 0;
     font-size: 12px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
 
     .checkIcon {
-      color: var(--bolt-elements-icon-success);
+      color: var(--amplify-elements-icon-success);
       font-size: 11px;
     }
   }
@@ -259,12 +259,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     font-size: 13px;
 
     .titleIcon {
       font-size: 14px;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       display: inline-flex;
     }
 
@@ -275,10 +275,10 @@
   }
 
   .messageContainer {
-    border: 1px solid var(--bolt-elements-borderColor);
+    border: 1px solid var(--amplify-elements-borderColor);
     border-radius: 4px;
     font-size: 12px;
-    background: var(--bolt-elements-background-depth-1);
+    background: var(--amplify-elements-background-depth-1);
     flex-basis: 100%;
     margin: 8px 0;
     overflow: hidden;
@@ -286,7 +286,7 @@
 
   .message {
     padding: 8px 12px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
     font-size: 11.5px;
     white-space: pre-wrap;
@@ -298,7 +298,7 @@
       font-weight: 600;
       margin: 4px 0 6px;
       font-size: 12px;
-      color: var(--bolt-elements-textPrimary);
+      color: var(--amplify-elements-textPrimary);
     }
   }
 
@@ -333,23 +333,23 @@
     line-height: 1.4;
 
     &.primary {
-      background: var(--bolt-elements-button-primary-background);
-      color: var(--bolt-elements-button-primary-text);
-      border-color: var(--bolt-elements-button-primary-background);
+      background: var(--amplify-elements-button-primary-background);
+      color: var(--amplify-elements-button-primary-text);
+      border-color: var(--amplify-elements-button-primary-background);
 
       &:hover {
-        background: var(--bolt-elements-button-primary-backgroundHover);
+        background: var(--amplify-elements-button-primary-backgroundHover);
       }
     }
 
     &.secondary {
       background: transparent;
-      color: var(--bolt-elements-textSecondary);
-      border-color: var(--bolt-elements-borderColor);
+      color: var(--amplify-elements-textSecondary);
+      border-color: var(--amplify-elements-borderColor);
 
       &:hover {
-        background: var(--bolt-elements-background-depth-2);
-        color: var(--bolt-elements-textPrimary);
+        background: var(--amplify-elements-background-depth-2);
+        color: var(--amplify-elements-textPrimary);
       }
     }
   }
@@ -360,7 +360,7 @@
 .chatThinkingBox {
   outline: none;
   position: relative;
-  color: var(--bolt-elements-textSecondary);
+  color: var(--amplify-elements-textSecondary);
   contain: layout style;
   margin-bottom: 14px;
 
@@ -372,14 +372,14 @@
     border: none;
     padding: 0;
     cursor: pointer;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     font-size: 14px;
     line-height: 1.5em;
 
     /* Brain icon sits on the LEFT of the label — signals "reasoning". */
     .brainIcon {
       font-size: 20px;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       display: inline-flex;
       flex-shrink: 0;
       transition: color 0.15s ease;
@@ -390,7 +390,7 @@
     /* Chevron sits on the RIGHT of the label — the expand/collapse affordance. */
     .chevron {
       font-size: 14px;
-      color: var(--bolt-elements-textTertiary);
+      color: var(--amplify-elements-textTertiary);
       transition: transform 0.15s ease;
       display: inline-flex;
       flex-shrink: 0;
@@ -408,18 +408,18 @@
     .label {
       font-size: 16px;
       font-weight: 400;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
     }
 
     &:hover {
-      color: var(--bolt-elements-textPrimary);
+      color: var(--amplify-elements-textPrimary);
 
       .brainIcon {
-        color: var(--bolt-elements-textPrimary);
+        color: var(--amplify-elements-textPrimary);
       }
 
       .chevron {
-        color: var(--bolt-elements-textPrimary);
+        color: var(--amplify-elements-textPrimary);
       }
     }
   }
@@ -428,11 +428,11 @@
   &.thinkingActive.thinkingCollapsed .headerButton .label {
     background: linear-gradient(
       90deg,
-      var(--bolt-elements-textSecondary) 0%,
-      var(--bolt-elements-textSecondary) 30%,
-      var(--bolt-elements-textPrimary) 50%,
-      var(--bolt-elements-textSecondary) 70%,
-      var(--bolt-elements-textSecondary) 100%
+      var(--amplify-elements-textSecondary) 0%,
+      var(--amplify-elements-textSecondary) 30%,
+      var(--amplify-elements-textPrimary) 50%,
+      var(--amplify-elements-textSecondary) 70%,
+      var(--amplify-elements-textSecondary) 100%
     );
     background-size: 400% 100%;
     background-clip: text;
@@ -450,8 +450,8 @@
     top: 24px;
     height: 16px;
     width: 8px;
-    border-left: 1px solid var(--bolt-elements-borderColor);
-    border-bottom: 1px solid var(--bolt-elements-borderColor);
+    border-left: 1px solid var(--amplify-elements-borderColor);
+    border-bottom: 1px solid var(--amplify-elements-borderColor);
     border-bottom-left-radius: 6px;
     pointer-events: none;
   }
@@ -496,7 +496,7 @@
         bottom: 0;
         width: 1px;
         border-radius: 0;
-        background-color: var(--bolt-elements-borderColor);
+        background-color: var(--amplify-elements-borderColor);
         mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
         -webkit-mask-image: linear-gradient(to bottom, #000 0 7px, transparent 7px 25px, #000 25px 100%);
         mask-mode: alpha;
@@ -536,7 +536,7 @@
         font-size: 20px;
         line-height: 20px;
         text-align: center;
-        color: var(--bolt-elements-textSecondary);
+        color: var(--amplify-elements-textSecondary);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -545,7 +545,7 @@
 
         /* Error state — red icon (terminal failure, blocked hook, etc.) */
         &.error {
-          color: var(--bolt-elements-icon-error);
+          color: var(--amplify-elements-icon-error);
         }
 
         /* In-flight spinner — rotates (matches Copilot's codicon-loading spin) */
@@ -562,7 +562,7 @@
       padding: 8px 12px 8px 28px;
       font-size: 16px;
       font-weight: 400;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       line-height: 1.6;
 
       p {
@@ -576,10 +576,10 @@
       code {
         font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
         font-size: 14px;
-        background-color: var(--bolt-elements-messages-inlineCode-background);
+        background-color: var(--amplify-elements-messages-inlineCode-background);
         padding: 1px 4px;
         border-radius: 4px;
-        border: 1px solid var(--bolt-elements-borderColor);
+        border: 1px solid var(--amplify-elements-borderColor);
         white-space: pre-wrap;
       }
     }
@@ -626,7 +626,7 @@
       padding: 8px 12px 8px 28px;
       font-size: 14px;
       font-weight: 400;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       display: flex;
       align-items: center;
       gap: 4px;
@@ -634,11 +634,11 @@
       .spinnerLabel {
         background: linear-gradient(
           90deg,
-          var(--bolt-elements-textSecondary) 0%,
-          var(--bolt-elements-textSecondary) 30%,
-          var(--bolt-elements-textPrimary) 50%,
-          var(--bolt-elements-textSecondary) 70%,
-          var(--bolt-elements-textSecondary) 100%
+          var(--amplify-elements-textSecondary) 0%,
+          var(--amplify-elements-textSecondary) 30%,
+          var(--amplify-elements-textPrimary) 50%,
+          var(--amplify-elements-textSecondary) 70%,
+          var(--amplify-elements-textSecondary) 100%
         );
         background-size: 400% 100%;
         background-clip: text;
@@ -658,19 +658,19 @@
       padding: 8px 12px 8px 28px;
       font-size: 14px;
       font-weight: 400;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       display: flex;
       align-items: center;
       gap: 4px;
 
       .doneIcon {
-        color: var(--bolt-elements-icon-success, #22c55e);
+        color: var(--amplify-elements-icon-success, #22c55e);
       }
 
       .doneLabel {
         font-size: 14px;
         font-weight: 600;
-        color: var(--bolt-elements-textSecondary);
+        color: var(--amplify-elements-textSecondary);
       }
     }
   }
@@ -680,7 +680,7 @@
 .answer {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--bolt-elements-textPrimary);
+  color: var(--amplify-elements-textPrimary);
 
   /* Tighter p spacing than the old markdown (Copilot uses 16px) */
   > p {
@@ -715,7 +715,7 @@
   /* The label button — flat, inline-flex, no border. */
   .chatUsedContextLabel {
     font-size: 13px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     user-select: none;
     width: fit-content;
 
@@ -730,7 +730,7 @@
       margin-left: -2px;
       font-size: 12px;
       line-height: 1.5em;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       cursor: pointer;
       transition:
         color 0.1s,
@@ -738,13 +738,13 @@
 
       .checkIcon {
         font-size: 12px;
-        color: var(--bolt-elements-icon-success);
+        color: var(--amplify-elements-icon-success);
         display: inline-flex;
       }
 
       .chevron {
         font-size: 12px;
-        color: var(--bolt-elements-textTertiary);
+        color: var(--amplify-elements-textTertiary);
         transition: transform 0.15s ease;
         display: inline-flex;
 
@@ -758,24 +758,24 @@
       }
 
       &:hover {
-        background: var(--bolt-elements-background-depth-2);
-        color: var(--bolt-elements-textPrimary);
+        background: var(--amplify-elements-background-depth-2);
+        color: var(--amplify-elements-textPrimary);
       }
     }
 
     /* When expanded (not collapsed), label text turns primary */
     &.expanded .labelButton {
-      color: var(--bolt-elements-textPrimary);
+      color: var(--amplify-elements-textPrimary);
     }
   }
 
   /* The bordered list — hidden when collapsed. */
   .chatUsedContextList {
-    border: 1px solid var(--bolt-elements-borderColor);
+    border: 1px solid var(--amplify-elements-borderColor);
     border-radius: 4px;
     padding: 4px 3px;
     margin-bottom: 8px;
-    background: var(--bolt-elements-background-depth-1);
+    background: var(--amplify-elements-background-depth-1);
     display: flex;
     flex-direction: column;
     gap: 1px;
@@ -788,7 +788,7 @@
     }
 
     &::-webkit-scrollbar-thumb {
-      background: var(--bolt-elements-borderColor);
+      background: var(--amplify-elements-borderColor);
       border-radius: 4px;
     }
 
@@ -809,7 +809,7 @@
     padding: 2px 6px;
     border-radius: 2px;
     font-size: 12px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
     cursor: pointer;
     user-select: none;
     min-height: 22px;
@@ -818,7 +818,7 @@
 
     .refIcon {
       font-size: 14px;
-      color: var(--bolt-elements-textSecondary);
+      color: var(--amplify-elements-textSecondary);
       display: inline-flex;
       flex-shrink: 0;
       width: 16px;
@@ -827,7 +827,7 @@
       justify-content: center;
 
       &.web {
-        color: var(--bolt-elements-textLink, #3794ff);
+        color: var(--amplify-elements-textLink, #3794ff);
       }
     }
 
@@ -842,18 +842,18 @@
     }
 
     .refRange {
-      color: var(--bolt-elements-textTertiary);
+      color: var(--amplify-elements-textTertiary);
       font-size: 11px;
       flex-shrink: 0;
       font-variant-numeric: tabular-nums;
     }
 
     &:hover {
-      background: var(--bolt-elements-background-depth-2);
-      color: var(--bolt-elements-textPrimary);
+      background: var(--amplify-elements-background-depth-2);
+      color: var(--amplify-elements-textPrimary);
 
       .refIcon {
-        color: var(--bolt-elements-textPrimary);
+        color: var(--amplify-elements-textPrimary);
       }
     }
   }
@@ -866,11 +866,11 @@
 .inlineCode {
   font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
   font-size: 0.9em;
-  color: var(--bolt-elements-messages-inlineCode-text);
-  background-color: var(--bolt-elements-messages-inlineCode-background);
+  color: var(--amplify-elements-messages-inlineCode-text);
+  background-color: var(--amplify-elements-messages-inlineCode-background);
   padding: 1px 5px;
   border-radius: 4px;
-  border: 1px solid var(--bolt-elements-borderColor);
+  border: 1px solid var(--amplify-elements-borderColor);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -894,12 +894,12 @@
   padding: 1px 8px 1px 5px;
   margin: 0 1px;
   border-radius: 5px;
-  border: 1px solid var(--bolt-elements-borderColor);
-  background: var(--bolt-elements-messages-inlineCode-background);
+  border: 1px solid var(--amplify-elements-borderColor);
+  background: var(--amplify-elements-messages-inlineCode-background);
   font-family: ui-monospace, 'Fira Code', Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
   line-height: 1.5;
-  color: var(--bolt-elements-textSecondary);
+  color: var(--amplify-elements-textSecondary);
   cursor: pointer;
   vertical-align: baseline;
   text-decoration: none;
@@ -945,9 +945,9 @@
   }
 
   &:hover {
-    background: var(--bolt-elements-background-depth-2);
-    border-color: var(--bolt-elements-textTertiary);
-    color: var(--bolt-elements-textPrimary);
+    background: var(--amplify-elements-background-depth-2);
+    border-color: var(--amplify-elements-textTertiary);
+    color: var(--amplify-elements-textPrimary);
     transform: translateY(-1px);
   }
 
@@ -956,7 +956,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--bolt-elements-textLink, #3794ff);
+    outline: 2px solid var(--amplify-elements-textLink, #3794ff);
     outline-offset: 1px;
   }
 
@@ -967,9 +967,9 @@
     opacity: 0.75;
 
     &:hover {
-      background: var(--bolt-elements-messages-inlineCode-background);
-      border-color: var(--bolt-elements-borderColor);
-      color: var(--bolt-elements-textSecondary);
+      background: var(--amplify-elements-messages-inlineCode-background);
+      border-color: var(--amplify-elements-borderColor);
+      color: var(--amplify-elements-textSecondary);
       transform: none;
     }
   }

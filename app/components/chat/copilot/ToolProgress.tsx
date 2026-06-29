@@ -368,7 +368,7 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
                     <div className={styles.ioTitle}>
                       Output
                       {renderedResult.isMutation && (
-                        <span className="ml-2 normal-case font-normal text-[10px] text-[color:var(--bolt-elements-icon-success)]">
+                        <span className="ml-2 normal-case font-normal text-[10px] text-[color:var(--amplify-elements-icon-success)]">
                           applied to workspace
                         </span>
                       )}

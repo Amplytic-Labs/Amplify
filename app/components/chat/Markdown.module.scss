@@ -18,7 +18,7 @@ $code-font-size: 13px;
   font-family: 'Almarai', sans-serif;
   font-size: 17px;
   line-height: 1.6;
-  color: var(--bolt-elements-textPrimary);
+  color: var(--amplify-elements-textPrimary);
   word-wrap: break-word;
   overflow-wrap: anywhere;
 
@@ -36,7 +36,7 @@ $code-font-size: 13px;
       margin-block-end: 10px;
       font-weight: 650;
       line-height: 1.3;
-      color: var(--bolt-elements-textPrimary);
+      color: var(--amplify-elements-textPrimary);
     }
   }
 
@@ -60,12 +60,12 @@ $code-font-size: 13px;
 
   h5 {
     font-size: 0.9em;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
   }
 
   h6 {
     font-size: 0.85em;
-    color: var(--bolt-elements-textTertiary);
+    color: var(--amplify-elements-textTertiary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -80,7 +80,7 @@ $code-font-size: 13px;
   }
 
   a {
-    color: var(--bolt-elements-messages-linkColor);
+    color: var(--amplify-elements-messages-linkColor);
     text-decoration: none;
     cursor: pointer;
 
@@ -91,7 +91,7 @@ $code-font-size: 13px;
 
   strong {
     font-weight: 650;
-    color: var(--bolt-elements-textPrimary);
+    color: var(--amplify-elements-textPrimary);
   }
 
   :not(pre) > code {
@@ -101,8 +101,8 @@ $code-font-size: 13px;
     @include not-inside-actions {
       border-radius: 5px;
       padding: 0.12em 0.38em;
-      background-color: var(--bolt-elements-messages-inlineCode-background);
-      color: var(--bolt-elements-messages-inlineCode-text);
+      background-color: var(--amplify-elements-messages-inlineCode-background);
+      color: var(--amplify-elements-messages-inlineCode-text);
     }
   }
 
@@ -122,9 +122,9 @@ $code-font-size: 13px;
   blockquote {
     margin: 0;
     padding: 2px 1em;
-    color: var(--bolt-elements-textSecondary);
-    border-left: 3px solid var(--bolt-elements-borderColor);
-    background: var(--bolt-elements-background-depth-2);
+    color: var(--amplify-elements-textSecondary);
+    border-left: 3px solid var(--amplify-elements-borderColor);
+    background: var(--amplify-elements-background-depth-2);
     border-radius: 0 6px 6px 0;
   }
 
@@ -181,7 +181,7 @@ $code-font-size: 13px;
     height: 1px;
     padding: 0;
     margin: 22px 0;
-    background-color: var(--bolt-elements-borderColor);
+    background-color: var(--amplify-elements-borderColor);
     border: 0;
     border-radius: 1px;
   }
@@ -194,17 +194,17 @@ $code-font-size: 13px;
 
     :is(th, td) {
       padding: 8px 12px;
-      border: 1px solid var(--bolt-elements-borderColor);
+      border: 1px solid var(--amplify-elements-borderColor);
       text-align: left;
     }
 
     th {
-      background-color: var(--bolt-elements-background-depth-2);
+      background-color: var(--amplify-elements-background-depth-2);
       font-weight: 600;
     }
 
     tr:nth-child(2n) {
-      background-color: var(--bolt-elements-background-depth-2);
+      background-color: var(--amplify-elements-background-depth-2);
     }
   }
 
@@ -213,10 +213,10 @@ $code-font-size: 13px;
     font-size: 0.85em;
     padding: 0.15em 0.4em;
     border-radius: 4px;
-    background-color: var(--bolt-elements-background-depth-2);
-    border: 1px solid var(--bolt-elements-borderColor);
+    background-color: var(--amplify-elements-background-depth-2);
+    border: 1px solid var(--amplify-elements-borderColor);
     border-bottom-width: 2px;
-    color: var(--bolt-elements-textSecondary);
+    color: var(--amplify-elements-textSecondary);
   }
 
   /* Nested lists inside a list item shouldn't get the bottom margin. */
@@ -230,7 +230,7 @@ $code-font-size: 13px;
   }
 }
 
-@keyframes bolt-thought-pulse {
+@keyframes amplify-thought-pulse {
   0%,
   100% {
     opacity: 0.35;

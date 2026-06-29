@@ -153,24 +153,24 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
       <div
         className={classNames(
           'flex items-center gap-2 p-2 cursor-pointer transition-colors text-sm',
-          'bg-bolt-elements-background-depth-2 hover:bg-bolt-elements-artifacts-backgroundHover',
-          !grouped && 'rounded-md border border-bolt-elements-borderColor',
-          grouped && 'border-b border-bolt-elements-borderColor last:border-b-0',
+          'bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-artifacts-backgroundHover',
+          !grouped && 'rounded-md border border-amplify-elements-borderColor',
+          grouped && 'border-b border-amplify-elements-borderColor last:border-b-0',
         )}
         onClick={toggleDetails}
       >
-        <div className={classNames(icon, 'text-bolt-elements-textSecondary')} />
-        <span className="text-bolt-elements-textPrimary font-medium">
+        <div className={classNames(icon, 'text-amplify-elements-textSecondary')} />
+        <span className="text-amplify-elements-textPrimary font-medium">
           {state === 'call' ? `${friendlyName}...` : friendlyName}
         </span>
         {summary && (
-          <span className="text-bolt-elements-textSecondary text-xs truncate max-w-md font-mono">{summary}</span>
+          <span className="text-amplify-elements-textSecondary text-xs truncate max-w-md font-mono">{summary}</span>
         )}
         {isResult && (
           <span
             className={classNames(
               'text-xs ml-auto',
-              isError ? 'text-bolt-elements-icon-error' : 'text-bolt-elements-icon-success',
+              isError ? 'text-amplify-elements-icon-error' : 'text-amplify-elements-icon-success',
             )}
           >
             {isError ? 'Failed' : 'Done'}
@@ -188,24 +188,24 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
           >
             <div
               className={classNames(
-                'p-3 text-xs font-mono bg-bolt-elements-background-depth-3 text-bolt-elements-textSecondary',
-                !grouped && 'border-x border-b border-bolt-elements-borderColor rounded-b-md',
-                grouped && 'border-x border-b border-bolt-elements-borderColor',
+                'p-3 text-xs font-mono bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary',
+                !grouped && 'border-x border-b border-amplify-elements-borderColor rounded-b-md',
+                grouped && 'border-x border-b border-amplify-elements-borderColor',
               )}
             >
               <div className="mb-2">
-                <span className="font-bold text-bolt-elements-textPrimary">Tool:</span> {toolName}
+                <span className="font-bold text-amplify-elements-textPrimary">Tool:</span> {toolName}
               </div>
               <div className="mb-2">
-                <span className="font-bold text-bolt-elements-textPrimary">Args:</span>{' '}
-                <pre className="mt-1 p-2 bg-bolt-elements-background-depth-2 rounded overflow-x-auto">
+                <span className="font-bold text-amplify-elements-textPrimary">Args:</span>{' '}
+                <pre className="mt-1 p-2 bg-amplify-elements-background-depth-2 rounded overflow-x-auto">
                   {JSON.stringify(args, null, 2)}
                 </pre>
               </div>
               {isResult && (
                 <div>
-                  <span className="font-bold text-bolt-elements-textPrimary">Result:</span>
-                  <pre className="mt-1 p-2 bg-bolt-elements-background-depth-2 rounded overflow-x-auto whitespace-pre-wrap break-words">
+                  <span className="font-bold text-amplify-elements-textPrimary">Result:</span>
+                  <pre className="mt-1 p-2 bg-amplify-elements-background-depth-2 rounded overflow-x-auto whitespace-pre-wrap break-words">
                     {renderResult(toolName, result)}
                   </pre>
                 </div>

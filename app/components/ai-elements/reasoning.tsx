@@ -179,7 +179,7 @@ export const ReasoningTrigger = memo(
         type="button"
         onClick={handleClick}
         className={classNames(
-          'flex items-center gap-2 text-bolt-elements-textTertiary text-sm transition-colors hover:text-bolt-elements-textPrimary bg-transparent border-none p-0 cursor-pointer',
+          'flex items-center gap-2 text-amplify-elements-textTertiary text-sm transition-colors hover:text-amplify-elements-textPrimary bg-transparent border-none p-0 cursor-pointer',
           className,
         )}
         {...props}
@@ -269,7 +269,7 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
           <div
             ref={contentRef}
             className={classNames(
-              'text-[13px] leading-relaxed text-bolt-elements-textSecondary outline-none max-h-96 overflow-y-auto px-4 py-3 bg-bolt-elements-background-depth-2/60 border border-bolt-elements-borderColor/50 rounded-lg',
+              'text-[13px] leading-relaxed text-amplify-elements-textSecondary outline-none max-h-96 overflow-y-auto px-4 py-3 bg-amplify-elements-background-depth-2/60 border border-amplify-elements-borderColor/50 rounded-lg',
               styles.ReasoningScrollbar,
             )}
           >

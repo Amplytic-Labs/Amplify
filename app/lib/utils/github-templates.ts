@@ -21,7 +21,7 @@ export async function fetchRepoContentsCloudflare(repo: string, githubToken?: st
   const repoResponse = await fetch(`${baseUrl}/repos/${repo}`, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'bolt.diy-app',
+      'User-Agent': 'Amplify',
       ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
     },
   });
@@ -37,7 +37,7 @@ export async function fetchRepoContentsCloudflare(repo: string, githubToken?: st
   const treeResponse = await fetch(`${baseUrl}/repos/${repo}/git/trees/${defaultBranch}?recursive=1`, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'bolt.diy-app',
+      'User-Agent': 'Amplify',
       ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
     },
   });
@@ -83,7 +83,7 @@ export async function fetchRepoContentsCloudflare(repo: string, githubToken?: st
         const contentResponse = await fetch(`${baseUrl}/repos/${repo}/contents/${file.path}`, {
           headers: {
             Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'bolt.diy-app',
+            'User-Agent': 'Amplify',
             ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
           },
         });
@@ -130,7 +130,7 @@ export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
   const zipResponse = await fetch(zipballUrl, {
     headers: {
       Accept: 'application/vnd.github.v3+json',
-      'User-Agent': 'bolt.diy-app',
+      'User-Agent': 'Amplify',
       ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
     },
   });

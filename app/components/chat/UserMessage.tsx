@@ -40,29 +40,29 @@ export function UserMessage({ content, parts }: UserMessageProps) {
       <div className="flex items-center gap-1.5 mb-0.5 justify-end">
         {profile?.avatar || profile?.username ? (
           <>
-            <span className="text-bolt-elements-textSecondary text-[11px] font-medium">
+            <span className="text-amplify-elements-textSecondary text-[11px] font-medium">
               {profile?.username || 'You'}
             </span>
             {profile.avatar ? (
               <img
                 src={profile.avatar}
                 alt={profile?.username || 'User'}
-                className="w-5 h-5 object-cover rounded-full border border-bolt-elements-borderColor shadow-sm"
+                className="w-5 h-5 object-cover rounded-full border border-amplify-elements-borderColor shadow-sm"
                 loading="eager"
                 decoding="sync"
               />
             ) : (
-              <div className="i-ph:user-circle-fill text-bolt-elements-textSecondary text-lg" />
+              <div className="i-ph:user-circle-fill text-amplify-elements-textSecondary text-lg" />
             )}
           </>
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-2 bg-bolt-elements-background-depth-2 shadow-sm border border-bolt-elements-borderColor px-3.5 py-2.5 w-fit max-w-[85%] rounded-2xl rounded-tr-sm ml-auto">
+      <div className="flex flex-col gap-2 bg-amplify-elements-background-depth-2 shadow-sm border border-amplify-elements-borderColor px-3.5 py-2.5 w-fit max-w-[85%] rounded-2xl rounded-tr-sm ml-auto">
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((item, index) => (
-              <div key={index} className="relative rounded-lg border border-bolt-elements-borderColor/50 overflow-hidden shadow-sm bg-bolt-elements-background-depth-1">
+              <div key={index} className="relative rounded-lg border border-amplify-elements-borderColor/50 overflow-hidden shadow-sm bg-amplify-elements-background-depth-1">
                 <img
                   src={`data:${item.mimeType};base64,${item.data}`}
                   alt={`Image ${index + 1}`}
@@ -73,7 +73,7 @@ export function UserMessage({ content, parts }: UserMessageProps) {
           </div>
         )}
         {textContent && (
-          <div className="text-bolt-elements-textPrimary prose-sm prose-p:my-0 leading-relaxed">
+          <div className="text-amplify-elements-textPrimary prose-sm prose-p:my-0 leading-relaxed">
             <Markdown html>{textContent}</Markdown>
           </div>
         )}
@@ -83,6 +83,6 @@ export function UserMessage({ content, parts }: UserMessageProps) {
 }
 
 function stripMetadata(content: string) {
-  const artifactRegex = /<boltArtifact\s+[^>]*>[\s\S]*?<\/boltArtifact>/gm;
+  const artifactRegex = /<amplifyArtifact\s+[^>]*>[\s\S]*?<\/amplifyArtifact>/gm;
   return content.replace(MODEL_REGEX, '').replace(PROVIDER_REGEX, '').replace(artifactRegex, '');
 }
