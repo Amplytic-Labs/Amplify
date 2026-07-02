@@ -219,6 +219,108 @@ export class PlanStore {
   }
 
   /**
+   * Creates a plan with full Task Contracts (goal, requirements,
+   * success criteria, required skills, tool output references,
+   * constraints). Also initializes the mutable ExecutionState for
+   * each point.
+   *
+   * This is the preferred creation path for the new architecture —
+   * it separates the immutable contract from the mutable execution
+   * state at creation time.
+   */
+  async createPlanWithContractsAsync(params: {
+    projectId: string;
+    chatId: string;
+    userRequest: string;
+    description: string;
+    plannerNotes?: string;
+    points: Array<{
+      title: string;
+      goal: string;
+      description: string;
+      requirements: string[];
+      successCriteria: string[];
+      requiredSkills: string[];
+      requiredToolOutputs: Array<{
+        tool: string;
+        id: string;
+        args?: Record<string, unknown>;
+        label?: string;
+      }>;
+      expectedFiles: string[];
+      verificationChecks?: VerificationCheckType[];
+      constraints?: {
+        doNotModify?: string[];
+        doNotInstall?: string[];
+        additional?: string[];
+      };
+    }>;
+    verificationChecks?: VerificationCheckType[];
+  }): Promise<Plan> {
+    await this.ensureInit();
+
+    const planId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const points: PlanPoint[] = params.points.map((point, index) => ({
+      id: `pp_${planId}_${index}`,
+      title: point.title,
+      goal: point.goal,
+      description: point.description,
+      requirements: point.requirements,
+      successCriteria: point.successCriteria,
+      requiredSkills: point.requiredSkills,
+      requiredToolOutputs: point.requiredToolOutputs,
+      constraints: point.constraints,
+      status: 'pending' as PlanPointStatus,
+      order: index,
+      dependencies: index > 0 ? [`pp_${planId}_${index - 1}`] : [],
+      expectedFiles: point.expectedFiles,
+      verificationChecks:
+        point.verificationChecks ?? params.verificationChecks ?? DEFAULT_VERIFICATION_CHECKS,
+      // Initialize the mutable execution state — the runtime owns this.
+      executionState: {
+        status: 'pending' as const,
+        startedAt: now,
+        lastActivity: now,
+        completedSteps: [],
+        toolCallIds: [],
+        filesModified: [],
+        checkpointIndex: -1,
+        canResume: true,
+        retryCount: 0,
+      },
+      checkpoints: [],
+    }));
+
+    const plan: Plan = {
+      id: planId,
+      projectId: params.projectId,
+      chatId: params.chatId,
+      userRequest: params.userRequest,
+      description: params.description,
+      status: 'draft',
+      points,
+      defaultVerificationChecks: params.verificationChecks ?? DEFAULT_VERIFICATION_CHECKS,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this._data.plans.push(plan);
+    this._data.chatToPlan[params.chatId] = planId;
+
+    if (!this._data.projectPlans[params.projectId]) {
+      this._data.projectPlans[params.projectId] = [];
+    }
+    this._data.projectPlans[params.projectId].push(planId);
+
+    this.persist();
+    logger.info(`Created plan ${planId} with ${points.length} task contracts`);
+
+    return plan;
+  }
+
+  /**
    * Creates a new plan from the AI's structured output.
    */
   createPlan(params: {

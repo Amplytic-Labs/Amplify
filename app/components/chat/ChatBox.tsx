@@ -407,6 +407,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 >
                   <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
                   <span>{activeModel?.label || activeModel?.name || props.model || 'Select model'}</span>
+                  {activeModel?.maxTokenAllowed && (
+                    <span className="hidden sm:inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[9px] font-semibold font-mono leading-none">
+                      {activeModel.maxTokenAllowed >= 1000000
+                        ? `${(activeModel.maxTokenAllowed / 1000000).toFixed(1)}M`
+                        : `${Math.floor(activeModel.maxTokenAllowed / 1000)}K`}
+                    </span>
+                  )}
                   <motion.div
                     animate={{ rotate: isModelDropdownOpen ? 180 : 0 }}
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
@@ -491,6 +498,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                           {modelItem.name}
                                         </p>
                                       </div>
+                                      {modelItem.maxTokenAllowed && (
+                                        <span className="flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--muted)] text-[var(--muted-foreground)] text-[9px] font-semibold font-mono leading-none">
+                                          {modelItem.maxTokenAllowed >= 1000000
+                                            ? `${(modelItem.maxTokenAllowed / 1000000).toFixed(1)}M`
+                                            : `${Math.floor(modelItem.maxTokenAllowed / 1000)}K`}
+                                        </span>
+                                      )}
                                     </motion.button>
                                   );
                                 })}

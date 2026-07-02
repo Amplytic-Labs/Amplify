@@ -77,7 +77,7 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
         <div className="flex gap-2 justify-end">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
+            className="bg-transparent px-3 py-1.5 text-xs font-medium text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
           >
             Cancel
           </button>

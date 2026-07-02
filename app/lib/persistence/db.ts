@@ -8,6 +8,12 @@ export interface IChatMetadata {
   gitBranch?: string;
   netlifySiteId?: string;
   projectInitiated?: boolean;
+
+  /**
+   * When set, this chat is linked to a Project (the global source of truth).
+   * File state is read from / written to the project, NOT a per-chat snapshot.
+   */
+  projectId?: string;
 }
 
 const logger = createScopedLogger('ChatHistory');
@@ -20,7 +26,11 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
   }
 
   return new Promise((resolve) => {
-    const request = indexedDB.open('amplifyHistory', 2);
+    /*
+     * v3: add `project_files` (global source of truth per project) and
+     * `project_commits` (versioned snapshots of a project's files).
+     */
+    const request = indexedDB.open('amplifyHistory', 3);
 
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -37,6 +47,23 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
       if (oldVersion < 2) {
         if (!db.objectStoreNames.contains('snapshots')) {
           db.createObjectStore('snapshots', { keyPath: 'chatId' });
+        }
+      }
+
+      if (oldVersion < 3) {
+        // Global, per-project file state (single current FileMap).
+        if (!db.objectStoreNames.contains('project_files')) {
+          db.createObjectStore('project_files', { keyPath: 'projectId' });
+        }
+
+        /*
+         * Versioned commits of a project's files. Indexed by projectId so we
+         * can list a project's history efficiently.
+         */
+        if (!db.objectStoreNames.contains('project_commits')) {
+          const commitStore = db.createObjectStore('project_commits', { keyPath: 'id' });
+          commitStore.createIndex('projectId', 'projectId', { unique: false });
+          commitStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
       }
     };

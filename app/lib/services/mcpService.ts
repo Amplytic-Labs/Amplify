@@ -325,7 +325,7 @@ export class MCPService {
       },
       execute_plan: {
         description:
-          'Creates and executes a plan by breaking a complex task into sequential plan points. Each plan point runs as an isolated sub-chat with full system prompt and app builder capabilities. Use this for complex multi-step implementation tasks that require 3+ distinct steps.',
+          "YOU decide when to call this. Use it when you judge the task is too big for a single response (3+ distinct steps, 3+ files, multi-component feature, or large refactor). Calling this creates a plan from your draft points — a dedicated planner enriches them into full task contracts, then the user approves before execution. Do NOT call this for simple single-step tasks. Do NOT ask the user whether to plan — if it's genuinely complex, just call it.",
         parameters: z.object({
           taskDescription: z.string().describe('The overall task to plan and execute'),
           planPoints: z

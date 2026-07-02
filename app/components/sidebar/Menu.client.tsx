@@ -6,7 +6,7 @@ import { ThemeSwitch } from '~/components/ui/ThemeSwitch';
 import { ControlPanel } from '~/components/@settings/core/ControlPanel';
 import { SettingsButton, HelpButton } from '~/components/ui/SettingsButton';
 import { Button } from '~/components/ui/Button';
-import { db, deleteById, getAll, chatId, type ChatHistoryItem, useChatHistory } from '~/lib/persistence';
+import { db, deleteById, getAll, chatId, chatListVersion, type ChatHistoryItem, useChatHistory } from '~/lib/persistence';
 import { projectStore } from '~/lib/persistence/project-store';
 import { cubicEasingFn } from '~/utils/easings';
 import { HistoryItem } from './HistoryItem';
@@ -108,7 +108,23 @@ export const Menu = () => {
   const loadEntries = useCallback(() => {
     if (db) {
       getAll(db)
-        .then((list) => list.filter((item) => item.urlId && item.description))
+        /*
+         * Only filter on urlId — previously this also required
+         * `item.description`, which hid newly-created text-only chats
+         * (their description is generated asynchronously by the
+         * /api/chat-title route). Chats with no description now show up
+         * with a "New chat" placeholder label in HistoryItem.
+         */
+        .then((list) => list.filter((item) => item.urlId))
+        .then((list) =>
+          // Sort newest-first by timestamp so the most recent chat
+          // appears at the top of the list immediately after creation.
+          list.sort((a, b) => {
+            const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+            const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+            return tb - ta;
+          }),
+        )
         .then(setList)
         .catch((error) => toast.error(error.message));
     }
@@ -292,6 +308,22 @@ export const Menu = () => {
       loadEntries();
     }
   }, [open, loadEntries]);
+
+  /*
+   * Live refresh: subscribe to `chatListVersion` so the sidebar re-fetches
+   * the chat list from IndexedDB whenever a chat is created or updated.
+   * This is what makes a newly-sent message's chat appear in the Recent
+   * Chats list immediately, without the user having to close & reopen
+   * the sidebar.
+   */
+  const listVersion = useStore(chatListVersion);
+
+  useEffect(() => {
+    if (open && db) {
+      loadEntries();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listVersion, open]);
 
   // Exit selection mode when sidebar is closed
   useEffect(() => {

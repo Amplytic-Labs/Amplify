@@ -379,7 +379,25 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       },
       onError: (error: any) => {
         // Provide more specific error messages for common issues
-        const errorMessage = error.message || 'Unknown error';
+        const rawMessage = error?.message || 'Unknown error';
+
+        // Detect HTML error pages (e.g. z.ai ALB 502/503/504 pages).
+        // These surface as the raw HTML body and are useless/confusing
+        // to show to the user. Replace with a clean, actionable message.
+        const looksLikeHtml =
+          rawMessage.includes('<html') ||
+          rawMessage.includes('<head>') ||
+          rawMessage.includes('<title>') ||
+          rawMessage.includes('<center>');
+
+        const htmlStatusMatch = rawMessage.match(/(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i);
+
+        if (looksLikeHtml) {
+          const statusCode = htmlStatusMatch?.[1] || '5xx';
+          return `Custom error: The AI service returned a ${statusCode} error (the provider's load balancer is temporarily unavailable). It was retried automatically but still failed. Please try again in a moment.`;
+        }
+
+        const errorMessage = rawMessage;
 
         if (errorMessage.includes('model') && errorMessage.includes('not found')) {
           return 'Custom error: Invalid model selected. Please check that the model name is correct and available.';
@@ -409,6 +427,12 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           return 'Custom error: Network error. Please check your internet connection and try again.';
         }
 
+        // Catch-all: if the error message is very long (likely a raw HTML
+        // page or stack trace), truncate it so the UI doesn't break.
+        if (errorMessage.length > 300) {
+          return `Custom error: ${errorMessage.slice(0, 300)}…`;
+        }
+
         return `Custom error: ${errorMessage}`;
       },
     });
@@ -425,9 +449,23 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
   } catch (error: any) {
     logger.error(error);
 
+    // Sanitize HTML error pages (e.g. z.ai ALB 502/503/504) so the raw
+    // HTML never reaches the client.
+    let message = error?.message || 'An unexpected error occurred';
+
+    if (
+      typeof message === 'string' &&
+      (message.includes('<html') || message.includes('<head>') || message.includes('<title>'))
+    ) {
+      const statusMatch = message.match(/(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i);
+      message = `The AI service returned a ${statusMatch?.[1] || '5xx'} error (temporarily unavailable). Please try again in a moment.`;
+    } else if (typeof message === 'string' && message.length > 300) {
+      message = message.slice(0, 300) + '…';
+    }
+
     const errorResponse = {
       error: true,
-      message: error.message || 'An unexpected error occurred',
+      message,
       statusCode: error.statusCode || 500,
       isRetryable: error.isRetryable !== false, // Default to retryable unless explicitly false
       provider: error.provider || 'unknown',

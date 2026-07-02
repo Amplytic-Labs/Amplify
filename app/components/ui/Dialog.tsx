@@ -16,9 +16,10 @@ interface DialogButtonProps {
   children: ReactNode;
   onClick?: (event: React.MouseEvent) => void;
   disabled?: boolean;
+  className?: string;
 }
 
-export const DialogButton = memo(({ type, children, onClick, disabled }: DialogButtonProps) => {
+export const DialogButton = memo(({ type, children, onClick, disabled, className: classNameProp }: DialogButtonProps) => {
   return (
     <button
       className={classNames(
@@ -28,6 +29,7 @@ export const DialogButton = memo(({ type, children, onClick, disabled }: DialogB
           : type === 'secondary'
             ? 'bg-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
             : 'bg-transparent text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10',
+        classNameProp,
       )}
       onClick={onClick}
       disabled={disabled}

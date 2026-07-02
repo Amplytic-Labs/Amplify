@@ -136,7 +136,7 @@ export function GitHubAuthDialog({ isOpen, onClose, onSuccess }: GitHubAuthDialo
                   <button
                     type="button"
                     onClick={handleClose}
-                    className="px-4 py-2 text-sm text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
+                    className="bg-transparent px-4 py-2 text-sm text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
                   >
                     Cancel
                   </button>

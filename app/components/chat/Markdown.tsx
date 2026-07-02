@@ -236,7 +236,7 @@ export const Markdown = memo(
             );
           }
 
-          return <button {...props}>{children}</button>;
+          return <button className="bg-transparent" {...props}>{children}</button>;
         },
         a: ({ node, children, ...props }) => {
           const href = props.href;

@@ -39,6 +39,7 @@ import type { LlmErrorAlertType } from '~/types/actions';
 import { projectStore } from '~/lib/persistence/project-store';
 import { planStore } from '~/lib/planning/plan-store';
 import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
+import { useProjectContextString } from '~/lib/persistence/useProjectContext';
 
 const logger = createScopedLogger('Chat');
 
@@ -142,9 +143,21 @@ export const ChatImpl = memo(
     const [vectorUserContext, setVectorUserContext] = useState('');
     const [vectorProjectContext, setVectorProjectContext] = useState('');
 
+    /*
+     * Structured project memory + file tree + vector recall, combined for the
+     * system prompt `projectContext` slot. Reactive to chat/files/memory edits.
+     */
+    const projectContextForPrompt = useProjectContextString(vectorProjectContext);
+
     // Plan execution state
     const [planExecuting, setPlanExecuting] = useState(false);
     const [planProgress, setPlanProgress] = useState<PlanProgressUpdate | null>(null);
+
+    // True while the planner LLM enriches the draft signal into full Task Contracts.
+    const [planLoading, setPlanLoading] = useState(false);
+
+    // Guards against the enrichment effect firing twice (strict-mode / dep re-runs).
+    const enrichPlanSignalRef = useRef(false);
     const activePlanIdRef = useRef<string | null>(null);
     const [planSignal, setPlanSignal] = useState<any>(null);
 
@@ -185,9 +198,10 @@ export const ChatImpl = memo(
         },
         maxLLMSteps: mcpSettings.maxLLMSteps,
         userContext: vectorUserContext || undefined,
-        projectContext: vectorProjectContext || undefined,
+        projectContext: projectContextForPrompt,
       },
       sendExtraMessageFields: true,
+
       /*
        * Enable client-side multi-step continuation. Without this, calling
        * `addToolResult` (used for native-tool auto-approve + mutating-tool
@@ -342,7 +356,7 @@ export const ChatImpl = memo(
       };
     }, [messages.length]);
 
-    // Detect execute_plan signal from AI responses and show approval dialog
+    // Detect execute_plan signal, enrich via the planner LLM, then show the approval dialog.
     useEffect(() => {
       const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
 
@@ -360,16 +374,51 @@ export const ChatImpl = memo(
         return;
       }
 
-      try {
-        const signal = JSON.parse(content);
+      let signal: any;
 
-        if (signal.type === 'execute_plan_signal' && !planExecuting && !planSignal) {
-          setPlanSignal(signal);
-        }
+      try {
+        signal = JSON.parse(content);
       } catch {
         // Starts with { but isn't valid JSON — ignore
+        return;
       }
-    }, [messages, planExecuting, planSignal]);
+
+      if (signal.type !== 'execute_plan_signal') {
+        return;
+      }
+
+      if (planExecuting || planSignal || planLoading) {
+        return;
+      }
+
+      if (enrichPlanSignalRef.current) {
+        return;
+      }
+
+      enrichPlanSignalRef.current = true;
+
+      /*
+       * Open the dialog immediately with the AI's draft plan + a loading
+       * overlay, then run the planner LLM to enrich each point into a
+       * full Task Contract (goal, requirements, successCriteria,
+       * requiredSkills, requiredToolOutputs, constraints). On failure
+       * the draft is kept so the user can still approve.
+       */
+      setPlanSignal(signal);
+      setPlanLoading(true);
+
+      (async () => {
+        try {
+          const { enrichSignalWithPlan } = await import('~/lib/planning/planner');
+          const enriched = await enrichSignalWithPlan(signal, projectContextForPrompt);
+          setPlanSignal(enriched);
+        } catch (e) {
+          logger.error('[Plan] planner enrichment failed, falling back to draft', e);
+        } finally {
+          setPlanLoading(false);
+        }
+      })();
+    }, [messages, planExecuting, planSignal, planLoading, projectContextForPrompt]);
 
     /*
      * ───────────────────────────────────────────────────────────────────
@@ -542,18 +591,25 @@ export const ChatImpl = memo(
           return;
         }
 
-        // Create the plan in the store (M-5 fix: use async version to ensure IDB is loaded)
-        const plan = await planStore.createPlanAsync({
+        // Create the plan with full Task Contracts (immutable spec + mutable ExecutionState per point).
+        const DEFAULT_CHECKS = ['lint', 'type_check', 'flow_verification'] as any[];
+        const plan = await planStore.createPlanWithContractsAsync({
           projectId: project.id,
           chatId: currentChatId || '',
           userRequest: signal.taskDescription,
           description: signal.taskDescription,
-          points: signal.planPoints.map((p: any, i: number) => ({
+          plannerNotes: signal.plannerNotes,
+          points: signal.planPoints.map((p: any) => ({
             title: p.title,
+            goal: p.goal || '',
             description: p.description,
-            order: i,
+            requirements: p.requirements || [],
+            successCriteria: p.successCriteria || [],
+            requiredSkills: p.requiredSkills || [],
+            requiredToolOutputs: p.requiredToolOutputs || [],
             expectedFiles: p.expectedFiles || [],
-            verificationChecks: ['lint', 'type_check', 'flow_verification'] as any[],
+            verificationChecks: p.verificationChecks?.length ? (p.verificationChecks as any) : DEFAULT_CHECKS,
+            constraints: p.constraints,
           })),
         });
 
@@ -587,6 +643,36 @@ export const ChatImpl = memo(
           // Vector context is optional
         }
 
+        /*
+         * Prepend the structured project memory + file tree so sub-chats share
+         * the same global context as the main chat.
+         */
+        let projectMemoryBlock = '';
+        let fileTreeBlock = '';
+
+        try {
+          const { formatProjectMemoryForPrompt } = await import('~/lib/persistence/project-store');
+          const { buildFileTreeSummary } = await import('~/lib/persistence/project-memory-detect');
+          projectMemoryBlock = formatProjectMemoryForPrompt(project.memory);
+          fileTreeBlock = buildFileTreeSummary(workbenchStore.files.get()) || '';
+          const parts = [projectMemoryBlock, fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '', currentProjectContext].filter(Boolean);
+          currentProjectContext = parts.join('\n\n');
+        } catch {
+          /* keep vector-only context */
+        }
+
+        // Collect available skills as RawSkillInput for the SkillContextBuilder.
+        // getRelevantSkills() returns a string, so we use getSkills() to get
+        // the list, then fetch each skill's content individually.
+        const skillList = skillLoader.getSkills();
+        const availableSkills = await Promise.all(
+          skillList.map(async (s: any) => ({
+            id: s.id,
+            label: s.label,
+            content: (await skillLoader.getSkillContent(s.id)) || '',
+          })),
+        );
+
         const fullSystemPrompt = getSystemPrompt({
           cwd: '/home/project',
           allowedHtmlElements: [] as any[],
@@ -619,8 +705,8 @@ export const ChatImpl = memo(
                 chatMode: 'build',
                 contextOptimization: false,
                 maxLLMSteps: 5,
-                userContext: vectorUserContext || '',
-                projectContext: vectorProjectContext || '',
+                userContext: currentUserContext || '',
+                projectContext: currentProjectContext || '',
                 apiKeys,
                 files: workbenchStore.files.get(),
               }),
@@ -736,6 +822,10 @@ export const ChatImpl = memo(
           toolExecutionResults: toolResults,
           chatId: currentChatId || '',
           projectId: project.id,
+          availableSkills,
+          projectMemoryBlock,
+          fileTreeBlock,
+          plannerNotes: signal.plannerNotes,
           onProgress: (update) => {
             setPlanProgress(update);
           },
@@ -754,6 +844,225 @@ export const ChatImpl = memo(
         setPlanExecuting(false);
         setPlanProgress(null);
         activePlanIdRef.current = null;
+      }
+    };
+
+    /**
+     * Resumes a paused / interrupted plan from where it left off.
+     *
+     * The ExecutionManager finds the first non-complete task, checks
+     * if it has a checkpoint, and reconstructs the worker's context.
+     * The user just says "continue" — no need to specify which task.
+     */
+    const handleResumePlan = async () => {
+      const planId = activePlanIdRef.current;
+
+      if (!planId) {
+        return;
+      }
+
+      setPlanExecuting(true);
+
+      try {
+        const { resumePlan } = await import('~/lib/planning/sub-chat-engine');
+        const { ExecutionManager } = await import('~/lib/planning/execution-manager');
+
+        const state = ExecutionManager.getExecutionState(planId);
+
+        if (!state?.canResume) {
+          return;
+        }
+
+        // Reload the plan from the store
+        const plan = await planStore.getPlanAsync(planId);
+        if (!plan) return;
+
+        // Reuse the same execution options as the original plan execution.
+        // We rebuild the system prompt and context the same way.
+        const { getSystemPrompt } = await import('~/lib/common/prompts/new-prompt');
+        const { chatId: chatIdAtom } = await import('~/lib/persistence/useChatHistory');
+        const currentChatId = chatIdAtom.get();
+        const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
+        if (!project) return;
+
+        const { SkillLoader } = await import('~/lib/services/skillLoader');
+        const { memoryStore } = await import('~/lib/persistence/memoryStore');
+        const skillLoader = SkillLoader.getInstance();
+        const skills = skillLoader.getRelevantSkills();
+        const memory = memoryStore.formatForPrompt();
+
+        let currentUserContext = '';
+        let currentProjectContext = '';
+
+        try {
+          const { userProfileStore } = await import('~/lib/vector-store/user-profile-store');
+          const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
+          await userProfileStore.initialize();
+          currentUserContext = await userProfileStore.formatContextForPrompt(plan.userRequest, 500);
+          currentProjectContext = await projectContextStore.formatContextForPrompt(
+            project.id,
+            plan.userRequest,
+            1000,
+          );
+        } catch {
+          // Vector context is optional
+        }
+
+        let projectMemoryBlock = '';
+        let fileTreeBlock = '';
+
+        try {
+          const { formatProjectMemoryForPrompt } = await import('~/lib/persistence/project-store');
+          const { buildFileTreeSummary } = await import('~/lib/persistence/project-memory-detect');
+          projectMemoryBlock = formatProjectMemoryForPrompt(project.memory);
+          fileTreeBlock = buildFileTreeSummary(workbenchStore.files.get()) || '';
+          const parts = [projectMemoryBlock, fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '', currentProjectContext].filter(Boolean);
+          currentProjectContext = parts.join('\n\n');
+        } catch {
+          /* keep vector-only context */
+        }
+
+        const fullSystemPrompt = getSystemPrompt({
+          cwd: '/home/project',
+          allowedHtmlElements: [] as any[],
+          modificationTagName: 'amplifyArtifact',
+          skills,
+          memory,
+          userContext: currentUserContext,
+          projectContext: currentProjectContext,
+        });
+
+        // Collect available skills as RawSkillInput for the SkillContextBuilder
+        const skillList = skillLoader.getSkills();
+        const availableSkills = await Promise.all(
+          skillList.map(async (s: any) => ({
+            id: s.id,
+            label: s.label,
+            content: (await skillLoader.getSkillContent(s.id)) || '',
+          })),
+        );
+
+        const toolResults = messages
+          .filter((m) => m.role === 'assistant' && m.toolInvocations)
+          .flatMap((m) =>
+            (m.toolInvocations || []).map(
+              (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
+            ),
+          )
+          .join('\n');
+
+        await resumePlan(plan, {
+          callLLM: async (subMessages, systemPrompt) => {
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: subMessages,
+                chatMode: 'build',
+                contextOptimization: false,
+                maxLLMSteps: 5,
+                userContext: currentUserContext || '',
+                projectContext: currentProjectContext || '',
+                apiKeys,
+                files: workbenchStore.files.get(),
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unknown error');
+              throw new Error(`Sub-chat LLM call failed (${response.status}): ${errorText}`);
+            }
+
+            if (!response.body) {
+              throw new Error('Sub-chat response body is null');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullContent = '';
+            let buffer = '';
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (!line.startsWith('0:')) continue;
+                try {
+                  const parsed = JSON.parse(line.slice(2));
+                  if (parsed.type === 'text') {
+                    fullContent += parsed.text || '';
+                  }
+                } catch {
+                  // Skip malformed lines
+                }
+              }
+            }
+
+            return {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: fullContent || 'No response generated.',
+            };
+          },
+          runShellCommand: async (cmd) => {
+            try {
+              const { webcontainer } = await import('~/lib/webcontainer');
+              const wc = await webcontainer;
+              const process = await wc.spawn('sh', ['-c', cmd]);
+              let stdout = '';
+              process.output.pipeTo(
+                new WritableStream({
+                  write(data) {
+                    stdout += data;
+                  },
+                }),
+              );
+              const exitCode = await process.exit;
+              return { stdout, stderr: '', exitCode: exitCode ?? 0 };
+            } catch (e: any) {
+              return { stdout: '', stderr: e.message || 'Shell command failed', exitCode: 1 };
+            }
+          },
+          readFile: async (path) => {
+            const currentFiles = workbenchStore.files.get();
+            const file = currentFiles[path];
+            return file && file.type === 'file' ? file.content : null;
+          },
+          writeFile: async (path, content) => {
+            try {
+              await workbenchStore.createFile(path, content);
+            } catch (e: any) {
+              logger.error(`[Plan] writeFile failed for ${path}:`, e);
+            }
+          },
+          listFiles: async () => Object.keys(workbenchStore.files.get()),
+          signal: planStore.getAbortSignal(),
+          systemPrompt: fullSystemPrompt,
+          toolExecutionResults: toolResults,
+          chatId: currentChatId || '',
+          projectId: project.id,
+          availableSkills,
+          projectMemoryBlock,
+          fileTreeBlock,
+          onProgress: (update) => {
+            setPlanProgress(update);
+          },
+        });
+
+        append({
+          role: 'assistant',
+          content: `Plan resumed and continued. Check the plan view for progress.`,
+        });
+      } catch (error) {
+        console.error('[Chat] Plan resume failed:', error);
+      } finally {
+        setPlanExecuting(false);
+        setPlanProgress(null);
       }
     };
 
@@ -871,18 +1180,19 @@ export const ChatImpl = memo(
         const quotedText = `"${customEvent.detail}"`;
         const currentInput = input || '';
         const newInput = currentInput.length > 0 ? `${currentInput}\n\n${quotedText}` : quotedText;
-        
+
         const syntheticEvent = {
           target: { value: newInput },
         } as React.ChangeEvent<HTMLTextAreaElement>;
         handleInputChange(syntheticEvent);
-        
+
         setTimeout(() => {
           textareaRef.current?.focus();
         }, 10);
       };
 
       window.addEventListener('amplify:quote-text', handleQuoteText);
+
       return () => window.removeEventListener('amplify:quote-text', handleQuoteText);
     }, [input, handleInputChange]);
 
@@ -1116,12 +1426,14 @@ export const ChatImpl = memo(
         return;
       }
 
+      enrichPlanSignalRef.current = false;
       const signalToExecute = { ...planSignal };
       setPlanSignal(null);
       handlePlanExecution(signalToExecute);
     }, [planSignal]);
 
     const handleRejectPlan = useCallback(() => {
+      enrichPlanSignalRef.current = false;
       setPlanSignal(null);
       append({
         role: 'assistant',
@@ -1135,6 +1447,7 @@ export const ChatImpl = memo(
           return;
         }
 
+        enrichPlanSignalRef.current = false;
         const modifiedSignal = {
           ...planSignal,
           planPoints: modifiedPoints,
@@ -1150,6 +1463,7 @@ export const ChatImpl = memo(
         <PlanApprovalDialog
           open={!!planSignal}
           signal={planSignal}
+          planning={planLoading}
           onApprove={handleApprovePlan}
           onReject={handleRejectPlan}
           onModify={handleModifyPlan}
@@ -1234,6 +1548,7 @@ export const ChatImpl = memo(
               planStore.cancelPlan(activePlanIdRef.current);
             }
           }}
+          onResumePlan={handleResumePlan}
         />
       </>
     );

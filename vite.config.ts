@@ -17,6 +17,9 @@ export default defineConfig((config) => {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     },
     server: {
+      // Allow the gateway/sandbox preview hosts (and any future tunnel) to
+      // reach the dev server. Vite blocks unknown hosts by default.
+      allowedHosts: true,
       headers: {
         'Cross-Origin-Embedder-Policy': 'credentialless',
         'Cross-Origin-Opener-Policy': 'same-origin',

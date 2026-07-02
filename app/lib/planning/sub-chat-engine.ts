@@ -1,25 +1,41 @@
 /**
  * Sub-Chat Execution Engine
  *
- * Executes each PlanPoint as an independent sub-chat.
- * Sub-chats are treated as normal chats — they receive the full system prompt,
- * optional app builder capabilities prompt, and contextual injections.
- * No custom "step" prompts are used; the plan point description is the user message.
+ * Executes each PlanPoint as an independent sub-chat (worker).
+ *
+ * Architecture (from the GPT design conversation):
+ *
+ *   Planner → Task Context   (immutable contract: what to do)
+ *   Project → Project Context (framework, architecture, file tree, vector)
+ *   Skills  → Expert Context  (structured outputs, only required skills)
+ *   Tools   → Runtime Context (resolved tool output references)
+ *
+ * The worker receives the combination of all four, assembled by the
+ * ContextBuilder into labeled sections (TASK / PROJECT / SKILLS /
+ * TOOL RESULTS / WORKSPACE / CONSTRAINTS / USER REQUEST).
+ *
+ * Key features:
+ *  - Checkpoints: structured progress snapshots every N tool calls.
+ *  - ExecutionState: mutable runtime-owned state (separate from the
+ *    immutable task contract).
+ *  - Resume: after interruption, the worker's context is reconstructed
+ *    from the latest checkpoint — no AI needed to decide where it was.
+ *  - ExecutionManager: orchestrates the task queue and resume logic.
  *
  * After each sub-chat completes:
- * 1. Extracts key information and stores it in the ProjectContextVectorStore
- * 2. Runs verification (lint, type-check, flow check)
- * 3. If verification fails, sends the errors back to the sub-chat for fixing
- * 4. Marks the point as completed or failed
- * 5. Moves to the next point
- *
- * The user sees only a progress indicator in the main chat.
- * When all points complete, a summary is returned to the main chat.
+ *  1. Takes a final checkpoint.
+ *  2. Runs verification (lint, type-check, flow check).
+ *  3. If verification fails, sends errors back to the sub-chat.
+ *  4. Marks the point as completed or failed (via ExecutionManager).
+ *  5. Extracts context into the ProjectContextVectorStore.
+ *  6. Moves to the next point.
  */
 
 import type {
+  Checkpoint,
   Plan,
   PlanPoint,
+  SkillContext,
   SubChat,
   SubChatMessage,
   ToolInvocationRecord,
@@ -30,6 +46,12 @@ import { projectContextStore } from '~/lib/vector-store/project-context-store';
 import { userProfileStore } from '~/lib/vector-store/user-profile-store';
 import { runVerification } from '~/lib/verification/runner';
 import type { Message } from 'ai';
+import { ExecutionManager } from './execution-manager';
+import { ExecutionStateManager } from './execution-state';
+import { CheckpointManager } from './checkpoint';
+import { ContextBuilder, type ProjectContextInfo, type WorkspaceSnapshot } from './context-builder';
+import { SkillContextBuilder, type RawSkillInput } from './skill-context';
+import { toolOutputCache, type ToolExecutor } from './tool-output-cache';
 
 export interface SubChatExecutionOptions {
   /**
@@ -94,10 +116,40 @@ export interface SubChatExecutionOptions {
    * The current project ID.
    */
   projectId: string;
+
+  /**
+   * Available skills (raw markdown content) that can be invoked.
+   * The SkillContextBuilder will only load the ones the planner
+   * marked as required for each task.
+   */
+  availableSkills?: RawSkillInput[];
+
+  /**
+   * Structured project memory block (framework, state mgmt, etc.)
+   * injected into every worker's PROJECT section.
+   */
+  projectMemoryBlock?: string;
+
+  /**
+   * File tree summary of the current workspace.
+   */
+  fileTreeBlock?: string;
+
+  /**
+   * Optional tool executor for resolving tool output references
+   * that aren't cached. If not provided, only cached outputs are used.
+   */
+  toolExecutor?: ToolExecutor;
+
+  /**
+   * Notes from the parent planner that all workers should inherit.
+   * Example: "Use Expo Router because later tasks depend on it."
+   */
+  plannerNotes?: string;
 }
 
 export interface PlanProgressUpdate {
-  type: 'point_start' | 'point_complete' | 'point_failed' | 'verification_start' | 'verification_result' | 'plan_complete' | 'context_extracted' | 'error';
+  type: 'point_start' | 'point_complete' | 'point_failed' | 'verification_start' | 'verification_result' | 'plan_complete' | 'context_extracted' | 'checkpoint' | 'skill_invoked' | 'tool_output_resolved' | 'resume' | 'error';
   planId: string;
   pointId?: string;
   pointTitle?: string;
@@ -107,6 +159,9 @@ export interface PlanProgressUpdate {
 
 /**
  * Executes an entire plan by running each point as a sub-chat.
+ *
+ * Uses the ExecutionManager to pick the next task (which handles
+ * resume from checkpoint automatically if a task was interrupted).
  */
 export async function executePlan(
   plan: Plan,
@@ -125,9 +180,10 @@ export async function executePlan(
       return { success: false, summary: 'Plan cancelled by user.', failedPoints };
     }
 
-    // Check dependencies
-    if (point.status === 'skipped') continue;
+    // Skip terminal tasks
+    if (['completed', 'skipped', 'cancelled'].includes(point.status)) continue;
 
+    // Check dependencies
     const depFailed = point.dependencies.some((depId) => {
       const dep = plan.points.find((p) => p.id === depId);
       return dep && (dep.status === 'failed' || dep.status === 'skipped');
@@ -153,11 +209,6 @@ export async function executePlan(
         pointId: point.id,
         pointTitle: point.title,
         message: `Starting: ${point.title}`,
-      });
-
-      planStore.updatePlanPoint(plan.id, point.id, {
-        status: 'in_progress',
-        startedAt: new Date().toISOString(),
       });
 
       const result = await executePlanPoint(plan, point, options);
@@ -199,11 +250,7 @@ export async function executePlan(
           // Send verification errors back to the sub-chat for fixing
           const fixResult = await fixVerificationErrors(plan, point, verificationResults, options);
           if (!fixResult.success) {
-            planStore.updatePlanPoint(plan.id, point.id, {
-              status: 'failed',
-              completedAt: new Date().toISOString(),
-              error: 'Failed to fix verification errors.',
-            });
+            ExecutionManager.markFailed(plan.id, point.id, 'Failed to fix verification errors.');
             failedPoints.push(point.title);
             options.onProgress?.({
               type: 'point_failed',
@@ -227,12 +274,9 @@ export async function executePlan(
         message: `Context extracted for "${point.title}"`,
       });
 
-      // Mark point as completed
-      planStore.updatePlanPoint(plan.id, point.id, {
-        status: 'completed',
-        completedAt: new Date().toISOString(),
-        summary: result.summary,
-      });
+      // Mark point as completed (via ExecutionManager so it updates
+      // the execution state + checks plan completion).
+      ExecutionManager.markCompleted(plan.id, point.id, result.summary);
 
       planSummary += `- ${point.title}: ${result.summary || 'Completed'}\n`;
 
@@ -245,11 +289,7 @@ export async function executePlan(
       });
     } catch (error: any) {
       const errorMessage = error?.message || 'Unknown error';
-      planStore.updatePlanPoint(plan.id, point.id, {
-        status: 'failed',
-        completedAt: new Date().toISOString(),
-        error: errorMessage,
-      });
+      ExecutionManager.markFailed(plan.id, point.id, errorMessage);
 
       failedPoints.push(point.title);
       options.onProgress?.({
@@ -283,78 +323,278 @@ export async function executePlan(
 }
 
 /**
+ * Resumes a plan from where it was interrupted.
+ *
+ * The ExecutionManager finds the first non-complete task, checks if
+ * it has a checkpoint, and reconstructs the worker's context from:
+ *   project → current files → task spec → checkpoint →
+ *   relevant tool outputs → skills → worker
+ *
+ * The worker is effectively stateless — it receives the reconstructed
+ * context and works from there.
+ */
+export async function resumePlan(
+  plan: Plan,
+  options: SubChatExecutionOptions,
+): Promise<{ success: boolean; summary: string; failedPoints: string[] }> {
+  const state = ExecutionManager.getExecutionState(plan.id);
+
+  if (!state?.canResume) {
+    return { success: false, summary: 'Plan cannot be resumed.', failedPoints: [] };
+  }
+
+  options.onProgress?.({
+    type: 'resume',
+    planId: plan.id,
+    message: state.resumeReason,
+  });
+
+  // The ExecutionManager.prepareExecution inside executePlan will
+  // handle the checkpoint reconstruction for each task.
+  return executePlan(plan, options);
+}
+
+/**
  * Executes a single plan point as a sub-chat.
  *
- * The sub-chat is treated as a NORMAL chat. The user message is simply
- * the plan point's description — no custom wrapper. Context is injected
- * into the system prompt via buildSubChatSystemPrompt.
+ * The worker's context is assembled by the ContextBuilder from four
+ * sources (Planner / Project / Skills / Runtime), each as a labeled
+ * section. If the task was interrupted and has a checkpoint, a RESUME
+ * section is prepended so the worker knows where it left off.
  */
 async function executePlanPoint(
   plan: Plan,
   point: PlanPoint,
   options: SubChatExecutionOptions,
 ): Promise<{ summary: string; modifiedFiles: string[]; toolCalls: ToolInvocationRecord[] }> {
-  // 1. Query project context from vector store
-  const projectContext = await projectContextStore.formatContextForPrompt(
-    plan.projectId,
-    `${point.title} ${point.description}`,
-    1500,
-  );
+  // ── 0. Prepare execution (handles resume from checkpoint) ──────
+  const prep = ExecutionManager.prepareExecution({ planId: plan.id });
 
-  // 2. Get previous points' summaries
+  // Use the point passed in (prepareExecution may have updated its state)
+  const activePoint = prep.point || point;
+
+  if (prep.isResume) {
+    options.onProgress?.({
+      type: 'resume',
+      planId: plan.id,
+      pointId: activePoint.id,
+      pointTitle: activePoint.title,
+      message: `Resuming "${activePoint.title}" from checkpoint #${(prep.checkpoint?.index ?? 0) + 1}`,
+    });
+  }
+
+  // ── 1. Preparing: fetch tool outputs + invoke skills ──────────
+  if (activePoint.executionState) {
+    activePoint.executionState = ExecutionStateManager.updateStatus(activePoint.executionState, 'preparing');
+    planStore.updatePlanPoint(plan.id, activePoint.id, {
+      executionState: activePoint.executionState,
+      status: 'preparing',
+    });
+  }
+
+  // 1a. Resolve tool output references (background fetch if not cached)
+  const toolRefs = activePoint.requiredToolOutputs ?? [];
+  let resolvedToolOutputs = new Map<string, import('./tool-output-cache').CachedToolOutput>();
+
+  if (toolRefs.length > 0) {
+    try {
+      resolvedToolOutputs = await toolOutputCache.resolveMany(toolRefs, options.toolExecutor);
+
+      // Also seed the cache with tool results from the main chat
+      if (options.toolExecutionResults) {
+        // The main chat's tool results are already available as a string;
+        // we pass them through as a fallback tool output.
+        await toolOutputCache.put(
+          'main_chat_tool_results',
+          'main_chat',
+          {},
+          options.toolExecutionResults,
+        );
+      }
+
+      options.onProgress?.({
+        type: 'tool_output_resolved',
+        planId: plan.id,
+        pointId: activePoint.id,
+        message: `Resolved ${resolvedToolOutputs.size}/${toolRefs.length} tool outputs`,
+      });
+    } catch (e) {
+      // Non-critical — the worker can still proceed
+    }
+  }
+
+  // 1b. Invoke required skills (only the ones the planner marked)
+  let skillContexts: SkillContext[] = [];
+
+  if (options.availableSkills && activePoint.requiredSkills && activePoint.requiredSkills.length > 0) {
+    skillContexts = SkillContextBuilder.buildMany(
+      options.availableSkills,
+      activePoint.requiredSkills,
+    );
+
+    options.onProgress?.({
+      type: 'skill_invoked',
+      planId: plan.id,
+      pointId: activePoint.id,
+      message: `Invoked ${skillContexts.length} skills: ${skillContexts.map((s) => s.label).join(', ')}`,
+    });
+  }
+
+  // ── 2. Query project context from vector store ────────────────
+  let vectorContext = '';
+  try {
+    vectorContext = await projectContextStore.formatContextForPrompt(
+      plan.projectId,
+      `${activePoint.title} ${activePoint.description}`,
+      1500,
+    );
+  } catch {
+    // Non-critical
+  }
+
+  // ── 3. Get previous points' summaries (plan context) ──────────
   const previousPointsSummary = plan.points
-    .filter((p) => p.status === 'completed' && p.order < point.order)
-    .map((p) => `[Previously completed: ${p.title}] ${p.summary || 'Done'}`)
+    .filter((p) => p.status === 'completed' && p.order < activePoint.order)
+    .map((p) => `[${p.title}] ${p.summary || 'Done'}`)
     .join('\n');
 
-  // 3. Build the system prompt — full main prompt + context injection
-  const systemPrompt = buildSubChatSystemPrompt({
-    systemPrompt: options.systemPrompt,
-    appBuilderPrompt: options.appBuilderPrompt,
-    projectContext,
+  // ── 4. Build the workspace snapshot ───────────────────────────
+  const changedFiles = activePoint.executionState?.filesModified ?? [];
+  const workspace: WorkspaceSnapshot = {
+    changedFiles,
+    pendingChangeCount: changedFiles.length,
+  };
+
+  // ── 5. Assemble the full context via ContextBuilder ───────────
+  const projectInfo: ProjectContextInfo = {
+    memoryBlock: options.projectMemoryBlock || '',
+    fileTreeBlock: options.fileTreeBlock || '',
+    vectorContext,
+  };
+
+  const workerContext = ContextBuilder.build({
+    plan,
+    point: activePoint,
+    projectInfo,
+    skills: skillContexts,
+    resolvedToolOutputs,
+    toolOutputReferences: toolRefs,
+    workspace,
+    isResume: prep.isResume,
+    resumeCheckpoint: prep.checkpoint,
     previousPointsSummary,
-    toolExecutionResults: options.toolExecutionResults,
-    projectId: plan.projectId,
-    userRequest: plan.userRequest,
+    plannerNotes: options.plannerNotes,
   });
 
-  // Initialize the sub-chat in the store
-  planStore.addSubChat(plan.id, point.id, {
-    planPointId: point.id,
+  // ── 6. Build the system prompt ────────────────────────────────
+  let systemPrompt = options.systemPrompt;
+  if (options.appBuilderPrompt) {
+    systemPrompt += `\n\n${options.appBuilderPrompt}`;
+  }
+  systemPrompt += `\n\n<active_project>\n${workerContext}\n</active_project>`;
+
+  // ── 7. Initialize the sub-chat in the store ───────────────────
+  planStore.addSubChat(plan.id, activePoint.id, {
+    planPointId: activePoint.id,
     projectId: plan.projectId,
     messages: [],
     toolInvocations: [],
     modifiedFiles: [],
   });
 
-  // 4. The user message is just the plan point's description — no custom wrapper
+  // ── 8. Update execution state to running ──────────────────────
+  if (activePoint.executionState) {
+    activePoint.executionState = ExecutionStateManager.updateStatus(activePoint.executionState, 'running');
+    planStore.updatePlanPoint(plan.id, activePoint.id, {
+      executionState: activePoint.executionState,
+      status: 'in_progress',
+    });
+  }
+
+  // ── 9. Build the user message ────────────────────────────────
+  // On a fresh start: the task description is the user message.
+  // On resume: the resume instruction is prepended so the worker
+  // knows what was already done and what remains.
+  const userContent = prep.isResume && prep.resumeInstruction
+    ? `${prep.resumeInstruction}\n\n---\n\n${activePoint.description}`
+    : activePoint.description;
+
   const userMessage: SubChatMessage = {
     id: crypto.randomUUID(),
     role: 'user',
-    content: point.description,
+    content: userContent,
   };
 
-  // 5. Call the LLM with the constructed system prompt and the user message
+  // ── 10. Call the LLM ──────────────────────────────────────────
   const assistantMessage = await options.callLLM([userMessage], systemPrompt);
 
-  // Track the sub-chat messages (M-5 fix: use async getter to ensure IDB data is loaded)
+  // Track the sub-chat messages
   const planData = await planStore.getPlanAsync(plan.id);
-  const subChat = planData?.points.find((p) => p.id === point.id)?.subChat;
+  const subChat = planData?.points.find((p) => p.id === activePoint.id)?.subChat;
   if (subChat) {
     subChat.messages.push(userMessage, assistantMessage);
   }
 
-  // Extract tool calls from the assistant message
+  // ── 11. Extract tool calls and update execution state ─────────
   const toolCalls: ToolInvocationRecord[] = extractToolCalls(assistantMessage);
+
   for (const tc of toolCalls) {
-    planStore.addToolInvocation(plan.id, point.id, tc);
+    planStore.addToolInvocation(plan.id, activePoint.id, tc);
+
+    // Record in execution state
+    if (activePoint.executionState) {
+      activePoint.executionState = ExecutionStateManager.recordToolCall(
+        activePoint.executionState,
+        tc.timestamp,
+      );
+
+      // Track modified files
+      const filePath = (tc.args as any).filePath || (tc.args as any).path;
+      if (filePath && (tc.toolName === 'write_file' || tc.toolName === 'update_file' || tc.toolName === 'create_file')) {
+        activePoint.executionState = ExecutionStateManager.recordFileModified(
+          activePoint.executionState,
+          filePath,
+        );
+        planStore.addModifiedFile(plan.id, activePoint.id, filePath);
+      }
+    }
   }
 
   // Detect modified files from tool calls
   const modifiedFiles = toolCalls
-    .filter((tc) => tc.toolName === 'write_file' || tc.toolName === 'update_file')
+    .filter((tc) => tc.toolName === 'write_file' || tc.toolName === 'update_file' || tc.toolName === 'create_file')
     .map((tc) => (tc.args as any).filePath || (tc.args as any).path)
     .filter(Boolean);
+
+  // ── 12. Take a checkpoint ─────────────────────────────────────
+  if (activePoint.executionState && toolCalls.length > 0) {
+    const completedSteps = [`${activePoint.title} executed`];
+
+    const checkpoint = CheckpointManager.createCheckpoint({
+      point: activePoint,
+      toolInvocations: toolCalls,
+      messageIndex: subChat?.messages.length ?? 1,
+      completedSteps,
+    });
+
+    activePoint.executionState = CheckpointManager.saveCheckpoint(
+      activePoint,
+      checkpoint,
+      activePoint.executionState,
+    );
+
+    planStore.updatePlanPoint(plan.id, activePoint.id, {
+      executionState: activePoint.executionState,
+      checkpoints: activePoint.checkpoints,
+    });
+
+    options.onProgress?.({
+      type: 'checkpoint',
+      planId: plan.id,
+      pointId: activePoint.id,
+      message: `Checkpoint #${checkpoint.index + 1} saved (${modifiedFiles.length} files, ${toolCalls.length} tool calls)`,
+    });
+  }
 
   return {
     summary: assistantMessage.content.slice(0, 500),
@@ -382,16 +622,8 @@ async function fixVerificationErrors(
     })
     .join('\n\n');
 
-  // Use the same buildSubChatSystemPrompt for consistency
-  const systemPrompt = buildSubChatSystemPrompt({
-    systemPrompt: options.systemPrompt,
-    appBuilderPrompt: options.appBuilderPrompt,
-    projectContext: '',
-    previousPointsSummary: '',
-    toolExecutionResults: options.toolExecutionResults,
-    projectId: plan.projectId,
-    userRequest: plan.userRequest,
-  });
+  // Build a simplified context for the fix attempt
+  const systemPrompt = options.systemPrompt + `\n\n<active_project>\n===== TASK =====\nTask: ${point.title}\nDescription: ${point.description}\n\n===== FIX REQUEST =====\nThe following verification errors were found. Fix them.\n</active_project>`;
 
   const fixMessage: SubChatMessage = {
     id: crypto.randomUUID(),
@@ -400,7 +632,7 @@ async function fixVerificationErrors(
   };
 
   try {
-    const response = await options.callLLM([fixMessage], systemPrompt);
+    await options.callLLM([fixMessage], systemPrompt);
     return { success: true };
   } catch {
     return { success: false };
@@ -457,10 +689,14 @@ async function extractContextFromSubChat(
 
   // Batch insert into vector store
   for (const entry of entries) {
-    await projectContextStore.add(projectId, {
-      projectId,
-      ...entry,
-    });
+    try {
+      await projectContextStore.add(projectId, {
+        projectId,
+        ...entry,
+      });
+    } catch {
+      // Non-critical
+    }
   }
 }
 
@@ -481,56 +717,5 @@ function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
     }));
 }
 
-/**
- * Builds the system prompt for a sub-chat execution.
- *
- * Starts with the full main chat system prompt, appends the optional
- * app builder capabilities prompt, then injects project-specific context
- * sections inside an <active_project> block. No custom step-specific
- * instructions are added — the sub-chat is a normal chat with context.
- */
-function buildSubChatSystemPrompt(params: {
-  systemPrompt: string;
-  appBuilderPrompt?: string;
-  projectContext: string;
-  previousPointsSummary: string;
-  toolExecutionResults: string;
-  projectId: string;
-  userRequest: string;
-}): string {
-  // 1. Start with the full system prompt from the main chat
-  let prompt = params.systemPrompt;
-
-  // 2. If app builder prompt is provided, append it
-  if (params.appBuilderPrompt) {
-    prompt += `\n\n${params.appBuilderPrompt}`;
-  }
-
-  // 3. Build the active project context section
-  let activeProjectContent = `This chat is executing as part of an active project (ID: ${params.projectId}).
-The overall user request is: ${params.userRequest}`;
-
-  // 4. Append previously completed steps if any
-  if (params.previousPointsSummary) {
-    activeProjectContent += `\n\n## Previously Completed Steps (in this plan)
-${params.previousPointsSummary}`;
-  }
-
-  // 5. Append relevant project context from vector store if any
-  if (params.projectContext) {
-    activeProjectContent += `\n\n## Relevant Project Context (from vector store)
-${params.projectContext}`;
-  }
-
-  // 6. Append relevant tool execution results from main chat if any
-  if (params.toolExecutionResults) {
-    activeProjectContent += `\n\n## Relevant Tool Results from Main Chat
-${params.toolExecutionResults}`;
-  }
-
-  prompt += `\n\n<active_project>
-${activeProjectContent}
-</active_project>`;
-
-  return prompt;
-}
+// Re-export for backwards compatibility
+export { ExecutionManager, ExecutionStateManager, CheckpointManager, ContextBuilder, SkillContextBuilder, toolOutputCache };

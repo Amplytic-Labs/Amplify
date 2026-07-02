@@ -309,7 +309,7 @@ export const Workbench = memo(
     const isSmallViewport = useViewport(1024);
     const streaming = useStore(streamingState);
 
-    // const [isSyncing, setIsSyncing] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Show veil only while streaming and no preview port is available yet
     const showVeil = streaming && !hasPreview;

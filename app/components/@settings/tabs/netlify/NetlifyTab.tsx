@@ -862,7 +862,7 @@ export default function NetlifyTab() {
                         {sites.length > 8 && (
                           <button
                             onClick={() => setIsSitesExpanded(!isSitesExpanded)}
-                            className="text-xs text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
+                            className="bg-transparent text-xs text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                           >
                             {isSitesExpanded ? 'Show Less' : `Show All ${sites.length}`}
                           </button>
@@ -1027,7 +1027,7 @@ export default function NetlifyTab() {
                           {deploys.length > 10 && (
                             <button
                               onClick={() => setIsDeploysExpanded(!isDeploysExpanded)}
-                              className="text-xs text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
+                              className="bg-transparent text-xs text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                             >
                               {isDeploysExpanded ? 'Show Less' : `Show All ${deploys.length}`}
                             </button>

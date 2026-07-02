@@ -260,7 +260,7 @@ export const AssistantMessage = memo(
                       <button
                         onClick={() => onRewind(messageId)}
                         key="i-ph:arrow-u-up-left"
-                        className="i-ph:arrow-u-up-left text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
+                        className="bg-transparent i-ph:arrow-u-up-left text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                       />
                     </WithTooltip>
                   )}
@@ -269,7 +269,7 @@ export const AssistantMessage = memo(
                       <button
                         onClick={() => onFork(messageId)}
                         key="i-ph:git-fork"
-                        className="i-ph:git-fork text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
+                        className="bg-transparent i-ph:git-fork text-xl text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors"
                       />
                     </WithTooltip>
                   )}

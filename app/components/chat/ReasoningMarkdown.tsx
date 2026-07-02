@@ -183,7 +183,7 @@ export const ReasoningMarkdown = memo(
             );
           }
 
-          return <button {...props}>{children}</button>;
+          return <button className="bg-transparent" {...props}>{children}</button>;
         },
       } satisfies Components;
     }, []);

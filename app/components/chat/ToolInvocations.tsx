@@ -1,6 +1,6 @@
 import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { AnimatePresence, motion } from 'framer-motion';
-import { memo, useMemo, useState, useEffect } from 'react';
+import { memo, useMemo, useState, useEffect, useCallback } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import { classNames } from '~/utils/classNames';
 import {
@@ -62,10 +62,6 @@ function JsonCodeBlock({ className, code, theme }: JsonCodeBlockProps) {
           theme: theme === 'dark' ? 'dark-plus' : 'light-plus',
         }),
       }}
-      style={{
-        padding: '0',
-        margin: '0',
-      }}
     ></div>
   );
 }
@@ -116,9 +112,9 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
             <div className="w-full text-amplify-elements-textPrimary font-medium leading-5 text-sm">
               Tool Invocations{' '}
               {hasToolResults && (
-                <span className="w-full w-full text-amplify-elements-textSecondary text-xs mt-0.5">
+                <div className="text-amplify-elements-textSecondary text-xs mt-0.5">
                   ({toolResults.length} tool{hasToolResults ? 's' : ''} used)
-                </span>
+                </div>
               )}
             </div>
           </div>
@@ -250,12 +246,18 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                   <span className="text-amplify-elements-textPrimary font-semibold">{annotation?.toolDescription}</span>
                 </div>
                 <div className="text-amplify-elements-textSecondary text-xs mb-1">Parameters:</div>
-                <div className="bg-[#FAFAFA] dark:bg-[#0A0A0A] p-3 rounded-md">
-                  <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.args)} theme={theme} />
+                <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
+                  <div className="relative group/copy">
+                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.args)} theme={theme} />
+                    <CopyJsonButton text={JSON.stringify(tool.toolInvocation.args, null, 2)} />
+                  </div>
                 </div>
                 <div className="text-amplify-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
-                <div className="bg-[#FAFAFA] dark:bg-[#0A0A0A] p-3 rounded-md">
-                  <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
+                <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
+                  <div className="relative group/copy">
+                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
+                    <CopyJsonButton text={typeof tool.toolInvocation.result === 'string' ? tool.toolInvocation.result : JSON.stringify(tool.toolInvocation.result, null, 2)} />
+                  </div>
                 </div>
               </div>
             </motion.li>
@@ -278,6 +280,24 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
 
   // OS detection for shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+
+  // ───────────────────────────────────────────────────────────────
+  // Auto-approval: every tool runs automatically EXCEPT execute_plan,
+  // which is the only tool that requires explicit user approval
+  // (the user approves the full enriched plan in PlanApprovalDialog).
+  // ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const pending = toolInvocations.filter(
+      (inv) => inv.toolInvocation.state === 'call' && inv.toolInvocation.toolName !== 'execute_plan',
+    );
+
+    for (const inv of pending) {
+      addToolResult({
+        toolCallId: inv.toolInvocation.toolCallId,
+        result: TOOL_EXECUTION_APPROVAL.APPROVE,
+      });
+    }
+  }, [toolInvocations, addToolResult]);
 
   useEffect(() => {
     const expandedState: { [id: string]: boolean } = {};
@@ -345,6 +365,12 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
           const { toolName, toolCallId } = tool.toolInvocation;
           const annotation = toolCallAnnotations.find((annotation) => annotation.toolCallId === toolCallId);
 
+          // Only execute_plan requires explicit user approval — it opens the
+          // PlanApprovalDialog after planner enrichment. All other tools
+          // auto-approve (see the useEffect above) and just show a "running"
+          // indicator while they execute.
+          const needsApproval = toolName === 'execute_plan';
+
           return (
             <motion.li
               key={index}
@@ -364,39 +390,48 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
                     </span>
                   </div>
                   <div className="flex items-center justify-end gap-2 ml-auto">
-                    <button
-                      className={classNames(
-                        'h-10 px-2.5 py-1.5 rounded-lg text-xs h-auto',
-                        'bg-transparent',
-                        'text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary',
-                        'transition-all duration-200',
-                        'flex items-center gap-2',
-                      )}
-                      onClick={() =>
-                        addToolResult({
-                          toolCallId,
-                          result: TOOL_EXECUTION_APPROVAL.REJECT,
-                        })
-                      }
-                    >
-                      Cancel <span className="opacity-70 text-xs ml-1">{isMac ? '⌘⌫' : 'Ctrl+Backspace'}</span>
-                    </button>
-                    <button
-                      className={classNames(
-                        'h-10 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-normal rounded-lg transition-colors',
-                        'bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor',
-                        'text-accent-500 hover:text-amplify-elements-textPrimary',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                      onClick={() =>
-                        addToolResult({
-                          toolCallId,
-                          result: TOOL_EXECUTION_APPROVAL.APPROVE,
-                        })
-                      }
-                    >
-                      Run tool <span className="opacity-70 text-xs ml-1">{isMac ? '⌘↵' : 'Ctrl+Enter'}</span>
-                    </button>
+                    {needsApproval ? (
+                      <>
+                        <button
+                          className={classNames(
+                            'h-10 px-2.5 py-1.5 rounded-lg text-xs h-auto',
+                            'bg-transparent',
+                            'text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary',
+                            'transition-all duration-200',
+                            'flex items-center gap-2',
+                          )}
+                          onClick={() =>
+                            addToolResult({
+                              toolCallId,
+                              result: TOOL_EXECUTION_APPROVAL.REJECT,
+                            })
+                          }
+                        >
+                          Cancel <span className="opacity-70 text-xs ml-1">{isMac ? '⌘⌫' : 'Ctrl+Backspace'}</span>
+                        </button>
+                        <button
+                          className={classNames(
+                            'h-10 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-normal rounded-lg transition-colors',
+                            'bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor',
+                            'text-accent-500 hover:text-amplify-elements-textPrimary',
+                            'disabled:opacity-50 disabled:cursor-not-allowed',
+                          )}
+                          onClick={() =>
+                            addToolResult({
+                              toolCallId,
+                              result: TOOL_EXECUTION_APPROVAL.APPROVE,
+                            })
+                          }
+                        >
+                          Run tool <span className="opacity-70 text-xs ml-1">{isMac ? '⌘↵' : 'Ctrl+Enter'}</span>
+                        </button>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-amplify-elements-textSecondary">
+                        <span className="inline-block w-3 h-3 border-2 border-purple-500/40 border-t-purple-500 rounded-full animate-spin" />
+                        Running…
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -407,3 +442,35 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
     </motion.div>
   );
 });
+
+/**
+ * Copy button that appears on hover inside JSON code blocks in tool
+ * results. The parent container must have the `group/copy` class.
+ *
+ * Fades in on hover, shows a green check for 1.5s after copying, then
+ * reverts to the copy icon.
+ */
+function CopyJsonButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable (permissions) — silently ignore */
+    }
+  }, [text]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+      className="absolute top-1.5 right-1.5 p-1 rounded-md text-xs bg-transparent hover:bg-amplify-elements-background-depth-2 text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary opacity-0 group-hover/copy:opacity-100 focus-within:opacity-100 transition-all duration-150 cursor-pointer"
+    >
+      <div className={copied ? 'i-ph:check text-green-500' : 'i-ph:copy'} />
+    </button>
+  );
+}

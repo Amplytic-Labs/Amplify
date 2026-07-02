@@ -35,6 +35,14 @@ export function HistoryItem({
       syncWithGlobalStore: isActiveChat,
     });
 
+  /*
+   * Display label: fall back to "New chat" when no description has been
+   * generated yet. The description is set asynchronously (provisional
+   * truncation immediately, then refined by the /api/chat-title LLM
+   * call), so the placeholder keeps the item legible in the meantime.
+   */
+  const displayLabel = currentDescription?.trim() || 'New chat';
+
   const handleItemClick = useCallback(
     (e: React.MouseEvent) => {
       if (selectionMode) {
@@ -98,7 +106,7 @@ export function HistoryItem({
           />
           <button
             type="submit"
-            className="i-ph:check h-4 w-4 text-gray-500 hover:text-purple-500 transition-colors"
+            className="bg-transparent i-ph:check h-4 w-4 text-gray-500 hover:text-purple-500 transition-colors"
             onMouseDown={handleSubmit}
           />
         </form>
@@ -108,8 +116,15 @@ export function HistoryItem({
           className="flex w-full relative truncate block"
           onClick={selectionMode ? handleItemClick : undefined}
         >
-          <WithTooltip tooltip={currentDescription}>
-            <span className="truncate pr-24">{currentDescription}</span>
+          <WithTooltip tooltip={displayLabel}>
+            <span
+              className={classNames(
+                'truncate pr-24',
+                !currentDescription?.trim() && 'text-gray-400 dark:text-gray-500 italic',
+              )}
+            >
+              {displayLabel}
+            </span>
           </WithTooltip>
           <div
             className={classNames(
@@ -178,7 +193,7 @@ const ChatActionButton = forwardRef(
         <button
           ref={ref}
           type="button"
-          className={`text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors ${icon} ${className ? className : ''}`}
+          className={`bg-transparent text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors ${icon} ${className ? className : ''}`}
           onClick={onClick}
         />
       </WithTooltip>

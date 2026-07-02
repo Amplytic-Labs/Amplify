@@ -35,6 +35,11 @@ import { PlanView } from './PlanView';
 import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
+import { OpenWorkspaceButton } from './OpenWorkspaceButton';
+// OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
+// The workspace only opens when the AI injects a template, the user clones
+// a GitHub repo, or the user picks a template — never via a manual button.
+void OpenWorkspaceButton;
 
 const TEXTAREA_MIN_HEIGHT = 32;
 
@@ -89,6 +94,7 @@ interface BaseChatProps {
   planExecuting?: boolean;
   planProgress?: any;
   onCancelPlan?: () => void;
+  onResumePlan?: () => void;
   planId?: string;
 }
 
@@ -144,6 +150,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       onApiKeysChange,
       planExecuting = false,
       onCancelPlan,
+      onResumePlan,
       planProgress,
       planId,
     },
@@ -347,12 +354,18 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
             <div className={classNames(styles.Chat, 'flex flex-col flex-grow h-full')}>
               {!chatStarted && (
                 <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
-                  <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary mb-4 animate-fade-in">
-                    Where ideas begin
-                  </h1>
-                  <p className="text-md lg:text-xl mb-8 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
+                  <div className="relative mb-4 animate-fade-in">
+                    <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
+                      <div className="w-[280px] h-[80px] bg-gradient-to-r from-purple-500/20 via-fuchsia-500/20 to-pink-500/20 blur-3xl rounded-full" />
+                    </div>
+                    <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 dark:from-purple-400 dark:via-fuchsia-400 dark:to-purple-400 bg-clip-text text-transparent">
+                      Where ideas begin
+                    </h1>
+                  </div>
+                  <p className="text-md lg:text-xl mb-6 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
                     Bring ideas to life in seconds or get help on existing projects.
                   </p>
+                  <ExamplePrompts sendMessage={sendMessage} />
                 </div>
               )}
               <StickToBottom
@@ -420,7 +433,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     )}
                     {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
                     {planExecuting && planId && (
-                      <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} />
+                      <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
                     )}
                   </div>
                   <ChatBox
@@ -513,15 +526,21 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   minSize={showWorkbench ? 15 : 100}
                   collapsible={showWorkbench}
                 >
-                  <div className={classNames(styles.Chat, 'flex flex-col h-full w-full')}>
+                  <div className={classNames(styles.Chat, 'flex flex-col h-full w-full relative')}>
                     {!chatStarted && (
                       <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
-                        <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary mb-4 animate-fade-in">
-                          Where ideas begin
-                        </h1>
-                        <p className="text-md lg:text-xl mb-8 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
+                        <div className="relative mb-4 animate-fade-in">
+                          <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
+                            <div className="w-[340px] h-[100px] bg-gradient-to-r from-purple-500/20 via-fuchsia-500/20 to-pink-500/20 blur-3xl rounded-full" />
+                          </div>
+                          <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 dark:from-purple-400 dark:via-fuchsia-400 dark:to-purple-400 bg-clip-text text-transparent">
+                            Where ideas begin
+                          </h1>
+                        </div>
+                        <p className="text-md lg:text-xl mb-6 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
                           Bring ideas to life in seconds or get help on existing projects.
                         </p>
+                        <ExamplePrompts sendMessage={sendMessage} />
                       </div>
                     )}
                     <StickToBottom
@@ -591,7 +610,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                             <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />
                           )}
                           {planExecuting && planId && (
-                            <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} />
+                            <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
                           )}
                         </div>
                         <ChatBox

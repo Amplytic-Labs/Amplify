@@ -71,7 +71,7 @@ export default function MemoryTab() {
               </div>
               <button
                 onClick={() => handleDelete(memory.id)}
-                className="p-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                className="bg-transparent p-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                 title="Delete memory"
               >
                 <div className="i-ph:trash text-lg" />

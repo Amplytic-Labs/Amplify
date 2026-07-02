@@ -12,7 +12,8 @@ export function setProjectSkills(projectId: string, skills: string[]) {
 }
 
 export function getProjectSkills(projectId: string): string[] {
-  return projectSkillsStore.get(projectId) || [];
+  const store = projectSkillsStore.get();
+  return store[projectId] || [];
 }
 
 export function toggleProjectSkill(projectId: string, skillId: string) {

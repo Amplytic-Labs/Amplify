@@ -71,6 +71,7 @@ export const TAB_LABELS: Record<TabType, string> = {
   supabase: 'Supabase',
   'event-logs': 'Event Logs',
   mcp: 'MCP Servers',
+  memory: 'Memory',
 };
 
 export const TAB_DESCRIPTIONS: Record<TabType, string> = {

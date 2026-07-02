@@ -61,6 +61,28 @@ export class WorkbenchStore {
     import.meta.hot?.data.deployAlert ?? atom<DeployAlert | undefined>(undefined);
   workbenchLeftPosition: WritableAtom<number | null> =
     import.meta.hot?.data.workbenchLeftPosition ?? atom<number | null>(null);
+
+  /**
+   * The projectId whose FileMap is currently loaded into the WebContainer +
+   * the workbench file store. Used by `useChatHistory` to skip the
+   * `restoreFileMap` step when switching between chats of the SAME project
+   * (so the workspace doesn't visually "reload" on every chat switch).
+   *
+   * - `undefined` = no project loaded (personal chat / fresh boot).
+   * - `'<none>'`  = a personal chat is loaded (so we know to NOT skip the
+   *    restore when later switching to a project chat).
+   */
+  loadedProjectId: WritableAtom<string | undefined> =
+    import.meta.hot?.data.loadedProjectId ?? atom<string | undefined>(undefined);
+
+  /**
+   * Whether the auto setup + start command for the currently-loaded project
+   * has already been run in this session. Prevents re-running `npm install`
+   * + `npm run dev` on every chat switch inside the same project.
+   */
+  projectAutoStarted: WritableAtom<boolean> =
+    import.meta.hot?.data.projectAutoStarted ?? atom<boolean>(false);
+
   modifiedFiles = new Set<string>();
   artifactIdList: string[] = [];
   #globalExecutionQueue = Promise.resolve();
@@ -75,6 +97,8 @@ export class WorkbenchStore {
       import.meta.hot.data.deployAlert = this.deployAlert;
       import.meta.hot.data.fileHistory = this.fileHistory;
       import.meta.hot.data.workbenchLeftPosition = this.workbenchLeftPosition;
+      import.meta.hot.data.loadedProjectId = this.loadedProjectId;
+      import.meta.hot.data.projectAutoStarted = this.projectAutoStarted;
 
       // Ensure binary files are properly preserved across hot reloads
       const filesMap = this.files.get();
