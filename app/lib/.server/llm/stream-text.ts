@@ -23,6 +23,65 @@ import { SkillLoader } from '~/lib/services/skillLoader';
 
 export type Messages = Message[];
 
+/**
+ * Project-marker filenames that indicate the workspace already contains an
+ * initialized project (via inject_template, a GitHub clone, or a user-picked
+ * template). When ANY of these are present, the `inject_template` tool is
+ * withheld from the model so it cannot hallucinate a re-injection.
+ */
+const PROJECT_MARKER_FILES = [
+  'package.json', // JS / TS / Node
+  'index.html', // Vite / static
+  'Cargo.toml', // Rust
+  'go.mod', // Go
+  'requirements.txt', // Python (pip)
+  'pyproject.toml', // Python (modern)
+  'Gemfile', // Ruby
+  'pom.xml', // Java (Maven)
+  'build.gradle', // Java (Gradle)
+  'composer.json', // PHP
+  'pubspec.yaml', // Flutter / Dart
+];
+
+/**
+ * Returns true when the workspace FileMap already contains an initialized
+ * project. This covers all three project-initiation paths:
+ *   1. AI called `inject_template` (files were written to the WebContainer)
+ *   2. User picked a starter template (same — files written)
+ *   3. User cloned a GitHub repo (files written)
+ *
+ * Detection: any known project-marker file at the root, OR a non-trivial
+ * number of files (>5) indicating an established workspace.
+ */
+function workspaceHasProject(files: FileMap | undefined): boolean {
+  if (!files) {
+    return false;
+  }
+
+  const entries = Object.keys(files);
+
+  if (entries.length === 0) {
+    return false;
+  }
+
+  // Check for a known project-marker file at the workspace root.
+  const hasMarker = entries.some((path) => {
+    // Normalize: strip leading ./ or / and check exact match at root.
+    const normalized = path.replace(/^\.{0,2}\//, '');
+    return PROJECT_MARKER_FILES.includes(normalized);
+  });
+
+  if (hasMarker) {
+    return true;
+  }
+
+  /*
+   * Fallback: a workspace with more than 5 files is almost certainly an
+   * established project, even without a recognized marker.
+   */
+  return entries.length > 5;
+}
+
 export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0], 'model'> {
   supabaseConnection?: {
     isConnected: boolean;
@@ -96,6 +155,14 @@ export async function streamText(props: {
   dataStream?: DataStreamWriter;
   userContext?: string;
   projectContext?: string;
+
+  /**
+   * True when the chat is continuing work inside an ALREADY-LOADED project
+   * workspace (i.e. the WebContainer has the project's files and a running
+   * dev server). When true, a dedicated continuation prompt is appended so
+   * the model works WITH the existing workspace instead of reinitializing.
+   */
+  projectContinuation?: boolean;
 }) {
   const {
     messages,
@@ -114,6 +181,7 @@ export async function streamText(props: {
     memory,
     userContext,
     projectContext,
+    projectContinuation,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -256,6 +324,66 @@ export async function streamText(props: {
     console.log('No locked files found from any source for prompt.');
   }
 
+  /*
+   * Guardrail: when the workspace already contains an initialized project
+   * (via inject_template, a GitHub clone, or a user-picked template), tell
+   * the model explicitly NOT to re-inject a template or reinitialize the
+   * project. This prevents the model from hallucinating a fresh template
+   * injection on top of an existing codebase.
+   */
+  const workspaceInitialized = workspaceHasProject(files);
+
+  if (workspaceInitialized) {
+    systemPrompt = `${systemPrompt}
+
+<workspace_guardrails>
+  CRITICAL — An existing project is ALREADY loaded in the workspace.
+
+  - Do NOT call inject_template. The project has already been initialized
+    (files, dependencies, and a running dev server are in place).
+  - Do NOT create a new amplifyArtifact template or attempt to
+    re-scaffold the project from scratch.
+  - Treat the EXISTING workspace files as the single source of truth. Read
+    them, understand the architecture, and make targeted edits.
+  - If the user asks for a new feature, implement it within the existing
+    project structure — do not start over.
+  - Only reinitialize if the user EXPLICITLY asks to replace the entire
+    project.
+</workspace_guardrails>
+    `;
+  }
+
+  /*
+   * Continuation prompt: when this is a chat inside an already-loaded
+   * project workspace (e.g. a "New chat in project" or any subsequent
+   * turn in a project chat), append a dedicated prompt so the model
+   * understands it should work WITH the existing workspace rather than
+   * starting from scratch.
+   */
+  if (projectContinuation) {
+    systemPrompt = `${systemPrompt}
+
+<project_continuation>
+  You are continuing work inside an EXISTING project workspace.
+
+  - The WebContainer already has the project's files, dependencies are
+    installed, and the dev server is running. You do NOT need to set up
+    or install anything to get started.
+  - Before making changes, review the project file tree and key files
+    (package.json, main entry point, routing) to understand the
+    architecture and conventions already in place.
+  - Make incremental, surgical edits that fit the existing codebase. 
+    Match the project's existing patterns, naming conventions, and 
+    structure.
+  - If this is the FIRST message in a new chat within the project, start 
+    by briefly acknowledging what you see in the workspace, then address 
+    the user's request directly.
+  - Do NOT re-explain the project setup, re-run install, or re-inject 
+    templates unless the user explicitly asks for it.
+</project_continuation>
+    `;
+  }
+
   logger.info(`Sending llm call to ${provider.name} with model ${modelDetails.name}`);
 
   // Log reasoning model detection and token parameters
@@ -347,6 +475,7 @@ export async function streamText(props: {
               designScheme,
             });
           }
+
           return { error: 'Unknown capability' };
         },
       },
@@ -359,11 +488,17 @@ export async function streamText(props: {
           try {
             const loader = SkillLoader.getInstance();
             let systems = loader.getDesignSystems();
+
             if (category) {
               systems = systems.filter((s) => s.category?.toLowerCase().includes(category.toLowerCase()));
             }
-            if (systems.length === 0) return 'No design systems found.';
+
+            if (systems.length === 0) {
+              return 'No design systems found.';
+            }
+
             const output = systems.map((s) => `- ${s.id}: ${s.label}${s.summary ? ` — ${s.summary}` : ''}`).join('\n');
+
             return `Available design systems:\n${output}\n\nUse \`get_design_system\` with the ID to load full instructions.`;
           } catch (e: any) {
             return { error: e.message };
@@ -379,6 +514,7 @@ export async function streamText(props: {
           try {
             const loader = SkillLoader.getInstance();
             const content = await loader.getDesignSystemContent(name);
+
             return content || `Design system "${name}" not found. Use list_design_systems to see available options.`;
           } catch (e: any) {
             return { error: e.message };
@@ -393,7 +529,11 @@ export async function streamText(props: {
           try {
             const loader = SkillLoader.getInstance();
             const skills = loader.getSkills();
-            if (skills.length === 0) return 'No specialized skills currently available.';
+
+            if (skills.length === 0) {
+              return 'No specialized skills currently available.';
+            }
+
             return (
               'Available skills:\n' +
               skills.map((s) => `- ${s.id}: ${s.description}`).join('\n') +
@@ -413,41 +553,58 @@ export async function streamText(props: {
           try {
             const loader = SkillLoader.getInstance();
             const content = await loader.getSkillContent(name.toLowerCase());
+
             return content || `Skill "${name}" not found. Use list_skills to see available skills.`;
           } catch (e: any) {
             return { error: e.message };
           }
         },
       },
-      inject_template: {
-        description:
-          'Injects a starter template into the workspace. Use this when starting a new project or adding a base structure for a component.',
-        parameters: z.object({
-          templateName: z
-            .string()
-            .describe(
-              'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
-            ),
-          title: z.string().optional().describe('A title for the imported files artifact'),
-        }),
-        execute: async ({ templateName, title }: { templateName: string; title?: string }) => {
-          try {
-            const result = await getTemplates(templateName, title);
-            if (!result) return { error: `Template "${templateName}" not found.` };
 
-            if (props.dataStream) {
-              props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
-            }
+      /*
+       * Guardrail: `inject_template` is ONLY available when the workspace
+       * does NOT already contain an initialized project. Once a project
+       * exists (via inject_template, a GitHub clone, or a user-picked
+       * template), the tool is withheld entirely so the model cannot
+       * hallucinate a re-injection that would clobber the existing
+       * codebase.
+       */
+      ...(workspaceInitialized
+        ? {}
+        : {
+            inject_template: {
+              description:
+                'Injects a starter template into the workspace. Use this ONLY when starting a brand-new project from scratch and the workspace is empty. Do NOT use this if the workspace already contains project files.',
+              parameters: z.object({
+                templateName: z
+                  .string()
+                  .describe(
+                    'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
+                  ),
+                title: z.string().optional().describe('A title for the imported files artifact'),
+              }),
+              execute: async ({ templateName, title }: { templateName: string; title?: string }) => {
+                try {
+                  const result = await getTemplates(templateName, title);
 
-            return {
-              summary: result.summary,
-              userMessage: result.userMessage,
-            };
-          } catch (e: any) {
-            return { error: e.message };
-          }
-        },
-      },
+                  if (!result) {
+                    return { error: `Template "${templateName}" not found.` };
+                  }
+
+                  if (props.dataStream) {
+                    props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
+                  }
+
+                  return {
+                    summary: result.summary,
+                    userMessage: result.userMessage,
+                  };
+                } catch (e: any) {
+                  return { error: e.message };
+                }
+              },
+            },
+          }),
       webSearch: {
         description: 'Fetch the content of a web page to get up-to-date information or read documentation.',
         parameters: z.object({

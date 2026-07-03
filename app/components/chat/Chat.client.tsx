@@ -53,9 +53,11 @@ export function Chat() {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
   }, [initialMessages]);
 
-  // Background screenshot capture: watches for the preview becoming available
-  // (after `npm start`) and captures a one-shot thumbnail per project session,
-  // stored in IndexedDB and shown in the sidebar ExpandableCard.
+  /*
+   * Background screenshot capture: watches for the preview becoming available
+   * (after `npm start`) and captures a one-shot thumbnail per project session,
+   * stored in IndexedDB and shown in the sidebar ExpandableCard.
+   */
   useScreenshotCapture();
 
   return (
@@ -110,6 +112,7 @@ export const ChatImpl = memo(
     const [searchParams, setSearchParams] = useSearchParams();
     const [fakeLoading, setFakeLoading] = useState(false);
     const files = useStore(workbenchStore.files);
+    const loadedProjectId = useStore(workbenchStore.loadedProjectId);
     const [designScheme, setDesignScheme] = useState<DesignScheme>(defaultDesignScheme);
     const actionAlert = useStore(workbenchStore.alert);
     const deployAlert = useStore(workbenchStore.deployAlert);
@@ -170,6 +173,16 @@ export const ChatImpl = memo(
     // Stable debug fetch instance – intercepts /api/chat requests for the debug page
     const debugFetch = useMemo(() => createDebugFetch(), []);
 
+    /*
+     * projectContinuation: true when the chat is running inside an
+     * already-loaded project workspace (files present + a project is
+     * loaded in the WebContainer). Sent to the server so the model gets
+     * a dedicated continuation prompt that tells it to work WITH the
+     * existing workspace instead of reinitializing or re-injecting a
+     * template.
+     */
+    const projectContinuation = !!loadedProjectId && loadedProjectId !== '<none>' && Object.keys(files).length > 0;
+
     const {
       messages,
       isLoading,
@@ -205,6 +218,7 @@ export const ChatImpl = memo(
         maxLLMSteps: mcpSettings.maxLLMSteps,
         userContext: vectorUserContext || undefined,
         projectContext: projectContextForPrompt,
+        projectContinuation,
       },
       sendExtraMessageFields: true,
 
@@ -661,15 +675,22 @@ export const ChatImpl = memo(
           const { buildFileTreeSummary } = await import('~/lib/persistence/project-memory-detect');
           projectMemoryBlock = formatProjectMemoryForPrompt(project.memory);
           fileTreeBlock = buildFileTreeSummary(workbenchStore.files.get()) || '';
-          const parts = [projectMemoryBlock, fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '', currentProjectContext].filter(Boolean);
+
+          const parts = [
+            projectMemoryBlock,
+            fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '',
+            currentProjectContext,
+          ].filter(Boolean);
           currentProjectContext = parts.join('\n\n');
         } catch {
           /* keep vector-only context */
         }
 
-        // Collect available skills as RawSkillInput for the SkillContextBuilder.
-        // getRelevantSkills() returns a string, so we use getSkills() to get
-        // the list, then fetch each skill's content individually.
+        /*
+         * Collect available skills as RawSkillInput for the SkillContextBuilder.
+         * getRelevantSkills() returns a string, so we use getSkills() to get
+         * the list, then fetch each skill's content individually.
+         */
         const skillList = skillLoader.getSkills();
         const availableSkills = await Promise.all(
           skillList.map(async (s: any) => ({
@@ -881,15 +902,23 @@ export const ChatImpl = memo(
 
         // Reload the plan from the store
         const plan = await planStore.getPlanAsync(planId);
-        if (!plan) return;
 
-        // Reuse the same execution options as the original plan execution.
-        // We rebuild the system prompt and context the same way.
+        if (!plan) {
+          return;
+        }
+
+        /*
+         * Reuse the same execution options as the original plan execution.
+         * We rebuild the system prompt and context the same way.
+         */
         const { getSystemPrompt } = await import('~/lib/common/prompts/new-prompt');
         const { chatId: chatIdAtom } = await import('~/lib/persistence/useChatHistory');
         const currentChatId = chatIdAtom.get();
         const project = currentChatId ? projectStore.getProjectByChat(currentChatId) : null;
-        if (!project) return;
+
+        if (!project) {
+          return;
+        }
 
         const { SkillLoader } = await import('~/lib/services/skillLoader');
         const { memoryStore } = await import('~/lib/persistence/memoryStore');
@@ -905,11 +934,7 @@ export const ChatImpl = memo(
           const { projectContextStore } = await import('~/lib/vector-store/project-context-store');
           await userProfileStore.initialize();
           currentUserContext = await userProfileStore.formatContextForPrompt(plan.userRequest, 500);
-          currentProjectContext = await projectContextStore.formatContextForPrompt(
-            project.id,
-            plan.userRequest,
-            1000,
-          );
+          currentProjectContext = await projectContextStore.formatContextForPrompt(project.id, plan.userRequest, 1000);
         } catch {
           // Vector context is optional
         }
@@ -922,7 +947,12 @@ export const ChatImpl = memo(
           const { buildFileTreeSummary } = await import('~/lib/persistence/project-memory-detect');
           projectMemoryBlock = formatProjectMemoryForPrompt(project.memory);
           fileTreeBlock = buildFileTreeSummary(workbenchStore.files.get()) || '';
-          const parts = [projectMemoryBlock, fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '', currentProjectContext].filter(Boolean);
+
+          const parts = [
+            projectMemoryBlock,
+            fileTreeBlock ? `File tree:\n${fileTreeBlock}` : '',
+            currentProjectContext,
+          ].filter(Boolean);
           currentProjectContext = parts.join('\n\n');
         } catch {
           /* keep vector-only context */
@@ -990,16 +1020,24 @@ export const ChatImpl = memo(
 
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+
+              if (done) {
+                break;
+              }
 
               buffer += decoder.decode(value, { stream: true });
+
               const lines = buffer.split('\n');
               buffer = lines.pop() || '';
 
               for (const line of lines) {
-                if (!line.startsWith('0:')) continue;
+                if (!line.startsWith('0:')) {
+                  continue;
+                }
+
                 try {
                   const parsed = JSON.parse(line.slice(2));
+
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
                   }
@@ -1028,7 +1066,9 @@ export const ChatImpl = memo(
                   },
                 }),
               );
+
               const exitCode = await process.exit;
+
               return { stdout, stderr: '', exitCode: exitCode ?? 0 };
             } catch (e: any) {
               return { stdout: '', stderr: e.message || 'Shell command failed', exitCode: 1 };
@@ -1037,6 +1077,7 @@ export const ChatImpl = memo(
           readFile: async (path) => {
             const currentFiles = workbenchStore.files.get();
             const file = currentFiles[path];
+
             return file && file.type === 'file' ? file.content : null;
           },
           writeFile: async (path, content) => {
@@ -1433,6 +1474,7 @@ export const ChatImpl = memo(
       }
 
       enrichPlanSignalRef.current = false;
+
       const signalToExecute = { ...planSignal };
       setPlanSignal(null);
       handlePlanExecution(signalToExecute);
@@ -1454,6 +1496,7 @@ export const ChatImpl = memo(
         }
 
         enrichPlanSignalRef.current = false;
+
         const modifiedSignal = {
           ...planSignal,
           planPoints: modifiedPoints,

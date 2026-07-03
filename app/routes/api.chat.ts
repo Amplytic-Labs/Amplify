@@ -62,6 +62,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     apiKeys: bodyApiKeys,
     userContext,
     projectContext,
+    projectContinuation,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -81,6 +82,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     apiKeys?: Record<string, string>;
     userContext?: string;
     projectContext?: string;
+    projectContinuation?: boolean;
   }>();
 
   const cookieHeader = request.headers.get('Cookie');
@@ -301,6 +303,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               memory,
               userContext,
               projectContext,
+              projectContinuation,
             });
 
             result.mergeIntoDataStream(dataStream, { sendReasoning: true });
@@ -352,6 +355,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           memory,
           userContext,
           projectContext,
+          projectContinuation,
         });
 
         (async () => {
@@ -381,16 +385,20 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         // Provide more specific error messages for common issues
         const rawMessage = error?.message || 'Unknown error';
 
-        // Detect HTML error pages (e.g. z.ai ALB 502/503/504 pages).
-        // These surface as the raw HTML body and are useless/confusing
-        // to show to the user. Replace with a clean, actionable message.
+        /*
+         * Detect HTML error pages (e.g. z.ai ALB 502/503/504 pages).
+         * These surface as the raw HTML body and are useless/confusing
+         * to show to the user. Replace with a clean, actionable message.
+         */
         const looksLikeHtml =
           rawMessage.includes('<html') ||
           rawMessage.includes('<head>') ||
           rawMessage.includes('<title>') ||
           rawMessage.includes('<center>');
 
-        const htmlStatusMatch = rawMessage.match(/(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i);
+        const htmlStatusMatch = rawMessage.match(
+          /(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i,
+        );
 
         if (looksLikeHtml) {
           const statusCode = htmlStatusMatch?.[1] || '5xx';
@@ -427,8 +435,10 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           return 'Custom error: Network error. Please check your internet connection and try again.';
         }
 
-        // Catch-all: if the error message is very long (likely a raw HTML
-        // page or stack trace), truncate it so the UI doesn't break.
+        /*
+         * Catch-all: if the error message is very long (likely a raw HTML
+         * page or stack trace), truncate it so the UI doesn't break.
+         */
         if (errorMessage.length > 300) {
           return `Custom error: ${errorMessage.slice(0, 300)}…`;
         }
@@ -449,15 +459,19 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
   } catch (error: any) {
     logger.error(error);
 
-    // Sanitize HTML error pages (e.g. z.ai ALB 502/503/504) so the raw
-    // HTML never reaches the client.
+    /*
+     * Sanitize HTML error pages (e.g. z.ai ALB 502/503/504) so the raw
+     * HTML never reaches the client.
+     */
     let message = error?.message || 'An unexpected error occurred';
 
     if (
       typeof message === 'string' &&
       (message.includes('<html') || message.includes('<head>') || message.includes('<title>'))
     ) {
-      const statusMatch = message.match(/(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i);
+      const statusMatch = message.match(
+        /(\d{3})\s+(?:Bad Gateway|Service Unavailable|Gateway Timeout|Internal Server Error)/i,
+      );
       message = `The AI service returned a ${statusMatch?.[1] || '5xx'} error (temporarily unavailable). Please try again in a moment.`;
     } else if (typeof message === 'string' && message.length > 300) {
       message = message.slice(0, 300) + '…';
