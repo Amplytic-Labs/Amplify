@@ -47,7 +47,7 @@ const logger = createScopedLogger('Chat');
 export function Chat() {
   renderLogger.trace('Chat');
 
-  const { ready, initialMessages, storeMessageHistory, importChat, exportChat } = useChatHistory();
+  const { ready, initialMessages, storeMessageHistory, importChat, exportChat, chatKey } = useChatHistory();
   const title = useStore(description);
   useEffect(() => {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
@@ -64,6 +64,7 @@ export function Chat() {
     <>
       {ready && (
         <ChatImpl
+          key={chatKey ?? 'home'}
           description={title}
           initialMessages={initialMessages}
           exportChat={exportChat}

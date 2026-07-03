@@ -146,6 +146,22 @@ export function useChatHistory() {
     }
 
     if (mixedId) {
+      /*
+       * Reset `ready` + `initialMessages` so ChatImpl UNMOUNTS during the
+       * async IndexedDB load. Without this, client-side navigation between
+       * chats keeps ChatImpl mounted with stale state — `chatStarted` and
+       * the `useChat` hook's internal `messages` only initialize from
+       * `initialMessages` on FIRST mount, so the new chat's messages and
+       * workspace files never render until a full page refresh.
+       *
+       * When the load completes, `setReady(true)` remounts ChatImpl fresh
+       * — it picks up the new `initialMessages` AND the workspace files
+       * that were restored into the WebContainer / workbenchStore during
+       * the same async callback.
+       */
+      setReady(false);
+      setInitialMessages([]);
+
       Promise.all([
         getMessages(db, mixedId),
         getSnapshot(db, mixedId), // Fetch snapshot from DB
@@ -312,7 +328,11 @@ export function useChatHistory() {
                * (files, running dev server, terminal) untouched and just
                * reset the chat to an empty conversation. This is the
                * "new chat in project" experience: instant, no reload.
+               *
+               * Re-assert showWorkbench in case it was reset (e.g. by HMR
+               * or a prior navigation to a non-project route).
                */
+              workbenchStore.showWorkbench.set(true);
               setInitialMessages([]);
               setUrlId(storedMessages.urlId);
               description.set(storedMessages.description || '');
@@ -330,14 +350,31 @@ export function useChatHistory() {
                 await restoreFileMap(projectFiles.files);
                 workbenchStore.files.set(projectFiles.files);
                 workbenchStore.loadedProjectId.set(linkedProject.id);
-                workbenchStore.showWorkbench.set(true);
 
                 if (!workbenchStore.projectAutoStarted.get()) {
                   runProjectAutoSetup(linkedProject).catch((e) =>
                     console.warn('[ChatHistory] Auto setup failed for empty project chat:', e),
                   );
                 }
+              } else {
+                /*
+                 * Project has no committed files yet (e.g. a brand-new
+                 * project created from the gallery). Mark the project as
+                 * loaded so subsequent chats in this project take the fast
+                 * path. The workspace still opens (below) so the user sees
+                 * the empty editor + terminal.
+                 */
+                workbenchStore.loadedProjectId.set(linkedProject.id);
               }
+
+              /*
+               * Always open the workspace for a project chat — even if the
+               * project has no files yet. This ensures the workspace
+               * survives a page refresh (showWorkbench is an in-memory atom
+               * that resets to false on reload, so we must re-assert it
+               * here).
+               */
+              workbenchStore.showWorkbench.set(true);
 
               setInitialMessages([]);
               setUrlId(storedMessages.urlId);
@@ -633,6 +670,15 @@ export function useChatHistory() {
   return {
     ready: !mixedId || ready,
     initialMessages,
+    /*
+     * The route-scoped chat key (urlId for chat pages, undefined for home).
+     * Used as a React `key` on <ChatImpl> so the component FULLY remounts
+     * whenever the route changes — resetting `chatStarted`, the `useChat`
+     * hook's internal message state, and all derived UI state. Without
+     * this, client-side navigation between chats (or chat → home) keeps
+     * ChatImpl mounted with stale state.
+     */
+    chatKey: mixedId,
     updateChatMestaData: async (metadata: IChatMetadata) => {
       const id = chatId.get();
 
