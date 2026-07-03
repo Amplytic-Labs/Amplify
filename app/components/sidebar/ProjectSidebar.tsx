@@ -38,6 +38,8 @@ import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';
 import { Dialog, DialogButton, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import { Tooltip } from '~/components/ui/Tooltip';
+import { ExpandableCard } from '~/components/project/ExpandableCard';
+import { useProjectScreenshot } from '~/lib/hooks/useProjectScreenshot';
 import {
   db,
   deleteById,
@@ -924,7 +926,7 @@ function ProjectsList({
     <div
       role="listbox"
       aria-label="Projects"
-      className="flex flex-col gap-[2px]"
+      className="flex flex-col gap-2 px-1 py-1"
     >
       {projects.map((project) => (
         <ProjectCard
@@ -957,22 +959,37 @@ function ProjectCard({
 }: ProjectCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [versionLabel, setVersionLabel] = useState<string | undefined>(undefined);
+  const [fileCount, setFileCount] = useState<number>(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Load the current commit's version label (v1, v2, …) from IndexedDB.
+  // Load the screenshot for this project from IndexedDB. Re-fetches when the
+  // project store bumps (the capture service sets screenshotAt after a new
+  // capture), so the hero image updates live.
+  const screenshot = useProjectScreenshot(project.id);
+
+  // Load the current commit's version label (v1, v2, …) + file count from
+  // IndexedDB.
   useEffect(() => {
     if (!db || !project.currentCommitId) {
       setVersionLabel(undefined);
+      setFileCount(0);
 
       return;
     }
 
     let cancelled = false;
-    import('~/lib/persistence/project-files')
-      .then(({ getProjectCommit }) => getProjectCommit(db!, project.currentCommitId!))
-      .then((commit) => {
+    Promise.all([
+      import('~/lib/persistence/project-files').then(({ getProjectCommit, getProjectFiles }) =>
+        Promise.all([
+          getProjectCommit(db!, project.currentCommitId!),
+          getProjectFiles(db!, project.id),
+        ]),
+      ),
+    ])
+      .then(([[commit, files]]) => {
         if (!cancelled) {
           setVersionLabel(commit?.label);
+          setFileCount(files?.files ? Object.keys(files.files).length : 0);
         }
       })
       .catch(() => undefined);
@@ -980,7 +997,7 @@ function ProjectCard({
     return () => {
       cancelled = true;
     };
-  }, [project.currentCommitId]);
+  }, [project.currentCommitId, project.id]);
 
   // Close kebab menu on outside click.
   useEffect(() => {
@@ -998,160 +1015,143 @@ function ProjectCard({
   }, [menuOpen]);
 
   const depCount = project.memory?.dependencies?.length ?? 0;
+  const framework = project.screenshotFramework || project.memory?.framework;
+
+  // Kebab menu node (passed into ExpandableCard so it renders above the hero).
+  const menu = (
+    <div ref={menuRef}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen(!menuOpen);
+        }}
+        className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors bg-background/70 backdrop-blur-sm border border-border/40"
+        aria-label="Project actions"
+        title="Project actions"
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-sidebar-border bg-sidebar shadow-lg py-1 overflow-hidden"
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onRenameProject(project);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            >
+              <Pencil size={12} className="shrink-0" />
+              <span>Rename</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onDeleteProject(project);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-500/10 transition-colors"
+            >
+              <Trash2 size={12} className="shrink-0" />
+              <span>Delete project</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 
   return (
-    <motion.div
-      layout
-      role="option"
-      aria-selected={isSelected}
-      aria-label={`Project: ${project.name}`}
-      className={classNames(
-        'group relative rounded-lg border bg-sidebar overflow-hidden',
-        isSelected ? 'border-purple-500/50' : 'border-sidebar-border',
-      )}
-      animate={{
-        boxShadow: isSelected
-          ? '0 0 0 1px rgba(168, 85, 247, 0.40), 0 2px 10px -3px rgba(168, 85, 247, 0.25)'
-          : '0 0 0 0px rgba(168, 85, 247, 0.0), 0 2px 10px -3px rgba(168, 85, 247, 0.0)',
-      }}
-      transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+    <ExpandableCard
+      name={project.name}
+      framework={framework}
+      screenshot={screenshot?.dataUrl}
+      screenshotAt={screenshot?.capturedAt || project.screenshotAt}
+      tags={[]}
+      isSelected={isSelected}
+      menu={menu}
+      onSelect={() => onSelect(project)}
+      onScreenshotPress={() => onSelect(project)}
     >
-      {/* Left accent bar — purple→fuchsia gradient, animates in on selection */}
-      <motion.div
-        className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-purple-500 to-fuchsia-500 rounded-l-lg z-10 pointer-events-none"
-        initial={false}
-        animate={{ opacity: isSelected ? 1 : 0, scaleY: isSelected ? 1 : 0.4 }}
-        transition={{ type: 'spring', stiffness: 350, damping: 24 }}
-        style={{ originY: 0.5 }}
-      />
-
-      {/* Subtle gradient hover tint on unselected cards (purple/fuchsia) */}
-      {!isSelected && (
-        <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gradient-to-br from-purple-500/[0.07] via-fuchsia-500/[0.04] to-transparent rounded-lg" />
-      )}
-
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => onSelect(project)}
-          aria-pressed={isSelected}
-          aria-label={`Select project: ${project.name}`}
-          className={classNames(
-            'w-full flex items-center gap-2 px-[10px] py-[9px] text-left transition-colors',
-            isSelected ? 'bg-purple-500/5' : 'hover:bg-purple-500/[0.04]',
-          )}
-        >
-          <div
-            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] ring-1 ring-purple-500/20"
-            style={{ background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(217, 70, 239, 0.08))' }}
-          >
-            <span className="text-purple-500">{project.icon || <Folder size={13} />}</span>
-          </div>
-          <div className="flex-1 min-w-0 pr-7">
-            <div className="text-[13px] font-medium text-sidebar-foreground truncate">{project.name}</div>
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-0.5">
-              <span>
-                {project.chatIds.length} chat{project.chatIds.length === 1 ? '' : 's'}
-              </span>
-              <span>·</span>
-              <span>{formatRelativeShort(project.updatedAt)}</span>
-              {versionLabel && (
-                <>
-                  <span>·</span>
-                  <span className="text-purple-500/80 font-medium">{versionLabel}</span>
-                </>
-              )}
-              {project.isSetupComplete && (
-                <>
-                  <span>·</span>
-                  <span className="text-emerald-500/80 font-medium" title="Dependencies installed">
-                    ready
-                  </span>
-                </>
-              )}
-              {depCount > 0 && (
-                <>
-                  <span>·</span>
-                  <span
-                    className="inline-flex items-center gap-0.5 text-fuchsia-500/80 font-medium"
-                    title={`${depCount} tracked ${depCount === 1 ? 'dependency' : 'dependencies'}`}
-                  >
-                    <Package size={8} />
-                    {depCount}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-          <AnimatePresence>
-            {isSelected && (
-              <motion.div
-                key="check"
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6 }}
-                transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                className="absolute right-9 top-1/2 -translate-y-1/2 shrink-0"
-              >
-                <Check size={13} className="text-purple-500" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </button>
-
-        {/* Kebab menu */}
-        <div ref={menuRef} className="absolute right-1.5 top-1/2 -translate-y-1/2">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(!menuOpen);
-            }}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
-            aria-label="Project actions"
-            title="Project actions"
-          >
-            <MoreHorizontal size={14} />
-          </button>
-          <AnimatePresence>
-            {menuOpen && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                transition={{ duration: 0.12 }}
-                className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-sidebar-border bg-sidebar shadow-lg py-1 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpen(false);
-                    onRenameProject(project);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                >
-                  <Pencil size={12} className="shrink-0" />
-                  <span>Rename</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpen(false);
-                    onDeleteProject(project);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 size={12} className="shrink-0" />
-                  <span>Delete project</span>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {/* Expanded detail panel — mirrors the Appwrite Sites card layout:
+          a 2-column grid of spec fields + a full-width latest-deployment row. */}
+      <div className="flex flex-wrap gap-y-3">
+        <DetailField label="Framework" value={framework || '—'} half />
+        <DetailField label="Version" value={versionLabel || '—'} half />
+        <DetailField label="Files" value={fileCount ? String(fileCount) : '—'} half />
+        <DetailField
+          label="Dependencies"
+          value={depCount ? `${depCount} tracked` : '—'}
+          half
+        />
+        <DetailField label="Updated" value={formatRelativeShort(project.updatedAt)} half />
+        <DetailField
+          label="Setup"
+          value={project.isSetupComplete ? 'Ready' : 'Pending'}
+          half
+          valueClass={project.isSetupComplete ? 'text-emerald-500' : 'text-amber-500'}
+        />
+        <div className="w-full pt-2 border-t border-border/50">
+          <DetailField
+            label="Start command"
+            value={project.startCommand || 'npm run dev'}
+            full
+            mono
+          />
         </div>
+        {project.chatIds.length > 0 && (
+          <div className="w-full pt-2 border-t border-border/50">
+            <DetailField
+              label="Chats"
+              value={`${project.chatIds.length} linked chat${project.chatIds.length === 1 ? '' : 's'}`}
+              full
+            />
+          </div>
+        )}
       </div>
-    </motion.div>
+    </ExpandableCard>
+  );
+}
+
+/** Small labelled spec field used inside the expanded detail panel. */
+function DetailField({
+  label,
+  value,
+  half,
+  full,
+  mono,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  half?: boolean;
+  full?: boolean;
+  mono?: boolean;
+  valueClass?: string;
+}) {
+  return (
+    <div className={half ? 'w-1/2' : full ? 'w-full' : 'w-full'}>
+      <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide">{label}</div>
+      <div
+        className={classNames(
+          'text-[12px] font-medium text-sidebar-foreground mt-0.5 truncate',
+          mono && 'font-mono text-[11px]',
+          valueClass,
+        )}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 

@@ -40,6 +40,7 @@ import { projectStore } from '~/lib/persistence/project-store';
 import { planStore } from '~/lib/planning/plan-store';
 import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 import { useProjectContextString } from '~/lib/persistence/useProjectContext';
+import { useScreenshotCapture } from '~/lib/services/screenshotCapture';
 
 const logger = createScopedLogger('Chat');
 
@@ -51,6 +52,11 @@ export function Chat() {
   useEffect(() => {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
   }, [initialMessages]);
+
+  // Background screenshot capture: watches for the preview becoming available
+  // (after `npm start`) and captures a one-shot thumbnail per project session,
+  // stored in IndexedDB and shown in the sidebar ExpandableCard.
+  useScreenshotCapture();
 
   return (
     <>

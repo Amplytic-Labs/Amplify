@@ -285,6 +285,119 @@
     if (event.data.type === 'INSPECTOR_ACTIVATE') {
       setInspectorActive(event.data.active);
     }
+
+    /*
+     * Screenshot capture request from the parent app. The parent asks the
+     * preview iframe to capture itself because the iframe is cross-origin
+     * (webcontainer-api.io) and the parent cannot read its DOM directly.
+     * Here, inside the iframe, we are same-origin to document.body, so we
+     * can serialize the live DOM to an SVG <foreignObject>, draw it onto a
+     * canvas, and postMessage the PNG data URL back to the parent.
+     *
+     * This runs ONLY when the parent explicitly requests a capture (one-shot
+     * per preview-ready event), so it has zero ongoing perf cost.
+     */
+    if (event.data.type === 'AMPLIFY_CAPTURE_SCREENSHOT') {
+      try {
+        var width = document.documentElement.scrollWidth || document.body.scrollWidth || 1280;
+        var height = document.documentElement.scrollHeight || document.body.scrollHeight || 800;
+
+        // Clamp to sane bounds so we don't generate a multi-megabyte PNG for
+        // very tall pages. The sidebar thumbnail only needs a representative
+        // top-of-page view.
+        var capWidth = Math.min(width, 1600);
+        var capHeight = Math.min(height, 1200);
+
+        // Clone the document so we can strip script tags + inspector styles
+        // before serialization (avoids re-executing scripts in the SVG and
+        // avoids capturing the inspector's own highlight outlines).
+        var cloneDoc = document.cloneNode(true);
+        cloneDoc.querySelectorAll('script').forEach(function(el) { el.remove(); });
+        var inspectorStyles = cloneDoc.querySelectorAll('style');
+        inspectorStyles.forEach(function(st) {
+          if (st.textContent && st.textContent.indexOf('inspector-') !== -1) {
+            st.remove();
+          }
+        });
+        var inspectorEls = cloneDoc.querySelectorAll('[class*="inspector-"]');
+        inspectorEls.forEach(function(el) {
+          var cn = el.className || '';
+          cn = typeof cn === 'string' ? cn : (cn.baseVal || '');
+          el.className = cn.split(/\s+/).filter(function(c) { return c.indexOf('inspector-') !== 0; }).join(' ');
+        });
+
+        // Serialize the cloned <html> (including DOCTYPE + html tag) so the
+        // foreignObject renders with the right structure + computed styles.
+        var serialized = '<!DOCTYPE html>' + cloneDoc.documentElement.outerHTML;
+
+        var svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + capWidth + '" height="' + capHeight + '">' +
+            '<foreignObject x="0" y="0" width="100%" height="100%">' +
+              '<html xmlns="http://www.w3.org/1999/xhtml">' + serialized + '</html>' +
+            '</foreignObject>' +
+          '</svg>';
+
+        var svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        var url = URL.createObjectURL(svgBlob);
+
+        var img = new Image();
+        img.onload = function() {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = capWidth;
+            canvas.height = capHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, capWidth, capHeight);
+            ctx.drawImage(img, 0, 0, capWidth, capHeight);
+            URL.revokeObjectURL(url);
+
+            var dataUrl;
+            try {
+              // Downscale large captures to a JPEG-ish PNG at 0.8 quality to
+              // keep the data URL small enough for IndexedDB + sidebar render.
+              dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            } catch (e) {
+              dataUrl = canvas.toDataURL('image/png');
+            }
+
+            window.parent.postMessage({
+              type: 'AMPLIFY_SCREENSHOT_RESULT',
+              requestId: event.data.requestId,
+              ok: true,
+              dataUrl: dataUrl,
+              width: capWidth,
+              height: capHeight,
+            }, '*');
+          } catch (err) {
+            URL.revokeObjectURL(url);
+            window.parent.postMessage({
+              type: 'AMPLIFY_SCREENSHOT_RESULT',
+              requestId: event.data.requestId,
+              ok: false,
+              error: String(err && err.message || err),
+            }, '*');
+          }
+        };
+        img.onerror = function() {
+          URL.revokeObjectURL(url);
+          window.parent.postMessage({
+            type: 'AMPLIFY_SCREENSHOT_RESULT',
+            requestId: event.data.requestId,
+            ok: false,
+            error: 'img onerror — SVG likely too large or tainted',
+          }, '*');
+        };
+        img.src = url;
+      } catch (err) {
+        window.parent.postMessage({
+          type: 'AMPLIFY_SCREENSHOT_RESULT',
+          requestId: event.data.requestId,
+          ok: false,
+          error: String(err && err.message || err),
+        }, '*');
+      }
+    }
   });
 
   // Auto-inject if inspector is already active

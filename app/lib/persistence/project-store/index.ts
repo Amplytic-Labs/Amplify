@@ -118,6 +118,22 @@ export interface Project {
    * the user wants to force a re-setup.
    */
   isSetupComplete?: boolean;
+
+  /**
+   * ISO timestamp of the last preview screenshot captured for this project.
+   * The actual PNG data URL lives in the IndexedDB `project_screenshots`
+   * store (keyed by projectId) to avoid bloating localStorage. This field
+   * is a lightweight flag so the sidebar knows a screenshot exists without
+   * having to query IndexedDB for every project on every render.
+   */
+  screenshotAt?: string;
+
+  /**
+   * Framework label captured at screenshot time (e.g. "Vite + React").
+   * Cached here so the ExpandableCard can render the framework badge
+   * without an extra IndexedDB round-trip.
+   */
+  screenshotFramework?: string;
 }
 
 export interface ProjectStoreData {
@@ -338,6 +354,8 @@ export class ProjectStore {
         | 'projectType'
         | 'followupMessage'
         | 'isSetupComplete'
+        | 'screenshotAt'
+        | 'screenshotFramework'
       >
     >,
   ): void {

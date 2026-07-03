@@ -29,8 +29,11 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
     /*
      * v3: add `project_files` (global source of truth per project) and
      * `project_commits` (versioned snapshots of a project's files).
+     * v4: add `project_screenshots` — captured PNG data URLs of a project's
+     * running preview (one per project, replaced on each new capture so we
+     * never bloat storage with stale screenshots).
      */
-    const request = indexedDB.open('amplifyHistory', 3);
+    const request = indexedDB.open('amplifyHistory', 4);
 
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -64,6 +67,18 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
           const commitStore = db.createObjectStore('project_commits', { keyPath: 'id' });
           commitStore.createIndex('projectId', 'projectId', { unique: false });
           commitStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+      }
+
+      if (oldVersion < 4) {
+        /*
+         * One screenshot per project (keyPath: projectId). The store holds
+         * { projectId, dataUrl, capturedAt, framework }. On every new
+         * capture we `put` (overwrite) the record, so old screenshots are
+         * automatically discarded — no stale-image bloat.
+         */
+        if (!db.objectStoreNames.contains('project_screenshots')) {
+          db.createObjectStore('project_screenshots', { keyPath: 'projectId' });
         }
       }
     };

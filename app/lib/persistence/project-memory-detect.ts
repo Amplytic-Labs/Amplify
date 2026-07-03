@@ -222,6 +222,22 @@ export function detectProjectMemory(files: FileMap): DetectionResult {
 }
 
 /**
+ * Lightweight helper that returns ONLY the detected framework label (e.g.
+ * "Vite + React", "Next.js 14", "Astro 4.5") from a FileMap. Used by the
+ * screenshot capture service to tag a captured thumbnail with the framework
+ * badge without running the full memory detection + merge pipeline.
+ */
+export function detectFrameworkFromFiles(files: FileMap): string | undefined {
+  try {
+    const { memory } = detectProjectMemory(files);
+
+    return memory.framework;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Merge detected memory into an existing memory object WITHOUT clobbering
  * fields the user has explicitly set. We only fill in missing fields and
  * refresh `dependencies` (which is data, not opinion).
