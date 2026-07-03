@@ -3,7 +3,7 @@ import { Fragment } from 'react';
 import { classNames } from '~/utils/classNames';
 import { AssistantMessage } from './AssistantMessage';
 import { UserMessage } from './UserMessage';
-import { useLocation } from '@remix-run/react';
+import { useLocation, useNavigate } from '@remix-run/react';
 import { db, chatId } from '~/lib/persistence/useChatHistory';
 import { forkChat } from '~/lib/persistence/db';
 import { toast } from 'react-toastify';
@@ -28,11 +28,20 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
   (props: MessagesProps, ref: ForwardedRef<HTMLDivElement> | undefined) => {
     const { id, isStreaming = false, messages = [] } = props;
     const location = useLocation();
+    const navigate = useNavigate();
 
     const handleRewind = (messageId: string) => {
       const searchParams = new URLSearchParams(location.search);
       searchParams.set('rewindTo', messageId);
-      window.location.search = searchParams.toString();
+
+      /*
+       * Client-side navigation for rewind — preserves the WebContainer +
+       * workspace state (no full page refresh, no file re-inject / dev-server
+       * restart). useChatHistory re-runs for the new search params and slices
+       * the message list to the rewind point without reloading files when the
+       * same project is already loaded.
+       */
+      navigate(`${location.pathname}?${searchParams.toString()}`);
     };
 
     const handleFork = async (messageId: string) => {
@@ -43,7 +52,13 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
         }
 
         const urlId = await forkChat(db, chatId.get()!, messageId);
-        window.location.href = `/chat/${urlId}`;
+
+        /*
+         * Client-side navigation to the forked chat — preserves the
+         * WebContainer + workspace state (no full page refresh) so the dev
+         * server keeps running and files aren't re-injected.
+         */
+        navigate(`/chat/${urlId}`);
       } catch (error) {
         toast.error('Failed to fork chat: ' + (error as Error).message);
       }

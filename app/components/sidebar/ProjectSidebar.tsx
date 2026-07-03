@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronDown,
-  ChevronRight,
   Search,
   LayoutGrid,
   List,
@@ -16,30 +15,14 @@ import {
   Plus,
   Folder,
   ArrowLeft,
-  RotateCcw,
-  Terminal,
-  Package,
-  X,
-  Brain,
-  History as HistoryIcon,
-  Clock,
-  Sparkles,
   MessageSquarePlus,
-  Layers,
-  Server,
-  Cpu,
-  ArrowDown,
-  type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { useParams, useNavigate } from '@remix-run/react';
+import { useParams, useNavigate, Link } from '@remix-run/react';
 import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';
 import { Dialog, DialogButton, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
-import { Tooltip } from '~/components/ui/Tooltip';
-import { ExpandableCard } from '~/components/project/ExpandableCard';
-import { useProjectScreenshot } from '~/lib/hooks/useProjectScreenshot';
 import {
   db,
   deleteById,
@@ -60,8 +43,9 @@ import { themeStore, setTheme } from '~/lib/stores/theme';
 import ThemeToggle from './ThemeToggle';
 import Amplify from './amplify';
 import { selectedProjectId, setSelectedProject, clearSelectedProject } from '~/lib/stores/selectedProject';
-import { rerunProjectSetup } from '~/lib/persistence/project-auto-run';
 import { workbenchStore } from '~/lib/stores/workbench';
+import { insetView, showProjectsGallery, showChatView } from '~/lib/stores/insetView';
+import { chatStore } from '~/lib/stores/chat';
 
 const navItems = [
   { icon: LayoutGrid, label: 'Projects' },
@@ -79,7 +63,7 @@ interface ProjectSidebarProps {
   };
 }
 
-export function ProjectSidebar({ user }: ProjectSidebarProps) {
+export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   const { duplicateCurrentChat, exportChat } = useChatHistory();
   const { id: urlId } = useParams();
   const navigate = useNavigate();
@@ -95,18 +79,28 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
   // Read the selected project reactively so the sidebar updates when it changes.
   const selectedProjectIdValue = useStore(selectedProjectId);
 
-  // Whether the selected project's auto-setup (npm install + npm run dev) is
-  // currently running. Drives the pulsing dot indicator in the
-  // SelectedProjectPanel. Read reactively so the UI flips to "running" the
-  // moment `runProjectAutoSetup` is invoked.
+  /*
+   * Whether the selected project's auto-setup (npm install + npm run dev) is
+   * currently running. Drives the pulsing dot indicator in the
+   * SelectedProjectPanel. Read reactively so the UI flips to "running" the
+   * moment `runProjectAutoSetup` is invoked.
+   */
   const projectAutoStarted = useStore(workbenchStore.projectAutoStarted);
 
-  // Live-refresh token: bumped every time a chat is saved in
-  // `storeMessageHistory` (useChatHistory.ts). Subscribing here makes the
-  // sidebar re-fetch its chat list from IndexedDB the instant a new chat is
-  // created — no page refresh needed. Declared up top so both the
-  // selected-project-chats effect and the main loadEntries effect can depend
-  // on it.
+  /*
+   * Reactive read of the sidebar-inset view mode ('chat' | 'projects'). Drives
+   * the active state of the Projects / Chats nav buttons.
+   */
+  const insetViewValue = useStore(insetView);
+
+  /*
+   * Live-refresh token: bumped every time a chat is saved in
+   * `storeMessageHistory` (useChatHistory.ts). Subscribing here makes the
+   * sidebar re-fetch its chat list from IndexedDB the instant a new chat is
+   * created — no page refresh needed. Declared up top so both the
+   * selected-project-chats effect and the main loadEntries effect can depend
+   * on it.
+   */
   const listVersion = useStore(chatListVersion);
 
   const [activeNav, setActiveNav] = useState('Chats');
@@ -118,33 +112,34 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
   const [list, setList] = useState<ChatHistoryItem[]>([]);
   const [dialogContent, setDialogContent] = useState<DialogContent>(null);
 
-  // Project search query (separate from chat search).
-  const [projectSearch, setProjectSearch] = useState('');
-
-  // Search query for chats belonging to the currently-selected project
-  // (used on the Chats nav when a project is selected, and in the
-  // SelectedProjectPanel). Filters `selectedProjectChats` by description.
+  /*
+   * Search query for chats belonging to the currently-selected project
+   * (used on the Chats nav when a project is selected). Filters
+   * `selectedProjectChats` by description.
+   */
   const [projectChatsSearch, setProjectChatsSearch] = useState('');
 
-  // Project management dialog state.
+  /*
+   * Project management dialog state (rename / delete from the gallery route
+   * its dialogs through here too, but the gallery has its own dialogs; this
+   * is kept for the sidebar's legacy wiring).
+   */
   const [projectDialog, setProjectDialog] = useState<
-    | { type: 'delete'; project: Project }
-    | { type: 'rename'; project: Project }
-    | null
+    { type: 'delete'; project: Project } | { type: 'rename'; project: Project } | null
   >(null);
 
-  // Reactive project list — re-renders whenever any project changes (create /
-  // rename / delete / memory update) because `_versionStore` is bumped on
-  // every mutation.
+  /*
+   * Reactive project list version — re-renders whenever any project changes
+   * (create / rename / delete / memory update) because `_versionStore` is
+   * bumped on every mutation. Used to keep the selected-project lookup fresh.
+   */
   // @ts-expect-error — _versionStore is private but stable across releases.
   const projectsVersion = useStore(projectStore._versionStore);
-  const allProjects = useMemo(() => {
-    void projectsVersion;
-    return projectStore.getAllProjects();
-  }, [projectsVersion]);
 
-  // The currently-selected project object (looked up fresh on every render
-  // so we always have the latest memory / version / commands).
+  /*
+   * The currently-selected project object (looked up fresh on every render
+   * so we always have the latest memory / version / commands).
+   */
   const selectedProject = useMemo(() => {
     if (!selectedProjectIdValue) {
       return undefined;
@@ -153,34 +148,24 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
     return projectStore.getProject(selectedProjectIdValue);
   }, [selectedProjectIdValue, projectsVersion]);
 
-  // Filter projects by search query (name / description / technologies).
-  const projects = useMemo(() => {
-    const q = projectSearch.trim().toLowerCase();
-
-    if (!q) {
-      return allProjects;
-    }
-
-    return allProjects.filter((p) => {
-      const haystack = [p.name, p.description ?? '', ...(p.technologies ?? [])].join(' ').toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [allProjects, projectSearch]);
-
   const { filteredItems: filteredList, handleSearchChange } = useSearchFilter({
     items: list,
     searchFields: ['description'],
   });
 
-  // Personal chats (no project linked) — shown when no project is selected
-  // on the Chats nav.
+  /*
+   * Personal chats (no project linked) — shown when no project is selected
+   * on the Chats nav.
+   */
   const personalChats = useMemo(() => {
     return filteredList.filter((item) => projectStore.getChatCategory(item.id) === 'chat');
   }, [filteredList]);
 
-  // Chats belonging to the currently-selected project — shown on the Chats
-  // nav when a project is selected, and also in the Selected Project panel
-  // under the Projects nav.
+  /*
+   * Chats belonging to the currently-selected project — shown on the Chats
+   * nav when a project is selected, and also in the Selected Project panel
+   * under the Projects nav.
+   */
   const [selectedProjectChats, setSelectedProjectChats] = useState<ChatHistoryItem[]>([]);
   const [loadingSelectedProjectChats, setLoadingSelectedProjectChats] = useState(false);
 
@@ -202,19 +187,19 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
     setLoadingSelectedProjectChats(true);
     Promise.all(project.chatIds.map((id) => getMessages(db!, id).catch(() => undefined)))
       .then((results) => {
-        const valid = results.filter(
-          (c): c is ChatHistoryItem => !!c && !!c.urlId,
-        );
+        const valid = results.filter((c): c is ChatHistoryItem => !!c && !!c.urlId);
         valid.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSelectedProjectChats(valid);
       })
       .finally(() => setLoadingSelectedProjectChats(false));
   }, [selectedProjectIdValue, projectsVersion, listVersion]);
 
-  // Filter the selected project's chats by the project-chats search query.
-  // Used both in the SelectedProjectPanel (Projects nav) and the
-  // SelectedProjectChatsList (Chats nav) so the search bar behaves
-  // consistently across both views.
+  /*
+   * Filter the selected project's chats by the project-chats search query.
+   * Used both in the SelectedProjectPanel (Projects nav) and the
+   * SelectedProjectChatsList (Chats nav) so the search bar behaves
+   * consistently across both views.
+   */
   const filteredProjectChats = useMemo(() => {
     const q = projectChatsSearch.trim().toLowerCase();
 
@@ -238,8 +223,10 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
    */
   useEffect(() => {
     if (!currentChatId) {
-      // On the home page (no chat) — keep the current selection so the user
-      // can browse the selected project's chats without losing context.
+      /*
+       * On the home page (no chat) — keep the current selection so the user
+       * can browse the selected project's chats without losing context.
+       */
       return;
     }
 
@@ -258,27 +245,59 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
   }, [currentChatId]);
 
   /**
-   * Select a project from the Projects list. Sets the selection and creates
-   * a new empty chat linked to the project so the user lands on a fresh
+   * Select a project from the Projects gallery (rendered in the sidebar inset)
+   * or from the sidebar's old inline list. Sets the selection and creates a
+   * new empty chat linked to the project so the user lands on a fresh
    * conversation with the project's files + memory loaded.
    *
+   * The workspace auto-opens immediately (no AI interference, no user input
+   * needed) — even on an empty chat — so the user sees the running preview
+   * the moment they pick a project.
+   *
    * If the current chat is already in the selected project, this is a no-op
-   * (we don't want to create duplicate empty chats).
+   * for chat creation, but still ensures the workspace is visible.
    */
   const handleSelectProject = useCallback(
     async (project: Project) => {
       setSelectedProject(project.id);
-      // Reset the project-chats search so the new project's chats aren't
-      // accidentally filtered by the previous project's query.
+
+      /*
+       * Reset the project-chats search so the new project's chats aren't
+       * accidentally filtered by the previous project's query.
+       */
       setProjectChatsSearch('');
 
-      // Already in this project? Just keep the current chat.
+      /*
+       * Make sure we're back in the chat view (the gallery may have been
+       * showing in the inset).
+       */
+      showChatView();
+
+      /*
+       * Auto-open the workspace immediately so the user sees the project's
+       * running preview without any AI / user input. The actual file restore
+       * + `npm install` / `npm run dev` is handled by useChatHistory when the
+       * new project chat loads (and skipped if the project is already loaded,
+       * so switching chats inside a project never reloads the workspace).
+       */
+      workbenchStore.showWorkbench.set(true);
+
+      /*
+       * Already in this project? Just keep the current chat (no duplicate
+       * empty chats) — but still make sure the workbench is open + auto-start
+       * has fired.
+       */
       const currentId = chatId.get();
 
       if (currentId) {
         const currentProject = projectStore.getProjectByChat(currentId);
 
         if (currentProject?.id === project.id) {
+          if (!workbenchStore.projectAutoStarted.get()) {
+            const { runProjectAutoSetup } = await import('~/lib/persistence/project-auto-run');
+            runProjectAutoSetup(project).catch((e) => console.warn('[ProjectSidebar] Auto setup failed:', e));
+          }
+
           return;
         }
       }
@@ -300,6 +319,11 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
         }
 
         loadEntries();
+
+        /*
+         * Client-side navigation (Remix useNavigate) — preserves the
+         * WebContainer + workspace state, so no page refresh / file re-inject.
+         */
         navigate(`/chat/${newUrlId}`);
         toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
       } catch (e) {
@@ -357,11 +381,14 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
          */
         .then((list) => list.filter((item) => item.urlId))
         .then((list) =>
-          // Sort newest-first by timestamp so the most recent chat
-          // appears at the top of the list immediately after creation.
+          /*
+           * Sort newest-first by timestamp so the most recent chat
+           * appears at the top of the list immediately after creation.
+           */
           list.sort((a, b) => {
             const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
             const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+
             return tb - ta;
           }),
         )
@@ -390,7 +417,10 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
 
   // Delete single chat
   const deleteChat = useCallback(async (id: string): Promise<void> => {
-    if (!db) throw new Error('Database not available');
+    if (!db) {
+      throw new Error('Database not available');
+    }
+
     try {
       localStorage.removeItem(`snapshot:${id}`);
     } catch (e) {
@@ -406,7 +436,24 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
       deleteChat(item.id)
         .then(() => {
           toast.success('Chat deleted successfully', { position: 'bottom-right', autoClose: 3000 });
+
+          /*
+           * Unlink the deleted chat from any project it belonged to so the
+           * project's chatIds array stays in sync (otherwise the
+           * SelectedProjectChatsList would keep showing a stale entry until
+           * the next full reload).
+           */
+          projectStore.unlinkChat(item.id);
+
+          /*
+           * Bump the chat-list version so every subscriber (including the
+           * selected-project-chats effect above) re-fetches from IndexedDB
+           * and the deleted chat disappears immediately.
+           */
+          chatListVersion.set(chatListVersion.get() + 1);
+
           loadEntries();
+
           if (chatId.get() === item.id) {
             window.location.pathname = '/';
           }
@@ -425,36 +472,37 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
     loadEntries();
   };
 
-  // Delete a project (and unlink its chats). The chats themselves are preserved
-  // and become personal chats again.
+  /*
+   * Delete a project (and unlink its chats). The chats themselves are preserved
+   * and become personal chats again.
+   */
   const handleDeleteProject = useCallback(
     (project: Project) => {
       projectStore.deleteProject(project.id);
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
 
-      // If we're currently viewing one of the project's chats, stay on it —
-      // it just becomes a personal chat again.
+      /*
+       * If we're currently viewing one of the project's chats, stay on it —
+       * it just becomes a personal chat again.
+       */
       loadEntries();
     },
     [loadEntries],
   );
 
   // Rename a project.
-  const handleRenameProject = useCallback(
-    (project: Project, newName: string) => {
-      const trimmed = newName.trim();
+  const handleRenameProject = useCallback((project: Project, newName: string) => {
+    const trimmed = newName.trim();
 
-      if (!trimmed) {
-        toast.error('Project name cannot be empty');
+    if (!trimmed) {
+      toast.error('Project name cannot be empty');
 
-        return;
-      }
+      return;
+    }
 
-      projectStore.updateProject(project.id, { name: trimmed });
-      toast.success('Project renamed', { autoClose: 2000 });
-    },
-    [],
-  );
+    projectStore.updateProject(project.id, { name: trimmed });
+    toast.success('Project renamed', { autoClose: 2000 });
+  }, []);
 
   const closeDialog = () => setDialogContent(null);
 
@@ -466,8 +514,82 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  /*
+   * Listen for project selections coming from the ProjectsGallery (which
+   * renders in the sidebar inset, outside this component's React subtree).
+   * The gallery dispatches `amplify:select-project-from-gallery` and we run
+   * the full project-load flow here so all the workspace / IndexedDB /
+   * navigation plumbing stays in one place.
+   */
+  useEffect(() => {
+    function onGallerySelect(e: Event) {
+      const detail = (e as CustomEvent<{ projectId: string }>).detail;
+
+      if (!detail?.projectId) {
+        return;
+      }
+
+      const project = projectStore.getProject(detail.projectId);
+
+      if (project) {
+        handleSelectProject(project);
+      }
+    }
+
+    window.addEventListener('amplify:select-project-from-gallery', onGallerySelect);
+
+    return () => window.removeEventListener('amplify:select-project-from-gallery', onGallerySelect);
+  }, [handleSelectProject]);
+
+  /**
+   * "New Chat" guard — prevents creating / navigating to a new empty chat
+   * when the user is ALREADY on a clean empty chat. Without this, repeatedly
+   * clicking "New Chat" (or re-selecting a project) accumulates empty chats
+   * in the sidebar.
+   *
+   * "Empty chat" = `chatStore.started` is false (no messages have been sent
+   * in the current chat, or we're on the home `/` route with no chatId).
+   */
+  const handleNewChat = useCallback(
+    (e?: React.UIEvent) => {
+      /*
+       * If the projects gallery is showing in the inset, flip back to chat
+       * first so the user sees their (empty) chat.
+       */
+      if (insetView.get() === 'projects') {
+        showChatView();
+      }
+
+      if (!chatStore.get().started) {
+        // Already on a clean empty chat — don't navigate / create a new one.
+        e?.preventDefault();
+
+        return;
+      }
+
+      /*
+       * Starting a brand-new personal chat — clear any project selection so
+       * the sidebar shows personal chats.
+       */
+      clearSelectedProject();
+      setIsNewChatDropdownOpen(false);
+
+      /*
+       * Client-side navigation to home — preserves the WebContainer state
+       * (no full page refresh) so the workspace isn't torn down.
+       */
+      if (e) {
+        e.preventDefault();
+      }
+
+      navigate('/');
+    },
+    [navigate],
+  );
 
   // Chats to show in sidebar
   const binnedChats = binDates(categoryFilteredList);
@@ -479,13 +601,20 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
         <div data-slot="sidebar-header" data-sidebar="header" className="flex flex-col gap-2 mb-5">
           <ul data-slot="sidebar-menu" data-sidebar="menu" className="flex w-full min-w-0 flex-col gap-1">
             <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className="group/menu-item relative">
-              <a
-                href="/"
+              <Link
+                to="/"
                 data-slot="sidebar-menu-button"
                 data-sidebar="menu-button"
                 data-size="lg"
                 data-active="false"
-                className="peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 h-12 text-sm group-data-[collapsible=icon]:p-0!"
+                onClick={(e) => {
+                  /*
+                   * Brand click = go home (new personal chat). Use the guarded
+                   * handler so we don't navigate away from an already-empty chat.
+                   */
+                  handleNewChat(e);
+                }}
+                className="peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 h-12 text-sm group-data-[collapsible=icon]:p-0! no-underline"
               >
                 <div className="flex aspect-square size-10 items-center justify-center rounded-lg ">
                   <Amplify />
@@ -494,19 +623,18 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                   <span className="truncate font-medium">Amplify</span>
                   <span className="truncate text-xs">AI agent platform</span>
                 </div>
-              </a>
+              </Link>
             </li>
           </ul>
         </div>
 
         {/* New Chat Button */}
         <div className="relative w-full mb-[20px]" ref={dropdownRef}>
-          <a
-            href="/"
-            onClick={() => {
-              // Starting a brand-new personal chat — clear any project
-              // selection so the sidebar shows personal chats.
-              clearSelectedProject();
+          <Link
+            to="/"
+            onClick={(e) => {
+              // Guarded: don't create a new empty chat if we're already on one.
+              handleNewChat(e);
             }}
             className="w-full h-[33px] bg-sidebar-accent border border-sidebar-border rounded-[8px] flex items-center cursor-pointer shadow-sm overflow-hidden no-underline"
           >
@@ -523,7 +651,7 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
             >
               <ChevronDown size={14} className="text-sidebar-foreground" strokeWidth={2.5} />
             </div>
-          </a>
+          </Link>
 
           <AnimatePresence>
             {isNewChatDropdownOpen && (
@@ -539,8 +667,9 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
                 className="absolute top-[calc(100%+4px)] left-0 font-geist w-[210px] bg-white dark:bg-sidebar border border-sidebar-border rounded-xl shadow-xl z-50 p-2 overflow-hidden ring-1 ring-black/5"
               >
-                <a
-                  href="/"
+                <Link
+                  to="/"
+                  onClick={(e) => handleNewChat(e)}
                   className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent no-underline"
                 >
                   <svg
@@ -563,7 +692,7 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                     />
                   </svg>
                   <span>Blank Chat</span>
-                </a>
+                </Link>
                 <button className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -612,24 +741,10 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
-            placeholder={
-              activeNav === 'Projects'
-                ? 'Search projects...'
-                : selectedProject
-                  ? `Search chats in ${selectedProject.name}…`
-                  : 'Search chats...'
-            }
-            value={
-              activeNav === 'Projects'
-                ? projectSearch
-                : selectedProject
-                  ? projectChatsSearch
-                  : undefined
-            }
+            placeholder={selectedProject ? `Search chats in ${selectedProject.name}…` : 'Search chats...'}
+            value={selectedProject ? projectChatsSearch : undefined}
             onChange={(e) => {
-              if (activeNav === 'Projects') {
-                setProjectSearch(e.target.value);
-              } else if (selectedProject) {
+              if (selectedProject) {
                 setProjectChatsSearch(e.target.value);
               } else {
                 handleSearchChange(e);
@@ -642,30 +757,70 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
         {/* Navigation Links */}
         <div className="w-full flex flex-col gap-[2px]">
           {navItems.map(({ icon: Icon, label }) => {
-            const isActive = activeNav === label;
+            /*
+             * Active-state logic for the three nav buttons:
+             *
+             *  • Projects — active while the projects gallery is showing in
+             *    the sidebar inset (insetView === 'projects').
+             *
+             *  • Chats (normal) — active when we're in the chat view AND no
+             *    project is selected. The sidebar shows personal/recent chats.
+             *    Uses the standard `bg-sidebar-accent` highlight.
+             *
+             *  • Chats (project) — active when we're in the chat view AND a
+             *    project IS selected. The sidebar shows the project's chats.
+             *    Uses a purple-tinted highlight so the user can clearly tell
+             *    they're looking at project-scoped chats, not their normal
+             *    personal chats. (Previously this used the same highlight as
+             *    normal chats, which was misleading.)
+             *
+             *  • Templates — never "active" (it opens a modal).
+             */
+            const isProjectsActive = label === 'Projects' && insetViewValue === 'projects';
+            const isNormalChatsActive =
+              label === 'Chats' && insetViewValue !== 'projects' && activeNav === 'Chats' && !selectedProject;
+            const isProjectChatsActive =
+              label === 'Chats' && insetViewValue !== 'projects' && activeNav === 'Chats' && !!selectedProject;
+
             return (
               <button
                 key={label}
                 onClick={() => {
                   if (label === 'Templates') {
                     setIsTemplatesModalOpen(true);
-                  } else {
-                    setActiveNav(label);
+                  } else if (label === 'Projects') {
+                    showProjectsGallery();
+                  } else if (label === 'Chats') {
+                    setActiveNav('Chats');
+                    showChatView();
                   }
                 }}
                 className={classNames(
-                  'bg-sidebar w-full h-[32px] flex items-center gap-[11px] rounded-[8px] px-[9px]',
-                  isActive && 'bg-sidebar-accent',
+                  'bg-sidebar w-full h-[32px] flex items-center gap-[11px] rounded-[8px] px-[9px] transition-colors',
+                  isProjectsActive && 'bg-sidebar-accent',
+                  isNormalChatsActive && 'bg-sidebar-accent',
+                  isProjectChatsActive && 'bg-purple-500/10 ring-1 ring-purple-500/30',
                 )}
               >
                 <Icon
                   size={18}
-                  className={isActive ? 'text-sidebar-foreground shrink-0' : 'text-muted-foreground shrink-0'}
+                  className={classNames(
+                    'shrink-0',
+                    isProjectsActive || isNormalChatsActive
+                      ? 'text-sidebar-foreground'
+                      : isProjectChatsActive
+                        ? 'text-purple-500'
+                        : 'text-muted-foreground',
+                  )}
                 />
                 <span
                   className={classNames(
                     'text-[16px] font-almarai font-medium',
-                    isActive ? 'text-sidebar-foreground' : 'text-sidebar-foreground/80',
+                    isProjectsActive || isNormalChatsActive
+                      ? 'text-sidebar-foreground'
+                      : isProjectChatsActive
+                        ? 'text-purple-600 dark:text-purple-400'
+                        : 'text-sidebar-foreground/80',
                   )}
                 >
                   {label}
@@ -683,11 +838,7 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
               className="flex items-center gap-1 bg-sidebar rounded"
             >
               <span className="font-medium text-[13px] text-muted-foreground">
-                {activeNav === 'Projects'
-                  ? 'All Projects'
-                  : selectedProject
-                    ? `${selectedProject.name} · Chats`
-                    : 'Recent Chats'}
+                {selectedProject ? `${selectedProject.name} · Chats` : 'Recent Chats'}
               </span>
               <ChevronDown
                 size={14}
@@ -701,44 +852,16 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
 
           {isRecentChatsExpanded && (
             <div className="w-full flex-1 overflow-y-auto flex flex-col gap-[1px] custom-scrollbar">
-              {activeNav === 'Projects' ? (
-                <>
-                  {/* Projects list — click to select, shows selected state */}
-                  <ProjectsList
-                    projects={projects}
-                    selectedProjectId={selectedProjectIdValue}
-                    currentUrlId={urlId}
-                    onSelectProject={handleSelectProject}
-                    onRenameProject={(project) => setProjectDialog({ type: 'rename', project })}
-                    onDeleteProject={(project) => setProjectDialog({ type: 'delete', project })}
-                  />
-
-                  {/* Selected project panel — appears below the projects list */}
-                  {selectedProject && (
-                    <SelectedProjectPanel
-                      project={selectedProject}
-                      chats={filteredProjectChats}
-                      loadingChats={loadingSelectedProjectChats}
-                      currentUrlId={urlId}
-                      isAutoStarted={projectAutoStarted}
-                      onNewChat={() => handleNewChatInProject(selectedProject)}
-                      onClearSelection={() => {
-                        clearSelectedProject();
-                        navigate('/');
-                      }}
-                      onRerunSetup={() => rerunProjectSetup(selectedProject)}
-                      onDelete={(item) => setDialogContent({ type: 'delete', item })}
-                      onDuplicate={handleDuplicate}
-                      exportChat={exportChat}
-                    />
-                  )}
-                </>
-              ) : selectedProject ? (
+              {/*
+                Projects now live in the sidebar-inset gallery (click "Projects"
+                nav to open it). The sidebar's chat-history area only ever shows
+                chats — either the selected project's chats, or personal chats.
+              */}
+              {selectedProject ? (
                 /*
-                 * Chats nav + project selected → show the project's chats in
-                 * the chat-history area. Switching between these chats does
-                 * NOT reload the workspace (handled in useChatHistory via the
-                 * loadedProjectId check).
+                 * A project is selected → show the project's chats. Switching
+                 * between these chats does NOT reload the workspace (handled in
+                 * useChatHistory via the loadedProjectId check).
                  */
                 <SelectedProjectChatsList
                   project={selectedProject}
@@ -748,8 +871,13 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                   isAutoStarted={projectAutoStarted}
                   onNewChat={() => handleNewChatInProject(selectedProject)}
                   onBackToAllChats={() => {
+                    /*
+                     * Full page refresh to root — clears the project
+                     * selection AND tears down the workspace so the user
+                     * lands on a clean base chat with no project context.
+                     */
                     clearSelectedProject();
-                    navigate('/');
+                    window.location.href = '/';
                   }}
                   onDelete={(item) => setDialogContent({ type: 'delete', item })}
                   onDuplicate={handleDuplicate}
@@ -757,8 +885,7 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                 />
               ) : (
                 /*
-                 * Chats nav + no project selected → personal chats (the
-                 * original binned list).
+                 * No project selected → personal chats (binned by date).
                  */
                 <>
                   {categoryFilteredList.length === 0 && (
@@ -767,63 +894,27 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
                     </div>
                   )}
 
-                  <DialogRoot open={dialogContent !== null}>
-                    {binnedChats.map(({ category, items }) => (
-                      <div key={category} className="first:mt-0">
-                        <div className="text-[10px] font-medium text-muted-foreground sticky top-0 z-1 bg-sidebar px-[9px] py-[3px]">
-                          {category}
-                        </div>
-                        {items.map((item) => (
-                          <SidebarHistoryItem
-                            key={item.id}
-                            item={item}
-                            isActive={urlId === item.urlId}
-                            exportChat={exportChat}
-                            onDelete={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setDialogContent({ type: 'delete', item });
-                            }}
-                            onDuplicate={() => handleDuplicate(item.id)}
-                          />
-                        ))}
+                  {binnedChats.map(({ category, items }) => (
+                    <div key={category} className="first:mt-0">
+                      <div className="text-[10px] font-medium text-muted-foreground sticky top-0 z-1 bg-sidebar px-[9px] py-[3px]">
+                        {category}
                       </div>
-                    ))}
-
-                    {/* Delete Dialog */}
-                    <Dialog onBackdrop={closeDialog} onClose={closeDialog}>
-                      {dialogContent?.type === 'delete' && (
-                        <>
-                          <div className="p-6 bg-white dark:bg-gray-950">
-                            <DialogTitle className="text-gray-900 dark:text-white">Delete Chat?</DialogTitle>
-                            <DialogDescription className="mt-2 text-gray-600 dark:text-gray-400">
-                              <p>
-                                You are about to delete{' '}
-                                <span className="font-medium text-gray-900 dark:text-white">
-                                  {dialogContent.item.description}
-                                </span>
-                              </p>
-                              <p className="mt-2">Are you sure you want to delete this chat?</p>
-                            </DialogDescription>
-                          </div>
-                          <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
-                            <DialogButton type="secondary" onClick={closeDialog}>
-                              Cancel
-                            </DialogButton>
-                            <DialogButton
-                              type="danger"
-                              onClick={(event) => {
-                                deleteItem(event, dialogContent.item);
-                                closeDialog();
-                              }}
-                            >
-                              Delete
-                            </DialogButton>
-                          </div>
-                        </>
-                      )}
-                    </Dialog>
-                  </DialogRoot>
+                      {items.map((item) => (
+                        <SidebarHistoryItem
+                          key={item.id}
+                          item={item}
+                          isActive={urlId === item.urlId}
+                          exportChat={exportChat}
+                          onDelete={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setDialogContent({ type: 'delete', item });
+                          }}
+                          onDuplicate={() => handleDuplicate(item.id)}
+                        />
+                      ))}
+                    </div>
+                  ))}
 
                   {/* More button */}
                   {categoryFilteredList.length > 5 && !showAllChats && (
@@ -851,6 +942,49 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
         </div>
       </div>
 
+      {/*
+        Delete-chat confirmation dialog.
+
+        Rendered at the TOP LEVEL of the sidebar fragment (outside the
+        selectedProject conditional and outside the isRecentChatsExpanded
+        block) so it always renders regardless of which chat-list view is
+        showing. Both the personal-chats SidebarHistoryItem and the
+        project-chats SelectedProjectChatsList set `dialogContent` via their
+        onDelete props — the dialog itself must live here to actually appear.
+      */}
+      <DialogRoot open={dialogContent !== null}>
+        <Dialog onBackdrop={closeDialog} onClose={closeDialog}>
+          {dialogContent?.type === 'delete' && (
+            <>
+              <div className="p-6 bg-white dark:bg-gray-950">
+                <DialogTitle className="text-gray-900 dark:text-white">Delete Chat?</DialogTitle>
+                <DialogDescription className="mt-2 text-gray-600 dark:text-gray-400">
+                  <p>
+                    You are about to delete{' '}
+                    <span className="font-medium text-gray-900 dark:text-white">{dialogContent.item.description}</span>
+                  </p>
+                  <p className="mt-2">Are you sure you want to delete this chat?</p>
+                </DialogDescription>
+              </div>
+              <div className="flex justify-end gap-3 px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+                <DialogButton type="secondary" onClick={closeDialog}>
+                  Cancel
+                </DialogButton>
+                <DialogButton
+                  type="danger"
+                  onClick={(event) => {
+                    deleteItem(event, dialogContent.item);
+                    closeDialog();
+                  }}
+                >
+                  Delete
+                </DialogButton>
+              </div>
+            </>
+          )}
+        </Dialog>
+      </DialogRoot>
+
       <TemplatesModal isOpen={isTemplatesModalOpen} onClose={() => setIsTemplatesModalOpen(false)} />
 
       {/* Project rename / delete dialogs */}
@@ -867,567 +1001,6 @@ export function ProjectSidebar({ user }: ProjectSidebarProps) {
         }}
       />
     </>
-  );
-}
-
-/* ================================================================== */
-/*  Projects List (selection-based — click to select a project)        */
-/* ================================================================== */
-
-interface ProjectsListProps {
-  projects: Project[];
-  selectedProjectId?: string;
-  currentUrlId?: string;
-  onSelectProject: (project: Project) => void;
-  onRenameProject: (project: Project) => void;
-  onDeleteProject: (project: Project) => void;
-}
-
-function ProjectsList({
-  projects,
-  selectedProjectId,
-  onSelectProject,
-  onRenameProject,
-  onDeleteProject,
-}: ProjectsListProps) {
-  if (projects.length === 0) {
-    return (
-      <div className="px-[9px] py-[20px] flex flex-col items-center justify-center gap-3 text-center">
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 blur-xl rounded-full" />
-          <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/15 to-fuchsia-500/10 flex items-center justify-center ring-1 ring-purple-500/20">
-            <Folder size={22} className="text-purple-500" />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-[13px] font-medium text-sidebar-foreground">No projects yet</p>
-          <p className="text-[11px] text-muted-foreground/80 leading-snug max-w-[210px]">
-            Projects are created automatically when you open the workspace from a chat. Files, memory, and versions are
-            shared across every chat in a project.
-          </p>
-        </div>
-        {/* CTA — point the user back to the New Chat button / chat input */}
-        <a
-          href="/"
-          className="group mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/15 border border-purple-500/20 transition-colors no-underline"
-        >
-          <Sparkles size={11} className="shrink-0" />
-          <span>Create your first project</span>
-          <ArrowDown
-            size={11}
-            className="shrink-0 transition-transform group-hover:translate-y-0.5"
-          />
-        </a>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      role="listbox"
-      aria-label="Projects"
-      className="flex flex-col gap-2 px-1 py-1"
-    >
-      {projects.map((project) => (
-        <ProjectCard
-          key={project.id}
-          project={project}
-          isSelected={selectedProjectId === project.id}
-          onSelect={onSelectProject}
-          onRenameProject={onRenameProject}
-          onDeleteProject={onDeleteProject}
-        />
-      ))}
-    </div>
-  );
-}
-
-interface ProjectCardProps {
-  project: Project;
-  isSelected: boolean;
-  onSelect: (project: Project) => void;
-  onRenameProject: (project: Project) => void;
-  onDeleteProject: (project: Project) => void;
-}
-
-function ProjectCard({
-  project,
-  isSelected,
-  onSelect,
-  onRenameProject,
-  onDeleteProject,
-}: ProjectCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [versionLabel, setVersionLabel] = useState<string | undefined>(undefined);
-  const [fileCount, setFileCount] = useState<number>(0);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Load the screenshot for this project from IndexedDB. Re-fetches when the
-  // project store bumps (the capture service sets screenshotAt after a new
-  // capture), so the hero image updates live.
-  const screenshot = useProjectScreenshot(project.id);
-
-  // Load the current commit's version label (v1, v2, …) + file count from
-  // IndexedDB.
-  useEffect(() => {
-    if (!db || !project.currentCommitId) {
-      setVersionLabel(undefined);
-      setFileCount(0);
-
-      return;
-    }
-
-    let cancelled = false;
-    Promise.all([
-      import('~/lib/persistence/project-files').then(({ getProjectCommit, getProjectFiles }) =>
-        Promise.all([
-          getProjectCommit(db!, project.currentCommitId!),
-          getProjectFiles(db!, project.id),
-        ]),
-      ),
-    ])
-      .then(([[commit, files]]) => {
-        if (!cancelled) {
-          setVersionLabel(commit?.label);
-          setFileCount(files?.files ? Object.keys(files.files).length : 0);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [project.currentCommitId, project.id]);
-
-  // Close kebab menu on outside click.
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside);
-
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpen]);
-
-  const depCount = project.memory?.dependencies?.length ?? 0;
-  const framework = project.screenshotFramework || project.memory?.framework;
-
-  // Kebab menu node (passed into ExpandableCard so it renders above the hero).
-  const menu = (
-    <div ref={menuRef}>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setMenuOpen(!menuOpen);
-        }}
-        className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors bg-background/70 backdrop-blur-sm border border-border/40"
-        aria-label="Project actions"
-        title="Project actions"
-      >
-        <MoreHorizontal size={14} />
-      </button>
-      <AnimatePresence>
-        {menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-sidebar-border bg-sidebar shadow-lg py-1 overflow-hidden"
-          >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen(false);
-                onRenameProject(project);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-            >
-              <Pencil size={12} className="shrink-0" />
-              <span>Rename</span>
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen(false);
-                onDeleteProject(project);
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-500 hover:bg-red-500/10 transition-colors"
-            >
-              <Trash2 size={12} className="shrink-0" />
-              <span>Delete project</span>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-
-  return (
-    <ExpandableCard
-      name={project.name}
-      framework={framework}
-      screenshot={screenshot?.dataUrl}
-      screenshotAt={screenshot?.capturedAt || project.screenshotAt}
-      tags={[]}
-      isSelected={isSelected}
-      menu={menu}
-      onSelect={() => onSelect(project)}
-      onScreenshotPress={() => onSelect(project)}
-    >
-      {/* Expanded detail panel — mirrors the Appwrite Sites card layout:
-          a 2-column grid of spec fields + a full-width latest-deployment row. */}
-      <div className="flex flex-wrap gap-y-3">
-        <DetailField label="Framework" value={framework || '—'} half />
-        <DetailField label="Version" value={versionLabel || '—'} half />
-        <DetailField label="Files" value={fileCount ? String(fileCount) : '—'} half />
-        <DetailField
-          label="Dependencies"
-          value={depCount ? `${depCount} tracked` : '—'}
-          half
-        />
-        <DetailField label="Updated" value={formatRelativeShort(project.updatedAt)} half />
-        <DetailField
-          label="Setup"
-          value={project.isSetupComplete ? 'Ready' : 'Pending'}
-          half
-          valueClass={project.isSetupComplete ? 'text-emerald-500' : 'text-amber-500'}
-        />
-        <div className="w-full pt-2 border-t border-border/50">
-          <DetailField
-            label="Start command"
-            value={project.startCommand || 'npm run dev'}
-            full
-            mono
-          />
-        </div>
-        {project.chatIds.length > 0 && (
-          <div className="w-full pt-2 border-t border-border/50">
-            <DetailField
-              label="Chats"
-              value={`${project.chatIds.length} linked chat${project.chatIds.length === 1 ? '' : 's'}`}
-              full
-            />
-          </div>
-        )}
-      </div>
-    </ExpandableCard>
-  );
-}
-
-/** Small labelled spec field used inside the expanded detail panel. */
-function DetailField({
-  label,
-  value,
-  half,
-  full,
-  mono,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  half?: boolean;
-  full?: boolean;
-  mono?: boolean;
-  valueClass?: string;
-}) {
-  return (
-    <div className={half ? 'w-1/2' : full ? 'w-full' : 'w-full'}>
-      <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide">{label}</div>
-      <div
-        className={classNames(
-          'text-[12px] font-medium text-sidebar-foreground mt-0.5 truncate',
-          mono && 'font-mono text-[11px]',
-          valueClass,
-        )}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ================================================================== */
-/*  Selected Project Panel — shown below the Projects list              */
-/* ================================================================== */
-
-interface SelectedProjectPanelProps {
-  project: Project;
-  chats: ChatHistoryItem[];
-  loadingChats: boolean;
-  currentUrlId?: string;
-  isAutoStarted?: boolean;
-  onNewChat: () => void;
-  onClearSelection: () => void;
-  onRerunSetup: () => void;
-  onDelete: (item: ChatHistoryItem) => void;
-  onDuplicate: (id: string) => void;
-  exportChat: (id?: string) => void;
-}
-
-/**
- * Small labelled chip for a project-memory field (framework / state / backend).
- * Only rendered when the value is set, so the row collapses cleanly when the
- * project has no memory yet.
- */
-function MemoryChip({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Tooltip content={`${label}: ${value}`}>
-      <span className="inline-flex items-center gap-1 max-w-full px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-        <Icon size={9} className="shrink-0" />
-        <span className="truncate">{value}</span>
-      </span>
-    </Tooltip>
-  );
-}
-
-function SelectedProjectPanel({
-  project,
-  chats,
-  loadingChats,
-  currentUrlId,
-  isAutoStarted = false,
-  onNewChat,
-  onClearSelection,
-  onRerunSetup,
-  onDelete,
-  onDuplicate,
-  exportChat,
-}: SelectedProjectPanelProps) {
-  const memory = project.memory;
-  const memoryChips: React.ReactNode[] = [];
-
-  if (memory?.framework) {
-    memoryChips.push(<MemoryChip key="fw" icon={Layers} label="Framework" value={memory.framework} />);
-  }
-
-  if (memory?.stateManagement) {
-    memoryChips.push(
-      <MemoryChip key="sm" icon={Cpu} label="State management" value={memory.stateManagement} />,
-    );
-  }
-
-  if (memory?.backend) {
-    memoryChips.push(<MemoryChip key="be" icon={Server} label="Backend" value={memory.backend} />);
-  }
-
-  const dispatchOpenMemory = () => {
-    window.dispatchEvent(
-      new CustomEvent('amplify:open-project-memory', { detail: { projectId: project.id } }),
-    );
-  };
-
-  const dispatchOpenHistory = () => {
-    window.dispatchEvent(
-      new CustomEvent('amplify:open-project-history', { detail: { projectId: project.id } }),
-    );
-  };
-
-  return (
-    <div className="mt-[8px] rounded-lg border border-purple-500/30 bg-gradient-to-br from-purple-500/[0.04] to-fuchsia-500/[0.02] overflow-hidden overflow-x-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-[10px] py-[8px] border-b border-purple-500/20">
-        <ChevronRight size={12} className="text-purple-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-500/80">
-              Selected Project
-            </span>
-            {/* Last updated relative time */}
-            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/80">
-              <Clock size={8} />
-              <span>{formatRelativeShort(project.updatedAt)}</span>
-            </span>
-          </div>
-          <div className="text-[12px] font-medium text-sidebar-foreground truncate">{project.name}</div>
-        </div>
-        <button
-          type="button"
-          onClick={onClearSelection}
-          className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-          aria-label="Clear project selection"
-          title="Back to all chats"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
-      {/* Project meta — commands + status */}
-      <div className="px-[10px] py-[8px] flex flex-col gap-[6px] border-b border-purple-500/10">
-        {project.startCommand || project.setupCommand ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {project.projectType && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                <Package size={9} />
-                {project.projectType}
-              </span>
-            )}
-            {project.isSetupComplete && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                <Check size={9} />
-                deps installed
-              </span>
-            )}
-            {/* Pulsing dot indicator — shown when the start command is running */}
-            {project.startCommand && (
-              <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                  isAutoStarted
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
-                    : 'bg-sidebar-accent text-muted-foreground border-sidebar-border'
-                }`}
-                title={isAutoStarted ? 'Start command is running' : 'Start command idle'}
-              >
-                <span className="relative flex h-1.5 w-1.5">
-                  {isAutoStarted && (
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75 animate-ping" />
-                  )}
-                  <span
-                    className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
-                      isAutoStarted ? 'bg-emerald-500' : 'bg-muted-foreground/50'
-                    }`}
-                  />
-                </span>
-                {isAutoStarted ? 'running' : 'idle'}
-              </span>
-            )}
-            {project.startCommand && (
-              <Tooltip content="Re-run setup + start command">
-                <button
-                  type="button"
-                  onClick={onRerunSetup}
-                  title="Re-run setup + start command"
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-sidebar-accent text-sidebar-foreground hover:bg-purple-500/15 transition-colors"
-                >
-                  <RotateCcw size={9} />
-                  rerun
-                </button>
-              </Tooltip>
-            )}
-          </div>
-        ) : (
-          <div className="text-[10px] text-muted-foreground italic">
-            No start command detected — open a chat and ask the AI to build something.
-          </div>
-        )}
-        {project.startCommand && (
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono bg-sidebar/60 rounded px-1.5 py-1 overflow-hidden">
-            <Terminal size={9} className="shrink-0 text-purple-500/70" />
-            <span className="truncate min-w-0">{project.startCommand}</span>
-          </div>
-        )}
-
-        {/* Memory chips — framework / state / backend */}
-        {memoryChips.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 pt-[2px]">{memoryChips}</div>
-        )}
-      </div>
-
-      {/* New chat in project */}
-      <div className="px-[6px] pt-[6px]">
-        <button
-          type="button"
-          onClick={onNewChat}
-          className="w-full flex items-center gap-2 px-[10px] py-[7px] rounded-md text-[12px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors border border-purple-500/20 bg-purple-500/5"
-          aria-label="New chat in this project"
-          title="Start a new chat in this project"
-        >
-          <Plus size={13} className="shrink-0" />
-          <span>New chat in project</span>
-        </button>
-      </div>
-
-      {/* Chat list — scrolls independently when long */}
-      <div className="px-[6px] pb-[6px] pt-[4px] flex flex-col gap-[1px] max-h-[220px] overflow-y-auto custom-scrollbar overflow-x-hidden">
-        {loadingChats ? (
-          <div className="px-[10px] py-[7px] text-[12px] text-muted-foreground">Loading chats…</div>
-        ) : chats.length === 0 ? (
-          // Better empty state — icon + descriptive copy + CTA button
-          <div className="px-[8px] py-[14px] flex flex-col items-center justify-center gap-2 text-center">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 blur-md rounded-full" />
-              <div className="relative w-9 h-9 rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20 flex items-center justify-center">
-                <MessageSquarePlus size={16} className="text-purple-500" />
-              </div>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-[12px] font-medium text-sidebar-foreground">No chats in this project yet</p>
-              <p className="text-[10px] text-muted-foreground/80 leading-snug max-w-[200px]">
-                Start a new chat to begin reasoning about this project's files. Every AI edit creates a new version.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onNewChat}
-              className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/15 border border-purple-500/20 transition-colors"
-              title="Start your first chat in this project"
-            >
-              <Plus size={11} className="shrink-0" />
-              <span>Start your first chat</span>
-            </button>
-          </div>
-        ) : (
-          chats.map((item) => (
-            <SidebarHistoryItem
-              key={item.id}
-              item={item}
-              isActive={currentUrlId === item.urlId}
-              exportChat={exportChat}
-              onDelete={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onDelete(item);
-              }}
-              onDuplicate={() => onDuplicate(item.id)}
-            />
-          ))
-        )}
-      </div>
-
-      {/* Footer — Open Memory + Open History quick actions */}
-      <div className="px-[6px] pb-[6px] pt-[2px] border-t border-purple-500/10 mt-[2px]">
-        <div className="grid grid-cols-2 gap-1.5">
-          <Tooltip content="Open project memory (framework, deps, style)">
-            <button
-              type="button"
-              onClick={dispatchOpenMemory}
-              title="Open project memory"
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/5 hover:bg-purple-500/12 border border-purple-500/15 transition-colors"
-            >
-              <Brain size={11} className="shrink-0" />
-              <span>Memory</span>
-            </button>
-          </Tooltip>
-          <Tooltip content="Open project version history (commits + restore)">
-            <button
-              type="button"
-              onClick={dispatchOpenHistory}
-              title="Open project history"
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400 bg-fuchsia-500/5 hover:bg-fuchsia-500/12 border border-fuchsia-500/15 transition-colors"
-            >
-              <HistoryIcon size={11} className="shrink-0" />
-              <span>History</span>
-            </button>
-          </Tooltip>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1467,7 +1040,7 @@ function SelectedProjectChatsList({
       <button
         type="button"
         onClick={onBackToAllChats}
-        className="w-full flex items-center gap-2 px-[9px] py-[7px] mb-[4px] rounded-md text-[12px] text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+        className="w-full flex items-center gap-2 px-[9px] py-[7px] mb-[4px] rounded-md text-[12px] text-muted-foreground bg-sidebar hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
         title="Back to all chats"
       >
         <ArrowLeft size={13} className="shrink-0" />
@@ -1584,10 +1157,21 @@ function formatRelativeShort(iso: string): string {
     const diffHr = Math.floor(diffMin / 60);
     const diffDay = Math.floor(diffHr / 24);
 
-    if (diffMin < 1) return 'just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffHr < 24) return `${diffHr}h ago`;
-    if (diffDay < 7) return `${diffDay}d ago`;
+    if (diffMin < 1) {
+      return 'just now';
+    }
+
+    if (diffMin < 60) {
+      return `${diffMin}m ago`;
+    }
+
+    if (diffHr < 24) {
+      return `${diffHr}h ago`;
+    }
+
+    if (diffDay < 7) {
+      return `${diffDay}d ago`;
+    }
 
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   } catch {
@@ -1708,13 +1292,17 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
 
   // Close menu on outside click
   useEffect(() => {
-    if (!isMenuOpen) return;
+    if (!isMenuOpen) {
+      return;
+    }
+
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen]);
 
@@ -1747,12 +1335,19 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
         </form>
       ) : (
         <>
-          <a
-            href={`/chat/${item.urlId}`}
+          {/*
+            Client-side navigation (Remix <Link>) — preserves the WebContainer
+            + workspace state when switching chats, so the dev server keeps
+            running and files are NOT re-injected. The useChatHistory effect
+            short-circuits the file-restore step when the same project is
+            already loaded (loadedProjectId check).
+          */}
+          <Link
+            to={`/chat/${item.urlId}`}
             className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline"
           >
             {currentDescription}
-          </a>
+          </Link>
 
           {/* More button - visible on hover */}
           <div className="relative shrink-0" ref={menuRef}>

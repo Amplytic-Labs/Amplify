@@ -302,6 +302,41 @@ export class ProjectStore {
     this._notify(projectId);
   }
 
+  /**
+   * Unlinks a chat from whatever project it belongs to.
+   *
+   * Called when a chat is deleted so the project's `chatIds` array doesn't
+   * keep stale references. The chat is removed from the project's list and
+   * the chatToProject / chatCategories maps are cleaned up.
+   */
+  unlinkChat(chatId: string): void {
+    const projectId = this._data.chatToProject[chatId];
+
+    if (!projectId) {
+      return;
+    }
+
+    const project = this.getProject(projectId);
+
+    if (project) {
+      project.chatIds = project.chatIds.filter((id) => id !== chatId);
+      project.updatedAt = new Date().toISOString();
+    }
+
+    delete this._data.chatToProject[chatId];
+
+    /*
+     * Only reset the category if it was 'project' — otherwise leave it
+     * untouched so personal chats keep their category.
+     */
+    if (this._data.chatCategories[chatId] === 'project') {
+      delete this._data.chatCategories[chatId];
+    }
+
+    saveProjectData(this._data);
+    this._notify(projectId);
+  }
+
   /*
    * ============================================================
    * Project Management
