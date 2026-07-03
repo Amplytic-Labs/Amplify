@@ -72,15 +72,15 @@ const _titleGenerationStarted = new Set<string>();
  */
 async function generateChatTitle(_chatId: string, firstMessage: string): Promise<string | null> {
   try {
-    // Read the current model + provider from the API keys cookie
-    // (set by the ChatBox model selector).
+    /*
+     * Read the current model + provider from the API keys cookie
+     * (set by the ChatBox model selector).
+     */
     let model = 'glm-4.7-flash';
     let provider = { name: 'Z.ai' } as any;
 
     try {
-      const cookieMatch = document.cookie
-        .split('; ')
-        .find((c) => c.startsWith('selectedModel='));
+      const cookieMatch = document.cookie.split('; ').find((c) => c.startsWith('selectedModel='));
 
       if (cookieMatch) {
         const decoded = decodeURIComponent(cookieMatch.split('=')[1]);
@@ -114,6 +114,7 @@ async function generateChatTitle(_chatId: string, firstMessage: string): Promise
     }
 
     const data: any = await response.json();
+
     return data.title || null;
   } catch (e) {
     console.warn('[ChatHistory] generateChatTitle error:', e);
@@ -208,8 +209,10 @@ export function useChatHistory() {
                 await restoreFileMap(projectFiles.files);
                 workbenchStore.files.set(projectFiles.files);
 
-                // Switching to a different project — reset the auto-start
-                // flag so the new project's setup + start command can fire.
+                /*
+                 * Switching to a different project — reset the auto-start
+                 * flag so the new project's setup + start command can fire.
+                 */
                 if (currentlyLoadedProjectId !== linkedProject.id) {
                   workbenchStore.projectAutoStarted.set(false);
                 }
@@ -251,9 +254,7 @@ export function useChatHistory() {
                 workbenchStore.showWorkbench.set(true);
 
                 if (!workbenchStore.projectAutoStarted.get()) {
-                  runProjectAutoSetup(linkedProject).catch((e) =>
-                    console.warn('[ChatHistory] Auto setup failed:', e),
-                  );
+                  runProjectAutoSetup(linkedProject).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
                 }
               } else if (storedMessages.metadata?.projectInitiated && snapshotIndex >= 0) {
                 /*
@@ -284,6 +285,77 @@ export function useChatHistory() {
             description.set(storedMessages.description);
             chatId.set(storedMessages.id);
             chatMetadata.set(storedMessages.metadata);
+          } else if (storedMessages && storedMessages.metadata?.projectId) {
+            /*
+             * Empty chat linked to a project — e.g. a fresh "New chat in
+             * project" created via the sidebar.
+             *
+             * We do NOT blindly restore project files here. If the project
+             * is already loaded in the WebContainer (the common case — the
+             * user is already in the project and just wants a new chat),
+             * we keep the workspace exactly as-is and only reset the chat
+             * state to an empty conversation. No file re-injection, no
+             * dependency reinstall, no terminal flicker — switching chats
+             * inside a project is instant.
+             *
+             * If the project is NOT yet loaded (rare — e.g. a direct URL
+             * load of an empty project chat, or the first project chat
+             * opened this session), we restore the project's files once so
+             * the workspace is usable.
+             */
+            const linkedProject = projectStore.getProject(storedMessages.metadata.projectId!);
+            const currentlyLoadedProjectId = workbenchStore.loadedProjectId.get();
+
+            if (linkedProject && currentlyLoadedProjectId === linkedProject.id) {
+              /*
+               * Fast path — same project already loaded. Keep the workspace
+               * (files, running dev server, terminal) untouched and just
+               * reset the chat to an empty conversation. This is the
+               * "new chat in project" experience: instant, no reload.
+               */
+              setInitialMessages([]);
+              setUrlId(storedMessages.urlId);
+              description.set(storedMessages.description || '');
+              chatId.set(storedMessages.id);
+              chatMetadata.set(storedMessages.metadata);
+            } else if (linkedProject) {
+              /*
+               * Project not yet loaded this session — restore its global
+               * file state into the WebContainer so the workspace is
+               * usable, then reset the chat to an empty conversation.
+               */
+              const projectFiles = await getProjectFiles(db, linkedProject.id);
+
+              if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                await restoreFileMap(projectFiles.files);
+                workbenchStore.files.set(projectFiles.files);
+                workbenchStore.loadedProjectId.set(linkedProject.id);
+                workbenchStore.showWorkbench.set(true);
+
+                if (!workbenchStore.projectAutoStarted.get()) {
+                  runProjectAutoSetup(linkedProject).catch((e) =>
+                    console.warn('[ChatHistory] Auto setup failed for empty project chat:', e),
+                  );
+                }
+              }
+
+              setInitialMessages([]);
+              setUrlId(storedMessages.urlId);
+              description.set(storedMessages.description || '');
+              chatId.set(storedMessages.id);
+              chatMetadata.set(storedMessages.metadata);
+            } else {
+              /*
+               * Metadata points to a project that no longer exists — treat
+               * as a plain empty chat and stay on the route so the user can
+               * still type a message.
+               */
+              setInitialMessages([]);
+              setUrlId(storedMessages.urlId);
+              description.set(storedMessages.description || '');
+              chatId.set(storedMessages.id);
+              chatMetadata.set(storedMessages.metadata);
+            }
           } else {
             navigate('/', { replace: true });
           }
@@ -327,8 +399,10 @@ export function useChatHistory() {
         const allChats = await getAll(db);
         let fixed = 0;
 
-        // Collect all existing urlIds so we can avoid collisions when
-        // assigning new ones.
+        /*
+         * Collect all existing urlIds so we can avoid collisions when
+         * assigning new ones.
+         */
         const existingUrlIds = new Set<string>();
 
         for (const chat of allChats) {
@@ -384,8 +458,10 @@ export function useChatHistory() {
               );
               fixed++;
             } catch (e) {
-              // Skip this chat if it still fails (e.g. collision we
-              // couldn't resolve) — don't abort the whole migration.
+              /*
+               * Skip this chat if it still fails (e.g. collision we
+               * couldn't resolve) — don't abort the whole migration.
+               */
               console.warn(`[ChatHistory] Migration: could not fix chat ${chat.id}:`, e);
             }
           }
@@ -739,99 +815,160 @@ export function useChatHistory() {
       );
 
       /*
-       * Generate a chat title for non-artifact conversations.
+       * Chat title generation — runs for EVERY chat (text-only AND
+       * artifact / project chats).
        *
-       * Previously, a chat's `description` (title) was only ever set
-       * from `firstArtifact?.title` — i.e. only when the AI emitted a
-       * code/file artifact. Pure text conversations (the common case
-       * for "hi" / quick questions) got `description: undefined`, which
-       * meant they were invisible in the Recent Chats sidebar (the
-       * sidebar filtered on `item.urlId && item.description`).
+       * Previously the LLM title call was gated behind `if (!firstArtifact)`,
+       * which meant artifact chats (including `inject_template` / project
+       * chats) were stuck with the artifact's title — almost always
+       * "Create initial files" — and never got a descriptive name. That
+       * made the sidebar unreadable: every project chat read "Create
+       * initial files".
        *
-       * Now we:
-       *   1. Immediately set a provisional truncated-title from the
-       *      first user message (so the chat is never untitled).
-       *   2. When the first assistant response arrives, fire a one-shot
-       *      LLM call to `/api/chat-title` to generate a clean 4-8 word
-       *      title, then update the chat's description in IndexedDB.
+       * Now:
+       *   1. For text-only chats: set a provisional truncated title from
+       *      the first user message immediately (so the chat is never
+       *      untitled), then fire a one-shot LLM call to `/api/chat-title`
+       *      for a clean 4-8 word title.
+       *   2. For artifact / project chats: skip the provisional title
+       *      (the artifact title is already set), but STILL fire the LLM
+       *      call. When it returns, we override the description ONLY if
+       *      the current title is a default placeholder ("Create initial
+       *      files", "Untitled Project", "New project chat", etc.) — so
+       *      we never clobber a meaningful AI-provided title, but we do
+       *      fix the common default case. We also rename the linked
+       *      project if it still has a default name.
        */
-      if (!firstArtifact) {
-        const firstUserMessage = messages.find((m) => m.role === 'user');
-        const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
+      const firstUserMessage = messages.find((m) => m.role === 'user');
+      const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
 
-        if (firstUserMessage) {
-          const rawContent: any = firstUserMessage.content;
-          let userText: string =
-            typeof rawContent === 'string'
+      if (firstUserMessage) {
+        const rawContent: any = firstUserMessage.content;
+        let userText: string =
+          typeof rawContent === 'string'
+            ? rawContent
+            : Array.isArray(rawContent)
               ? rawContent
-              : Array.isArray(rawContent)
-                ? rawContent
-                    .filter((p: any) => p.type === 'text')
-                    .map((p: any) => p.text)
-                    .join(' ')
-                : '';
+                  .filter((p: any) => p.type === 'text')
+                  .map((p: any) => p.text)
+                  .join(' ')
+              : '';
 
-          // Strip the [Model: ...]\n\n[Provider: ...]\n\n prefix that
-          // extractPropertiesFromMessage injects into user messages.
-          userText = userText
-            .replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '')
-            .trim();
+        /*
+         * Strip the [Model: ...]\n\n[Provider: ...]\n\n prefix that
+         * extractPropertiesFromMessage injects into user messages.
+         */
+        userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
 
-          // 1. Provisional fallback title (instant) — set immediately
-          //    so the chat shows up in the sidebar with SOMETHING.
-          if (!description.get()) {
-            const provisionalTitle =
-              (userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '')) || 'New Conversation';
-            description.set(provisionalTitle);
+        /*
+         * 1. Provisional fallback title (instant) — only for text-only
+         *    chats (artifact chats already have firstArtifact.title set).
+         *    Set immediately so the chat shows up in the sidebar.
+         */
+        if (!firstArtifact && !description.get()) {
+          const provisionalTitle =
+            userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '') || 'New Conversation';
+          description.set(provisionalTitle);
 
-            // Re-save immediately so the chat shows up in the sidebar
-            // with the provisional title right away.
-            await setMessages(
-              db,
-              finalChatId,
-              [...archivedMessages, ...messages],
-              _finalUrlId,
-              description.get(),
-              undefined,
-              chatMetadata.get(),
-            );
-          }
+          /*
+           * Re-save immediately so the chat shows up in the sidebar
+           * with the provisional title right away.
+           */
+          await setMessages(
+            db,
+            finalChatId,
+            [...archivedMessages, ...messages],
+            _finalUrlId,
+            description.get(),
+            undefined,
+            chatMetadata.get(),
+          );
+        }
 
-          // 2. One-shot LLM title generation — fires once per chat
-          //    when the first assistant response is available. Uses
-          //    a module-level Set to ensure we only fire once even
-          //    though storeMessageHistory runs many times during
-          //    streaming.
-          if (firstAssistantMessage && !_titleGenerationStarted.has(finalChatId)) {
-            _titleGenerationStarted.add(finalChatId);
+        /*
+         * 2. One-shot LLM title generation — fires once per chat when
+         *    the first assistant response is available. Runs for ALL
+         *    chats (text-only AND artifact/project). For artifact chats
+         *    we only override the default placeholder title, so a
+         *    meaningful AI-provided title is preserved.
+         */
+        if (firstAssistantMessage && !_titleGenerationStarted.has(finalChatId)) {
+          _titleGenerationStarted.add(finalChatId);
 
-            generateChatTitle(finalChatId, userText)
-              .then((title) => {
-                if (title && chatId.get() === finalChatId) {
-                  description.set(title);
-                  setMessages(
-                    db,
-                    finalChatId,
-                    [...archivedMessages, ...messages],
-                    _finalUrlId,
-                    title,
-                    undefined,
-                    chatMetadata.get(),
-                  ).then(() => {
-                    chatListVersion.set(chatListVersion.get() + 1);
-                  });
+          generateChatTitle(finalChatId, userText)
+            .then((title) => {
+              if (!title || chatId.get() !== finalChatId) {
+                return;
+              }
+
+              const currentDesc = description.get() || '';
+              const isDefaultPlaceholder =
+                !currentDesc ||
+                currentDesc === 'Create initial files' ||
+                currentDesc === 'Untitled Project' ||
+                currentDesc === 'New project chat' ||
+                currentDesc === 'New Conversation';
+
+              /*
+               * For text-only chats: always apply the LLM title.
+               * For artifact/project chats: only override a default
+               * placeholder, never clobber a meaningful title.
+               */
+              const shouldApply = !firstArtifact || isDefaultPlaceholder;
+
+              if (!shouldApply) {
+                return;
+              }
+
+              description.set(title);
+
+              setMessages(
+                db,
+                finalChatId,
+                [...archivedMessages, ...messages],
+                _finalUrlId,
+                title,
+                undefined,
+                chatMetadata.get(),
+              ).then(() => {
+                chatListVersion.set(chatListVersion.get() + 1);
+
+                /*
+                 * If this is a project chat whose project still has a
+                 * default name, rename the project to match the new
+                 * title too — so the sidebar project card shows a
+                 * descriptive name instead of "Create initial files".
+                 */
+                try {
+                  const linkedProject = projectStore.getProjectByChat(finalChatId);
+
+                  if (linkedProject) {
+                    const isDefaultProjectName =
+                      linkedProject.name === 'Create initial files' ||
+                      linkedProject.name === 'Untitled Project' ||
+                      linkedProject.name === 'New project chat' ||
+                      /^Project \d+$/.test(linkedProject.name);
+
+                    if (isDefaultProjectName) {
+                      projectStore.updateProject(linkedProject.id, { name: title });
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[ChatHistory] Failed to rename project after title gen:', e);
                 }
-              })
-              .catch((e) => {
-                console.warn('[ChatHistory] Title generation failed:', e);
-                _titleGenerationStarted.delete(finalChatId); // allow retry
               });
-          }
+            })
+            .catch((e) => {
+              console.warn('[ChatHistory] Title generation failed:', e);
+              _titleGenerationStarted.delete(finalChatId); // allow retry
+            });
         }
       }
 
-      // Notify the sidebar that the chat list has changed so it can
-      // re-fetch from IndexedDB and show the new/updated chat.
+      /*
+       * Notify the sidebar that the chat list has changed so it can
+       * re-fetch from IndexedDB and show the new/updated chat.
+       */
       chatListVersion.set(chatListVersion.get() + 1);
     },
     duplicateCurrentChat: async (listItemId: string) => {
