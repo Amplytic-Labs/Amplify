@@ -26,9 +26,13 @@
  *   6. We bump `projectStore` with `screenshotAt` + `screenshotFramework` so
  *      the sidebar ExpandableCard re-renders with the new thumbnail.
  *
- * "One time only after npm start": a per-project-session guard
+ * "One time only after the project is running": a per-project-session guard
  * (`_capturedThisSession`) ensures we only capture once per preview server
- * lifetime. If the user re-runs the project, the guard resets.
+ * lifetime. The trigger is purely "preview becomes available" — this works
+ * for ANY start command the AI or user runs (`npm start`, `npm run dev`,
+ * `npx expo start`, `python -m http.server`, a custom script, etc.), not
+ * just the auto-detected one. If the user re-runs the project, the guard
+ * resets so a fresh capture is taken.
  */
 
 import { useStore } from '@nanostores/react';
@@ -358,14 +362,17 @@ function gradientColorsFor(meta: { gradient: string }): [string, string] {
  * React hook (mounted once, at the app shell) that watches for the
  * "preview becomes available" trigger and fires a one-shot capture.
  *
- * The trigger: `previewsStore.previews` transitions from empty → non-empty
- * (i.e. "No preview available" disappears). We then wait for the iframe to
- * be ready + paint, and capture.
+ * The trigger: `workbenchStore.previews` transitions to contain at least one
+ * ready entry (i.e. "No preview available" disappears). This is the ONLY
+ * signal we gate on — we deliberately do NOT require `projectAutoStarted`,
+ * because a project can be started by ANY command the AI or user runs in the
+ * shell (`npm start`, `npm run dev`, `npx expo start`, `python -m http.server`,
+ * a custom script, etc.). The preview becoming available is the universal
+ * "the app is now running" signal, regardless of how it was started.
  */
 export function useScreenshotCapture(): void {
   const previews = useStore(workbenchStore.previews);
   const loadedProjectId = useStore(workbenchStore.loadedProjectId);
-  const projectAutoStarted = useStore(workbenchStore.projectAutoStarted);
   const lastCaptureAttempt = useRef(0);
 
   useEffect(() => {
@@ -378,16 +385,11 @@ export function useScreenshotCapture(): void {
     }
 
     // Only capture when there's at least one ready preview (preview available).
+    // This is the "Preview is not available disappears" moment — works for any
+    // start command (npm start, npm run dev, npx expo start, custom, etc.).
     const hasReady = previews.some((p) => p.ready);
 
     if (!hasReady) {
-      return;
-    }
-
-    // Only capture after the project's auto-setup has started (npm start run).
-    // This matches the user's spec: "one time only after we have run npm start
-    // and there is preview available."
-    if (!projectAutoStarted) {
       return;
     }
 
@@ -405,7 +407,7 @@ export function useScreenshotCapture(): void {
       console.warn('[screenshotCapture] error:', e);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previews, loadedProjectId, projectAutoStarted]);
+  }, [previews, loadedProjectId]);
 }
 
 /**
