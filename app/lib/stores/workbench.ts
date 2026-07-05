@@ -48,6 +48,26 @@ export class WorkbenchStore {
 
   #reloadedMessages = new Set<string>();
 
+  /*
+   * BUG #3 FIX — workspace-ready gate.
+   *
+   * When the AI invokes `inject_template`, the template's file actions +
+   * `npm install` run asynchronously on the client. If the AI's *next*
+   * response tries to modify files before the template files are written,
+   * it can crash (modifying a non-existent file) or race with `npm install`.
+   *
+   * `#workspaceReadyPromise` starts RESOLVED (no-op for normal chats). When a
+   * `template` artifact is opened we replace it with a pending promise
+   * (`setWorkspaceLoading`). When that template's ActionRunner goes idle
+   * (all file writes + npm install complete) we resolve it
+   * (`setWorkspaceReady`). Non-template action executions `await` this
+   * promise, so the AI's follow-up modifications are paused until the
+   * workspace has actually loaded every template file.
+   */
+  #workspaceReadyPromise: Promise<void> = Promise.resolve();
+  #resolveWorkspaceReady: () => void = () => {};
+  #workspaceLoadingTimeout: ReturnType<typeof setTimeout> | undefined;
+
   artifacts: Artifacts = import.meta.hot?.data.artifacts ?? map({});
 
   showWorkbench: WritableAtom<boolean> = import.meta.hot?.data.showWorkbench ?? atom(false);
@@ -180,6 +200,143 @@ export class WorkbenchStore {
 
   setShowWorkbench(show: boolean) {
     this.showWorkbench.set(show);
+  }
+
+  /**
+   * BUG #3: Marks the workspace as "loading" (template files being written).
+   * Subsequent non-template action executions will `await workspaceReady()`
+   * until `setWorkspaceReady()` is called.
+   */
+  setWorkspaceLoading() {
+    this.#workspaceReadyPromise = new Promise<void>((resolve) => {
+      this.#resolveWorkspaceReady = resolve;
+    });
+
+    // Safety net: never let the gate block forever. If the template runner
+    // never reports idle (e.g. an error swallowed the status change), resolve
+    // after 90s so the AI's follow-up actions can proceed.
+    if (this.#workspaceLoadingTimeout) {
+      clearTimeout(this.#workspaceLoadingTimeout);
+    }
+
+    this.#workspaceLoadingTimeout = setTimeout(() => {
+      console.warn('[WorkbenchStore] workspace-ready gate timed out after 90s — releasing');
+      this.setWorkspaceReady();
+    }, 90_000);
+  }
+
+  /**
+   * BUG #3: Marks the workspace as ready — releases any non-template action
+   * that is awaiting `workspaceReady()`.
+   */
+  setWorkspaceReady() {
+    if (this.#workspaceLoadingTimeout) {
+      clearTimeout(this.#workspaceLoadingTimeout);
+      this.#workspaceLoadingTimeout = undefined;
+    }
+
+    // Only resolve if currently loading (promise is pending).
+    this.#resolveWorkspaceReady();
+    // Re-arm with an immediately-resolved promise so future awaits are no-ops.
+    this.#workspaceReadyPromise = Promise.resolve();
+    this.#resolveWorkspaceReady = () => {};
+  }
+
+  /** BUG #3: await this before running non-template actions. */
+  workspaceReady(): Promise<void> {
+    return this.#workspaceReadyPromise;
+  }
+
+  /**
+   * Resets all workbench singleton state.
+   *
+   * Called when switching chats so that artifacts, files, view state, and
+   * execution queues from the previous chat do not leak into the next one.
+   * This is the cornerstone fix for:
+   *   - Bug #1 (empty workspace on project open)
+   *   - Bug #2 (old chat content leaking into new chat)
+   */
+  reset() {
+    // Discard any in-flight execution so pending actions from the previous
+    // chat never run against the new chat's WebContainer state.
+    this.#globalExecutionQueue = Promise.resolve();
+
+    // Clear artifact runners and their action maps.
+    for (const artifact of Object.values(this.artifacts.get())) {
+      try {
+        artifact.runner.abortAllActions?.();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.artifacts.set({});
+    this.artifactIdList = [];
+
+    // Clear file state.
+    this.#filesStore.files.set({});
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.modifiedFiles.clear();
+
+    // Clear view / alert state.
+    this.showWorkbench.set(false);
+    this.currentView.set('code');
+    this.actionAlert.set(undefined);
+    this.supabaseAlert.set(undefined);
+    this.deployAlert.set(undefined);
+    this.workbenchLeftPosition.set(null);
+
+    // Clear reloaded-message tracking.
+    this.#reloadedMessages.clear();
+
+    // Release any pending workspace-ready gate so a stale loading state from
+    // the previous chat cannot block the next chat's actions.
+    this.setWorkspaceReady();
+
+    // Reset editor selection so the next chat starts clean.
+    this.#editorStore.selectedFile.set(undefined);
+
+    console.log('[WorkbenchStore] reset() — all workspace state cleared');
+  }
+
+  /**
+   * Directly populates `files` from a saved snapshot (in addition to writing
+   * them to the WebContainer). This guarantees the editor renders the files
+   * immediately on chat load without depending solely on the WebContainer
+   * file watcher (which can miss events or race with initialization).
+   */
+  loadFilesFromSnapshot(files: FileMap) {
+    if (!files || Object.keys(files).length === 0) {
+      return;
+    }
+
+    const next: FileMap = {};
+
+    for (const [rawPath, dirent] of Object.entries(files)) {
+      if (!dirent) {
+        continue;
+      }
+
+      // Normalize the path to be absolute under WORK_DIR.
+      let p = rawPath;
+
+      if (p.startsWith(WORK_DIR)) {
+        // already absolute
+      } else if (p.startsWith('/')) {
+        p = `${WORK_DIR}${p}`;
+      } else {
+        p = `${WORK_DIR}/${p}`;
+      }
+
+      next[p] = dirent;
+    }
+
+    this.#filesStore.files.set(next);
+    this.setDocuments(next);
+
+    if (Object.keys(next).length > 0) {
+      this.showWorkbench.set(true);
+    }
   }
 
   setCurrentDocumentContent(newContent: string) {
@@ -561,6 +718,32 @@ export class WorkbenchStore {
       this.artifactIdList.push(id);
     }
 
+    const isTemplate = type === 'template';
+
+    /*
+     * BUG #3: For template artifacts (inject_template), arm the workspace-
+     * ready gate so the AI's follow-up file modifications pause until every
+     * template file + `npm install` has finished. The `onStatusChange`
+     * callback resolves the gate the first time the runner goes idle after
+     * having been busy.
+     */
+    let templateRunnerBusy = false;
+
+    const onStatusChange = isTemplate
+      ? (isRunning: boolean) => {
+          if (isRunning) {
+            templateRunnerBusy = true;
+          } else if (templateRunnerBusy) {
+            templateRunnerBusy = false;
+            this.setWorkspaceReady();
+          }
+        }
+      : undefined;
+
+    if (isTemplate) {
+      this.setWorkspaceLoading();
+    }
+
     this.artifacts.setKey(id, {
       id,
       title,
@@ -590,6 +773,7 @@ export class WorkbenchStore {
 
           this.deployAlert.set(alert);
         },
+        onStatusChange,
       ),
     });
   }
@@ -644,6 +828,34 @@ export class WorkbenchStore {
 
     if (!action || action.executed) {
       return;
+    }
+
+    /*
+     * Reloading a chat from history: the message parser re-fires callbacks so
+     * the artifact/action UI is rebuilt, but we must NOT re-execute shell,
+     * file, build, or start commands (they would e.g. re-run `npm install` or
+     * overwrite files). The actual file contents are restored from the saved
+     * snapshot by `restoreSnapshot` + `loadFilesFromSnapshot`. We simply mark
+     * the action as complete so the UI shows it as done.
+     */
+    if (this.#reloadedMessages.has(data.messageId)) {
+      artifact.runner.markActionComplete(data.actionId);
+      return;
+    }
+
+    /*
+     * BUG #3: Non-template actions pause until any in-progress template
+     * injection (inject_template) has finished writing all its files and
+     * running `npm install`. Template artifacts themselves do NOT await (they
+     * are the loading actions). This prevents the AI's follow-up modifications
+     * from racing against — or modifying — not-yet-existing files.
+     */
+    if (artifact.type !== 'template') {
+      try {
+        await this.workspaceReady();
+      } catch {
+        /* ignore — gate should never reject */
+      }
     }
 
     const isBundled = artifact.type === 'bundled';

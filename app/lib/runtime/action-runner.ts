@@ -151,6 +151,28 @@ export class ActionRunner {
     return;
   }
 
+  /**
+   * Marks an already-added action as complete WITHOUT executing it.
+   *
+   * Used when restoring a chat from history: the action is shown in the UI
+   * (so the artifact cards render correctly) but shell/file/start commands
+   * are not re-run. The actual file contents come from the saved snapshot,
+   * not from re-executing the actions.
+   */
+  markActionComplete(actionId: string) {
+    const action = this.actions.get()[actionId];
+
+    if (!action) {
+      return;
+    }
+
+    this.#updateAction(actionId, {
+      ...action,
+      status: 'complete',
+      executed: true,
+    });
+  }
+
   async #executeAction(actionId: string, isStreaming: boolean = false) {
     const action = this.actions.get()[actionId];
 

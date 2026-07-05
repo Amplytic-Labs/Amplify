@@ -60,7 +60,17 @@ export function useMessageParser() {
   const parseMessages = useCallback((messages: Message[], isLoading: boolean) => {
     let reset = false;
 
-    if (import.meta.env.DEV && !isLoading) {
+    /*
+     * Reset the parser whenever we re-parse a non-streaming message list.
+     * Previously this was gated behind `import.meta.env.DEV`, which meant the
+     * parser's per-message cursor survived across chat switches in production,
+     * so returning to a previously-visited chat fired NO callbacks — leaving
+     * the workspace empty (Bug #1). Re-parsing is idempotent because
+     * `addArtifact` / `addAction` / `runAction` all short-circuit on already
+     * known / executed actions, and reloaded messages are suppressed via
+     * `#reloadedMessages` in `WorkbenchStore._runAction`.
+     */
+    if (!isLoading) {
       reset = true;
       messageParser.reset();
     }

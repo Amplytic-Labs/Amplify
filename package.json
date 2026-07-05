@@ -13,7 +13,7 @@
   "scripts": {
     "deploy": "npm run build && wrangler pages deploy",
     "build": "remix vite:build",
-    "dev": "node pre-start.cjs  && remix vite:dev",
+    "dev": "node pre-start.cjs && remix vite:dev --port 3000 --host 0.0.0.0 --strictPort",
     "test": "vitest --run",
     "test:watch": "vitest",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint app",
@@ -46,7 +46,6 @@
     "node": ">=18.18.0"
   },
   "dependencies": {
-    "@iconify-json/vscode-icons": "^1.2.62",
     "@ai-sdk/amazon-bedrock": "1.0.6",
     "@ai-sdk/anthropic": "0.0.39",
     "@ai-sdk/cerebras": "^0.2.16",
@@ -77,6 +76,7 @@
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
     "@iconify-json/svg-spinners": "^1.2.1",
+    "@iconify-json/vscode-icons": "^1.2.62",
     "@lezer/highlight": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.16.0",
     "@nanostores/react": "^0.7.3",
@@ -166,6 +166,7 @@
     "unist-util-visit": "^5.0.0",
     "use-debounce": "^10.0.4",
     "vite-plugin-node-polyfills": "^0.22.0",
+    "z-ai-web-dev-sdk": "^0.0.18",
     "zod": "^3.24.1",
     "zustand": "^5.0.3"
   },

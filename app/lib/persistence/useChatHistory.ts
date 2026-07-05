@@ -71,9 +71,12 @@ export function useChatHistory() {
         .then(async ([storedMessages, snapshot]) => {
           if (storedMessages && storedMessages.messages.length > 0) {
             /*
-             * const snapshotStr = localStorage.getItem(`snapshot:${mixedId}`); // Remove localStorage usage
-             * const snapshot: Snapshot = snapshotStr ? JSON.parse(snapshotStr) : { chatIndex: 0, files: {} }; // Use snapshot from DB
+             * BUG #1 + #2 FIX:
+             * Reset ALL workbench singleton state before loading the new chat
+             * so artifacts/files/view from the previous chat cannot leak in.
              */
+            workbenchStore.reset();
+
             const validSnapshot = snapshot || { chatIndex: '', files: {} }; // Ensure snapshot is not undefined
             const summary = validSnapshot.summary;
 
@@ -89,7 +92,18 @@ export function useChatHistory() {
             setArchivedMessages(archivedMessages);
 
             if (storedMessages.metadata?.projectInitiated && snapshotIndex >= 0) {
-              restoreSnapshot(mixedId);
+              /*
+               * BUG #1 FIX: pass the ACTUAL fetched snapshot (previously this
+               * was called with only the id, so restoreSnapshot defaulted to
+               * `{ files: {} }` and wrote zero files → empty workspace).
+               */
+              await restoreSnapshot(mixedId, validSnapshot);
+            }
+
+            // Even for non-project chats, clear any leftover WebContainer
+            // files from the previous chat so they don't bleed across.
+            if (!(storedMessages.metadata?.projectInitiated && snapshotIndex >= 0)) {
+              await clearWebContainerWorkdir();
             }
 
             setInitialMessages(filteredMessages);
@@ -111,7 +125,21 @@ export function useChatHistory() {
           toast.error('Failed to load chat: ' + error.message); // More specific error
         });
     } else {
-      // Handle case where there is no mixedId (e.g., new chat)
+      /*
+       * BUG #2 FIX: New chat (no mixedId). Reset ALL singleton state so the
+       * previous chat's messages/files/chatId cannot leak into this new chat.
+       * Previously `chatId` was left holding the previous chat's id, so
+       * `storeMessageHistory` would save the new chat's messages into the OLD
+       * chat's row — corrupting it.
+       */
+      workbenchStore.reset();
+      chatId.set(undefined);
+      description.set(undefined);
+      chatMetadata.set(undefined);
+      setInitialMessages([]);
+      setArchivedMessages([]);
+      setUrlId(undefined);
+      void clearWebContainerWorkdir();
       setReady(true);
     }
   }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
@@ -142,41 +170,80 @@ export function useChatHistory() {
   );
 
   const restoreSnapshot = useCallback(async (id: string, snapshot?: Snapshot) => {
-    // const snapshotStr = localStorage.getItem(`snapshot:${id}`); // Remove localStorage usage
     const container = await webcontainer;
 
     const validSnapshot = snapshot || { chatIndex: '', files: {} };
 
-    if (!validSnapshot?.files) {
+    if (!validSnapshot?.files || Object.keys(validSnapshot.files).length === 0) {
       return;
     }
 
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
+    /*
+     * Clear the previous chat's files from the WebContainer workdir first so
+     * orphaned files from chat A cannot bleed into chat B.
+     */
+    await clearWebContainerWorkdir(container);
 
-      if (value?.type === 'folder') {
-        await container.fs.mkdir(key, { recursive: true });
-      }
-    });
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (value?.type === 'file') {
-        if (key.startsWith(container.workdir)) {
-          key = key.replace(container.workdir, '');
+    // 1. Create folders first (depth-first, recursive).
+    await Promise.all(
+      Object.entries(validSnapshot.files).map(async ([key, value]) => {
+        if (value?.type !== 'folder') {
+          return;
         }
 
-        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } else {
-      }
-    });
+        let p = key;
 
-    // workbenchStore.files.setKey(snapshot?.files)
+        if (p.startsWith(container.workdir)) {
+          p = p.replace(container.workdir, '');
+        }
+
+        try {
+          await container.fs.mkdir(p, { recursive: true });
+        } catch (e) {
+          // ignore — folder may already exist
+        }
+      }),
+    );
+
+    // 2. Write files.
+    await Promise.all(
+      Object.entries(validSnapshot.files).map(async ([key, value]) => {
+        if (value?.type !== 'file') {
+          return;
+        }
+
+        let p = key;
+
+        if (p.startsWith(container.workdir)) {
+          p = p.replace(container.workdir, '');
+        }
+
+        try {
+          await container.fs.writeFile(p, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
+        } catch (e) {
+          console.warn('[restoreSnapshot] Failed to write file', p, e);
+        }
+      }),
+    );
+
+    /*
+     * BUG #1 FIX: Directly populate `workbenchStore.files` from the snapshot
+     * so the editor renders files immediately — instead of relying solely on
+     * the WebContainer file watcher (which can miss events or race with
+     * initialization, leaving the workspace IDE empty).
+     */
+    workbenchStore.loadFilesFromSnapshot(validSnapshot.files);
+    workbenchStore.showWorkbench.set(true);
+
+    console.log(
+      `[restoreSnapshot] Restored ${Object.keys(validSnapshot.files).length} entries for chat ${id}`,
+    );
   }, []);
 
   return {
     ready: !mixedId || ready,
     initialMessages,
+    mixedId,
     updateChatMestaData: async (metadata: IChatMetadata) => {
       const id = chatId.get();
 
@@ -345,3 +412,29 @@ function navigateChat(nextId: string) {
 
   window.history.replaceState({}, '', url);
 }
+
+/**
+ * Clears the WebContainer workdir of all top-level entries so files from a
+ * previous chat cannot bleed into the next one. Safe to call before the
+ * WebContainer has booted (it awaits the boot promise). Errors are swallowed
+ * because a missing entry or a busy fs is non-fatal during a chat switch.
+ */
+export async function clearWebContainerWorkdir(container?: Awaited<typeof webcontainer>) {
+  try {
+    const wc = container ?? (await webcontainer);
+    const entries = await wc.fs.readdir(wc.workdir, { withFileTypes: true });
+
+    await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          await wc.fs.rm(`${wc.workdir}/${entry.name}`, { recursive: true, force: true });
+        } catch {
+          /* ignore individual entry failures */
+        }
+      }),
+    );
+  } catch (e) {
+    console.warn('[clearWebContainerWorkdir] failed', e);
+  }
+}
+

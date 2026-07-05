@@ -179,14 +179,89 @@ export default class ZaiProvider extends BaseProvider {
       defaultApiTokenKey: 'ZAI_API_KEY',
     });
 
-    if (!apiKey) {
-      throw new Error(`Missing API key for ${this.name} provider`);
+    /*
+     * Primary path: use the in-house `z-ai-web-dev-sdk` which resolves its
+     * own credentials from `/etc/.z-ai-config` (or project/home config).
+     * This makes the Z.ai provider work out-of-the-box in environments where
+     * the SDK is provisioned, without requiring an explicit `ZAI_API_KEY`.
+     *
+     * We bridge the SDK (which speaks the OpenAI Chat Completions wire format
+     * and returns a `ReadableStream` for streaming) into `@ai-sdk/openai`'s
+     * `createOpenAI` by supplying a custom `fetch` implementation.
+     */
+    const sdkFetch: typeof fetch = async (input: any, init?: any) => {
+      let body: any = {};
+
+      try {
+        body = init?.body ? JSON.parse(init.body as string) : {};
+      } catch {
+        body = {};
+      }
+
+      // Normalize the model name. The internal endpoint maps GLM family names.
+      const sdkModel = body.model || model || 'glm-4.6';
+      const wantStream = body.stream === true;
+
+      // Strip provider-specific keys the SDK doesn't understand.
+      const { model: _m, stream: _s, ...rest } = body;
+      void _m;
+      void _s;
+
+      try {
+        const ZAIModule: any = await import('z-ai-web-dev-sdk');
+        const ZAI = ZAIModule.default;
+        const zai = await ZAI.create();
+
+        if (wantStream) {
+          const readable: ReadableStream = await zai.chat.completions.create({
+            model: sdkModel,
+            messages: body.messages || [],
+            stream: true,
+            ...rest,
+          });
+
+          return new Response(readable, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+          });
+        }
+
+        const result = await zai.chat.completions.create({
+          model: sdkModel,
+          messages: body.messages || [],
+          stream: false,
+          ...rest,
+        });
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ error: { message: err?.message || 'Z.ai SDK error', type: 'zai_sdk_error' } }),
+          { status: 502, headers: { 'content-type': 'application/json' } },
+        );
+      }
+    };
+
+    // Fallback path: if a real `ZAI_API_KEY` (id.secret) is provided, use the
+    // original JWT-based approach against the public coding endpoint.
+    if (apiKey && apiKey.includes('.')) {
+      try {
+        const token = this._generateToken(apiKey);
+        const zaiClient = createOpenAI({ baseURL: baseUrl, apiKey: token });
+        return zaiClient(model);
+      } catch {
+        // fall through to SDK-backed client
+      }
     }
 
-    const token = this._generateToken(apiKey);
+    // SDK-backed client (no API key required from the user).
     const zaiClient = createOpenAI({
-      baseURL: baseUrl,
-      apiKey: token,
+      baseURL: baseUrl || 'https://api.z.ai/api/coding/paas/v4',
+      apiKey: apiKey || 'zai-sdk',
+      fetch: sdkFetch,
     });
 
     return zaiClient(model);

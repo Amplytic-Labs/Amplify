@@ -45,16 +45,26 @@ const logger = createScopedLogger('Chat');
 export function Chat() {
   renderLogger.trace('Chat');
 
-  const { ready, initialMessages, storeMessageHistory, importChat, exportChat } = useChatHistory();
+  const { ready, initialMessages, storeMessageHistory, importChat, exportChat, mixedId } = useChatHistory();
   const title = useStore(description);
   useEffect(() => {
     workbenchStore.setReloadedMessages(initialMessages.map((m) => m.id));
   }, [initialMessages]);
 
+  /*
+   * BUG #2 FIX: Force `<ChatImpl />` to remount whenever the chat id changes.
+   * `useChat` from @ai-sdk/react only consumes `initialMessages` on first
+   * mount, so without a remount the previous chat's `messages` state persists
+   * into the next chat. Keying by `mixedId` (or 'new') guarantees a clean
+   * `useChat` re-initialization on every chat switch.
+   */
+  const chatKey = mixedId ?? 'new';
+
   return (
     <>
       {ready && (
         <ChatImpl
+          key={chatKey}
           description={title}
           initialMessages={initialMessages}
           exportChat={exportChat}
