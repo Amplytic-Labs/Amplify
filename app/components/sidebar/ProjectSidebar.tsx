@@ -482,12 +482,24 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
 
       /*
+       * Clear the selected project + workbench state so the workspace
+       * doesn't show stale files from the deleted project.
+       */
+      if (selectedProjectId.get() === project.id) {
+        clearSelectedProject();
+      }
+
+      workbenchStore.showWorkbench.set(false);
+      workbenchStore.loadedProjectId.set('<none>');
+      workbenchStore.projectAutoStarted.set(false);
+
+      /*
        * If we're currently viewing one of the project's chats, stay on it —
        * it just becomes a personal chat again.
        */
       loadEntries();
     },
-    [loadEntries],
+    [loadEntries, selectedProjectId],
   );
 
   // Rename a project.
@@ -573,9 +585,11 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
 
       /*
        * Starting a brand-new personal chat — clear any project selection so
-       * the sidebar shows personal chats.
+       * the sidebar shows personal chats. Also reset chatStore.started so
+       * the guard above works on subsequent clicks without a full remount.
        */
       clearSelectedProject();
+      chatStore.setKey('started', false);
       setIsNewChatDropdownOpen(false);
 
       /*

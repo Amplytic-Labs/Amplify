@@ -339,7 +339,7 @@ export const ChatImpl = memo(
         parseMessages,
         storeMessageHistory,
       });
-    }, [messages, isLoading, parseMessages]);
+    }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory]);
 
     // Query vector stores for RAG context when user messages change
     useEffect(() => {

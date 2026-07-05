@@ -133,6 +133,14 @@ export function useChatHistory() {
   const [urlId, setUrlId] = useState<string | undefined>();
 
   useEffect(() => {
+    /*
+     * Cancellation flag: if the user rapidly switches chats before the
+     * async load completes, the stale callback must not clobber the
+     * new chat's state. Declared at the effect scope so the cleanup
+     * function can access it.
+     */
+    let cancelled = false;
+
     if (!db) {
       setReady(true);
 
@@ -167,6 +175,7 @@ export function useChatHistory() {
         getSnapshot(db, mixedId), // Fetch snapshot from DB
       ])
         .then(async ([storedMessages, snapshot]) => {
+          if (cancelled) return;
           if (storedMessages && storedMessages.messages.length > 0) {
             /*
              * const snapshotStr = localStorage.getItem(`snapshot:${mixedId}`); // Remove localStorage usage
@@ -432,6 +441,15 @@ export function useChatHistory() {
 
       setReady(true);
     }
+
+    /*
+     * Cleanup: mark the async load as cancelled so stale callbacks
+     * don't clobber the new chat's state when the user rapidly
+     * switches between chats.
+     */
+    return () => {
+      cancelled = true;
+    };
   }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
 
   /*
@@ -619,25 +637,35 @@ export function useChatHistory() {
       return;
     }
 
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
+    /*
+     * Fix: use for...of instead of forEach(async) so that folder
+     * creation completes before file writes begin. forEach with an
+     * async callback fires all iterations concurrently, which means
+     * files can be written before their parent directories exist,
+     * causing ENOENT errors.
+     */
+    for (const [rawKey, value] of Object.entries(validSnapshot.files)) {
       if (value?.type === 'folder') {
+        let key = rawKey;
+
+        if (key.startsWith(container.workdir)) {
+          key = key.replace(container.workdir, '');
+        }
+
         await container.fs.mkdir(key, { recursive: true });
       }
-    });
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
+    }
+    for (const [rawKey, value] of Object.entries(validSnapshot.files)) {
       if (value?.type === 'file') {
+        let key = rawKey;
+
         if (key.startsWith(container.workdir)) {
           key = key.replace(container.workdir, '');
         }
 
         await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } else {
       }
-    });
+    }
 
     // workbenchStore.files.setKey(snapshot?.files)
   }, []);
