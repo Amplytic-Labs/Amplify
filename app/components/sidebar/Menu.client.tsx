@@ -14,6 +14,7 @@ import { binDates } from './date-binning';
 import { useSearchFilter } from '~/lib/hooks/useSearchFilter';
 import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
+import { useNavigate } from '@remix-run/react';
 import { sidebarStore } from '~/lib/stores/sidebar';
 
 const menuVariants = {
@@ -66,6 +67,7 @@ function CurrentDateTime() {
 
 export const Menu = () => {
   const { duplicateCurrentChat, exportChat } = useChatHistory();
+  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
   const [list, setList] = useState<ChatHistoryItem[]>([]);
   const open = useStore(sidebarStore);
@@ -171,9 +173,9 @@ export const Menu = () => {
           loadEntries();
 
           if (chatId.get() === item.id) {
-            // hard page navigation to clear the stores
+            // Use Remix navigate() to preserve WebContainer and in-memory state
             console.log('Navigating away from deleted chat');
-            window.location.pathname = '/';
+            navigate('/');
           }
         })
         .catch((error) => {
@@ -187,7 +189,7 @@ export const Menu = () => {
           loadEntries();
         });
     },
-    [loadEntries, deleteChat],
+    [loadEntries, deleteChat, navigate],
   );
 
   const deleteSelectedItems = useCallback(
@@ -238,10 +240,10 @@ export const Menu = () => {
       // Navigate if needed
       if (shouldNavigate) {
         console.log('Navigating away from deleted chat');
-        window.location.pathname = '/';
+        navigate('/');
       }
     },
-    [deleteChat, loadEntries, db],
+    [deleteChat, loadEntries, db, navigate],
   );
 
   const closeDialog = () => {

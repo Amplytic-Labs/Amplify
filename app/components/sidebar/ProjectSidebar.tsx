@@ -455,7 +455,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
           loadEntries();
 
           if (chatId.get() === item.id) {
-            window.location.pathname = '/';
+            navigate('/');
           }
         })
         .catch((error) => {
@@ -886,12 +886,13 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   onNewChat={() => handleNewChatInProject(selectedProject)}
                   onBackToAllChats={() => {
                     /*
-                     * Full page refresh to root — clears the project
-                     * selection AND tears down the workspace so the user
-                     * lands on a clean base chat with no project context.
+                     * Navigate to root — clears the project selection
+                     * so the user lands on a clean base chat with no
+                     * project context. Uses Remix navigate() to preserve
+                     * the WebContainer and all in-memory state.
                      */
                     clearSelectedProject();
-                    window.location.href = '/';
+                    navigate('/');
                   }}
                   onDelete={(item) => setDialogContent({ type: 'delete', item })}
                   onDuplicate={handleDuplicate}

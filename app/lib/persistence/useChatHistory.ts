@@ -132,6 +132,22 @@ export function useChatHistory() {
   const [ready, setReady] = useState<boolean>(false);
   const [urlId, setUrlId] = useState<string | undefined>();
 
+  /*
+   * Tracks which `mixedId` the current `initialMessages` / `ready` state
+   * was loaded for. When `mixedId` changes (e.g. navigating between chats
+   * or chat → home), `loadedId` still holds the OLD value on the first
+   * render, making `ready` evaluate to `false` and preventing ChatImpl
+   * from mounting with stale `initialMessages`.
+   *
+   * Without this, navigating from `/chat/oldId` to `/` causes the first
+   * render to have `ready = !undefined || true = true` (the shortcut
+   * for the home page) while `initialMessages` still holds the old
+   * chat's messages. ChatImpl mounts with the wrong messages, and
+   * `useChat` only reads `initialMessages` on first mount — it never
+   * recovers until a full page refresh.
+   */
+  const [loadedId, setLoadedId] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     /*
      * Cancellation flag: if the user rapidly switches chats before the
@@ -143,6 +159,7 @@ export function useChatHistory() {
 
     if (!db) {
       setReady(true);
+      setLoadedId(mixedId);
 
       if (persistenceEnabled) {
         const error = new Error('Chat persistence is unavailable');
@@ -169,6 +186,7 @@ export function useChatHistory() {
        */
       setReady(false);
       setInitialMessages([]);
+      setLoadedId(undefined); // prevent stale ready during async load
 
       Promise.all([
         getMessages(db, mixedId),
@@ -406,6 +424,7 @@ export function useChatHistory() {
             navigate('/', { replace: true });
           }
 
+          setLoadedId(mixedId);
           setReady(true);
         })
         .catch((error) => {
@@ -435,10 +454,19 @@ export function useChatHistory() {
       setArchivedMessages([]);
       setUrlId(undefined);
 
+      /*
+       * Reset workbench artifacts from the previous chat so that
+       * `storeMessageHistory` doesn't read a stale `firstArtifact`
+       * and associate the new chat with the old chat's project / urlId.
+       */
+      workbenchStore.artifacts.set({});
+      workbenchStore.artifactIdList = [];
+
       workbenchStore.showWorkbench.set(false);
       workbenchStore.loadedProjectId.set('<none>');
       workbenchStore.projectAutoStarted.set(false);
 
+      setLoadedId(undefined);
       setReady(true);
     }
 
@@ -719,7 +747,14 @@ export function useChatHistory() {
   }, []);
 
   return {
-    ready: !mixedId || ready,
+    /*
+     * Only consider ready when the loaded state corresponds to the
+     * CURRENT route's `mixedId`. When `mixedId` changes (navigation),
+     * `loadedId` still holds the old value, making this evaluate to
+     * `false` even if `ready` is still `true` from the previous chat.
+     * This prevents ChatImpl from mounting with stale `initialMessages`.
+     */
+    ready: loadedId === mixedId && ready,
     initialMessages,
     /*
      * The route-scoped chat key (urlId for chat pages, undefined for home).
@@ -747,6 +782,23 @@ export function useChatHistory() {
     },
     storeMessageHistory: async (messages: Message[]) => {
       if (!db || messages.length === 0) {
+        return;
+      }
+
+      /*
+       * Guard: detect stale calls from a pending sampler timeout.
+       *
+       * When the user switches chats, the old ChatImpl unmounts but the
+       * `processSampledMessages` sampler may still have a pending 50 ms
+       * timeout. If it fires after `chatId` has been reset / updated, the
+       * old messages would be written under the NEW chat's ID — effectively
+       * copying the old chat's content into the new one.
+       *
+       * `loadedId` is captured at closure-creation time (render). If
+       * `chatId.get()` has since changed (because the useEffect reset
+       * it for a navigation), the save is stale and must be aborted.
+       */
+      if (loadedId && chatId.get() !== loadedId) {
         return;
       }
 
@@ -1089,7 +1141,7 @@ export function useChatHistory() {
 
       try {
         const newId = await createChatFromMessages(db, description, messages, metadata);
-        window.location.href = `/chat/${newId}`;
+        navigate(`/chat/${newId}`);
         toast.success('Chat imported successfully');
       } catch (error) {
         if (error instanceof Error) {

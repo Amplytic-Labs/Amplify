@@ -111,13 +111,20 @@ export const ChatImpl = memo(
     const files = useStore(workbenchStore.files);
     const loadedProjectId = useStore(workbenchStore.loadedProjectId);
     /*
-     * Bug fix: chatStarted must also be true when a project workspace is
-     * already loaded, even if initialMessages is empty (e.g. a fresh
-     * "New chat in project" created from the sidebar). Without this, the
-     * Workbench component never renders because it gates on chatStarted.
+     * chatStarted must be true when either:
+     *   1. There are initialMessages (restoring an existing chat), OR
+     *   2. The workbench is open (project workspace is visible).
+     *
+     * Previously this also required loadedProjectId !== '<none>', which
+     * created a race condition: showWorkbench could be true (set by
+     * useChatHistory) before loadedProjectId was updated from '<none>'
+     * to the actual project ID, leaving the Workbench returning null.
+     * showWorkbench alone is sufficient because it is only set to true
+     * when a workspace should be visible (project selected, template
+     * injected, repo cloned).
      */
     const [chatStarted, setChatStarted] = useState(
-      initialMessages.length > 0 || (showWorkbench && !!loadedProjectId && loadedProjectId !== '<none>'),
+      initialMessages.length > 0 || showWorkbench,
     );
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
@@ -314,22 +321,42 @@ export const ChatImpl = memo(
 
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
-    useEffect(() => {
-      const hasProjectWorkspace = showWorkbench && !!loadedProjectId && loadedProjectId !== '<none>';
-      chatStore.setKey('started', initialMessages.length > 0 || hasProjectWorkspace);
-    }, []);
-
     /*
-     * Keep chatStarted in sync with the workspace state. When the
-     * workbench opens (e.g. project loaded after initial render), we
-     * must flip chatStarted to true so the Workbench component renders.
+     * Keep chatStarted and chatStore.started in sync with the workspace
+     * state. When the workbench opens (e.g. project loaded after initial
+     * render), we must flip chatStarted to true so the Workbench component
+     * renders. Only showWorkbench is needed — loadedProjectId may lag
+     * behind during async loading, causing a window where the panel is
+     * open but the Workbench returns null.
+     *
+     * This single effect replaces two separate effects: the old mount-only
+     * effect (with empty deps) and the sync effect. The mount-only effect
+     * was misleading because it never re-ran when showWorkbench changed
+     * after mount, and the two effects could race.
      */
     useEffect(() => {
-      if (showWorkbench && loadedProjectId && loadedProjectId !== '<none>' && !chatStarted) {
-        setChatStarted(true);
-        chatStore.setKey('started', true);
+      const shouldStart = initialMessages.length > 0 || showWorkbench;
+
+      if (shouldStart !== chatStarted) {
+        setChatStarted(shouldStart);
       }
-    }, [showWorkbench, loadedProjectId, chatStarted]);
+
+      chatStore.setKey('started', shouldStart);
+    }, [initialMessages.length, showWorkbench, chatStarted]);
+
+    /*
+     * Abort streaming and workbench actions when ChatImpl unmounts
+     * (e.g. when switching to a different chat). Without this, the old
+     * streaming HTTP connection may continue running, and stale responses
+     * could arrive after the user has switched to a different chat.
+     */
+    useEffect(() => {
+      return () => {
+        stop();
+        workbenchStore.abortAllActions();
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
       processSampledMessages({
@@ -593,14 +620,20 @@ export const ChatImpl = memo(
 
     useEffect(() => {
       /*
-       * Mark workspace as NOT ready when a project is being loaded
-       * (files map is empty but showWorkbench just turned on).
-       * Mark as ready once files are present.
+       * Mark workspace as NOT ready when a project is being loaded or
+       * an inject_template is being processed (files map is empty but
+       * showWorkbench just turned on). Mark as ready once files are present.
+       *
+       * Previously this required loadedProjectId !== '<none>', which missed
+       * the inject_template case where files are being created by the
+       * message parser but loadedProjectId hasn't been set to a real ID yet.
+       * Now we simply check: if the workbench is open and there are no files,
+       * the workspace isn't ready.
        */
       const currentFiles = workbenchStore.files.get();
       const hasFiles = Object.keys(currentFiles).some((k) => currentFiles[k]?.type === 'file');
 
-      if (showWorkbench && loadedProjectId && loadedProjectId !== '<none>' && !hasFiles) {
+      if (showWorkbench && !hasFiles) {
         workspaceReadyRef.current = false;
       } else if (hasFiles) {
         if (!workspaceReadyRef.current) {

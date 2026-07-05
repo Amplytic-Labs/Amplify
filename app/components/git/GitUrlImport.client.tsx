@@ -1,4 +1,4 @@
-import { useSearchParams } from '@remix-run/react';
+import { useSearchParams, useNavigate } from '@remix-run/react';
 import { generateId, type Message } from 'ai';
 import ignore from 'ignore';
 import { useEffect, useState } from 'react';
@@ -38,6 +38,7 @@ const IGNORE_PATTERNS = [
 
 export function GitUrlImport() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { ready: historyReady, importChat } = useChatHistory();
   const { ready: gitReady, gitClone } = useGit();
   const [imported, setImported] = useState(false);
@@ -106,7 +107,7 @@ ${escapeAmplifyTags(file.content)}
         console.error('Error during import:', error);
         toast.error('Failed to import repository');
         setLoading(false);
-        window.location.href = '/';
+        navigate('/');
 
         return;
       }
@@ -121,7 +122,7 @@ ${escapeAmplifyTags(file.content)}
     const url = searchParams.get('url');
 
     if (!url) {
-      window.location.href = '/';
+      navigate('/');
       return;
     }
 
@@ -129,10 +130,10 @@ ${escapeAmplifyTags(file.content)}
       console.error('Error importing repo:', error);
       toast.error('Failed to import repository');
       setLoading(false);
-      window.location.href = '/';
+      navigate('/');
     });
     setImported(true);
-  }, [searchParams, historyReady, gitReady, imported]);
+  }, [searchParams, historyReady, gitReady, imported, navigate]);
 
   return (
     <ClientOnly fallback={<BaseChat />}>

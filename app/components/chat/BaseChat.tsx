@@ -173,9 +173,8 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     }, [expoUrl]);
 
-    useEffect(() => {
-      console.log(transcript);
-    }, [transcript]);
+    // SpeechRecognition transcript is used via the `transcript` state variable
+    // No debug logging needed in production
 
     useEffect(() => {
       onStreamingChange?.(isStreaming);
@@ -210,6 +209,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         };
 
         setRecognition(recognition);
+
+        // Cleanup: abort speech recognition on unmount to prevent memory leaks
+        return () => {
+          try {
+            recognition.abort();
+          } catch {
+            // Ignore errors during cleanup
+          }
+        };
       }
     }, []);
 

@@ -322,6 +322,7 @@ export const Workbench = memo(
     };
 
     // Track workbench panel position for slider alignment (desktop only)
+    // Uses ResizeObserver instead of requestAnimationFrame loop for efficiency
     useEffect(() => {
       if (isSmallViewport || !showWorkbench) {
         workbenchStore.workbenchLeftPosition.set(null);
@@ -343,17 +344,22 @@ export const Workbench = memo(
       // Update on resize
       window.addEventListener('resize', updateWorkbenchPosition);
 
-      // Update on animation frame for smooth tracking during resize
-      let animationFrameId: number;
-      const observePosition = () => {
-        updateWorkbenchPosition();
-        animationFrameId = requestAnimationFrame(observePosition);
-      };
-      animationFrameId = requestAnimationFrame(observePosition);
+      // Use ResizeObserver for efficient position tracking instead of
+      // a continuous requestAnimationFrame loop. The old RAF loop ran at
+      // ~60fps indefinitely, causing unnecessary React re-renders.
+      let resizeObserver: ResizeObserver | undefined;
+      const workbenchElement = document.querySelector('[data-workbench-panel]');
+
+      if (workbenchElement) {
+        resizeObserver = new ResizeObserver(() => {
+          updateWorkbenchPosition();
+        });
+        resizeObserver.observe(workbenchElement);
+      }
 
       return () => {
         window.removeEventListener('resize', updateWorkbenchPosition);
-        cancelAnimationFrame(animationFrameId);
+        resizeObserver?.disconnect();
       };
     }, [isSmallViewport, showWorkbench]);
 
