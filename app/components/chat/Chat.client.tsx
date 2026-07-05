@@ -107,13 +107,22 @@ export const ChatImpl = memo(
     useShortcuts();
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
+    const showWorkbench = useStore(workbenchStore.showWorkbench);
+    const files = useStore(workbenchStore.files);
+    const loadedProjectId = useStore(workbenchStore.loadedProjectId);
+    /*
+     * Bug fix: chatStarted must also be true when a project workspace is
+     * already loaded, even if initialMessages is empty (e.g. a fresh
+     * "New chat in project" created from the sidebar). Without this, the
+     * Workbench component never renders because it gates on chatStarted.
+     */
+    const [chatStarted, setChatStarted] = useState(
+      initialMessages.length > 0 || (showWorkbench && !!loadedProjectId && loadedProjectId !== '<none>'),
+    );
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
     const [fakeLoading, setFakeLoading] = useState(false);
-    const files = useStore(workbenchStore.files);
-    const loadedProjectId = useStore(workbenchStore.loadedProjectId);
     const [designScheme, setDesignScheme] = useState<DesignScheme>(defaultDesignScheme);
     const actionAlert = useStore(workbenchStore.alert);
     const deployAlert = useStore(workbenchStore.deployAlert);
@@ -306,8 +315,21 @@ export const ChatImpl = memo(
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
     useEffect(() => {
-      chatStore.setKey('started', initialMessages.length > 0);
+      const hasProjectWorkspace = showWorkbench && !!loadedProjectId && loadedProjectId !== '<none>';
+      chatStore.setKey('started', initialMessages.length > 0 || hasProjectWorkspace);
     }, []);
+
+    /*
+     * Keep chatStarted in sync with the workspace state. When the
+     * workbench opens (e.g. project loaded after initial render), we
+     * must flip chatStarted to true so the Workbench component renders.
+     */
+    useEffect(() => {
+      if (showWorkbench && loadedProjectId && loadedProjectId !== '<none>' && !chatStarted) {
+        setChatStarted(true);
+        chatStore.setKey('started', true);
+      }
+    }, [showWorkbench, loadedProjectId, chatStarted]);
 
     useEffect(() => {
       processSampledMessages({
@@ -551,9 +573,58 @@ export const ChatImpl = memo(
      * Mutating tools (replace_string_in_file, multi_replace_string_in_file,
      * create_file) are intentionally NOT in this list — they still show
      * the Approve/Reject UI so the user stays in control of file edits.
+     *
+     * IMPORTANT: If the workspace is still loading files (e.g. after an
+     * inject_template), we delay auto-approval until the workspace has
+     * finished loading. This prevents the AI from reading/modifying files
+     * that don't exist in the WebContainer yet.
      * ───────────────────────────────────────────────────────────────────
      */
     const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
+    /*
+     * Track whether the workspace has finished processing an inject_template
+     * or file-loading operation. When a project is loaded, we wait for the
+     * files to be present in the workbench store before allowing tool
+     * results to be sent.
+     */
+    const workspaceReadyRef = useRef(true);
+    const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string }>>([]);
+
+    useEffect(() => {
+      /*
+       * Mark workspace as NOT ready when a project is being loaded
+       * (files map is empty but showWorkbench just turned on).
+       * Mark as ready once files are present.
+       */
+      const currentFiles = workbenchStore.files.get();
+      const hasFiles = Object.keys(currentFiles).some((k) => currentFiles[k]?.type === 'file');
+
+      if (showWorkbench && loadedProjectId && loadedProjectId !== '<none>' && !hasFiles) {
+        workspaceReadyRef.current = false;
+      } else if (hasFiles) {
+        if (!workspaceReadyRef.current) {
+          workspaceReadyRef.current = true;
+
+          /*
+           * Flush any pending auto-approvals that were queued while
+           * the workspace was loading.
+           */
+          if (pendingAutoApprovalsRef.current.length > 0) {
+            const pending = [...pendingAutoApprovalsRef.current];
+            pendingAutoApprovalsRef.current = [];
+
+            for (const { toolCallId } of pending) {
+              logger.debug(`[auto-approve] flushing delayed ${toolCallId}`);
+              addToolResult({
+                toolCallId,
+                result: TOOL_EXECUTION_APPROVAL.APPROVE,
+              });
+            }
+          }
+        }
+      }
+    }, [files, showWorkbench, loadedProjectId, addToolResult]);
 
     useEffect(() => {
       for (const msg of messages) {
@@ -587,6 +658,19 @@ export const ChatImpl = memo(
           }
 
           autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+
+          /*
+           * If the workspace is still loading files (e.g. after
+           * inject_template), queue the auto-approval instead of
+           * sending it immediately. This prevents the AI from
+           * reading files that don't exist in the WebContainer yet.
+           */
+          if (!workspaceReadyRef.current) {
+            logger.debug(`[auto-approve] delaying ${inv.toolName} (${inv.toolCallId}) — workspace not ready`);
+            pendingAutoApprovalsRef.current.push({ toolCallId: inv.toolCallId });
+            continue;
+          }
+
           logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
           addToolResult({
             toolCallId: inv.toolCallId,

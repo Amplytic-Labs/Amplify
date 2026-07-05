@@ -406,7 +406,30 @@ export function useChatHistory() {
           toast.error('Failed to load chat: ' + error.message); // More specific error
         });
     } else {
-      // Handle case where there is no mixedId (e.g., new chat)
+      /*
+       * New chat (home page) — reset ALL chat-scoped atoms so that
+       * `storeMessageHistory` doesn't accidentally save messages under
+       * the previous chat's ID. Without this, switching from an old
+       * chat → new chat → back causes the new chat's messages to be
+       * written to the old chat's database entry (because chatId still
+       * held the old ID), effectively "copying" the old chat into the
+       * new one.
+       *
+       * Also hide the workbench panel since this is a fresh non-project
+       * chat. If a project was previously loaded, mark it as unloaded so
+       * that navigating back into the project re-restores its files.
+       */
+      chatId.set(undefined);
+      description.set(undefined);
+      chatMetadata.set(undefined);
+      setInitialMessages([]);
+      setArchivedMessages([]);
+      setUrlId(undefined);
+
+      workbenchStore.showWorkbench.set(false);
+      workbenchStore.loadedProjectId.set('<none>');
+      workbenchStore.projectAutoStarted.set(false);
+
       setReady(true);
     }
   }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
