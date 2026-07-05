@@ -443,8 +443,29 @@ export const Workbench = memo(
       }
     }, []);
 
+    /*
+     * Determine whether the workspace content should be rendered.
+     * We use chatStarted OR showWorkbench (not just chatStarted) to
+     * eliminate the one-render gap that occurs when showWorkbench
+     * becomes true before the chatStarted state has caught up via
+     * the sync effect. Without this, the panel opens but the
+     * Workbench returns null for one frame, causing a flash.
+     */
+    const shouldRender = chatStarted || showWorkbench;
+
+    /*
+     * When the workspace is open but no files are loaded yet (e.g.
+     * just opened an empty project chat or files are still being
+     * restored from the database), show a loading placeholder
+     * instead of a blank editor.
+     */
+    const hasFiles = useMemo(
+      () => Object.values(files).some((f) => f?.type === 'file'),
+      [files],
+    );
+
     return (
-      chatStarted && (
+      shouldRender && (
         <motion.div
           data-workbench-panel
           initial="closed"
@@ -478,6 +499,15 @@ export const Workbench = memo(
           >
             <div className="h-full ">
               <div className="h-full flex flex-col bg-amplify-elements-background-depth-2  overflow-hidden">
+                {!hasFiles && showWorkbench && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3 text-amplify-elements-textTertiary">
+                      <div className="i-ph:folder-open text-3xl" />
+                      <p className="text-sm font-medium">Loading workspace…</p>
+                    </div>
+                  </div>
+                )}
+                {hasFiles && (
                 <div className="relative flex-1 overflow-hidden">
                   <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
                     <EditorPanel
@@ -516,6 +546,7 @@ export const Workbench = memo(
                     <RenderPanel />
                   </View>
                 </div>
+                )}
               </div>
             </div>
           </div>

@@ -122,10 +122,17 @@ export const ChatImpl = memo(
      * showWorkbench alone is sufficient because it is only set to true
      * when a workspace should be visible (project selected, template
      * injected, repo cloned).
+     *
+     * We use an internal state + a derived value to eliminate the
+     * one-render gap that existed when showWorkbench became true after
+     * mount. The derived `chatStarted` is true as soon as either
+     * the internal flag OR showWorkbench is true, so the Workbench
+     * never sees a stale false during the effect-to-render cycle.
      */
-    const [chatStarted, setChatStarted] = useState(
+    const [chatStartedInternal, setChatStartedInternal] = useState(
       initialMessages.length > 0 || showWorkbench,
     );
+    const chatStarted = chatStartedInternal || showWorkbench || initialMessages.length > 0;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -322,10 +329,11 @@ export const ChatImpl = memo(
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
     /*
-     * Keep chatStarted and chatStore.started in sync with the workspace
-     * state. When the workbench opens (e.g. project loaded after initial
-     * render), we must flip chatStarted to true so the Workbench component
-     * renders. Only showWorkbench is needed — loadedProjectId may lag
+     * Keep chatStartedInternal and chatStore.started in sync with the
+     * workspace state. When the workbench opens (e.g. project loaded
+     * after initial render), we must flip chatStartedInternal to true so
+     * the Workbench component renders even if showWorkbench later becomes
+     * false. Only showWorkbench is needed — loadedProjectId may lag
      * behind during async loading, causing a window where the panel is
      * open but the Workbench returns null.
      *
@@ -337,12 +345,12 @@ export const ChatImpl = memo(
     useEffect(() => {
       const shouldStart = initialMessages.length > 0 || showWorkbench;
 
-      if (shouldStart !== chatStarted) {
-        setChatStarted(shouldStart);
+      if (shouldStart !== chatStartedInternal) {
+        setChatStartedInternal(shouldStart);
       }
 
       chatStore.setKey('started', shouldStart);
-    }, [initialMessages.length, showWorkbench, chatStarted]);
+    }, [initialMessages.length, showWorkbench, chatStartedInternal]);
 
     /*
      * Abort streaming and workbench actions when ChatImpl unmounts
@@ -359,13 +367,19 @@ export const ChatImpl = memo(
     }, []);
 
     useEffect(() => {
-      processSampledMessages({
-        messages,
-        initialMessages,
-        isLoading,
-        parseMessages,
-        storeMessageHistory,
-      });
+      /*
+       * Only process if we have messages — skip empty calls that may
+       * occur during chat switches when the sampler fires with stale state.
+       */
+      if (messages.length > 0) {
+        processSampledMessages({
+          messages,
+          initialMessages,
+          isLoading,
+          parseMessages,
+          storeMessageHistory,
+        });
+      }
     }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory]);
 
     // Query vector stores for RAG context when user messages change
@@ -568,8 +582,32 @@ export const ChatImpl = memo(
 
         processedMutationToolCallIdsRef.current.add(toolCallId);
 
-        // Fire-and-forget — apply each operation in order
+        /*
+         * If the workspace is still loading files (e.g. after inject_template),
+         * delay the mutation until the workspace is ready. Mutating a file that
+         * hasn't been written to the WebContainer yet would fail or create an
+         * inconsistent state. We wait for workspaceReadyRef to become true,
+         * which happens when the files atom has file entries.
+         */
         (async () => {
+          if (!workspaceReadyRef.current) {
+            logger.debug(`[native-tool] delaying mutation ${toolCallId} — workspace not ready`);
+
+            // Wait for the workspace to become ready (poll every 200ms)
+            await new Promise<void>((resolve) => {
+              const check = () => {
+                if (workspaceReadyRef.current) {
+                  resolve();
+                } else {
+                  setTimeout(check, 200);
+                }
+              };
+              check();
+            });
+
+            logger.debug(`[native-tool] workspace ready, applying mutation ${toolCallId}`);
+          }
+
           for (const op of parsed.operations) {
             try {
               const summary = await workbenchStore.applyFileMutation(op);
@@ -618,6 +656,19 @@ export const ChatImpl = memo(
     const workspaceReadyRef = useRef(true);
     const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string }>>([]);
 
+    /*
+     * Reset tool call tracking refs on mount. When switching chats,
+     * ChatImpl remounts (due to chatKey change), but refs may retain
+     * stale IDs from the previous chat if React reuses the fiber.
+     * Clearing them ensures no cross-chat state bleeding.
+     */
+    useEffect(() => {
+      processedMutationToolCallIdsRef.current = new Set();
+      autoApprovedToolCallIdsRef.current = new Set();
+      pendingAutoApprovalsRef.current = [];
+      workspaceReadyRef.current = true;
+    }, []);
+
     useEffect(() => {
       /*
        * Mark workspace as NOT ready when a project is being loaded or
@@ -629,13 +680,40 @@ export const ChatImpl = memo(
        * message parser but loadedProjectId hasn't been set to a real ID yet.
        * Now we simply check: if the workbench is open and there are no files,
        * the workspace isn't ready.
+       *
+       * We also check for inject_template tool calls in the messages — when
+       * the AI calls inject_template, the workspace will soon have files but
+       * they may not be loaded yet. We mark the workspace as not ready until
+       * the files actually appear.
        */
       const currentFiles = workbenchStore.files.get();
       const hasFiles = Object.keys(currentFiles).some((k) => currentFiles[k]?.type === 'file');
 
-      if (showWorkbench && !hasFiles) {
+      /*
+       * Detect inject_template in progress: scan messages for an inject_template
+       * tool call that hasn't yet resulted in files being loaded.
+       */
+      let injectTemplateInProgress = false;
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') continue;
+        const parts = (msg as any).parts as any[] | undefined;
+        if (!Array.isArray(parts)) continue;
+        for (const p of parts) {
+          if (
+            p?.type === 'tool-invocation' &&
+            p?.toolInvocation?.toolName === 'inject_template' &&
+            (p.toolInvocation.state === 'call' || p.toolInvocation.state === 'partial')
+          ) {
+            injectTemplateInProgress = true;
+            break;
+          }
+        }
+        if (injectTemplateInProgress) break;
+      }
+
+      if ((showWorkbench && !hasFiles) || injectTemplateInProgress) {
         workspaceReadyRef.current = false;
-      } else if (hasFiles) {
+      } else if (hasFiles && !injectTemplateInProgress) {
         if (!workspaceReadyRef.current) {
           workspaceReadyRef.current = true;
 
@@ -657,7 +735,7 @@ export const ChatImpl = memo(
           }
         }
       }
-    }, [files, showWorkbench, loadedProjectId, addToolResult]);
+    }, [files, showWorkbench, loadedProjectId, addToolResult, messages]);
 
     useEffect(() => {
       for (const msg of messages) {
@@ -1362,11 +1440,11 @@ export const ChatImpl = memo(
     }, [input, handleInputChange]);
 
     const runAnimation = async () => {
-      if (chatStarted) {
+      if (chatStartedInternal) {
         return;
       }
 
-      setChatStarted(true);
+      setChatStartedInternal(true);
       chatStore.setKey('started', true);
 
       await Promise.all([

@@ -189,6 +189,40 @@ export class WorkbenchStore {
   }
 
   setDocuments(files: FileMap) {
+    const previousFiles = this.#filesStore.files.get();
+    const previousFileKeys = new Set(
+      Object.keys(previousFiles).filter((k) => previousFiles[k]?.type === 'file'),
+    );
+    const newFileKeys = new Set(Object.keys(files).filter((k) => files[k]?.type === 'file'));
+
+    /*
+     * Detect whether the file set has completely changed (e.g. a different
+     * project was loaded). If the overlap between old and new file paths
+     * is less than 50 %, we treat it as a new project and reset the
+     * selected file so the auto-select logic picks a file from the new set.
+     */
+    let filesCompletelyChanged = false;
+
+    if (previousFileKeys.size > 0 && newFileKeys.size > 0) {
+      let overlap = 0;
+
+      for (const key of newFileKeys) {
+        if (previousFileKeys.has(key)) {
+          overlap++;
+        }
+      }
+
+      filesCompletelyChanged = overlap / Math.min(previousFileKeys.size, newFileKeys.size) < 0.5;
+    } else if (previousFileKeys.size > 0 && newFileKeys.size === 0) {
+      // All files removed — definitely a reset
+      filesCompletelyChanged = true;
+    }
+
+    if (filesCompletelyChanged) {
+      // Clear stale selectedFile so that auto-select picks a file from the new set
+      this.setSelectedFile(undefined);
+    }
+
     this.#editorStore.setDocuments(files);
 
     if (this.#filesStore.filesCount > 0 && this.currentDocument.get() === undefined) {
@@ -200,6 +234,49 @@ export class WorkbenchStore {
         }
       }
     }
+  }
+
+  /**
+   * Reset all chat-scoped workbench state so that stale data from a
+   * previous chat doesn't bleed into a new one. Called by
+   * `useChatHistory` when navigating to the home page (new chat)
+   * or when switching between unrelated chats.
+   */
+  resetForNewChat() {
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.showWorkbench.set(false);
+    this.loadedProjectId.set('<none>');
+    this.projectAutoStarted.set(false);
+    this.modifiedFiles.clear();
+
+    // Clear editor state so a new file is auto-selected when files arrive
+    this.setSelectedFile(undefined);
+    this.#editorStore.setDocuments({});
+  }
+
+  /**
+   * Reset only the conversation-scoped state (artifacts, file history,
+   * unsaved files, editor selection) WITHOUT touching project-related
+   * atoms (showWorkbench, loadedProjectId, projectAutoStarted).
+   *
+   * Used when switching between chats inside the same project — the
+   * workspace stays open, but the chat overlay resets.
+   */
+  resetChatState() {
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.modifiedFiles.clear();
+
+    // Reset selected file so the new chat auto-selects a file
+    this.setSelectedFile(undefined);
+    this.#editorStore.setDocuments({});
   }
 
   setShowWorkbench(show: boolean) {

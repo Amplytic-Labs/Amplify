@@ -209,9 +209,15 @@ export function useChatHistory() {
             const snapshotIndex = storedMessages.messages.findIndex((m) => m.id === validSnapshot.chatIndex);
 
             const filteredMessages = storedMessages.messages.slice(0, endingIdx);
-            const archivedMessages: Message[] = [];
 
-            setArchivedMessages(archivedMessages);
+            /*
+             * NOTE: archivedMessages state is intentionally NOT set here.
+             * The previous code `setArchivedMessages(archivedMessages)` set
+             * the state to a locally-scoped empty array `[]`, shadowing the
+             * state variable and making it always empty. Since archivedMessages
+             * is always empty anyway (archived message support was never
+             * fully implemented), we remove the broken setter call.
+             */
 
             /*
              * ── Project = source of truth ──────────────────────────────
@@ -358,7 +364,12 @@ export function useChatHistory() {
                *
                * Re-assert showWorkbench in case it was reset (e.g. by HMR
                * or a prior navigation to a non-project route).
+               *
+               * Reset chat-scoped state (artifacts, fileHistory, etc.)
+               * WITHOUT touching project atoms so the workspace stays
+               * open and files remain loaded.
                */
+              workbenchStore.resetChatState();
               workbenchStore.showWorkbench.set(true);
               setInitialMessages([]);
               setUrlId(storedMessages.urlId);
@@ -400,6 +411,11 @@ export function useChatHistory() {
                * survives a page refresh (showWorkbench is an in-memory atom
                * that resets to false on reload, so we must re-assert it
                * here).
+               *
+               * IMPORTANT: showWorkbench MUST be set to true BEFORE
+               * setReady(true) below, because setReady triggers ChatImpl
+               * to mount, and ChatImpl reads showWorkbench to decide
+               * whether the workspace is visible.
                */
               workbenchStore.showWorkbench.set(true);
 
@@ -455,16 +471,12 @@ export function useChatHistory() {
       setUrlId(undefined);
 
       /*
-       * Reset workbench artifacts from the previous chat so that
-       * `storeMessageHistory` doesn't read a stale `firstArtifact`
-       * and associate the new chat with the old chat's project / urlId.
+       * Reset ALL workbench state for a new non-project chat.
+       * This clears artifacts, file history, selected file, unsaved
+       * files, and project markers so that stale state from the
+       * previous chat doesn't bleed into the new one.
        */
-      workbenchStore.artifacts.set({});
-      workbenchStore.artifactIdList = [];
-
-      workbenchStore.showWorkbench.set(false);
-      workbenchStore.loadedProjectId.set('<none>');
-      workbenchStore.projectAutoStarted.set(false);
+      workbenchStore.resetForNewChat();
 
       setLoadedId(undefined);
       setReady(true);
@@ -586,7 +598,13 @@ export function useChatHistory() {
 
   const takeSnapshot = useCallback(
     async (chatIdx: string, files: FileMap, _chatId?: string | undefined, chatSummary?: string) => {
-      const id = chatId.get();
+      /*
+       * Prefer the explicitly passed _chatId (captured at call time by
+       * storeMessageHistory) over reading chatId.get() at execution time.
+       * This prevents stale snapshots from being saved under the wrong
+       * chat ID when the user switches chats during an async operation.
+       */
+      const id = _chatId || chatId.get();
 
       if (!id || !db) {
         return;
@@ -786,19 +804,28 @@ export function useChatHistory() {
       }
 
       /*
-       * Guard: detect stale calls from a pending sampler timeout.
+       * Capture the chatId at the START of this invocation.
+       * If chatId changes during execution (due to chat switch), we abort
+       * to prevent saving stale messages under the wrong chat ID.
        *
-       * When the user switches chats, the old ChatImpl unmounts but the
-       * `processSampledMessages` sampler may still have a pending 50 ms
-       * timeout. If it fires after `chatId` has been reset / updated, the
-       * old messages would be written under the NEW chat's ID — effectively
-       * copying the old chat's content into the new one.
-       *
-       * `loadedId` is captured at closure-creation time (render). If
-       * `chatId.get()` has since changed (because the useEffect reset
-       * it for a navigation), the save is stale and must be aborted.
+       * This is more robust than the old `loadedId` guard because
+       * `loadedId` is captured at closure-creation time (render) and may
+       * still hold the old value when the effect first runs. By capturing
+       * chatId at invocation time and checking it after every await, we
+       * guarantee that a chat switch during any async operation is detected.
        */
-      if (loadedId && chatId.get() !== loadedId) {
+      const capturedChatId = chatId.get();
+
+      if (!capturedChatId) {
+        return;
+      }
+
+      /*
+       * Guard: if chatId has already changed since this invocation started
+       * (e.g. stale sampler callback from a previous chat), the messages
+       * are stale and must not be saved.
+       */
+      if (loadedId && capturedChatId !== loadedId) {
         return;
       }
 
@@ -809,6 +836,12 @@ export function useChatHistory() {
 
       if (!urlId && firstArtifact?.id) {
         const urlId = await getUrlId(db, firstArtifact.id);
+
+        // Abort if chat switched during async operation
+        if (chatId.get() !== capturedChatId) {
+          return;
+        }
+
         _urlId = urlId;
         navigateChat(urlId);
         setUrlId(urlId);
@@ -829,7 +862,17 @@ export function useChatHistory() {
         }
       }
 
-      takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, chatSummary);
+      /*
+       * Await takeSnapshot instead of fire-and-forget, and pass
+       * capturedChatId so it uses the correct chat ID even if the
+       * user switches chats during the snapshot write.
+       */
+      await takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), capturedChatId, chatSummary);
+
+      // Abort if chat switched during takeSnapshot
+      if (chatId.get() !== capturedChatId) {
+        return;
+      }
 
       if (!description.get() && firstArtifact?.title) {
         description.set(firstArtifact?.title);
@@ -847,14 +890,21 @@ export function useChatHistory() {
        * project's first commit (the global source of truth from here on).
        */
       if (firstArtifact) {
-        const currentId = chatId.get();
-
-        if (currentId && !projectStore.getProjectByChat(currentId)) {
+        /*
+         * Use capturedChatId instead of chatId.get() to avoid using a
+         * chatId that changed during async operations.
+         */
+        if (capturedChatId && !projectStore.getProjectByChat(capturedChatId)) {
           try {
             const project = await projectStore.promoteChatToProject(
-              currentId,
+              capturedChatId,
               firstArtifact.title || 'Untitled Project',
             );
+
+            // Abort if chat switched during async operation
+            if (chatId.get() !== capturedChatId) {
+              return;
+            }
 
             // Seed the project's global file state + first commit.
             const currentFiles = workbenchStore.files.get();
@@ -865,8 +915,14 @@ export function useChatHistory() {
                 project.id,
                 `Project created — ${firstArtifact.title || 'Untitled'}`,
                 currentFiles,
-                currentId,
+                capturedChatId,
               );
+
+              // Abort if chat switched during async operation
+              if (chatId.get() !== capturedChatId) {
+                return;
+              }
+
               projectStore.updateProject(project.id, {
                 currentCommitId: (await getProjectFiles(db, project.id))?.currentCommitId,
               });
@@ -896,6 +952,11 @@ export function useChatHistory() {
                 console.warn('[ChatHistory] detectProjectCommands on promote failed:', e);
               }
 
+              // Abort if chat switched during async operation
+              if (chatId.get() !== capturedChatId) {
+                return;
+              }
+
               // Mark this project as the loaded one + kick off auto-setup.
               workbenchStore.loadedProjectId.set(project.id);
 
@@ -918,9 +979,18 @@ export function useChatHistory() {
         }
       }
 
-      // Ensure chatId.get() is used here as well
+      // Abort if chat switched during earlier async operations
+      if (chatId.get() !== capturedChatId && chatId.get() !== undefined) {
+        return;
+      }
+
       if (initialMessages.length === 0 && !chatId.get()) {
         const nextId = await getNextId(db);
+
+        // Abort if chat switched during async operation
+        if (chatId.get() !== capturedChatId && chatId.get() !== nextId) {
+          return;
+        }
 
         chatId.set(nextId);
 
@@ -938,6 +1008,15 @@ export function useChatHistory() {
        * flow derives urlId from the artifact id.
        */
       const finalChatId = chatId.get();
+
+      /*
+       * Final staleness check: if chatId changed at any point during
+       * this function's execution, the messages belong to a different
+       * chat and must not be saved under the current chatId.
+       */
+      if (finalChatId !== capturedChatId && initialMessages.length > 0) {
+        return;
+      }
 
       if (!finalChatId) {
         console.error('Cannot save messages, chat ID is not set.');
