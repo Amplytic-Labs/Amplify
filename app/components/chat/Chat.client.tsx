@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react';
 import type { Message } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { useAnimate } from 'framer-motion';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
 import { toast } from 'react-toastify';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
@@ -1572,7 +1572,19 @@ export const ChatImpl = memo(
       setLlmErrorAlert(undefined);
     }, []);
 
-    useEffect(() => {
+    /*
+     * Auto-resize the textarea to fit its content. This MUST run as a
+     * layout effect (before paint) — not a regular effect — because the
+     * resize sets `height='auto'` (shrink) then measures `scrollHeight`
+     * then sets the final height. With useEffect the intermediate 'auto'
+     * state is painted for one frame, causing a visible shrink-then-grow
+     * flicker. That layout shift propagates through the flex container
+     * and triggers the StickToBottom scroll recalculation, making the
+     * chat messages jump on every keystroke. useLayoutEffect applies
+     * all three height changes synchronously before the browser paints,
+     * so only the final height is ever visible.
+     */
+    useLayoutEffect(() => {
       const textarea = textareaRef.current;
 
       if (textarea) {

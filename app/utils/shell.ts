@@ -222,19 +222,29 @@ export class AmplifyShell {
 
     const state = this.executionState.get();
 
-    if (state?.active && state.abort) {
-      state.abort();
-    }
-
     /*
-     * interrupt the current execution
-     *  this.#shellInputStream?.write('\x03');
+     * Only interrupt if there is actually a tracked, active command running.
+     * Previously, \x03 (Ctrl+C) was sent UNCONDITIONALLY on every call —
+     * even when no command was running, and worse, even when a long-running
+     * command like `npm install` was still executing. A second
+     * `executeCommand` call (e.g. from project-auto-run, the start action,
+     * or an AI tool call) would kill `npm install` mid-install, leaving the
+     * project in a broken state. Now we only send \x03 when `state.active`
+     * is true, meaning a previously tracked command is still running and
+     * genuinely needs to be interrupted before we can send the new one.
      */
-    this.terminal.input('\x03');
-    await this.waitTillOscCode('prompt');
+    if (state?.active) {
+      if (state.abort) {
+        state.abort();
+      }
 
-    if (state && state.executionPrms) {
-      await state.executionPrms;
+      // interrupt the current execution
+      this.terminal.input('\x03');
+      await this.waitTillOscCode('prompt');
+
+      if (state.executionPrms) {
+        await state.executionPrms;
+      }
     }
 
     //start a new execution

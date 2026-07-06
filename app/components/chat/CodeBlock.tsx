@@ -78,7 +78,21 @@ export const CodeBlock = memo(
             </button>
           )}
         </div>
-        <div dangerouslySetInnerHTML={{ __html: html ?? '' }}></div>
+        {html ? (
+          <div dangerouslySetInnerHTML={{ __html: html }} />
+        ) : (
+          /*
+           * Fallback while Shiki highlighting is loading (first render of
+           * each codeblock, and briefly after `code` changes during
+           * streaming). Showing the raw code in a <pre> gives the correct
+           * height from the very first paint, so the ResizeObserver on the
+           * message container doesn't fire a 0→full-height jump that would
+           * trigger scrollToBottom and visually fight the user.
+           */
+          <pre className="shiki fallback" style={{ backgroundColor: 'transparent' }}>
+            <code>{code}</code>
+          </pre>
+        )}
       </div>
     );
   },

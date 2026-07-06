@@ -311,8 +311,22 @@ export const Workbench = memo(
 
     const [isSyncing, setIsSyncing] = useState(false);
 
-    // Show veil only while streaming and no preview port is available yet
-    const showVeil = streaming && !hasPreview;
+    const hasFiles = useMemo(
+      () => Object.values(files).some((f) => f?.type === 'file'),
+      [files],
+    );
+
+    /*
+     * Show the "Initializing project…" veil ONLY during the initial workspace
+     * bootstrapping — i.e. while the AI is streaming AND no files have been
+     * written to the WebContainer yet. Once files exist the project is
+     * initialized and subsequent messages must NOT veil the workspace, even
+     * if the AI is streaming or no preview port is open. The previous logic
+     * (`streaming && !hasPreview`) re-veiled the workspace on every message
+     * for projects that don't expose a preview port, hiding the editor the
+     * user was trying to look at.
+     */
+    const showVeil = streaming && !hasFiles;
 
     // Check if ANY file in the workspace is renderable (for tab visibility).
     const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
@@ -457,13 +471,9 @@ export const Workbench = memo(
      * When the workspace is open but no files are loaded yet (e.g.
      * just opened an empty project chat or files are still being
      * restored from the database), show a loading placeholder
-     * instead of a blank editor.
+     * instead of a blank editor. (hasFiles is computed above, near
+     * showVeil, so it's available for the veil gate too.)
      */
-    const hasFiles = useMemo(
-      () => Object.values(files).some((f) => f?.type === 'file'),
-      [files],
-    );
-
     return (
       shouldRender && (
         <motion.div
