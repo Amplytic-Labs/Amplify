@@ -80,8 +80,7 @@ export class WorkbenchStore {
    * has already been run in this session. Prevents re-running `npm install`
    * + `npm run dev` on every chat switch inside the same project.
    */
-  projectAutoStarted: WritableAtom<boolean> =
-    import.meta.hot?.data.projectAutoStarted ?? atom<boolean>(false);
+  projectAutoStarted: WritableAtom<boolean> = import.meta.hot?.data.projectAutoStarted ?? atom<boolean>(false);
 
   modifiedFiles = new Set<string>();
   artifactIdList: string[] = [];
@@ -190,9 +189,7 @@ export class WorkbenchStore {
 
   setDocuments(files: FileMap) {
     const previousFiles = this.#filesStore.files.get();
-    const previousFileKeys = new Set(
-      Object.keys(previousFiles).filter((k) => previousFiles[k]?.type === 'file'),
-    );
+    const previousFileKeys = new Set(Object.keys(previousFiles).filter((k) => previousFiles[k]?.type === 'file'));
     const newFileKeys = new Set(Object.keys(files).filter((k) => files[k]?.type === 'file'));
 
     /*
@@ -256,6 +253,25 @@ export class WorkbenchStore {
     // Clear editor state so a new file is auto-selected when files arrive
     this.setSelectedFile(undefined);
     this.#editorStore.setDocuments({});
+
+    /*
+     * CRITICAL (Bug 2 root cause): clear the files atom.
+     *
+     * Without this, stale files from the previous project chat remain in
+     * the `files` store and:
+     *   1. are sent to `/api/chat` in the request body, so the server
+     *      believes an existing project is loaded (workspaceHasProject()
+     *      returns true) and withholds inject_template + injects the
+     *      workspace_guardrails prompt;
+     *   2. are persisted as the NEW chat's snapshot via takeSnapshot(),
+     *      which permanently "copies" the old chat's workspace into the
+     *      new chat — exactly the "new chat becomes the old chat" bug.
+     *
+     * Also reset per-file modification tracking in the FilesStore so edit
+     * state from the previous chat doesn't leak.
+     */
+    this.#filesStore.files.set({});
+    this.#filesStore.resetFileModifications();
   }
 
   /**
@@ -276,7 +292,22 @@ export class WorkbenchStore {
 
     // Reset selected file so the new chat auto-selects a file
     this.setSelectedFile(undefined);
-    this.#editorStore.setDocuments({});
+
+    /*
+     * Re-sync editor documents from the CURRENT file map instead of
+     * clearing to {}. In the same-project "new chat" fast path the files
+     * atom is intentionally preserved (so the workspace stays open), but
+     * the Workbench's `useEffect[files]` only re-fires when the `files`
+     * reference changes. Clearing documents to {} here would leave the
+     * editor pane blank because the effect wouldn't re-populate it.
+     *
+     * By re-setting documents from the live file map we guarantee the
+     * editor reflects the current workspace even when the files reference
+     * is unchanged. setDocuments() also auto-selects the first file when
+     * no file is currently selected (which we just cleared above).
+     */
+    const currentFiles = this.#filesStore.files.get();
+    this.#editorStore.setDocuments({ ...currentFiles });
   }
 
   setShowWorkbench(show: boolean) {

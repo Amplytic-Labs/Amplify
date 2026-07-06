@@ -110,6 +110,7 @@ export const ChatImpl = memo(
     const showWorkbench = useStore(workbenchStore.showWorkbench);
     const files = useStore(workbenchStore.files);
     const loadedProjectId = useStore(workbenchStore.loadedProjectId);
+
     /*
      * chatStarted must be true when either:
      *   1. There are initialMessages (restoring an existing chat), OR
@@ -129,9 +130,7 @@ export const ChatImpl = memo(
      * the internal flag OR showWorkbench is true, so the Workbench
      * never sees a stale false during the effect-to-render cycle.
      */
-    const [chatStartedInternal, setChatStartedInternal] = useState(
-      initialMessages.length > 0 || showWorkbench,
-    );
+    const [chatStartedInternal, setChatStartedInternal] = useState(initialMessages.length > 0 || showWorkbench);
     const chatStarted = chatStartedInternal || showWorkbench || initialMessages.length > 0;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
@@ -657,6 +656,24 @@ export const ChatImpl = memo(
     const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string }>>([]);
 
     /*
+     * Workspace file-stabilization tracking (Bug 3 robustness).
+     *
+     * When inject_template streams an <amplifyArtifact>, files are written
+     * to the WebContainer asynchronously by the message parser. The tool
+     * result is returned to the AI BEFORE all files are committed, so the
+     * AI may immediately try to read/modify files that don't exist yet.
+     *
+     * `workspaceFileCountRef` records the last-seen file count; the
+     * readiness effect only opens the gate once the count has STABILIZED
+     * (unchanged for WORKSPACE_STABILIZE_MS). This prevents the gate from
+     * opening the moment the first file appears while the rest are still
+     * streaming in.
+     */
+    const WORKSPACE_STABILIZE_MS = 600;
+    const workspaceFileCountRef = useRef(0);
+    const workspaceStabilizeTimerRef = useRef(0);
+
+    /*
      * Reset tool call tracking refs on mount. When switching chats,
      * ChatImpl remounts (due to chatKey change), but refs may retain
      * stale IDs from the previous chat if React reuses the fiber.
@@ -667,13 +684,16 @@ export const ChatImpl = memo(
       autoApprovedToolCallIdsRef.current = new Set();
       pendingAutoApprovalsRef.current = [];
       workspaceReadyRef.current = true;
+      workspaceFileCountRef.current = 0;
+      workspaceStabilizeTimerRef.current = 0;
     }, []);
 
     useEffect(() => {
       /*
        * Mark workspace as NOT ready when a project is being loaded or
        * an inject_template is being processed (files map is empty but
-       * showWorkbench just turned on). Mark as ready once files are present.
+       * showWorkbench just turned on). Mark as ready once files are present
+       * AND have stabilized (no new files appearing for a brief window).
        *
        * Previously this required loadedProjectId !== '<none>', which missed
        * the inject_template case where files are being created by the
@@ -684,38 +704,90 @@ export const ChatImpl = memo(
        * We also check for inject_template tool calls in the messages — when
        * the AI calls inject_template, the workspace will soon have files but
        * they may not be loaded yet. We mark the workspace as not ready until
-       * the files actually appear.
+       * the files actually appear AND stop growing.
        */
       const currentFiles = workbenchStore.files.get();
-      const hasFiles = Object.keys(currentFiles).some((k) => currentFiles[k]?.type === 'file');
+      const fileCount = Object.keys(currentFiles).filter((k) => currentFiles[k]?.type === 'file').length;
+      const hasFiles = fileCount > 0;
 
       /*
        * Detect inject_template in progress: scan messages for an inject_template
-       * tool call that hasn't yet resulted in files being loaded.
+       * tool call that is in the call/partial/result lifecycle. We include the
+       * `result` state because the tool result is returned to the AI BEFORE the
+       * streamed <amplifyArtifact> XML has finished parsing and writing files
+       * to the WebContainer — so files may still be arriving after `result`.
        */
       let injectTemplateInProgress = false;
+
       for (const msg of messages) {
-        if (msg.role !== 'assistant') continue;
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
         const parts = (msg as any).parts as any[] | undefined;
-        if (!Array.isArray(parts)) continue;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
         for (const p of parts) {
           if (
             p?.type === 'tool-invocation' &&
             p?.toolInvocation?.toolName === 'inject_template' &&
-            (p.toolInvocation.state === 'call' || p.toolInvocation.state === 'partial')
+            (p.toolInvocation.state === 'call' ||
+              p.toolInvocation.state === 'partial' ||
+              p.toolInvocation.state === 'result')
           ) {
             injectTemplateInProgress = true;
             break;
           }
         }
-        if (injectTemplateInProgress) break;
+
+        if (injectTemplateInProgress) {
+          break;
+        }
       }
 
       if ((showWorkbench && !hasFiles) || injectTemplateInProgress) {
         workspaceReadyRef.current = false;
+
+        /*
+         * Track the current file count so we can detect when files stop
+         * growing (stabilization) before declaring the workspace ready.
+         * This prevents the gate from opening the moment the FIRST file
+         * appears while the rest of the template is still streaming in.
+         */
+        workspaceFileCountRef.current = fileCount;
       } else if (hasFiles && !injectTemplateInProgress) {
+        /*
+         * Files exist and no inject_template is in progress. Before opening
+         * the gate, require the file count to STABILIZE — i.e. remain the
+         * same across two consecutive renders within a short time window.
+         * This handles the race where files are still being written by the
+         * message parser after the inject_template tool result arrived.
+         */
+        if (fileCount !== workspaceFileCountRef.current) {
+          // Files are still growing — keep gate closed, record new count.
+          workspaceFileCountRef.current = fileCount;
+          workspaceStabilizeTimerRef.current = Date.now();
+
+          return;
+        }
+
+        const elapsed = Date.now() - (workspaceStabilizeTimerRef.current || 0);
+
+        if (elapsed < WORKSPACE_STABILIZE_MS) {
+          /*
+           * Not yet stable — keep gate closed; this effect will re-run on
+           * the next files change or can be re-checked via the timer below.
+           */
+          return;
+        }
+
         if (!workspaceReadyRef.current) {
           workspaceReadyRef.current = true;
+          workspaceFileCountRef.current = 0;
+          workspaceStabilizeTimerRef.current = 0;
 
           /*
            * Flush any pending auto-approvals that were queued while
@@ -736,6 +808,102 @@ export const ChatImpl = memo(
         }
       }
     }, [files, showWorkbench, loadedProjectId, addToolResult, messages]);
+
+    /*
+     * Stabilization timer: the files effect above only re-runs when `files`
+     * changes. If files stop changing (stabilized) we still need to flip the
+     * gate open after the stabilization window elapses. This standalone timer
+     * polls the readiness condition while the workspace is in a "loading"
+     * state, ensuring the gate eventually opens even without further file
+     * changes.
+     */
+    useEffect(() => {
+      if (workspaceReadyRef.current) {
+        return undefined;
+      }
+
+      const interval = setInterval(() => {
+        const currentFiles = workbenchStore.files.get();
+        const fileCount = Object.keys(currentFiles).filter((k) => currentFiles[k]?.type === 'file').length;
+
+        if (fileCount === 0) {
+          return; // still no files
+        }
+
+        if (fileCount !== workspaceFileCountRef.current) {
+          workspaceFileCountRef.current = fileCount;
+          workspaceStabilizeTimerRef.current = Date.now();
+
+          return;
+        }
+
+        const elapsed = Date.now() - (workspaceStabilizeTimerRef.current || 0);
+
+        if (elapsed >= WORKSPACE_STABILIZE_MS && !workspaceReadyRef.current) {
+          // Re-verify no inject_template is still in progress.
+          let injectInProgress = false;
+
+          for (const msg of messages) {
+            if (msg.role !== 'assistant') {
+              continue;
+            }
+
+            const parts = (msg as any).parts as any[] | undefined;
+
+            if (!Array.isArray(parts)) {
+              continue;
+            }
+
+            for (const p of parts) {
+              if (
+                p?.type === 'tool-invocation' &&
+                p?.toolInvocation?.toolName === 'inject_template' &&
+                (p.toolInvocation.state === 'call' ||
+                  p.toolInvocation.state === 'partial' ||
+                  p.toolInvocation.state === 'result')
+              ) {
+                /*
+                 * Only block if the result hasn't arrived yet. Once state
+                 * is 'result' the file-writing is finishing up; combined
+                 * with stabilization this is safe. Keep simple: if any
+                 * inject_template call/partial (not yet result) exists,
+                 * wait.
+                 */
+                if (p.toolInvocation.state !== 'result') {
+                  injectInProgress = true;
+                  break;
+                }
+              }
+            }
+
+            if (injectInProgress) {
+              break;
+            }
+          }
+
+          if (!injectInProgress) {
+            workspaceReadyRef.current = true;
+            workspaceFileCountRef.current = 0;
+            workspaceStabilizeTimerRef.current = 0;
+
+            if (pendingAutoApprovalsRef.current.length > 0) {
+              const pending = [...pendingAutoApprovalsRef.current];
+              pendingAutoApprovalsRef.current = [];
+
+              for (const { toolCallId } of pending) {
+                logger.debug(`[auto-approve] flushing delayed ${toolCallId} (stabilize timer)`);
+                addToolResult({
+                  toolCallId,
+                  result: TOOL_EXECUTION_APPROVAL.APPROVE,
+                });
+              }
+            }
+          }
+        }
+      }, 250);
+
+      return () => clearInterval(interval);
+    }, [messages, addToolResult]);
 
     useEffect(() => {
       for (const msg of messages) {

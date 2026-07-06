@@ -598,6 +598,26 @@ export async function streamText(props: {
                   return {
                     summary: result.summary,
                     userMessage: result.userMessage,
+
+                    /*
+                     * IMPORTANT: the template's <amplifyArtifact> XML is
+                     * streamed above and parsed/written to the WebContainer
+                     * by the client message parser ASYNCHRONOUSLY. This tool
+                     * result is returned to the model BEFORE all files are
+                     * committed to the workspace.
+                     *
+                     * The client-side readiness gate delays auto-approval of
+                     * read-only tools and the application of file mutations
+                     * until the file count has stabilized, so by the time a
+                     * subsequent read_file / list_dir / mutate call is
+                     * permitted to execute, the files will exist.
+                     *
+                     * Do NOT immediately attempt to read or modify files
+                     * that were just injected — they may not be written yet.
+                     * If you must verify, prefer list_dir first.
+                     */
+                    warning:
+                      'Template files are being written to the workspace asynchronously. Wait for the workspace to finish loading before reading or modifying files, otherwise operations may fail on non-existent files.',
                   };
                 } catch (e: any) {
                   return { error: e.message };
