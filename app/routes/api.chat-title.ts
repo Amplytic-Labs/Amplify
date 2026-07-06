@@ -44,8 +44,16 @@ async function chatTitleAction({ context, request }: ActionFunctionArgs) {
 
   try {
     const llmManager = LLMManager.getInstance();
-    const providerName = provider?.name || 'Z.ai';
-    const modelName = model || 'glm-4.7-flash';
+
+    /*
+     * Fall back to the app's configured default provider + model (from
+     * LLMManager) rather than hardcoding Z.ai / glm-4.7-flash. The
+     * client (useChatHistory.generateChatTitle) normally sends the
+     * user's selected model + provider, so these fallbacks only fire
+     * if the client omits them.
+     */
+    const providerName = provider?.name || llmManager.getDefaultProvider().name;
+    const modelName = model || 'claude-3-5-sonnet-latest';
 
     const providerInstance = llmManager.getProvider(providerName);
 

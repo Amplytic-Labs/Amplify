@@ -26,6 +26,7 @@ import type { ContextAnnotation } from '~/types/context';
 import { projectStore } from './project-store';
 import { getProjectFiles, createProjectCommit } from './project-files';
 import { runProjectAutoSetup } from './project-auto-run';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';
 
 export interface ChatHistoryItem {
   id: string;
@@ -68,35 +69,56 @@ const _titleGenerationStarted = new Set<string>();
  * the route is unavailable or returns an error.
  *
  * Uses the currently-selected model + provider from cookies so the
- * title is generated with the same provider the user is chatting with.
+ * title is generated with the SAME provider the user is chatting with
+ * (and has provided an API key for).
+ *
+ * Cookie format (set by Chat.client.tsx handleModelChange / handleProviderChange):
+ *   selectedModel    = plain string, e.g. "gpt-4o"
+ *   selectedProvider = plain string, e.g. "OpenAI"
  */
 async function generateChatTitle(_chatId: string, firstMessage: string): Promise<string | null> {
   try {
     /*
-     * Read the current model + provider from the API keys cookie
-     * (set by the ChatBox model selector).
+     * Read the current model + provider from cookies. Both are stored
+     * as plain strings (not JSON) by the Chat model selector.
      */
-    let model = 'glm-4.7-flash';
-    let provider = { name: 'Z.ai' } as any;
+    let model = DEFAULT_MODEL;
+    let provider = { name: DEFAULT_PROVIDER.name } as any;
 
     try {
-      const cookieMatch = document.cookie.split('; ').find((c) => c.startsWith('selectedModel='));
+      const getCookie = (name: string): string | null => {
+        const match = document.cookie
+          .split('; ')
+          .find((c) => c.startsWith(`${name}=`));
 
-      if (cookieMatch) {
-        const decoded = decodeURIComponent(cookieMatch.split('=')[1]);
+        if (!match) {
+          return null;
+        }
 
         try {
-          const parsed = JSON.parse(decoded);
-
-          if (parsed.model) {
-            model = parsed.model;
-          }
-
-          if (parsed.provider) {
-            provider = parsed.provider;
-          }
+          return decodeURIComponent(match.split('=').slice(1).join('='));
         } catch {
-          // Not JSON — ignore
+          return match.split('=').slice(1).join('=');
+        }
+      };
+
+      const modelCookie = getCookie('selectedModel');
+
+      if (modelCookie) {
+        model = modelCookie;
+      }
+
+      const providerCookie = getCookie('selectedProvider');
+
+      if (providerCookie) {
+        // Look up the full ProviderInfo from PROVIDER_LIST so the
+        // server gets the correct provider name + settings.
+        const found = PROVIDER_LIST.find((p) => p.name === providerCookie);
+
+        if (found) {
+          provider = found;
+        } else {
+          provider = { name: providerCookie } as any;
         }
       }
     } catch {
