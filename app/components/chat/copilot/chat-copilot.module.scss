@@ -911,9 +911,9 @@
   user-select: none;
   -webkit-user-select: none;
 
-  /* The colorized file-type / folder icon. For Phosphor-based icons (folder,
-   * generic file) this uses a CSS mask. For brand file-type icons (React, JS,
-   * TS, …) the parent uses an inline SVG background-image (see .filePillIconSvg). */
+  /* File-type / folder icon. Uses the SAME vscode-icons (or Phosphor for
+   * folders) UnoCSS classes as the workspace file tree, so the inline-chat
+   * pills match the workbench exactly. */
   .filePillIcon {
     display: inline-flex;
     align-items: center;
@@ -922,18 +922,6 @@
     height: 15px;
     font-size: 15px;
     flex-shrink: 0;
-  }
-
-  /* Inline-SVG brand icon (React atom, JS yellow, TS blue, …). Rendered as a
-   * background-image so the multi-colour SVG shows with no CSS masking. */
-  .filePillIconSvg {
-    display: inline-block;
-    width: 15px;
-    height: 15px;
-    flex-shrink: 0;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
   }
 
   .filePillName {
@@ -983,7 +971,7 @@
   }
 }
 
-/* File pill — no extra tint (the inline SVG icon already carries brand colour). */
+/* File pill — no extra tint (the vscode-icon class carries brand colour). */
 .filePillFile {
-  /* intentionally empty — icon colour comes from the inline SVG */
+  /* intentionally empty — icon colour comes from the vscode-icon class */
 }

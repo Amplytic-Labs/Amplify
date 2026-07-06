@@ -4,7 +4,7 @@ import { classNames } from '~/utils/classNames';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
 import { detectPill, type PillMeta } from '~/lib/chat/file-pill';
-import { getFileIconStyle } from './file-icons';
+import { getFileTypeIconClass } from '~/components/workbench/file-icon-map';
 import styles from './chat-copilot.module.scss';
 
 interface FilePillProps {
@@ -16,7 +16,7 @@ interface FilePillProps {
  * Inline-code file/folder pill — replaces plain `<code>` when the AI mentions
  * a file path or folder path inside backticks.
  *
- *   `app/_layout.jsx`  →  [⚛ _layout.jsx]        (React logo, cyan)
+ *   `app/_layout.jsx`  →  [⚛ _layout.jsx]        (file-type icon, matches workbench)
  *   `components/ui/`   →  [📁 ui]                (folder icon, amber)
  *
  * The pill is CLICKABLE when the path exists in the live workspace — clicking
@@ -28,9 +28,11 @@ interface FilePillProps {
  * Falls back to a plain `<code>` element if `detectPill` returns null (the
  * inline code isn't a file/folder path — e.g. `useState`, `npm install`).
  *
- * File-type icons are rendered as INLINE SVG data-URIs (see file-icons.ts)
- * so brand colours (React cyan, JS yellow, TS blue, …) show without relying
- * on UnoCSS icon auto-resolution.
+ * File-type icons use the SAME mapping as the workspace file tree
+ * (getFileTypeIconClass from workbench/file-icon-map.ts) — vscode-icons
+ * classes resolved by full filename (special files like package.json) then
+ * by extension, falling back to a generic file icon. This keeps the inline
+ * chat visually identical to the workbench.
  */
 export const FilePill = memo(({ raw }: FilePillProps) => {
   const meta = useMemo(() => detectPill(raw), [raw]);
@@ -79,11 +81,13 @@ export const FilePill = memo(({ raw }: FilePillProps) => {
   };
 
   /*
-   * File-type icon: inline SVG data-URI for brand-coloured icons, or a
-   * Phosphor class for the generic fallback.
+   * File-type icon: uses the SAME vscode-icons mapping as the workspace
+   * file tree (getFileTypeIconClass), so inline-chat pills match the
+   * workbench exactly. Resolves special files (package.json, Dockerfile,
+   * …) by full filename, then by extension, then falls back to a generic
+   * file icon. Folders use a Phosphor folder icon.
    */
-  const iconStyle = meta.type === 'file' ? getFileIconStyle(meta.ext) : null;
-  const iconClass = meta.type === 'folder' ? 'i-ph:folder-simple' : iconStyle ? null : 'i-ph:file';
+  const iconClass = meta.type === 'folder' ? 'i-ph:folder-simple' : getFileTypeIconClass(meta.name);
 
   return (
     <button
@@ -98,11 +102,7 @@ export const FilePill = memo(({ raw }: FilePillProps) => {
       title={exists ? meta.path : `${meta.path} (not in workspace)`}
       data-pill-type={meta.type}
     >
-      {iconStyle ? (
-        <span className={styles.filePillIconSvg} style={iconStyle} aria-hidden />
-      ) : (
-        <span className={classNames(styles.filePillIcon, iconClass)} aria-hidden />
-      )}
+      <span className={classNames(styles.filePillIcon, iconClass)} aria-hidden />
       <span className={styles.filePillName}>{meta.name}</span>
     </button>
   );
