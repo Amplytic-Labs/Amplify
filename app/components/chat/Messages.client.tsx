@@ -17,6 +17,8 @@ interface MessagesProps {
   isStreaming?: boolean;
   messages?: Message[];
   append?: (message: Message) => void;
+  /** Regenerate handler — only the last assistant message receives this. */
+  onRegenerate?: () => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
@@ -95,6 +97,11 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
                         onRewind={handleRewind}
                         onFork={handleFork}
                         append={props.append}
+                        onRegenerate={
+                          !isUserMessage && index === messages.length - 1
+                            ? props.onRegenerate
+                            : undefined
+                        }
                         chatMode={props.chatMode}
                         setChatMode={props.setChatMode}
                         model={props.model}

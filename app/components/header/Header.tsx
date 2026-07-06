@@ -8,7 +8,6 @@ import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { sidebarStore } from '~/lib/stores/sidebar';
 import { classNames } from '~/utils/classNames';
 import { HeaderActionButtonsContent } from './HeaderActionButtons.client';
-import { UserDropdown } from './UserDropdown.client';
 import { ChatDescription } from '~/lib/persistence/ChatDescription.client';
 import { MotionDropdown } from '~/components/ui/MotionDropdown';
 import { DeployButton } from '~/components/deploy/DeployButton';

@@ -28,6 +28,8 @@ interface AssistantMessageProps {
   onRewind?: (messageId: string) => void;
   onFork?: (messageId: string) => void;
   append?: (message: Message) => void;
+  /** Regenerate (retry) this assistant answer. Passed through to AnswerActions. */
+  onRegenerate?: () => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
@@ -95,6 +97,7 @@ export const AssistantMessage = memo(
     onRewind,
     onFork,
     append,
+    onRegenerate,
     chatMode,
     setChatMode,
     model,
@@ -310,7 +313,7 @@ export const AssistantMessage = memo(
          * Copilot-style hover action bar: 👍 👎 | 📋 ↻ 🔊 + token-usage pill.
          * Hidden while streaming; fades in on group-hover.
          */}
-        <AnswerActions content={content} usage={usage} isStreaming={isStreaming} />
+        <AnswerActions content={content} usage={usage} isStreaming={isStreaming} onRegenerate={onRegenerate} />
       </div>
     );
   },

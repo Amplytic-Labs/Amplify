@@ -16,12 +16,14 @@ import {
   Folder,
   ArrowLeft,
   MessageSquarePlus,
+  Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useParams, useNavigate, Link } from '@remix-run/react';
 import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';
+import { ControlPanel } from '~/components/@settings/core/ControlPanel';
 import { Dialog, DialogButton, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import {
   db,
@@ -73,6 +75,13 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+
+  // Settings / ControlPanel visibility. Previously the ONLY entry point to the
+  // full Settings UI (providers, API keys, cloud connections, data export,
+  // MCP, memory, etc.) lived inside the old Menu overlay, which is unreachable
+  // in the new ProjectSidebar-based layout. Surfacing it here restores access
+  // to the entire Settings surface.
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const theme = useStore(themeStore);
 
@@ -707,7 +716,20 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   </svg>
                   <span>Blank Chat</span>
                 </Link>
-                <button className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewChatDropdownOpen(false);
+                    // Navigate to the /git route which renders the GitUrlImport
+                    // flow (clone a repo by URL into a new chat). Previously
+                    // this button had no onClick and did nothing. A full-page
+                    // navigation is used here because the dropdown's
+                    // AnimatePresence exit can race with Remix's client-side
+                    // navigate() and swallow it.
+                    window.location.assign('/git');
+                  }}
+                  className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="1.5em"
@@ -954,6 +976,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
             defaultTheme={theme}
             onChange={(newTheme: string) => setTheme(newTheme as 'light' | 'dark')}
           />
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            aria-label="Open settings"
+            title="Settings"
+            className="flex items-center justify-center w-[40px] h-[40px] rounded-lg text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors cursor-pointer"
+          >
+            <Settings size={18} className="shrink-0" />
+          </button>
         </div>
       </div>
 
@@ -1001,6 +1032,14 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       </DialogRoot>
 
       <TemplatesModal isOpen={isTemplatesModalOpen} onClose={() => setIsTemplatesModalOpen(false)} />
+
+      {/*
+        Full Settings / ControlPanel. The only entry point used to live inside
+        the old Menu overlay (now unreachable in the new layout). Triggered by
+        the footer Settings button above so every user can reach providers, API
+        keys, cloud connections, data export/import, MCP, memory, etc.
+      */}
+      <ControlPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* Project rename / delete dialogs */}
       <ProjectManagementDialogs

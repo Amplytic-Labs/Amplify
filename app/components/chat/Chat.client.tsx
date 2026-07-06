@@ -1947,6 +1947,7 @@ export const ChatImpl = memo(
           chatMode={chatMode}
           setChatMode={setChatMode}
           append={append}
+          reload={reload}
           designScheme={designScheme}
           setDesignScheme={setDesignScheme}
           selectedElement={selectedElement}

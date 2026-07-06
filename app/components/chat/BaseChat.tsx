@@ -83,6 +83,8 @@ interface BaseChatProps {
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   append?: (message: Message) => void;
+  /** Regenerate the last assistant answer (AI SDK reload). */
+  reload?: () => void;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;
   selectedElement?: ElementInfo | null;
@@ -138,6 +140,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       chatMode,
       setChatMode,
       append,
+      reload,
       designScheme,
       setDesignScheme,
       selectedElement,
@@ -300,20 +303,27 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const handleFileUpload = () => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*';
+      // Accept images AND common code/text/config files so the button matches
+      // its "Attach images or files" label. Non-image files are still attached
+      // to the chat (uploadedFiles); only images populate the preview list.
+      input.accept = 'image/*,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.xml,.yml,.yaml,.csv,.py,.go,.rs,.java,.c,.cpp,.sh,.env';
 
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
 
         if (file) {
-          const reader = new FileReader();
+          const isImage = file.type.startsWith('image/');
+          setUploadedFiles?.([...uploadedFiles, file]);
 
-          reader.onload = (e) => {
-            const base64Image = e.target?.result as string;
-            setUploadedFiles?.([...uploadedFiles, file]);
-            setImageDataList?.([...imageDataList, base64Image]);
-          };
-          reader.readAsDataURL(file);
+          if (isImage) {
+            const reader = new FileReader();
+
+            reader.onload = (ev) => {
+              const base64Image = ev.target?.result as string;
+              setImageDataList?.([...imageDataList, base64Image]);
+            };
+            reader.readAsDataURL(file);
+          }
         }
       };
 
@@ -392,6 +402,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           messages={messages}
                           isStreaming={isStreaming}
                           append={append}
+                          onRegenerate={reload}
                           chatMode={chatMode}
                           setChatMode={setChatMode}
                           provider={provider}
@@ -567,6 +578,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                                 messages={messages}
                                 isStreaming={isStreaming}
                                 append={append}
+                                onRegenerate={reload}
                                 chatMode={chatMode}
                                 setChatMode={setChatMode}
                                 provider={provider}

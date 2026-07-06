@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
 import { Search, X } from 'lucide-react';
+import { useNavigate } from '@remix-run/react';
 import { STARTER_TEMPLATES } from '~/utils/constants';
 
 export function TemplatesModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const navigate = useNavigate();
+
   if (!isOpen) return null;
+
+  // "Create Blank" starts a fresh empty chat (no starter template cloned).
+  // Previously this button had no onClick and did nothing.
+  const handleCreateBlank = () => {
+    onClose();
+    navigate('/');
+  };
 
   const filteredItems = STARTER_TEMPLATES.filter(item => 
     item.label.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -77,7 +86,9 @@ export function TemplatesModal({ isOpen, onClose }: { isOpen: boolean; onClose: 
         
         {/* Footer actions */}
         <div className="p-4 border-t border-sidebar-border bg-sidebar-accent/10 flex justify-end">
-          <button 
+          <button
+            type="button"
+            onClick={handleCreateBlank}
             className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors shadow-md"
           >
             Create Blank
