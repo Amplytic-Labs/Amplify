@@ -22,6 +22,7 @@ import type { ElementInfo } from '~/components/workbench/Inspector';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
+import { SummarizationToast } from './SummarizationToast';
 
 // Custom theme style injector to guarantee custom variables are active
 const InjectThemeStyles = () => {
@@ -549,6 +550,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
             <div className="flex items-center gap-2">
               <ContextBudgetIndicator maxTokenAllowed={activeModel?.maxTokenAllowed} messages={props.messages} />
+              <SummarizationToast messages={props.messages} />
               <AnimatePresence>
                 {props.input.length > 0 && (
                   <motion.span

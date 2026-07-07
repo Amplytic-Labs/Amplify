@@ -162,7 +162,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             label: 'summary',
             status: 'in-progress',
             order: progressCounter++,
-            message: 'Analysing Request',
+            message: 'Condensing conversation to fit context window…',
           } satisfies ProgressAnnotation);
 
           // Create a summary of the chat
@@ -189,7 +189,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             label: 'summary',
             status: 'complete',
             order: progressCounter++,
-            message: 'Analysis Complete',
+            message: 'Conversation condensed',
           } satisfies ProgressAnnotation);
 
           dataStream.writeMessageAnnotation({
@@ -205,7 +205,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             label: 'context',
             status: 'in-progress',
             order: progressCounter++,
-            message: 'Determining Files to Read',
+            message: 'Selecting relevant workspace files…',
           } satisfies ProgressAnnotation);
 
           // Select context files
