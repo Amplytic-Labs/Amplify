@@ -513,9 +513,12 @@ export class ProjectStore {
   }
 
   /**
-   * Deletes a project and unlinks all associated chats. Also schedules
-   * cleanup of the project's global files + commits in IndexedDB (best-effort,
-   * async — the store itself is localStorage and synchronous).
+   * Deletes a project AND all of its associated chats (messages). Also
+   * cleans up the project's global files + commits in IndexedDB.
+   *
+   * The chats belonging to this project are deleted from IndexedDB — they
+   * do NOT become personal chats (the user deleted the project, so the
+   * chats should go with it).
    */
   deleteProject(projectId: string): void {
     const project = this.getProject(projectId);
@@ -524,10 +527,14 @@ export class ProjectStore {
       return;
     }
 
-    // Unlink all chats
-    for (const chatId of project.chatIds) {
+    // Snapshot the chat IDs before removing the project — we need them
+    // for the async IndexedDB deletion below.
+    const chatIdsToDelete = [...project.chatIds];
+
+    // Remove the chat → project mappings + categories.
+    for (const chatId of chatIdsToDelete) {
       delete this._data.chatToProject[chatId];
-      this._data.chatCategories[chatId] = 'chat';
+      delete this._data.chatCategories[chatId];
     }
 
     // Remove the project
@@ -535,17 +542,25 @@ export class ProjectStore {
     saveProjectData(this._data);
     this._notify(projectId);
 
-    // Best-effort cleanup of project files + commits in IndexedDB.
+    /*
+     * Best-effort cleanup of project files + commits + chat messages in
+     * IndexedDB. The store itself is localStorage (synchronous), but the
+     * IndexedDB cleanup is async and best-effort.
+     */
     if (typeof window !== 'undefined') {
       import('~/lib/persistence')
-        .then(({ db }) => {
+        .then(async ({ db, deleteById }) => {
           if (!db) {
-            return undefined;
+            return;
           }
 
-          return import('~/lib/persistence/project-files').then(({ deleteProjectFiles }) =>
-            deleteProjectFiles(db, projectId),
-          );
+          // Delete all of the project's chats from IndexedDB.
+          await Promise.all(chatIdsToDelete.map((chatId) => deleteById(db, chatId).catch(() => undefined)));
+
+          // Delete the project's global files + commits.
+          const { deleteProjectFiles } = await import('~/lib/persistence/project-files');
+
+          await deleteProjectFiles(db, projectId);
         })
         .catch(() => undefined);
     }

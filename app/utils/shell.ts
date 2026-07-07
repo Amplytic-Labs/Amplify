@@ -220,31 +220,125 @@ export class AmplifyShell {
       return undefined;
     }
 
+    /*
+     * Split &&-chained commands and execute them ONE AT A TIME.
+     *
+     * Why: the shell integration emits an OSC 'exit' sequence after each
+     * sub-command in a && chain. Our waitTillOscCode('exit') breaks on
+     * the FIRST exit it sees, so sending the whole chain as one line
+     * would make executeCommand return after just the first sub-command
+     * — the next executeCommand call would then inject its command while
+     * the rest of the chain is still running (e.g. npm install gets
+     * killed mid-way by the start command being injected).
+     *
+     * By splitting on && and running each sub-command individually, each
+     * gets its own executeSingleCommand call with its own exit-OSC wait,
+     * so commands run truly sequentially. If any sub-command fails
+     * (non-zero exit), we stop the chain (same semantics as &&).
+     */
+    const subCommands = this.#splitCommandChain(command);
+
+    if (subCommands.length <= 1) {
+      return this.#executeSingleCommand(sessionId, command, abort);
+    }
+
+    let lastResp: ExecutionResult | undefined;
+
+    for (const subCmd of subCommands) {
+      lastResp = await this.#executeSingleCommand(sessionId, subCmd, abort);
+
+      // && semantics: stop if the previous command failed.
+      if (lastResp && lastResp.exitCode !== 0) {
+        break;
+      }
+    }
+
+    return lastResp;
+  }
+
+  /**
+   * Splits a command string on top-level && separators (not inside quotes).
+   * Returns the trimmed, non-empty sub-commands.
+   */
+  #splitCommandChain(command: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inSingle = false;
+    let inDouble = false;
+    let escaped = false;
+
+    for (let i = 0; i < command.length; i++) {
+      const ch = command[i];
+
+      if (escaped) {
+        current += ch;
+        escaped = false;
+        continue;
+      }
+
+      if (ch === '\\') {
+        current += ch;
+        escaped = true;
+        continue;
+      }
+
+      if (ch === "'" && !inDouble) {
+        inSingle = !inSingle;
+        current += ch;
+        continue;
+      }
+
+      if (ch === '"' && !inSingle) {
+        inDouble = !inDouble;
+        current += ch;
+        continue;
+      }
+
+      // Check for && (only when not inside quotes)
+      if (ch === '&' && !inSingle && !inDouble && command[i + 1] === '&') {
+        parts.push(current.trim());
+        current = '';
+        i++; // skip the second &
+        continue;
+      }
+
+      current += ch;
+    }
+
+    if (current.trim()) {
+      parts.push(current.trim());
+    }
+
+    return parts.filter(Boolean);
+  }
+
+  /**
+   * Executes a SINGLE command (no && chain) in the terminal and waits for
+   * it to complete. This is the original executeCommand logic.
+   */
+  async #executeSingleCommand(sessionId: string, command: string, abort?: () => void): Promise<ExecutionResult> {
+    if (!this.process || !this.terminal) {
+      return undefined;
+    }
+
     const state = this.executionState.get();
 
+    if (state?.active && state.abort) {
+      state.abort();
+    }
+
     /*
-     * Only interrupt if there is actually a tracked, active command running.
-     * Previously, \x03 (Ctrl+C) was sent UNCONDITIONALLY on every call —
-     * even when no command was running, and worse, even when a long-running
-     * command like `npm install` was still executing. A second
-     * `executeCommand` call (e.g. from project-auto-run, the start action,
-     * or an AI tool call) would kill `npm install` mid-install, leaving the
-     * project in a broken state. Now we only send \x03 when `state.active`
-     * is true, meaning a previously tracked command is still running and
-     * genuinely needs to be interrupted before we can send the new one.
+     * Only send Ctrl+C (\x03) when a tracked command is genuinely running.
+     * Sending it unconditionally when the shell is idle can interfere with
+     * the prompt and cause the next command to be swallowed.
      */
     if (state?.active) {
-      if (state.abort) {
-        state.abort();
-      }
-
-      // interrupt the current execution
       this.terminal.input('\x03');
       await this.waitTillOscCode('prompt');
+    }
 
-      if (state.executionPrms) {
-        await state.executionPrms;
-      }
+    if (state && state.executionPrms) {
+      await state.executionPrms;
     }
 
     //start a new execution

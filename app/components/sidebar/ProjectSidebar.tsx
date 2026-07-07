@@ -353,6 +353,24 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
         return;
       }
 
+      /*
+       * Empty-chat guard — same pattern as handleNewChat below. If the
+       * current chat hasn't started yet AND it belongs to this project,
+       * don't create a duplicate empty chat.
+       */
+      if (!chatStore.get().started) {
+        const currentChat = chatId.get();
+
+        if (currentChat) {
+          const currentProject = projectStore.getProjectByChat(currentChat);
+
+          if (currentProject?.id === project.id) {
+            // Already on an empty chat in this project — no-op.
+            return;
+          }
+        }
+      }
+
       try {
         const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
           projectId: project.id,
@@ -482,18 +500,21 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   };
 
   /*
-   * Delete a project (and unlink its chats). The chats themselves are preserved
-   * and become personal chats again.
+   * Delete a project AND all of its chats. The chats are removed from
+   * IndexedDB — they do not become personal chats.
    */
   const handleDeleteProject = useCallback(
     (project: Project) => {
+      const projectChatIds = projectStore.getProjectChatIds(project.id);
+      const currentChat = chatId.get();
+      const currentChatBelongsToProject =
+        currentChat && projectChatIds.includes(currentChat);
+
       projectStore.deleteProject(project.id);
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
 
-      /*
-       * Clear the selected project + workbench state so the workspace
-       * doesn't show stale files from the deleted project.
-       */
+      // Clear the selected project + workbench state so the workspace
+      // doesn't show stale files from the deleted project.
       if (selectedProjectId.get() === project.id) {
         clearSelectedProject();
       }
@@ -502,13 +523,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       workbenchStore.loadedProjectId.set('<none>');
       workbenchStore.projectAutoStarted.set(false);
 
-      /*
-       * If we're currently viewing one of the project's chats, stay on it —
-       * it just becomes a personal chat again.
-       */
+      // If we're currently viewing one of the project's chats, navigate
+      // home — the chat was deleted along with the project.
+      if (currentChatBelongsToProject) {
+        navigate('/');
+      }
+
       loadEntries();
     },
-    [loadEntries, selectedProjectId],
+    [loadEntries, navigate, selectedProjectId],
   );
 
   // Rename a project.

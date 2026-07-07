@@ -1242,6 +1242,54 @@ export function useChatHistory() {
 
       try {
         const newId = await createChatFromMessages(db, description, messages, metadata);
+
+        /*
+         * Auto-promote to project: if the imported messages contain an
+         * <amplifyArtifact> (i.e. files were injected via Git import or
+         * manual template use), register the chat as a project and select
+         * it so it shows up in the sidebar's project section — not the
+         * personal-chats list.
+         *
+         * This runs BEFORE the page reload below, so the project + chat
+         * linkage + sidebar selection are all persisted (localStorage)
+         * and survive the reload.
+         */
+        const hasArtifact = messages.some(
+          (m) => typeof m.content === 'string' && m.content.includes('<amplifyArtifact'),
+        );
+
+        if (hasArtifact) {
+          try {
+            const project = await projectStore.promoteChatToProject(newId, description);
+
+            // Select the project so the sidebar shows it after reload.
+            const { setSelectedProject } = await import('~/lib/stores/selectedProject');
+
+            setSelectedProject(project.id);
+
+            // Seed the project's file state from the workbench (if
+            // available — the workbench may not have processed the
+            // artifacts yet, but this is best-effort).
+            const currentFiles = workbenchStore.files.get();
+
+            if (Object.keys(currentFiles).length > 0) {
+              try {
+                await createProjectCommit(
+                  db,
+                  project.id,
+                  `Project imported — ${description}`,
+                  currentFiles,
+                  newId,
+                );
+              } catch {
+                /* best-effort — don't block the import */
+              }
+            }
+          } catch (e) {
+            console.warn('[ChatHistory] Failed to promote imported chat to project:', e);
+          }
+        }
+
         navigate(`/chat/${newId}`);
         toast.success('Chat imported successfully');
       } catch (error) {
