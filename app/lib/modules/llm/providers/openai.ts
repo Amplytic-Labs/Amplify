@@ -123,7 +123,14 @@ export default class OpenAIProvider extends BaseProvider {
         name: m.id,
         label: `${m.id} (${Math.floor(contextWindow / 1000)}k context)`,
         provider: this.name,
-        maxTokenAllowed: Math.min(contextWindow, 128000), // Cap at 128k for safety
+
+        /*
+         * Use the real context window from the API — do NOT cap at 128k.
+         * The cap was causing gpt-4o-mini (128k) and future 200k+ models to
+         * all report 128k, which broke context-budget-based summarization
+         * (it would trigger too early for large-context models).
+         */
+        maxTokenAllowed: contextWindow,
         maxCompletionTokens,
       };
     });

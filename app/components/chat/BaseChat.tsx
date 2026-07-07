@@ -36,9 +36,12 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 import { OpenWorkspaceButton } from './OpenWorkspaceButton';
-// OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
-// The workspace only opens when the AI injects a template, the user clones
-// a GitHub repo, or the user picks a template — never via a manual button.
+
+/*
+ * OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
+ * The workspace only opens when the AI injects a template, the user clones
+ * a GitHub repo, or the user picks a template — never via a manual button.
+ */
 void OpenWorkspaceButton;
 
 const TEXTAREA_MIN_HEIGHT = 32;
@@ -452,7 +455,12 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     )}
                     {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
                     {planExecuting && planId && (
-                      <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
+                      <PlanView
+                        planId={planId}
+                        progress={planProgress}
+                        onCancel={onCancelPlan!}
+                        onResume={onResumePlan}
+                      />
                     )}
                   </div>
                   <ChatBox
@@ -495,6 +503,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     selectedElement={selectedElement}
                     setSelectedElement={setSelectedElement}
                     onWebSearchResult={onWebSearchResult}
+                    messages={messages}
                   />
                 </div>
               </StickToBottom>
@@ -630,7 +639,12 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                             <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />
                           )}
                           {planExecuting && planId && (
-                            <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
+                            <PlanView
+                              planId={planId}
+                              progress={planProgress}
+                              onCancel={onCancelPlan!}
+                              onResume={onResumePlan}
+                            />
                           )}
                         </div>
                         <ChatBox
@@ -673,6 +687,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           selectedElement={selectedElement}
                           setSelectedElement={setSelectedElement}
                           onWebSearchResult={onWebSearchResult}
+                          messages={messages}
                         />
                       </div>
                     </StickToBottom>

@@ -21,6 +21,7 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
+import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 
 // Custom theme style injector to guarantee custom variables are active
 const InjectThemeStyles = () => {
@@ -154,6 +155,9 @@ interface ChatBoxProps {
   setDesignScheme?: (scheme: DesignScheme) => void;
   selectedElement?: ElementInfo | null;
   setSelectedElement?: ((element: ElementInfo | null) => void) | undefined;
+
+  /** Conversation messages — used by the context-budget indicator. */
+  messages?: any[];
 }
 
 export const ChatBox: React.FC<ChatBoxProps> = (props) => {
@@ -544,6 +548,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             </div>
 
             <div className="flex items-center gap-2">
+              <ContextBudgetIndicator maxTokenAllowed={activeModel?.maxTokenAllowed} messages={props.messages} />
               <AnimatePresence>
                 {props.input.length > 0 && (
                   <motion.span

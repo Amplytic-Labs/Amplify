@@ -10,13 +10,13 @@ import { getFilePaths, selectContext } from '~/lib/.server/llm/select-context';
 import type { ContextAnnotation, ProgressAnnotation } from '~/types/context';
 import { WORK_DIR } from '~/utils/constants';
 import { createSummary } from '~/lib/.server/llm/create-summary';
+import { getModelContextInfo, shouldSummarize } from '~/lib/.server/llm/context-budget';
 import { extractPropertiesFromMessage } from '~/lib/.server/llm/utils';
 import type { DesignScheme } from '~/types/design-scheme';
 import { MCPService } from '~/lib/services/mcpService';
 import { StreamRecoveryManager } from '~/lib/.server/llm/stream-recovery';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { memoryStore } from '~/lib/persistence/memoryStore';
-import { stripAmplifyArtifactsWithSummary } from '~/lib/chat/artifact-stripper';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
@@ -40,85 +40,6 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   });
 
   return cookies;
-}
-
-/**
- * Strip `<amplifyArtifact>…</amplifyArtifact>` blocks from every message before
- * the messages are sent to the LLM (createSummary / selectContext / streamText).
- *
- * WHY: when a project is imported via git-clone / manual template picker, the
- * entire repo file contents are persisted as an assistant `message.content`
- * wrapped in `<amplifyArtifact>` (see GitUrlImport.client.tsx). The message
- * parser already consumed that artifact on first load and wrote the files into
- * the workbench — so the raw artifact text is dead weight from the model's
- * perspective. Re-sending it on every turn was bloating the prompt to ~273k
- * tokens and forcing `createSummary` to run every single message.
- *
- * This is SERVER-SIDE ONLY. Stored messages (IndexedDB) keep their full content
- * so the parser can re-hydrate the workbench on reload; only the copy that
- * crosses the wire to the model is stripped. The stripper is O(n) and a no-op
- * when no artifact markers are present, so it's cheap to run on every message
- * of every request.
- *
- * REPLACE, not delete: each artifact block is replaced with a concise one-line
- * summary (file paths + shell/start commands) so the model still knows the
- * workspace structure. This mirrors what the `inject_template` tool returns to
- * the model — a short summary, not the full file bodies. If the model needs
- * actual file contents it can use `list_dir` / `read_file` tools.
- */
-function stripArtifactsFromMessages(messages: Messages): Messages {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return messages;
-  }
-
-  return messages.map((msg) => {
-    if (!msg) {
-      return msg;
-    }
-
-    const content = (msg as { content?: unknown }).content;
-
-    // String content — the common case (git import, inject_template side-effect).
-    if (typeof content === 'string') {
-      const stripped = stripAmplifyArtifactsWithSummary(content);
-
-      if (stripped === content) {
-        return msg; // unchanged — avoid needless object copy
-      }
-
-      return { ...msg, content: stripped } as (typeof messages)[number];
-    }
-
-    // Array-of-parts content (AI SDK structured messages) — strip text parts only.
-    if (Array.isArray(content)) {
-      let changed = false;
-      const newParts = content.map((part: unknown) => {
-        if (
-          part &&
-          typeof part === 'object' &&
-          (part as { type?: string }).type === 'text' &&
-          typeof (part as { text?: string }).text === 'string'
-        ) {
-          const stripped = stripAmplifyArtifactsWithSummary((part as { text: string }).text);
-
-          if (stripped !== (part as { text: string }).text) {
-            changed = true;
-            return { ...(part as object), text: stripped };
-          }
-        }
-
-        return part;
-      });
-
-      if (!changed) {
-        return msg;
-      }
-
-      return { ...msg, content: newParts } as unknown as (typeof messages)[number];
-    }
-
-    return msg;
-  });
 }
 
 async function chatAction({ context, request }: ActionFunctionArgs) {
@@ -197,24 +118,45 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         let summary: string | undefined = undefined;
         let messageSliceId = 0;
 
-        const processedMessages = stripArtifactsFromMessages(
-          await mcpService.processToolInvocations(messages, dataStream, files),
-        );
-
-        if (processedMessages.length > 3) {
-          messageSliceId = processedMessages.length - 3;
-        }
+        const processedMessages = await mcpService.processToolInvocations(messages, dataStream, files);
 
         /*
-         * Context optimization (createSummary + selectContext) is expensive —
-         * each adds a blocking LLM round-trip before the first response token.
-         * Running it on EVERY turn (even turn 1, with just 3 messages) made
-         * responses feel sluggish. Now we only run it once the conversation
-         * has enough history to actually benefit from a summary (8+ messages
-         * ≈ 4 exchanges). Early turns get the full message history directly.
+         * Context-length-based summarization gate.
+         *
+         * Previously this fired on EVERY turn (or with a fixed "> 8 messages"
+         * threshold), which was both too aggressive (slow responses on short
+         * conversations) and too lenient (a single huge pasted file could
+         * overflow a 16k-context model on turn 2 without triggering).
+         *
+         * Now we estimate the conversation's token footprint and only run
+         * createSummary when it approaches the CURRENT MODEL's actual context
+         * window (maxTokenAllowed, from ModelInfo). The system prompt + file
+         * paths survive summarization (they're rebuilt fresh each turn); only
+         * earlier chat messages get collapsed into a CHAT SUMMARY block.
          */
-        if (filePaths.length > 0 && contextOptimization && processedMessages.length > 8) {
-          logger.debug('Generating Chat Summary');
+        const contextInfo = await getModelContextInfo(processedMessages, {
+          apiKeys,
+          providerSettings,
+          serverEnv: context.cloudflare?.env as any,
+        });
+
+        const summarizeDecision = shouldSummarize(
+          processedMessages,
+          contextInfo,
+          contextOptimization,
+          filePaths.length > 0,
+        );
+
+        messageSliceId = summarizeDecision.messageSliceId;
+
+        logger.debug(
+          `Context budget: ~${summarizeDecision.estimatedTokens} tokens / ${contextInfo.usableBudget} usable ` +
+            `(model ${contextInfo.model}@${contextInfo.provider}, ctx ${contextInfo.maxTokenAllowed}, ` +
+            `trigger at ${contextInfo.summarizationTrigger}) — summarize: ${summarizeDecision.shouldRun}`,
+        );
+
+        if (summarizeDecision.shouldRun) {
+          logger.debug('Generating Chat Summary (context budget approaching limit)');
           dataStream.writeData({
             type: 'progress',
             label: 'summary',
@@ -224,7 +166,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           } satisfies ProgressAnnotation);
 
           // Create a summary of the chat
-          console.log(`Messages count: ${processedMessages.length}`);
+          console.log(`Messages count: ${processedMessages.length}, est tokens: ${summarizeDecision.estimatedTokens}`);
 
           summary = await createSummary({
             messages: [...processedMessages],
