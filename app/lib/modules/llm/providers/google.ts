@@ -52,14 +52,14 @@ export default class GoogleProvider extends BaseProvider {
       name: 'gemma-4-26b-a4b-it',
       label: 'Gemma 4 26B',
       provider: 'Google',
-      maxTokenAllowed: 128000,
+      maxTokenAllowed: 256000,
       maxCompletionTokens: 8192,
     },
     {
       name: 'gemma-4-31b-it',
       label: 'Gemma 4 31B',
       provider: 'Google',
-      maxTokenAllowed: 128000,
+      maxTokenAllowed: 256000,
       maxCompletionTokens: 8192,
     },
     {
@@ -131,6 +131,12 @@ export default class GoogleProvider extends BaseProvider {
         contextWindow = 32000; // Gemini Pro has 32k context
       } else if (modelName.includes('gemini-flash')) {
         contextWindow = 32000; // Gemini Flash has 32k context
+      } else if (modelName.includes('gemma-4')) {
+        contextWindow = 256000; // Gemma 4 models have 256k context
+      } else if (modelName.includes('gemma-3')) {
+        contextWindow = 128000; // Gemma 3 models have 128k context
+      } else if (modelName.includes('gemma-2')) {
+        contextWindow = 8192; // Gemma 2 models have 8k context
       }
 
       // Cap at reasonable limits to prevent issues

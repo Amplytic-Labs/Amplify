@@ -26,6 +26,7 @@ import type { IProviderSetting } from '~/types/model';
 import { countTokens } from '~/lib/utils/token-counter';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';
 import { LLMManager } from '~/lib/modules/llm/manager';
+import type { ModelInfo } from '~/lib/modules/llm/types';
 import { extractPropertiesFromMessage } from './utils';
 import { createScopedLogger } from '~/utils/logger';
 
@@ -159,21 +160,30 @@ export async function getModelContextInfo(
   const provider = PROVIDER_LIST.find((p) => p.name === providerName) || DEFAULT_PROVIDER;
   const llmManager = LLMManager.getInstance();
 
-  // Look up the model in static list first (fast, no network)
-  let modelDetails = llmManager.getStaticModelListFromProvider(provider).find((m) => m.name === modelName);
+  /*
+   * Prefer the MERGED model list (dynamic-first, static-fallback) so that
+   * API-fetched real context windows win over the static list's hardcoded
+   * values. The static list is a curated fallback that can go stale (e.g.
+   * Gemma 4 was initially hardcoded to 128k but is actually 256k); the
+   * dynamic list reflects the provider's current API response.
+   *
+   * getModelListFromProvider returns dynamic-merged-over-static: if a model
+   * appears in both, the dynamic (API-fetched) entry wins. If the dynamic
+   * fetch fails (no API key / network), it returns the static list alone,
+   * so this is still safe. Results are cached after the first call.
+   */
+  let modelDetails: ModelInfo | undefined;
 
-  // If not static, try the dynamic list (may need API key + network)
-  if (!modelDetails) {
-    try {
-      const dynamicModels = await llmManager.getModelListFromProvider(provider, {
-        apiKeys: opts?.apiKeys,
-        providerSettings: opts?.providerSettings,
-        serverEnv: opts?.serverEnv as any,
-      });
-      modelDetails = dynamicModels.find((m) => m.name === modelName);
-    } catch (e) {
-      logger.warn(`Failed to fetch dynamic models for ${provider.name}:`, e);
-    }
+  try {
+    const mergedModels = await llmManager.getModelListFromProvider(provider, {
+      apiKeys: opts?.apiKeys,
+      providerSettings: opts?.providerSettings,
+      serverEnv: opts?.serverEnv as any,
+    });
+    modelDetails = mergedModels.find((m) => m.name === modelName);
+  } catch (e) {
+    logger.warn(`Failed to fetch merged model list for ${provider.name}, using static:`, e);
+    modelDetails = llmManager.getStaticModelListFromProvider(provider).find((m) => m.name === modelName);
   }
 
   // Fallback defaults if we still can't find the model
