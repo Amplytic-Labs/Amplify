@@ -2059,3 +2059,59 @@ Unresolved / risks / next-phase recommendations:
          hardcoded 0.7 in context-budget.ts) — power users may want 0.5.
      (d) Empty-chat landing screen polish (better example prompts, feature
          highlights) — the current empty state is sparse.
+
+---
+Task ID: gemma4-context-fix
+Agent: main session
+Task: User-reported bug — "Gemma 4 31b and 26b are 256k context LLMs but I see 128k."
+
+Work Log:
+- Investigated: app/lib/modules/llm/providers/google.ts static list hardcoded
+  both gemma-4-26b-a4b-it and gemma-4-31b-it at maxTokenAllowed: 128000.
+  The UI (ModelSelector + ChatBox) and the context-budget summarization
+  trigger both read this value → wrong 128k propagated to display AND to
+  the summarization-threshold math (summarization triggered 2x too early
+  for these 256k models).
+- Also found: google.ts getDynamicModels had NO Gemma heuristics — if the
+  Google API omitted inputTokenLimit for a Gemma model, it fell back to
+  32000 (even worse than the static 128k).
+- Also found: context-budget.ts (round-2 code) preferred the STATIC model
+  list over dynamic, so even when the Google API returned the correct
+  context dynamically, the wrong static value won.
+
+Three fixes (commit 8487f4d on rebrand/amplify):
+
+1. google.ts static list — both Gemma 4 entries: 128000 → 256000.
+   Direct fix for the user's report.
+
+2. google.ts getDynamicModels — added gemma-4 (256k), gemma-3 (128k),
+   gemma-2 (8k) heuristics so the dynamic path also returns accurate
+   context windows when the API omits inputTokenLimit.
+
+3. context-budget.ts getModelContextInfo — now prefers the MERGED model
+   list (dynamic-first, static-fallback) via getModelListFromProvider()
+   instead of static-first-then-dynamic. API-fetched real context windows
+   now win over stale static values. Falls back to static if dynamic fetch
+   fails. Added `import type { ModelInfo }` for the type annotation.
+   (First attempt at this commit forgot the import — caught by tsc in the
+   worktree, amended in 8487f4d.)
+
+Verification:
+  - tsc --noEmit in isolated worktree at 8487f4d: ZERO errors in both
+    changed files. (One pre-existing error in markdown.ts — unist-util-visit
+    module resolution — unrelated, present on main too.)
+  - eslint on both files: ZERO errors (exit 0).
+  - Dev server `bun run dev`: HTTP 200, 1.37MB homepage, no compile errors.
+  - Browser QA: NOT attempted (the previous session's outage was caused by
+    `bun run build` OOMing the 3.9GB sandbox; browser connect also OOMs the
+    dev server). Verified via tsc + eslint + HTTP smoke-test instead.
+
+Stage Summary:
+  - Commit 8487f4d on rebrand/amplify (2 files changed).
+  - The user's Gemma 4 models will now correctly display 256k in the model
+    selector AND the context-budget summarization trigger will correctly
+    compute the 70% threshold against 256k (not 128k), so summarization
+    won't fire 2x too early.
+  - The merged-list improvement (fix #3) future-proofs against any other
+    stale static entries across all providers — the API is now the source
+    of truth when available.
