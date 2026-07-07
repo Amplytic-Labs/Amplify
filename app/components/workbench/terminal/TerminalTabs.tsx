@@ -162,7 +162,8 @@ export const TerminalTabs = memo(() => {
                         className={classNames(
                           'flex items-center text-sm cursor-pointer gap-1.5 px-3 py-2 h-full whitespace-nowrap rounded-full',
                           {
-                            'bg-amplify-elements-terminals-buttonBackground text-amplify-elements-textPrimary': isActive,
+                            'bg-amplify-elements-terminals-buttonBackground text-amplify-elements-textPrimary':
+                              isActive,
                             'bg-amplify-elements-background-depth-2 text-amplify-elements-textSecondary hover:bg-amplify-elements-terminals-buttonBackground':
                               !isActive,
                           },
@@ -196,12 +197,26 @@ export const TerminalTabs = memo(() => {
 
                 if (ref?.getTerminal()) {
                   const terminal = ref.getTerminal()!;
-                  terminal.clear();
-                  terminal.focus();
 
                   if (activeTerminal === 0) {
-                    workbenchStore.attachAmplifyTerminal(terminal);
+                    /*
+                     * Amplify terminal: use the shell's soft reset.
+                     * This clears the screen + sends `clear` to the running
+                     * shell WITHOUT spawning a new jsh process or registering
+                     * a new onData listener (which caused the
+                     * "characters multiply on reset" bug).
+                     */
+                    workbenchStore.amplifyTerminal.resetTerminal();
+                    terminal.focus();
                   } else {
+                    /*
+                     * Non-amplify terminal: detach (kills the old process)
+                     * BEFORE re-attaching so we don't accumulate onData
+                     * listeners + echo pipes.
+                     */
+                    workbenchStore.detachTerminal(terminal);
+                    terminal.clear();
+                    terminal.focus();
                     workbenchStore.attachTerminal(terminal);
                   }
                 }

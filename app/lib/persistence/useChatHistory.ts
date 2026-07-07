@@ -69,66 +69,76 @@ const _titleGenerationStarted = new Set<string>();
  * the route is unavailable or returns an error.
  *
  * Uses the currently-selected model + provider from cookies so the
- * title is generated with the SAME provider the user is chatting with
- * (and has provided an API key for).
- *
- * Cookie format (set by Chat.client.tsx handleModelChange / handleProviderChange):
- *   selectedModel    = plain string, e.g. "gpt-4o"
- *   selectedProvider = plain string, e.g. "OpenAI"
+ * title is generated with the same provider the user is chatting with.
  */
 async function generateChatTitle(_chatId: string, firstMessage: string): Promise<string | null> {
   try {
     /*
-     * Read the current model + provider from cookies. Both are stored
-     * as plain strings (not JSON) by the Chat model selector.
+     * Read the current model + provider from the selection cookies.
+     *
+     * These cookies are PLAIN STRINGS (set by Chat.client.tsx), NOT JSON.
+     * A previous version of this code tried JSON.parse on the plain string,
+     * which silently failed and fell back to the hardcoded Z.ai default —
+     * causing the "Missing API key for Z.ai provider" error and the raw
+     * <amplifyArtifact> tag showing up as the chat title.
      */
     let model = DEFAULT_MODEL;
-    let provider = { name: DEFAULT_PROVIDER.name } as any;
+    let provider: { name: string } = { name: DEFAULT_PROVIDER.name };
+
+    const getCookie = (name: string): string | null => {
+      const match = document.cookie.split('; ').find((c) => c.startsWith(`${name}=`));
+
+      if (!match) {
+        return null;
+      }
+
+      try {
+        return decodeURIComponent(match.split('=').slice(1).join('='));
+      } catch {
+        return null;
+      }
+    };
+
+    const modelCookie = getCookie('selectedModel');
+
+    if (modelCookie) {
+      model = modelCookie;
+    }
+
+    const providerCookie = getCookie('selectedProvider');
+
+    if (providerCookie) {
+      const found = PROVIDER_LIST.find((p) => p.name === providerCookie);
+
+      if (found) {
+        provider = found;
+      } else {
+        provider = { name: providerCookie };
+      }
+    }
+
+    /*
+     * Read API keys from localStorage and send them in the request body.
+     * The server endpoint can only read cookies, but the API key popup
+     * historically wrote to localStorage only. We send both the body keys
+     * AND rely on the cookie (which the popup now also writes).
+     */
+    let apiKeys: Record<string, string> = {};
 
     try {
-      const getCookie = (name: string): string | null => {
-        const match = document.cookie
-          .split('; ')
-          .find((c) => c.startsWith(`${name}=`));
+      const stored = localStorage.getItem('apiKeys');
 
-        if (!match) {
-          return null;
-        }
-
-        try {
-          return decodeURIComponent(match.split('=').slice(1).join('='));
-        } catch {
-          return match.split('=').slice(1).join('=');
-        }
-      };
-
-      const modelCookie = getCookie('selectedModel');
-
-      if (modelCookie) {
-        model = modelCookie;
-      }
-
-      const providerCookie = getCookie('selectedProvider');
-
-      if (providerCookie) {
-        // Look up the full ProviderInfo from PROVIDER_LIST so the
-        // server gets the correct provider name + settings.
-        const found = PROVIDER_LIST.find((p) => p.name === providerCookie);
-
-        if (found) {
-          provider = found;
-        } else {
-          provider = { name: providerCookie } as any;
-        }
+      if (stored) {
+        apiKeys = JSON.parse(stored);
       }
     } catch {
-      // cookie read failed — use defaults
+      // ignore
     }
 
     const response = await fetch('/api/chat-title', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: firstMessage, model, provider }),
+      body: JSON.stringify({ message: firstMessage, model, provider, apiKeys }),
     });
 
     if (!response.ok) {
@@ -154,34 +164,9 @@ export function useChatHistory() {
   const [ready, setReady] = useState<boolean>(false);
   const [urlId, setUrlId] = useState<string | undefined>();
 
-  /*
-   * Tracks which `mixedId` the current `initialMessages` / `ready` state
-   * was loaded for. When `mixedId` changes (e.g. navigating between chats
-   * or chat → home), `loadedId` still holds the OLD value on the first
-   * render, making `ready` evaluate to `false` and preventing ChatImpl
-   * from mounting with stale `initialMessages`.
-   *
-   * Without this, navigating from `/chat/oldId` to `/` causes the first
-   * render to have `ready = !undefined || true = true` (the shortcut
-   * for the home page) while `initialMessages` still holds the old
-   * chat's messages. ChatImpl mounts with the wrong messages, and
-   * `useChat` only reads `initialMessages` on first mount — it never
-   * recovers until a full page refresh.
-   */
-  const [loadedId, setLoadedId] = useState<string | undefined>(undefined);
-
   useEffect(() => {
-    /*
-     * Cancellation flag: if the user rapidly switches chats before the
-     * async load completes, the stale callback must not clobber the
-     * new chat's state. Declared at the effect scope so the cleanup
-     * function can access it.
-     */
-    let cancelled = false;
-
     if (!db) {
       setReady(true);
-      setLoadedId(mixedId);
 
       if (persistenceEnabled) {
         const error = new Error('Chat persistence is unavailable');
@@ -208,14 +193,12 @@ export function useChatHistory() {
        */
       setReady(false);
       setInitialMessages([]);
-      setLoadedId(undefined); // prevent stale ready during async load
 
       Promise.all([
         getMessages(db, mixedId),
         getSnapshot(db, mixedId), // Fetch snapshot from DB
       ])
         .then(async ([storedMessages, snapshot]) => {
-          if (cancelled) return;
           if (storedMessages && storedMessages.messages.length > 0) {
             /*
              * const snapshotStr = localStorage.getItem(`snapshot:${mixedId}`); // Remove localStorage usage
@@ -231,15 +214,9 @@ export function useChatHistory() {
             const snapshotIndex = storedMessages.messages.findIndex((m) => m.id === validSnapshot.chatIndex);
 
             const filteredMessages = storedMessages.messages.slice(0, endingIdx);
+            const archivedMessages: Message[] = [];
 
-            /*
-             * NOTE: archivedMessages state is intentionally NOT set here.
-             * The previous code `setArchivedMessages(archivedMessages)` set
-             * the state to a locally-scoped empty array `[]`, shadowing the
-             * state variable and making it always empty. Since archivedMessages
-             * is always empty anyway (archived message support was never
-             * fully implemented), we remove the broken setter call.
-             */
+            setArchivedMessages(archivedMessages);
 
             /*
              * ── Project = source of truth ──────────────────────────────
@@ -386,12 +363,7 @@ export function useChatHistory() {
                *
                * Re-assert showWorkbench in case it was reset (e.g. by HMR
                * or a prior navigation to a non-project route).
-               *
-               * Reset chat-scoped state (artifacts, fileHistory, etc.)
-               * WITHOUT touching project atoms so the workspace stays
-               * open and files remain loaded.
                */
-              workbenchStore.resetChatState();
               workbenchStore.showWorkbench.set(true);
               setInitialMessages([]);
               setUrlId(storedMessages.urlId);
@@ -433,11 +405,6 @@ export function useChatHistory() {
                * survives a page refresh (showWorkbench is an in-memory atom
                * that resets to false on reload, so we must re-assert it
                * here).
-               *
-               * IMPORTANT: showWorkbench MUST be set to true BEFORE
-               * setReady(true) below, because setReady triggers ChatImpl
-               * to mount, and ChatImpl reads showWorkbench to decide
-               * whether the workspace is visible.
                */
               workbenchStore.showWorkbench.set(true);
 
@@ -462,7 +429,6 @@ export function useChatHistory() {
             navigate('/', { replace: true });
           }
 
-          setLoadedId(mixedId);
           setReady(true);
         })
         .catch((error) => {
@@ -472,46 +438,9 @@ export function useChatHistory() {
           toast.error('Failed to load chat: ' + error.message); // More specific error
         });
     } else {
-      /*
-       * New chat (home page) — reset ALL chat-scoped atoms so that
-       * `storeMessageHistory` doesn't accidentally save messages under
-       * the previous chat's ID. Without this, switching from an old
-       * chat → new chat → back causes the new chat's messages to be
-       * written to the old chat's database entry (because chatId still
-       * held the old ID), effectively "copying" the old chat into the
-       * new one.
-       *
-       * Also hide the workbench panel since this is a fresh non-project
-       * chat. If a project was previously loaded, mark it as unloaded so
-       * that navigating back into the project re-restores its files.
-       */
-      chatId.set(undefined);
-      description.set(undefined);
-      chatMetadata.set(undefined);
-      setInitialMessages([]);
-      setArchivedMessages([]);
-      setUrlId(undefined);
-
-      /*
-       * Reset ALL workbench state for a new non-project chat.
-       * This clears artifacts, file history, selected file, unsaved
-       * files, and project markers so that stale state from the
-       * previous chat doesn't bleed into the new one.
-       */
-      workbenchStore.resetForNewChat();
-
-      setLoadedId(undefined);
+      // Handle case where there is no mixedId (e.g., new chat)
       setReady(true);
     }
-
-    /*
-     * Cleanup: mark the async load as cancelled so stale callbacks
-     * don't clobber the new chat's state when the user rapidly
-     * switches between chats.
-     */
-    return () => {
-      cancelled = true;
-    };
   }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
 
   /*
@@ -619,14 +548,14 @@ export function useChatHistory() {
   }, [db]);
 
   const takeSnapshot = useCallback(
-    async (chatIdx: string, files: FileMap, _chatId?: string | undefined, chatSummary?: string) => {
-      /*
-       * Prefer the explicitly passed _chatId (captured at call time by
-       * storeMessageHistory) over reading chatId.get() at execution time.
-       * This prevents stale snapshots from being saved under the wrong
-       * chat ID when the user switches chats during an async operation.
-       */
-      const id = _chatId || chatId.get();
+    async (
+      chatIdx: string,
+      files: FileMap,
+      _chatId?: string | undefined,
+      chatSummary?: string,
+      lastUserText?: string,
+    ) => {
+      const id = chatId.get();
 
       if (!id || !db) {
         return;
@@ -642,9 +571,36 @@ export function useChatHistory() {
 
       if (project) {
         try {
-          const message = chatSummary?.slice(0, 80) || `Update via chat ${id}`;
+          /*
+           * Build a human-readable commit message. Previously this fell back to
+           * `Update via chat <UUID>` which showed up as a raw UUID in the
+           * project history UI. Now we prefer (in order):
+           *   1. The server-generated chatSummary annotation
+           *   2. The last user message text (truncated)
+           *   3. A generic "Update" label
+           */
+          let commitMessage = chatSummary?.slice(0, 80);
 
-          await createProjectCommit(db, project.id, message, files, id);
+          if (!commitMessage) {
+            /*
+             * Fall back to the last user message text (passed in by the
+             * caller from the messages array). Previously this fell back to
+             * `Update via chat <UUID>` which showed up as a raw UUID in the
+             * project history UI.
+             */
+            if (lastUserText) {
+              commitMessage =
+                lastUserText
+                  .replace(/<[^>]*>/g, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 80) || 'Update';
+            } else {
+              commitMessage = 'Update';
+            }
+          }
+
+          await createProjectCommit(db, project.id, commitMessage!, files, id);
           projectStore.updateProject(project.id, {
             currentCommitId: (await getProjectFiles(db, project.id))?.currentCommitId,
           });
@@ -654,9 +610,8 @@ export function useChatHistory() {
            * Missing fields are filled in; user-edited fields are preserved.
            */
           try {
-            const { detectProjectMemory, mergeDetectedMemory } = await import(
-              '~/lib/persistence/project-memory-detect'
-            );
+            const { detectProjectMemory, mergeDetectedMemory } =
+              await import('~/lib/persistence/project-memory-detect');
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);
@@ -705,35 +660,25 @@ export function useChatHistory() {
       return;
     }
 
-    /*
-     * Fix: use for...of instead of forEach(async) so that folder
-     * creation completes before file writes begin. forEach with an
-     * async callback fires all iterations concurrently, which means
-     * files can be written before their parent directories exist,
-     * causing ENOENT errors.
-     */
-    for (const [rawKey, value] of Object.entries(validSnapshot.files)) {
+    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
+      if (key.startsWith(container.workdir)) {
+        key = key.replace(container.workdir, '');
+      }
+
       if (value?.type === 'folder') {
-        let key = rawKey;
-
-        if (key.startsWith(container.workdir)) {
-          key = key.replace(container.workdir, '');
-        }
-
         await container.fs.mkdir(key, { recursive: true });
       }
-    }
-    for (const [rawKey, value] of Object.entries(validSnapshot.files)) {
+    });
+    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
       if (value?.type === 'file') {
-        let key = rawKey;
-
         if (key.startsWith(container.workdir)) {
           key = key.replace(container.workdir, '');
         }
 
         await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
+      } else {
       }
-    }
+    });
 
     // workbenchStore.files.setKey(snapshot?.files)
   }, []);
@@ -787,15 +732,9 @@ export function useChatHistory() {
   }, []);
 
   return {
-    /*
-     * Only consider ready when the loaded state corresponds to the
-     * CURRENT route's `mixedId`. When `mixedId` changes (navigation),
-     * `loadedId` still holds the old value, making this evaluate to
-     * `false` even if `ready` is still `true` from the previous chat.
-     * This prevents ChatImpl from mounting with stale `initialMessages`.
-     */
-    ready: loadedId === mixedId && ready,
+    ready: !mixedId || ready,
     initialMessages,
+
     /*
      * The route-scoped chat key (urlId for chat pages, undefined for home).
      * Used as a React `key` on <ChatImpl> so the component FULLY remounts
@@ -825,32 +764,6 @@ export function useChatHistory() {
         return;
       }
 
-      /*
-       * Capture the chatId at the START of this invocation.
-       * If chatId changes during execution (due to chat switch), we abort
-       * to prevent saving stale messages under the wrong chat ID.
-       *
-       * This is more robust than the old `loadedId` guard because
-       * `loadedId` is captured at closure-creation time (render) and may
-       * still hold the old value when the effect first runs. By capturing
-       * chatId at invocation time and checking it after every await, we
-       * guarantee that a chat switch during any async operation is detected.
-       */
-      const capturedChatId = chatId.get();
-
-      if (!capturedChatId) {
-        return;
-      }
-
-      /*
-       * Guard: if chatId has already changed since this invocation started
-       * (e.g. stale sampler callback from a previous chat), the messages
-       * are stale and must not be saved.
-       */
-      if (loadedId && capturedChatId !== loadedId) {
-        return;
-      }
-
       const { firstArtifact } = workbenchStore;
       messages = messages.filter((m) => !m.annotations?.includes('no-store'));
 
@@ -858,12 +771,6 @@ export function useChatHistory() {
 
       if (!urlId && firstArtifact?.id) {
         const urlId = await getUrlId(db, firstArtifact.id);
-
-        // Abort if chat switched during async operation
-        if (chatId.get() !== capturedChatId) {
-          return;
-        }
-
         _urlId = urlId;
         navigateChat(urlId);
         setUrlId(urlId);
@@ -885,16 +792,26 @@ export function useChatHistory() {
       }
 
       /*
-       * Await takeSnapshot instead of fire-and-forget, and pass
-       * capturedChatId so it uses the correct chat ID even if the
-       * user switches chats during the snapshot write.
+       * Extract the last user message text so we can use it as a fallback
+       * commit message (avoids the raw-UUID commit message bug).
        */
-      await takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), capturedChatId, chatSummary);
+      let lastUserText: string | undefined;
 
-      // Abort if chat switched during takeSnapshot
-      if (chatId.get() !== capturedChatId) {
-        return;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          const c: any = messages[i].content;
+
+          if (typeof c === 'string') {
+            lastUserText = c;
+          } else if (Array.isArray(c)) {
+            lastUserText = c.map((part: any) => (typeof part === 'string' ? part : part?.text || '')).join(' ');
+          }
+
+          break;
+        }
       }
+
+      takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, chatSummary, lastUserText);
 
       if (!description.get() && firstArtifact?.title) {
         description.set(firstArtifact?.title);
@@ -912,21 +829,14 @@ export function useChatHistory() {
        * project's first commit (the global source of truth from here on).
        */
       if (firstArtifact) {
-        /*
-         * Use capturedChatId instead of chatId.get() to avoid using a
-         * chatId that changed during async operations.
-         */
-        if (capturedChatId && !projectStore.getProjectByChat(capturedChatId)) {
+        const currentId = chatId.get();
+
+        if (currentId && !projectStore.getProjectByChat(currentId)) {
           try {
             const project = await projectStore.promoteChatToProject(
-              capturedChatId,
+              currentId,
               firstArtifact.title || 'Untitled Project',
             );
-
-            // Abort if chat switched during async operation
-            if (chatId.get() !== capturedChatId) {
-              return;
-            }
 
             // Seed the project's global file state + first commit.
             const currentFiles = workbenchStore.files.get();
@@ -937,14 +847,8 @@ export function useChatHistory() {
                 project.id,
                 `Project created — ${firstArtifact.title || 'Untitled'}`,
                 currentFiles,
-                capturedChatId,
+                currentId,
               );
-
-              // Abort if chat switched during async operation
-              if (chatId.get() !== capturedChatId) {
-                return;
-              }
-
               projectStore.updateProject(project.id, {
                 currentCommitId: (await getProjectFiles(db, project.id))?.currentCommitId,
               });
@@ -974,11 +878,6 @@ export function useChatHistory() {
                 console.warn('[ChatHistory] detectProjectCommands on promote failed:', e);
               }
 
-              // Abort if chat switched during async operation
-              if (chatId.get() !== capturedChatId) {
-                return;
-              }
-
               // Mark this project as the loaded one + kick off auto-setup.
               workbenchStore.loadedProjectId.set(project.id);
 
@@ -1001,18 +900,9 @@ export function useChatHistory() {
         }
       }
 
-      // Abort if chat switched during earlier async operations
-      if (chatId.get() !== capturedChatId && chatId.get() !== undefined) {
-        return;
-      }
-
+      // Ensure chatId.get() is used here as well
       if (initialMessages.length === 0 && !chatId.get()) {
         const nextId = await getNextId(db);
-
-        // Abort if chat switched during async operation
-        if (chatId.get() !== capturedChatId && chatId.get() !== nextId) {
-          return;
-        }
 
         chatId.set(nextId);
 
@@ -1030,15 +920,6 @@ export function useChatHistory() {
        * flow derives urlId from the artifact id.
        */
       const finalChatId = chatId.get();
-
-      /*
-       * Final staleness check: if chatId changed at any point during
-       * this function's execution, the messages belong to a different
-       * chat and must not be saved under the current chatId.
-       */
-      if (finalChatId !== capturedChatId && initialMessages.length > 0) {
-        return;
-      }
 
       if (!finalChatId) {
         console.error('Cannot save messages, chat ID is not set.');
@@ -1242,55 +1123,7 @@ export function useChatHistory() {
 
       try {
         const newId = await createChatFromMessages(db, description, messages, metadata);
-
-        /*
-         * Auto-promote to project: if the imported messages contain an
-         * <amplifyArtifact> (i.e. files were injected via Git import or
-         * manual template use), register the chat as a project and select
-         * it so it shows up in the sidebar's project section — not the
-         * personal-chats list.
-         *
-         * This runs BEFORE the page reload below, so the project + chat
-         * linkage + sidebar selection are all persisted (localStorage)
-         * and survive the reload.
-         */
-        const hasArtifact = messages.some(
-          (m) => typeof m.content === 'string' && m.content.includes('<amplifyArtifact'),
-        );
-
-        if (hasArtifact) {
-          try {
-            const project = await projectStore.promoteChatToProject(newId, description);
-
-            // Select the project so the sidebar shows it after reload.
-            const { setSelectedProject } = await import('~/lib/stores/selectedProject');
-
-            setSelectedProject(project.id);
-
-            // Seed the project's file state from the workbench (if
-            // available — the workbench may not have processed the
-            // artifacts yet, but this is best-effort).
-            const currentFiles = workbenchStore.files.get();
-
-            if (Object.keys(currentFiles).length > 0) {
-              try {
-                await createProjectCommit(
-                  db,
-                  project.id,
-                  `Project imported — ${description}`,
-                  currentFiles,
-                  newId,
-                );
-              } catch {
-                /* best-effort — don't block the import */
-              }
-            }
-          } catch (e) {
-            console.warn('[ChatHistory] Failed to promote imported chat to project:', e);
-          }
-        }
-
-        navigate(`/chat/${newId}`);
+        window.location.href = `/chat/${newId}`;
         toast.success('Chat imported successfully');
       } catch (error) {
         if (error instanceof Error) {

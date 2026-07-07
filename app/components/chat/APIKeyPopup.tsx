@@ -37,6 +37,14 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
       const newKeys = { ...currentKeys, [provider.name]: tempKey };
       localStorage.setItem('apiKeys', JSON.stringify(newKeys));
 
+      /*
+       * ALSO write the apiKeys cookie so server-side endpoints (which can only
+       * read cookies, not localStorage) can access the key. Without this, the
+       * chat-title endpoint fails with "Missing API key for Z.ai provider" and
+       * falls back to using the raw <amplifyArtifact> tag as the chat title.
+       */
+      Cookies.set('apiKeys', JSON.stringify(newKeys), { expires: 365, sameSite: 'lax' });
+
       onClose();
     } catch (error) {
       console.error('Failed to save API key:', error);

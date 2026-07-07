@@ -205,7 +205,15 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           messageSliceId = processedMessages.length - 3;
         }
 
-        if (filePaths.length > 0 && contextOptimization) {
+        /*
+         * Context optimization (createSummary + selectContext) is expensive —
+         * each adds a blocking LLM round-trip before the first response token.
+         * Running it on EVERY turn (even turn 1, with just 3 messages) made
+         * responses feel sluggish. Now we only run it once the conversation
+         * has enough history to actually benefit from a summary (8+ messages
+         * ≈ 4 exchanges). Early turns get the full message history directly.
+         */
+        if (filePaths.length > 0 && contextOptimization && processedMessages.length > 8) {
           logger.debug('Generating Chat Summary');
           dataStream.writeData({
             type: 'progress',

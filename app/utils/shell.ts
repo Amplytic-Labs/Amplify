@@ -103,6 +103,16 @@ export class AmplifyShell {
   #outputStream: ReadableStreamDefaultReader<string> | undefined;
   #shellInputStream: WritableStreamDefaultWriter<string> | undefined;
 
+  /*
+   * Track the onData disposable + pipe so we can tear them down before re-init
+   * (prevents the “characters multiply on reset” bug where each reset adds a
+   * duplicate onData listener + echo pipe on the same long-lived XTerm).
+   */
+  #onDataDisposable: { dispose: () => void } | undefined;
+  #terminalPipeController: AbortController | undefined;
+  #expoUrlAbort: AbortController | undefined;
+  #initializedOnce = false;
+
   constructor() {
     this.#readyPromise = new Promise((resolve) => {
       this.#initialized = resolve;
@@ -113,7 +123,53 @@ export class AmplifyShell {
     return this.#readyPromise;
   }
 
+  /**
+   * Tear down everything a previous init() / newAmplifyShellProcess() created:
+   * the onData listener, the terminal echo pipe, the expo-url watcher, and the
+   * jsh process itself. Safe to call even if nothing was set up.
+   *
+   * This is what makes reset() safe — without it, every reset layers a new
+   * onData listener on the same XTerm, so N resets ⇒ N+1 characters per
+   * keystroke.
+   */
+  #teardown() {
+    try {
+      this.#onDataDisposable?.dispose();
+    } catch {
+      /* ignore */
+    }
+    this.#onDataDisposable = undefined;
+
+    this.#terminalPipeController?.abort();
+    this.#terminalPipeController = undefined;
+
+    this.#expoUrlAbort?.abort();
+    this.#expoUrlAbort = undefined;
+
+    try {
+      this.#process?.kill();
+    } catch {
+      /* process may already be dead */
+    }
+    this.#process = undefined;
+
+    this.#outputStream = undefined;
+    this.#shellInputStream = undefined;
+  }
+
   async init(webcontainer: WebContainer, terminal: ITerminal) {
+    /*
+     * If we already have a live process for this terminal, do NOT re-init —
+     * re-initing is the root cause of the multiply-characters bug. Callers
+     * that just want to clear the screen should use resetTerminal() instead.
+     */
+    if (this.#initializedOnce && this.#process && this.#terminal === terminal) {
+      return;
+    }
+
+    // Tear down any prior process / listeners / pipes before spawning new ones.
+    this.#teardown();
+
     this.#webcontainer = webcontainer;
     this.#terminal = terminal;
 
@@ -127,6 +183,37 @@ export class AmplifyShell {
 
     await this.waitTillOscCode('interactive');
     this.#initialized?.();
+    this.#initializedOnce = true;
+  }
+
+  /**
+   * Soft reset: clear the screen + send `clear` to the shell WITHOUT spawning
+   * a new jsh process or registering a new onData listener. This is what the
+   * Reset button should call instead of attachAmplifyTerminal(terminal).
+   */
+  resetTerminal() {
+    if (!this.#terminal) {
+      return;
+    }
+
+    try {
+      this.#terminal.clear?.();
+    } catch {
+      /* ignore */
+    }
+
+    // Send `clear` to the running shell so the scrollback + prompt are reset.
+    try {
+      this.#terminal.input('clear\n');
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      this.#terminal.focus?.();
+    } catch {
+      /* ignore */
+    }
   }
 
   async newAmplifyShellProcess(webcontainer: WebContainer, terminal: ITerminal) {
@@ -147,6 +234,12 @@ export class AmplifyShell {
 
     const jshReady = withResolvers<void>();
     let isInteractive = false;
+
+    /*
+     * Use an AbortController so #teardown() can cancel this pipe without
+     * waiting for the stream to end naturally.
+     */
+    this.#terminalPipeController = new AbortController();
     streamA.pipeTo(
       new WritableStream({
         write(data) {
@@ -162,9 +255,15 @@ export class AmplifyShell {
           terminal.write(data);
         },
       }),
+      { signal: this.#terminalPipeController.signal },
     );
 
-    terminal.onData((data) => {
+    /*
+     * Capture the disposable so #teardown() can remove this listener.
+     * Without this, every reset layers a new onData listener on the same
+     * XTerm instance and keystrokes get echoed N+1 times.
+     */
+    this.#onDataDisposable = terminal.onData((data) => {
       if (isInteractive) {
         input.write(data);
       }
@@ -178,11 +277,17 @@ export class AmplifyShell {
 
   // Dedicated background watcher for Expo URL
   private async _watchExpoUrlInBackground(stream: ReadableStream<string>) {
+    this.#expoUrlAbort = new AbortController();
+
     const reader = stream.getReader();
     let buffer = '';
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
     while (true) {
+      if (this.#expoUrlAbort?.signal.aborted) {
+        break;
+      }
+
       const { value, done } = await reader.read();
 
       if (done) {

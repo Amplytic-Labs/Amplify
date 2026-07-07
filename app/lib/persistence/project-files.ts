@@ -100,8 +100,63 @@ export async function countProjectCommits(db: IDBDatabase, projectId: string): P
 }
 
 /**
+ * Deep-compare two FileMaps for byte-identical content.
+ * Used as a dirty check so we don't create a new version commit when nothing
+ * actually changed (which caused the "v10 every time, all versions same" bug).
+ *
+ * Compares the set of paths and each file's `.content` (the actual file body).
+ * Metadata-only changes (timestamps, etc.) do NOT count as dirty.
+ */
+function filesEqual(a: FileMap | undefined, b: FileMap | undefined): boolean {
+  if (!a || !b) {
+    return a === b;
+  }
+
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  for (const key of aKeys) {
+    if (!(key in b)) {
+      return false;
+    }
+
+    const af = a[key];
+    const bf = b[key];
+
+    /*
+     * Dirent is a union of File | Folder. Only File has `content`.
+     * Narrow by type first, then compare content for files.
+     */
+    if (af?.type !== bf?.type) {
+      return false;
+    }
+
+    if (af?.type === 'file' && bf?.type === 'file') {
+      // Compare the content — the part that actually matters.
+      if (af.content !== bf.content) {
+        return false;
+      }
+    }
+
+    // Folders have no content; type equality (checked above) is sufficient.
+  }
+
+  return true;
+}
+
+/**
  * Create a versioned commit of the project's files and set it as current.
  * Returns the new commit id.
+ *
+ * Dirty check: if the files are byte-identical to the previous commit, we
+ * skip creating a new commit and return the previous commit's id. This
+ * prevents the "v10 every time with identical versions" bug where every
+ * chat turn (even text-only replies that changed nothing) minted a new
+ * version.
  */
 export async function createProjectCommit(
   db: IDBDatabase,
@@ -110,6 +165,35 @@ export async function createProjectCommit(
   files: FileMap,
   chatId?: string,
 ): Promise<string> {
+  /*
+   * ── Dirty check ──────────────────────────────────────────────────────
+   * If the current project state already points at a commit whose files are
+   * byte-identical to what we're about to commit, short-circuit: return the
+   * existing commit id instead of minting a duplicate version.
+   */
+  try {
+    const current = await getProjectFiles(db, projectId);
+
+    if (current?.currentCommitId) {
+      const prevCommit = await getProjectCommit(db, current.currentCommitId);
+
+      if (prevCommit && filesEqual(prevCommit.files, files)) {
+        logger.info(
+          `Skipping commit for project ${projectId} — files identical to ${prevCommit.label}. ` +
+            `This prevents the "v10 every time" duplicate-version bug.`,
+        );
+
+        return prevCommit.id;
+      }
+    }
+  } catch (e) {
+    /*
+     * If the dirty check fails for any reason, fall through to creating a
+     * new commit (the safe default).
+     */
+    logger.warn('Dirty check failed, creating commit anyway:', e);
+  }
+
   const count = await countProjectCommits(db, projectId);
   const id = crypto.randomUUID();
   const commit: ProjectCommit = {

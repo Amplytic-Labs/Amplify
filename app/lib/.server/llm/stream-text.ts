@@ -13,7 +13,7 @@ import { PromptLibrary } from '~/lib/common/prompt-library';
 import { allowedHTMLElements } from '~/utils/markdown';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createScopedLogger } from '~/utils/logger';
-import { createFilesContext, extractPropertiesFromMessage } from './utils';
+import { extractPropertiesFromMessage } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { z } from 'zod';
@@ -268,14 +268,31 @@ export async function streamText(props: {
     });
 
   if (chatMode === 'build' && contextFiles && contextOptimization) {
-    const codeContext = createFilesContext(contextFiles, true);
+    /*
+     * List only the PATHS of the context files — NOT their full contents.
+     *
+     * Previously this called createFilesContext(contextFiles, true) which
+     * injected the full source code of ~5 files into the system prompt on
+     * every turn. That caused:
+     *   1. Token bloat (~7-8k extra prompt tokens per turn)
+     *   2. The AI could answer file-content questions WITHOUT calling any
+     *      tool, because the contents were already in its context — which
+     *      looked like "silent code leakage" to the user.
+     *
+     * Now the AI sees only the file paths and must use its tools
+     * (read_file / str_replace_editor) to access actual contents when it
+     * needs them.
+     */
+    const contextPaths = Object.keys(contextFiles)
+      .filter((p) => contextFiles[p]?.type === 'file')
+      .map((p) => p.replace('/home/project/', ''));
 
     systemPrompt = `${systemPrompt}
 
-    Below is the artifact containing the context loaded into context buffer for you to have knowledge of and might need changes to fullfill current user request.
-    CONTEXT BUFFER:
+    Below is the list of files currently in the project workspace that you may need to read or modify to fulfill the user's request. Use your file-reading tools to access their contents when needed — do NOT assume you already know their contents.
+    WORKSPACE FILES:
     ---
-    ${codeContext}
+    ${contextPaths.map((p) => `- ${p}`).join('\n')}
     ---
     `;
 
