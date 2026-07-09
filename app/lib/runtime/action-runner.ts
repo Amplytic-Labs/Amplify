@@ -193,7 +193,7 @@ export class ActionRunner {
           // complete once they've been running for a short period — meaning
           // the server launched without an immediate error.
 
-          this.#runStartAction(action)
+          this.#runStartAction(action, actionId)
             .then(() => {
               // Server process exited on its own (unusual but possible)
               const currentStatus = this.actions.get()[actionId]?.status;
@@ -298,9 +298,28 @@ export class ActionRunner {
     }
   }
 
-  async #runStartAction(action: ActionState) {
+  async #runStartAction(action: ActionState, currentActionId: string) {
     if (action.type !== 'start') {
       unreachable('Expected shell action');
+    }
+
+    /*
+     * Skip re-running a start command if another `start` action is already
+     * running or has completed. Long-running dev servers should NOT be
+     * relaunched on every turn — doing so kills the existing server (Ctrl+C
+     * in executeCommand) and triggers a "Dev Server Failed" alert. The model
+     * sometimes re-emits `<amplifyAction type="start">` even with the
+     * project-continuation prompt; this guard makes that a no-op.
+     */
+    const existingActions = this.actions.get();
+    const startAlreadyActive = Object.entries(existingActions).some(
+      ([id, a]) => id !== currentActionId && a.type === 'start' && (a.status === 'running' || a.status === 'complete'),
+    );
+
+    if (startAlreadyActive) {
+      logger.debug('[start]: A start action is already running/complete — skipping re-launch to avoid killing the dev server.');
+
+      return undefined;
     }
 
     if (!this.#shellTerminal) {
@@ -314,13 +333,28 @@ export class ActionRunner {
       unreachable('Shell terminal not found');
     }
 
-    const resp = await shell.executeCommand(this.runnerId.get(), action.content, () => {
-      logger.debug(`[${action.type}]:Aborting Action\n\n`, action);
-      action.abort();
-    });
+    /*
+     * Run the dev server DETACHED (backgrounded, not tracked in
+     * executionState). A dev server never exits, so the normal
+     * executeCommand path would hold executionState.active forever and cause
+     * every subsequent shell command to send Ctrl+C — killing the server.
+     * Detached mode backgrounds it so the prompt returns and later commands
+     * run without interrupting it.
+     */
+    const resp = await shell.executeCommand(
+      this.runnerId.get(),
+      action.content,
+      () => {
+        logger.debug(`[${action.type}]:Aborting Action\n\n`, action);
+        action.abort();
+      },
+      { detached: true },
+    );
     logger.debug(`${action.type} Shell Response: [exit code:${resp?.exitCode}]`);
 
-    if (resp?.exitCode != 0) {
+    // Detached commands return undefined (the dev server is still running).
+    // A defined non-zero exit means the background launch itself failed.
+    if (resp?.exitCode != null && resp.exitCode !== 0) {
       throw new ActionCommandError('Failed To Start Application', resp?.output || 'No Output Available');
     }
 

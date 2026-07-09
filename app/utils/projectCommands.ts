@@ -13,35 +13,24 @@ interface FileContent {
   path: string;
 }
 
-// Helper function to make any command non-interactive
+/*
+ * Helper function to keep the setup command simple and predictable.
+ * Previously this prepended `export CI=true …` and rewrote `npm install` into
+ * `npm install --yes --no-audit --no-fund --silent` (the `--yes` flag is not a
+ * valid `npm install` option and could confuse the package manager). It also
+ * injected `npx update-browserslist-db@latest` and `npx shadcn@latest init`.
+ *
+ * Per user request we now keep the setup command as a plain `npm install` — no
+ * environment exports, no extra npx calls, no shadcn init. The start command
+ * runs only AFTER install finishes (the ActionRunner serializes actions and
+ * project-auto-run.ts awaits setup before firing start).
+ */
 function makeNonInteractive(command: string): string {
-  // Set environment variables for non-interactive mode
-  const envVars = 'export CI=true DEBIAN_FRONTEND=noninteractive FORCE_COLOR=0';
-
-  // Common interactive packages and their non-interactive flags
-  const interactivePackages = [
-    { pattern: /npx\s+([^@\s]+@?[^\s]*)\s+init/g, replacement: 'echo "y" | npx --yes $1 init --defaults --yes' },
-    { pattern: /npx\s+create-([^\s]+)/g, replacement: 'npx --yes create-$1 --template default' },
-    { pattern: /npx\s+([^@\s]+@?[^\s]*)\s+add/g, replacement: 'npx --yes $1 add --defaults --yes' },
-    { pattern: /npm\s+install(?!\s+--)/g, replacement: 'npm install --yes --no-audit --no-fund --silent' },
-    { pattern: /yarn\s+add(?!\s+--)/g, replacement: 'yarn add --non-interactive' },
-    { pattern: /pnpm\s+add(?!\s+--)/g, replacement: 'pnpm add --yes' },
-  ];
-
-  let processedCommand = command;
-
-  // Apply replacements for known interactive patterns
-  interactivePackages.forEach(({ pattern, replacement }) => {
-    processedCommand = processedCommand.replace(pattern, replacement);
-  });
-
-  return `${envVars} && ${processedCommand}`;
+  return command.trim();
 }
 
 export async function detectProjectCommands(files: FileContent[]): Promise<ProjectCommands> {
   const hasFile = (name: string) => files.some((f) => f.path.endsWith(name));
-  const hasFileContent = (name: string, content: string) =>
-    files.some((f) => f.path.endsWith(name) && f.content.includes(content));
 
   if (hasFile('package.json')) {
     const packageJsonFile = files.find((f) => f.path.endsWith('package.json'));
@@ -53,27 +42,18 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
     try {
       const packageJson = JSON.parse(packageJsonFile.content);
       const scripts = packageJson?.scripts || {};
-      const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
-
-      // Check if this is a shadcn project
-      const isShadcnProject =
-        hasFileContent('components.json', 'shadcn') ||
-        Object.keys(dependencies).some((dep) => dep.includes('shadcn')) ||
-        hasFile('components.json');
 
       // Check for preferred commands in priority order
       const preferredCommands = ['dev', 'start', 'preview'];
       const availableCommand = preferredCommands.find((cmd) => scripts[cmd]);
 
-      // Build setup command with non-interactive handling
-      let baseSetupCommand = 'npx update-browserslist-db@latest && npm install';
-
-      // Add shadcn init if it's a shadcn project
-      if (isShadcnProject) {
-        baseSetupCommand += ' && npx shadcn@latest init';
-      }
-
-      const setupCommand = makeNonInteractive(baseSetupCommand);
+      /*
+       * Keep the setup command simple: just `npm install`.
+       * (Previously this also ran `npx update-browserslist-db@latest` and, for
+       * shadcn projects, `npx shadcn@latest init` — both removed per user
+       * request. The start command runs only after install completes.)
+       */
+      const setupCommand = makeNonInteractive('npm install');
 
       if (availableCommand) {
         return {

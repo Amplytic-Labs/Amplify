@@ -49,9 +49,29 @@ export function simplifyBoltActions(input: string): string {
   const regex = /(<boltAction[^>]*type="file"[^>]*>)([\s\S]*?)(<\/boltAction>)/g;
 
   // Replace each matching occurrence
-  return input.replace(regex, (_0, openingTag, _2, closingTag) => {
+  let out = input.replace(regex, (_0, openingTag, _2, closingTag) => {
     return `${openingTag}\n          ...\n        ${closingTag}`;
   });
+
+  /*
+   * Also strip the CONTENTS of <amplifyAction type="file"> tags (the
+   * rebranded equivalent of boltAction). The file PATH is preserved (via the
+   * filePath attribute) so the model still sees the workspace file tree, but
+   * the raw source code is removed — preventing a single cloned-repo message
+   * from consuming the entire context window on every subsequent turn.
+   *
+   * The full contents remain in stored messages (IndexedDB) so the client
+   * message parser can still write them to the WebContainer on load. This
+   * only affects what is sent to the LLM.
+   */
+  out = out.replace(
+    /(<amplifyAction[^>]*type="file"[^>]*>)([\s\S]*?)(<\/amplifyAction>)/g,
+    (_0, openingTag, _2, closingTag) => {
+      return `${openingTag.replace(/>$/, ' />')}`;
+    },
+  );
+
+  return out;
 }
 
 export function createFilesContext(files: FileMap, useRelativePath?: boolean) {

@@ -320,10 +320,26 @@ export class AmplifyShell {
     return this.#process;
   }
 
-  async executeCommand(sessionId: string, command: string, abort?: () => void): Promise<ExecutionResult> {
+  async executeCommand(
+    sessionId: string,
+    command: string,
+    abort?: () => void,
+    options?: { detached?: boolean },
+  ): Promise<ExecutionResult> {
     if (!this.process || !this.terminal) {
       return undefined;
     }
+
+    /*
+     * detached mode: used for long-running commands (dev servers / `start`
+     * actions). Such a command never exits, so the normal
+     * waitTillOscCode('exit') would hold executionState.active forever —
+     * causing EVERY subsequent executeCommand to send Ctrl+C and kill the
+     * dev server. In detached mode we background the command (` &`) so the
+     * shell prompt returns, and we do NOT track it in executionState, so
+     * later shell commands run normally without interrupting the server.
+     */
+    const detached = !!options?.detached;
 
     /*
      * Split &&-chained commands and execute them ONE AT A TIME.
@@ -344,13 +360,13 @@ export class AmplifyShell {
     const subCommands = this.#splitCommandChain(command);
 
     if (subCommands.length <= 1) {
-      return this.#executeSingleCommand(sessionId, command, abort);
+      return this.#executeSingleCommand(sessionId, command, abort, detached);
     }
 
     let lastResp: ExecutionResult | undefined;
 
     for (const subCmd of subCommands) {
-      lastResp = await this.#executeSingleCommand(sessionId, subCmd, abort);
+      lastResp = await this.#executeSingleCommand(sessionId, subCmd, abort, detached);
 
       // && semantics: stop if the previous command failed.
       if (lastResp && lastResp.exitCode !== 0) {
@@ -420,34 +436,75 @@ export class AmplifyShell {
   /**
    * Executes a SINGLE command (no && chain) in the terminal and waits for
    * it to complete. This is the original executeCommand logic.
+   *
+   * When `detached` is true (used for long-running `start` commands like dev
+   * servers), the command is backgrounded with ` &` and NOT tracked in
+   * executionState. This is critical: a dev server never exits, so tracking
+   * it would leave executionState.active=true forever, causing every later
+   * executeCommand to send Ctrl+C and kill the server. Detached commands
+   * return immediately with an undefined result.
    */
-  async #executeSingleCommand(sessionId: string, command: string, abort?: () => void): Promise<ExecutionResult> {
+  async #executeSingleCommand(
+    sessionId: string,
+    command: string,
+    abort?: () => void,
+    detached: boolean = false,
+  ): Promise<ExecutionResult> {
     if (!this.process || !this.terminal) {
       return undefined;
     }
 
     const state = this.executionState.get();
 
-    if (state?.active && state.abort) {
-      state.abort();
+    if (!detached) {
+      if (state?.active && state.abort) {
+        state.abort();
+      }
+
+      /*
+       * Only send Ctrl+C (\x03) when a tracked command is genuinely running.
+       * Sending it unconditionally when the shell is idle can interfere with
+       * the prompt and cause the next command to be swallowed.
+       */
+      if (state?.active) {
+        this.terminal.input('\x03');
+        await this.waitTillOscCode('prompt');
+      }
+
+      if (state && state.executionPrms) {
+        await state.executionPrms;
+      }
+    } else {
+      /*
+       * Detached: still wait for any in-flight tracked command (e.g. the
+       * `npm install` setup) to finish before launching the dev server, but
+       * do NOT abort it and do NOT send Ctrl+C.
+       */
+      if (state?.active && state.executionPrms) {
+        try {
+          await state.executionPrms;
+        } catch {
+          /* ignore — the tracked command's error is handled by its caller */
+        }
+      }
     }
 
-    /*
-     * Only send Ctrl+C (\x03) when a tracked command is genuinely running.
-     * Sending it unconditionally when the shell is idle can interfere with
-     * the prompt and cause the next command to be swallowed.
-     */
-    if (state?.active) {
-      this.terminal.input('\x03');
-      await this.waitTillOscCode('prompt');
-    }
-
-    if (state && state.executionPrms) {
-      await state.executionPrms;
-    }
+    const cmdToRun = detached ? `${command.trim()} &` : `${command.trim()}`;
 
     //start a new execution
-    this.terminal.input(command.trim() + '\n');
+    this.terminal.input(cmdToRun + '\n');
+
+    if (detached) {
+      /*
+       * Long-running command (dev server) launched in the background. Do NOT
+       * track it in executionState and do NOT wait for an exit OSC (it will
+       * never come). Give the shell a brief moment to accept the background
+       * job and return the prompt.
+       */
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      return undefined;
+    }
 
     //wait for the execution to finish
     const executionPromise = this.getCurrentExecutionResult();

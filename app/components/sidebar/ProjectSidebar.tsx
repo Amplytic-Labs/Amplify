@@ -619,8 +619,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
        * Starting a brand-new personal chat — clear any project selection so
        * the sidebar shows personal chats. Also reset chatStore.started so
        * the guard above works on subsequent clicks without a full remount.
+       *
+       * CRITICAL: also reset the workbench so the workspace + chat are
+       * hidden and the user lands on a fresh entry screen (no leftover
+       * files, editor, or terminal output from the previous project).
+       * Without resetForNewChat(), showWorkbench stays true and the old
+       * project's workspace remains visible after navigating to "/".
        */
       clearSelectedProject();
+      workbenchStore.resetForNewChat();
       chatStore.setKey('started', false);
       setIsNewChatDropdownOpen(false);
 

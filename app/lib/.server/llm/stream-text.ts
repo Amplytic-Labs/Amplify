@@ -13,7 +13,7 @@ import { PromptLibrary } from '~/lib/common/prompt-library';
 import { allowedHTMLElements } from '~/utils/markdown';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createScopedLogger } from '~/utils/logger';
-import { extractPropertiesFromMessage } from './utils';
+import { extractPropertiesFromMessage, simplifyBoltActions } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { z } from 'zod';
@@ -132,6 +132,21 @@ function sanitizeText(text: string): string {
   let sanitized = text.replace(/<div class=\\"__boltThought__\\">.*?<\/div>/s, '');
   sanitized = sanitized.replace(/<(think|thought)>.*?<\/(think|thought)>/s, '');
   sanitized = sanitized.replace(/<boltAction type="file" filePath="package-lock\.json">[\s\S]*?<\/boltAction>/g, '');
+
+  /*
+   * Strip the CONTENTS of every <amplifyAction type="file"> tag before the
+   * text reaches the LLM. The file PATH (filePath attribute) is preserved so
+   * the model still knows which files exist in the workspace (the "file
+   * tree"), but the raw source code is removed. This prevents a single
+   * cloned-repo / template-injection message — which can carry hundreds of KB
+   * of source — from consuming the entire context window on EVERY subsequent
+   * turn. The model can retrieve actual contents on demand via read_file.
+   *
+   * The full contents remain in the stored messages (IndexedDB) so the
+   * client message parser can still write them to the WebContainer on load;
+   * this only affects the text sent to the model.
+   */
+  sanitized = simplifyBoltActions(sanitized);
 
   return sanitized.trim();
 }

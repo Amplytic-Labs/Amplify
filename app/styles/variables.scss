@@ -97,6 +97,13 @@
   --amplify-elements-borderColor: var(--border);
   --amplify-elements-borderColorActive: var(--ring);
 
+  /*
+   * Base element background — used by `bg-amplify-elements-background`
+   * (Button default variant + generic containers). Theme-aware so containers
+   * without an explicit bg- class no longer fall back to plain white.
+   */
+  --amplify-elements-background: var(--background);
+
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);
   --amplify-elements-bg-depth-3: var(--muted);
@@ -237,6 +244,13 @@
 
   --amplify-elements-borderColor: var(--border);
   --amplify-elements-borderColorActive: var(--ring);
+
+  /*
+   * Base element background — used by `bg-amplify-elements-background`
+   * (Button default variant + generic containers). Theme-aware so containers
+   * without an explicit bg- class no longer fall back to plain white.
+   */
+  --amplify-elements-background: var(--background);
 
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);

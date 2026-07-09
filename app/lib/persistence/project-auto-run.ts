@@ -99,16 +99,19 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
     }
 
     /*
-     * Step 2 — start command (npm run dev). Runs in the background so the
-     * dev server / preview keeps running. We don't `await` the full
-     * execution result because long-running commands never exit.
+     * Step 2 — start command (npm run dev). Runs DETACHED (backgrounded,
+     * not tracked in the shell's executionState) so the dev server keeps
+     * running without blocking subsequent shell commands. Previously this
+     * held executionState.active forever, which caused every later
+     * executeCommand (e.g. an AI-emitted `npm install`) to send Ctrl+C and
+     * kill the dev server.
      */
     if (project.startCommand) {
       toast.info(`Starting project (${project.startCommand})…`, { autoClose: 2000 });
 
-      // Fire and forget — the start command is long-running.
+      // Detached: backgrounds the dev server so the prompt returns.
       shell
-        .executeCommand(`${sessionId}-start`, project.startCommand)
+        .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
         .catch((e) => console.warn('[auto-run] Start command error:', e));
     }
   } catch (e) {
@@ -153,7 +156,7 @@ export async function rerunProjectSetup(project: Project): Promise<void> {
 
     if (project.startCommand) {
       shell
-        .executeCommand(`${sessionId}-start`, project.startCommand)
+        .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
         .catch((e) => console.warn('[rerun] Start command error:', e));
     }
   } catch (e) {

@@ -312,6 +312,15 @@ export default defineConfig({
           borderColor: 'var(--amplify-elements-borderColor)',
           borderColorActive: 'var(--amplify-elements-borderColorActive)',
           background: {
+            /*
+             * DEFAULT resolves `bg-amplify-elements-background` (used by the
+             * Button `default` variant and several containers) to the
+             * theme-aware base background. Without this, the class mapped to
+             * an object with only `depth.*` sub-keys and produced NO
+             * background — leaving containers transparent so they fell back
+             * to the plain white body color.
+             */
+            DEFAULT: 'var(--amplify-elements-background)',
             depth: {
               1: 'var(--amplify-elements-bg-depth-1)',
               2: 'var(--amplify-elements-bg-depth-2)',
