@@ -2115,3 +2115,262 @@ Stage Summary:
   - The merged-list improvement (fix #3) future-proofs against any other
     stale static entries across all providers — the API is now the source
     of truth when available.
+
+---
+Task ID: verify-prev-fixes
+Agent: general-purpose (verification sub-agent)
+Task: READ-ONLY verification of the 4 previously-implemented fixes on the rebrand/amplify branch (commits 18e74a3, 244702b, 8487f4d + stream-text.ts paths-only). No files were modified. No commits made.
+
+Work Log:
+- Read tail of worklog.md to understand previous agents' work.
+- Ran git checks:
+    • `git log --oneline -8` confirms all 4 target commits are present:
+        83413b4 (HEAD, main — PolarFS marker)
+        6db3ea0 (rebrand/amplify tip — worklog handover)
+        8487f4d (Gemma 4 context fix)          ✓ on rebrand/amplify
+        244702b (summarization transparency)   ✓ on rebrand/amplify
+        18e74a3 (context-budget summarization) ✓ on rebrand/amplify
+    • `git branch --show-current` returns `main` (NOT rebrand/amplify).
+      This is the known PolarFS working-tree-auto-revert issue documented
+      by previous agents. HOWEVER: a `git diff main rebrand/amplify --` on
+      all 6 target files returns ZERO diff — the relevant file blobs are
+      byte-identical on both branches. So verification against the working
+      tree is equivalent to verification against rebrand/amplify. (The
+      working tree also has unrelated uncommitted modifications to 9 files
+      including a new simplifyBoltActions call in stream-text.ts — these are
+      NOT part of the 4 fixes under verification and were left untouched.)
+- Verified each fix by reading files via `git show rebrand/amplify:<path>`
+  (reliable; bypasses PolarFS working-tree drift). For one suspicious spot
+  (`}, essages]);` displayed by `git show | rg`), used `git cat-file -p … |
+  od -c` to confirm the actual blob bytes are `  }, [messages]);\n` — the
+  `[m` was being stripped by ANSI-escape interpretation in the display
+  pipeline, NOT a real bug in the file.
+
+Fix 1 — Context-budget-based summarization (commit 18e74a3) — PASS
+  Evidence:
+    app/lib/.server/llm/context-budget.ts (exists, 247 lines):
+      • getModelContextInfo() — lines 104-204. Resolves model+provider from
+        last user message via extractPropertiesFromMessage, then calls
+        llmManager.getModelListFromProvider(provider, …) to get the MERGED
+        model list (dynamic-first), finds the model entry, and computes
+        usableBudget = max(0, maxTokenAllowed − maxCompletionTokens −
+        SYSTEM_PROMPT_RESERVE). summarizationTrigger = floor(usableBudget ×
+        SUMMARIZATION_THRESHOLD = 0.7). Falls back to
+        getStaticModelListFromProvider on dynamic-fetch error.
+      • shouldSummarize() — lines 210-247. Returns { shouldRun, estimatedTokens,
+        messageSliceId }. shouldRun = contextOptimization && hasWorkspaceFiles
+        && estimatedTokens > summarizationTrigger. messageSliceId keeps the
+        last 3 messages verbatim.
+      • Constants: SYSTEM_PROMPT_RESERVE=8192 (L40), DEFAULT_CONTEXT_WINDOW=
+        128000 (L45), DEFAULT_MAX_COMPLETION_TOKENS=8192, SUMMARIZATION_
+        THRESHOLD=0.7 (L57).
+      • import type { ModelInfo } present (L29) — the worklog noted an
+        earlier attempt forgot this; confirmed fixed in 8487f4d.
+    app/routes/api.chat.ts:
+      • L13: `import { getModelContextInfo, shouldSummarize } from
+        '~/lib/.server/llm/context-budget';`
+      • L137: `const contextInfo = await getModelContextInfo(processedMessages,
+        { apiKeys, providerSettings, serverEnv: context.cloudflare?.env });`
+      • L143: `const summarizeDecision = shouldSummarize(processedMessages,
+        contextInfo, contextOptimization, filePaths.length > 0);`
+      • L155: `if (summarizeDecision.shouldRun) { … createSummary(…) … }` —
+        the createSummary call is now gated by the context-budget decision,
+        NOT by `processedMessages.length > 8`. The old >8 gate is GONE;
+        only mentioned in an explanatory comment at L126.
+  Functional assessment: CORRECT. Per-model token budget, real context
+  window from ModelInfo, 70% threshold leaves 30% headroom for the summary
+  LLM call + next turn + tool outputs. HasWorkspaceFiles gate correctly
+  restricts summarization to build mode (matches the existing
+  messageSliceId usage in stream-text.ts).
+
+Fix 2 — Summarization transparency (commit 244702b) — PASS
+  Evidence:
+    app/components/chat/ContextBudgetIndicator.tsx (exists, ~296 lines):
+      • L3: `import * as Popover from '@radix-ui/react-popover';`
+      • L3 also imports motion + AnimatePresence from framer-motion.
+      • <Popover.Root open={open} onOpenChange={setOpen}> wraps a
+        <Popover.Trigger asChild> button (the pill) + <Popover.Portal
+        forceMount> + <Popover.Content sideOffset={8} align="end"
+        className="… w-[280px]" asChild> — confirmed Popover component.
+      • Pill shows: pulsing status dot (animate-ping when isOverTrigger),
+        used/max token readout, mini progress bar, percentage.
+      • Popover content: header w/ model name badge, big token readout,
+        full-width progress bar with red trigger-threshold marker at
+        (triggerThreshold / maxTokenAllowed × 100)%, legend, detail rows
+        (used / remaining / summarization trigger / workspace files), and
+        a contextual status banner (healthy / approaching / condensed).
+      • Color coding: <50% emerald, <75% amber, <90% orange, ≥90% red.
+    app/components/chat/SummarizationToast.tsx (exists, ~125 lines):
+      • Pure side-effect component — returns null.
+      • useEffect scans messages newest→oldest for an assistant message
+        with a `chatSummary` annotation; on first sight fires ONE
+        react-toastify toast: "Conversation condensed (~Xk tokens freed)"
+        with a sparkle icon (i-ph:sparkle-fill).
+      • De-dup via `toastedRef: Set<string>` keyed on `${msg.id}:${chatId}`,
+        bounded LRU (size > 20 → slice(-10)).
+      • autoClose: 5000, respects reduced-motion via toastify defaults.
+    app/routes/api.chat.ts progress messages:
+      • L165: `message: 'Condensing conversation to fit context window…',`
+      • L192: `message: 'Conversation condensed',`
+      • L208: `message: 'Selecting relevant workspace files…',`
+  Functional assessment: CORRECT. Both components are defensive (null
+  return when no usage annotation / no chatSummary annotation) so runtime
+  risk is low. Toast de-dup is sound. Pill's trigger threshold math
+  mirrors server-side (8192 system + 8192 completion reserves, ×0.7) so
+  client and server will agree on when condensation fires.
+
+Fix 3 — Gemma 4 context fix (commit 8487f4d) — PASS
+  Evidence:
+    app/lib/modules/llm/providers/google.ts:
+      • L52-57: `name: 'gemma-4-26b-a4b-it'`, `maxTokenAllowed: 256000`
+        (was 128000).
+      • L59-64: `name: 'gemma-4-31b-it'`, `maxTokenAllowed: 256000`
+        (was 128000).
+      • getDynamicModels heuristics at L134-139:
+          `else if (modelName.includes('gemma-4')) { contextWindow = 256000; }`
+          `else if (modelName.includes('gemma-3')) { contextWindow = 128000; }`
+          `else if (modelName.includes('gemma-2')) { contextWindow = 8192; }`
+        These fire when the Google API omits inputTokenLimit for a Gemma
+        model (previously fell back to 32000).
+    app/lib/.server/llm/context-budget.ts:
+      • L29: `import type { ModelInfo } from '~/lib/modules/llm/types';`
+        (the worklog noted a previous attempt forgot this; confirmed fixed)
+      • L178: `const mergedModels = await llmManager.getModelListFromProvider(
+        provider, { apiKeys, providerSettings, serverEnv });` — dynamic-
+        first merged list, NOT static-first.
+      • L186: Falls back to `getStaticModelListFromProvider` only on catch.
+    app/lib/modules/llm/manager.ts (read for cross-check):
+      • L139-194 getModelListFromProvider: returns
+        `[...dynamicModels, ...filteredStaticList]` where
+        filteredStaticList excludes static entries whose name also appears
+        in dynamic. So dynamic (real API-fetched context window) wins over
+        stale static values. ✓ Confirmed.
+  Functional assessment: CORRECT. User's report ("Gemma 4 31b/26b show
+  128k but are 256k") is fixed in BOTH the static list AND the dynamic
+  path. context-budget.ts now reads the merged list so even if a future
+  provider's static list goes stale, the API-fetched value wins. Minor
+  note: the cached-dynamic path in manager.ts L168 (`return [...cachedModels,
+  ...staticModels]`) does NOT filter static-duplicate names the way the
+  non-cached path does — but context-budget.ts uses .find(), which finds
+  the cached (dynamic) entry first, so behavior is still correct.
+
+Fix 4 — stream-text.ts contextFiles paths-only — PASS
+  Evidence:
+    app/lib/.server/llm/stream-text.ts (lines ~270-298):
+      • Guard: `if (chatMode === 'build' && contextFiles && contextOptimization) {`
+      • Builds PATHS ONLY:
+            const contextPaths = Object.keys(contextFiles)
+              .filter((p) => contextFiles[p]?.type === 'file')
+              .map((p) => p.replace('/home/project/', ''));
+        Then injects into systemPrompt:
+            ${contextPaths.map((p) => `- ${p}`).join('\n')}
+      • Does NOT call `createFilesContext(contextFiles, true)` (the old
+        behavior that injected full source code of ~5 files).
+      • Explanatory comment explicitly documents the rationale: "Previously
+        this called createFilesContext(contextFiles, true) which injected
+        the full source code of ~5 files into the system prompt on every
+        turn. That caused: 1. Token bloat (~7-8k extra prompt tokens per
+        turn) 2. The AI could answer file-content questions WITHOUT calling
+        any tool, because the contents were already in its context".
+      • If a summary exists, the CHAT SUMMARY block is appended and
+        processedMessages is sliced via props.messageSliceId (or last
+        message kept). System prompt + file paths + chat summary all
+        survive; earlier messages get dropped.
+  Functional assessment: CORRECT. The AI now sees only file paths in its
+  system prompt; it must use read_file / str_replace_editor tools to
+  access contents. This both reduces token bloat AND eliminates the
+  "silent code leakage" UX issue.
+
+tsc check (filtered):
+  `npx tsc --noEmit --skipLibCheck 2>&1 | grep -E "context-budget|create-
+  summary|google\.ts|ContextBudgetIndicator|SummarizationToast"` → ZERO
+  matches. No type errors in any of the target files. PASS.
+
+Stage Summary:
+  All 4 fixes PASS verification (code present + correct + functionally
+  sound + tsc-clean):
+    1. ✓ Context-budget summarization (18e74a3): context-budget.ts exists
+       with getModelContextInfo + shouldSummarize; api.chat.ts uses them
+       instead of the old >8 gate.
+    2. ✓ Summarization transparency (244702b): ContextBudgetIndicator is a
+       Radix Popover; SummarizationToast exists and fires on chatSummary
+       annotations; api.chat.ts has the 3 descriptive progress messages.
+    3. ✓ Gemma 4 context (8487f4d): both gemma-4 entries 128k→256k in
+       google.ts static list; getDynamicModels has gemma-4/3/2 heuristics;
+       context-budget.ts prefers merged (dynamic-first) model list.
+    4. ✓ stream-text.ts contextFiles paths-only: builds Object.keys paths
+       list, does NOT inject file contents into system prompt.
+
+  Issues / regressions spotted: NONE.
+    • Minor non-blocking observation: LLMManager.getModelListFromProvider's
+      cached path (manager.ts L168) returns `[...cachedModels,
+      ...staticModels]` without de-duplicating static-vs-cached entries by
+      name, unlike the non-cached path. Doesn't cause a bug here because
+      context-budget.ts uses .find() (cached entry wins), but a future
+      caller that iterates could double-count. Out of scope for this
+      verification.
+    • The working tree currently has 9 uncommitted modifications (incl. a
+      new simplifyBoltActions() call in stream-text.ts that strips
+      <amplifyAction type="file"> contents from message text before it
+      reaches the LLM). These are NOT part of the 4 fixes under
+      verification and appear to be in-progress work from another agent.
+      They were left untouched per the read-only constraint.
+
+  Recommended next actions:
+    • Get browser-based QA working (the recurring sandbox OOM-on-browser-
+      connect issue has blocked visual verification of the Popover and the
+      toast for 3 rounds now). Either (a) a larger-memory sandbox, or (b)
+      a Playwright harness against a `vite build` + static serve (lower
+      memory than dev mode).
+    • Consider committing or stashing the uncommitted simplifyBoltActions
+      work in stream-text.ts + utils.ts so the working tree isn't carrying
+      uncommitted changes across sessions.
+    • Optional cleanup: align the cached-path return in
+      LLMManager.getModelListFromProvider to also filter static-duplicate
+      names, for consistency with the non-cached path.
+
+  No files were modified during this verification other than appending
+  this section to worklog.md.
+
+---
+Task ID: round-4-six-fixes
+Agent: main session
+Task: Fix 6 user-reported issues on rebrand/amplify: (1) clone sends whole workspace file contents → context blowout; (2) sending a message stops the terminal process + shows a notification; (3) sidebar "New Chat" should clear project + hide workspace + show fresh entry; (4) containers/buttons without bg- class fall back to white; (5/6/7) app-start injects export CI=true / update-browserslist / shadcn init — keep simple `npm install` then start, with install waiting for completion.
+
+Work Log:
+- Confirmed on rebrand/amplify branch (commit 5754823). All 6 files committed via git plumbing (PolarFS working-tree auto-revert to main made the normal Edit→commit flow unsafe; reused the read-tree/hash-object/update-index/commit-tree/update-ref pattern from earlier rounds).
+- Verified the 4 previously-implemented fixes (context-budget, summarization transparency, Gemma 4 256k, stream-text paths-only) all PASS via a read-only subagent (Task ID: verify-prev-fixes).
+
+Issue 1 — context bloat on clone:
+- Root cause: GitCloneButton (and GitUrlImport / folderImport) embed ALL file contents in a single assistant message via <amplifyAction type="file">CONTENT</amplifyAction>. That message stays in conversation history → sent to the LLM on every turn → fills the context window in one message.
+- Fix (low-risk, surgical): strip the CONTENTS of <amplifyAction type="file"> tags BEFORE the text reaches the LLM, preserving the filePath attribute (so the model still sees the file tree). Full contents remain in stored messages (IndexedDB) so the client message parser can still write them to the WebContainer on load.
+  - app/lib/.server/llm/utils.ts: extended simplifyBoltActions() to also collapse <amplifyAction type="file">…</amplifyAction> → <amplifyAction type="file" filePath="…" />.
+  - app/lib/.server/llm/stream-text.ts: sanitizeText() now calls simplifyBoltActions() so the main LLM call never sees file contents. (create-summary.ts + select-context.ts already used simplifyBoltActions, so the summary + context-selection LLM calls are covered too.)
+
+Issue 2 — terminal process killed + notification on message send:
+- Root cause: AmplifyShell.executeCommand tracks the running command in executionState. A `start` action (dev server) never exits, so executionState.active stays true forever. Every subsequent executeCommand (e.g. an AI-emitted `npm install`) then sends Ctrl+C (\x03) to "interrupt" — killing the dev server. The failed re-launch then fires the onAlert "Dev Server Failed" notification.
+- Fix:
+  - app/utils/shell.ts: executeCommand + #executeSingleCommand gained a `detached` option. Detached commands are backgrounded (`command &`) so the shell prompt returns, and are NOT tracked in executionState — so later commands don't Ctrl+C them. Detached still waits for any in-flight tracked command (e.g. npm install) to finish first.
+  - app/lib/runtime/action-runner.ts: #runStartAction now (a) skips re-launch if another start action is already running/complete, and (b) calls executeCommand with { detached: true }. Passed currentActionId so the skip-check excludes the current action.
+  - app/lib/persistence/project-auto-run.ts: the fire-and-forget start command in runProjectAutoSetup + rerunProjectSetup now uses { detached: true }.
+
+Issue 3 — sidebar "New Chat" doesn't reset the workspace:
+- Root cause: handleNewChat in ProjectSidebar.tsx called clearSelectedProject() + chatStore.setKey('started', false) + navigate('/') but did NOT reset the workbench, so showWorkbench stayed true and the old project's workspace remained visible.
+- Fix: handleNewChat now calls workbenchStore.resetForNewChat() (which sets showWorkbench=false, clears files, loadedProjectId, editor state) before navigating to "/". The user now lands on a fresh entry screen.
+
+Issue 4 — containers/buttons fall back to white:
+- Root cause: Button.tsx default variant uses `bg-amplify-elements-background`, but in uno.config.ts the `amplify.elements.background` theme key was an OBJECT with only `depth.{1,2,3,4}` sub-keys — no DEFAULT. So `bg-amplify-elements-background` resolved to nothing → transparent → showed the plain white body color.
+- Fix:
+  - uno.config.ts: added `DEFAULT: 'var(--amplify-elements-background)'` to the amplify.elements.background object (alongside depth).
+  - app/styles/variables.scss: added `--amplify-elements-background: var(--background);` in BOTH light and dark themes (theme-aware).
+
+Issue 5/6/7 — injected startup commands:
+- Root cause: app/utils/projectCommands.ts detectProjectCommands built setupCommand = makeNonInteractive('npx update-browserslist-db@latest && npm install') + (for shadcn projects) ' && npx shadcn@latest init', and makeNonInteractive prepended 'export CI=true DEBIAN_FRONTEND=noninteractive FORCE_COLOR=0 && ' and rewrote `npm install` into `npm install --yes --no-audit --no-fund --silent` (--yes is not a valid npm install flag).
+- Fix: makeNonInteractive now just trims the command. setupCommand is a plain 'npm install' (no export CI, no update-browserslist, no shadcn init). startCommand stays `npm run <script>`. The ActionRunner already serializes actions (#currentExecutionPromise) and project-auto-run.ts awaits setup before firing start, so install completes before start runs.
+
+Stage Summary:
+- Commit 5754823 on rebrand/amplify (9 files: ProjectSidebar.tsx, stream-text.ts, utils.ts, project-auto-run.ts, action-runner.ts, variables.scss, projectCommands.ts, shell.ts, uno.config.ts).
+- npx tsc --noEmit --skipLibCheck: ZERO errors in all 9 modified files (one transient TS error about ActionState.id was fixed by passing currentActionId to #runStartAction).
+- Dev server (remix vite:dev on :3000): HTTP 200, 1.57MB homepage, no compile errors in dev.log.
+- Previously-implemented fixes (18e74a3, 244702b, 8487f4d): verified PASS by read-only subagent.
+- Browser-based visual QA: the recurring sandbox OOM-on-browser-connect issue (documented in prior rounds) prevents visual verification; relied on tsc + curl smoke-test + code reading instead. The detached/backgrounded start command change carries runtime risk (jsh `&` backgrounding) that could not be visually verified — recommend browser QA once the sandbox memory issue is resolved.
