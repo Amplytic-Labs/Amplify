@@ -225,7 +225,6 @@ export const ChatImpl = memo(
       fetch: debugFetch,
       body: {
         apiKeys,
-        files,
         promptId,
         contextOptimization: contextOptimizationEnabled,
         chatMode,

@@ -136,7 +136,7 @@ export const ContextBudgetIndicator = memo(({ maxTokenAllowed, messages, modelNa
         <button
           type="button"
           className={classNames(
-            'hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-mono font-semibold leading-none',
+            'hidden sm:flex items-center justify-center h-5 w-5 rounded-full relative',
             'transition-all duration-200 hover:scale-[1.03] hover:shadow-md cursor-pointer',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
             colorClass,
@@ -144,7 +144,30 @@ export const ContextBudgetIndicator = memo(({ maxTokenAllowed, messages, modelNa
           title={`Conversation using ~${formatTokens(used)} of ${formatTokens(maxTokenAllowed)} tokens (${pct}%)`}
           aria-label={`Context budget: ${pct}% used. Click for details.`}
         >
-          {/* Pulsing status dot — pulses when over the summarization trigger */}
+          <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 12 12">
+            <circle
+              cx="6"
+              cy="6"
+              r="5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              fill="transparent"
+              className="opacity-20"
+            />
+            <circle
+              cx="6"
+              cy="6"
+              r="5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              fill="transparent"
+              strokeDasharray="31.4159"
+              strokeDashoffset={31.4159 * (1 - pct / 100)}
+              strokeLinecap="round"
+              className="transition-all duration-500"
+            />
+          </svg>
+          {/* Status dot in the center */}
           <span className="relative flex h-1.5 w-1.5">
             {isOverTrigger && (
               <span
@@ -156,17 +179,6 @@ export const ContextBudgetIndicator = memo(({ maxTokenAllowed, messages, modelNa
             )}
             <span className={classNames('relative inline-flex rounded-full h-1.5 w-1.5', dotColorClass)} />
           </span>
-          <span>
-            {formatTokens(used)}/{formatTokens(maxTokenAllowed)}
-          </span>
-          {/* Mini progress bar */}
-          <div className="w-10 h-1 rounded-full bg-current/20 overflow-hidden">
-            <div
-              className={classNames('h-full rounded-full transition-all duration-500', barColorClass)}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span>{pct}%</span>
         </button>
       </Popover.Trigger>
       <AnimatePresence>

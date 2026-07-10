@@ -281,6 +281,29 @@ export class ProjectStore {
   }
 
   /**
+   * Creates a new project without needing a trigger chat.
+   */
+  createProject(data: { name: string; description?: string; hasWorkspace: boolean }): Project {
+    const projectId = crypto.randomUUID();
+    const project: Project = {
+      id: projectId,
+      name: data.name,
+      description: data.description,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      chatIds: [],
+      primaryChatId: '',
+      hasWorkspace: data.hasWorkspace,
+    };
+
+    this._data.projects.push(project);
+    saveProjectData(this._data);
+    this._notify(projectId);
+
+    return project;
+  }
+
+  /**
    * Links an additional chat to an existing project.
    */
   linkChatToProject(chatId: string, projectId: string): void {

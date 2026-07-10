@@ -45,31 +45,17 @@ export function extractPropertiesFromMessage(message: Omit<Message, 'id'>): {
 }
 
 export function simplifyBoltActions(input: string): string {
-  // Using regex to match boltAction tags that have type="file"
-  const regex = /(<boltAction[^>]*type="file"[^>]*>)([\s\S]*?)(<\/boltAction>)/g;
-
-  // Replace each matching occurrence
-  let out = input.replace(regex, (_0, openingTag, _2, closingTag) => {
+  const actionRegex = /(<(?:bolt|amplify)Action[^>]*filePath=[^>]*>)([\s\S]*?)(<\/(?:bolt|amplify)Action>)/g;
+  let out = input.replace(actionRegex, (_, openingTag, _content, closingTag) => {
     return `${openingTag}\n          ...\n        ${closingTag}`;
   });
 
-  /*
-   * Also strip the CONTENTS of <amplifyAction type="file"> tags (the
-   * rebranded equivalent of boltAction). The file PATH is preserved (via the
-   * filePath attribute) so the model still sees the workspace file tree, but
-   * the raw source code is removed — preventing a single cloned-repo message
-   * from consuming the entire context window on every subsequent turn.
-   *
-   * The full contents remain in stored messages (IndexedDB) so the client
-   * message parser can still write them to the WebContainer on load. This
-   * only affects what is sent to the LLM.
-   */
-  out = out.replace(
-    /(<amplifyAction[^>]*type="file"[^>]*>)([\s\S]*?)(<\/amplifyAction>)/g,
-    (_0, openingTag, _2, closingTag) => {
-      return `${openingTag.replace(/>$/, ' />')}`;
-    },
-  );
+  out = out.replace(/(<boltArtifact[^>]*>)([\s\S]*?)(<\/boltArtifact>)/g, (_0, openingTag, _content, closingTag) => {
+    if (_content.includes('boltAction') || _content.includes('amplifyAction')) {
+      return `${openingTag}\n  [Workspace files listed in artifact collapsed]\n${closingTag}`;
+    }
+    return $_0;
+  });
 
   return out;
 }

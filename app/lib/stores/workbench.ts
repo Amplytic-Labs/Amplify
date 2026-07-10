@@ -15,7 +15,8 @@ import fileSaver from 'file-saver';
 import { Octokit, type RestEndpointMethodTypes } from '@octokit/rest';
 import { path } from '~/utils/path';
 import { extractRelativePath } from '~/utils/diff';
-import { description } from '~/lib/persistence';
+import { description, db } from '~/lib/persistence';
+import { saveProjectFiles } from '~/lib/persistence/project-files';
 import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
@@ -378,6 +379,14 @@ export class WorkbenchStore {
      */
 
     await this.#filesStore.saveFile(filePath, document.value);
+
+    // If a project is loaded, persist this file change to the project's global FileMap.
+    // This ensures that "New Chat" in the same project starts with the latest files.
+    const projectId = this.loadedProjectId.get();
+    if (projectId && projectId !== '<none>' && db) {
+      const files = this.files.get();
+      await saveProjectFiles(db, projectId, files);
+    }
 
     const newUnsavedFiles = new Set(this.unsavedFiles.get());
     newUnsavedFiles.delete(filePath);

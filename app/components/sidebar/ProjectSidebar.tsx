@@ -333,7 +333,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
          * Client-side navigation (Remix useNavigate) — preserves the
          * WebContainer + workspace state, so no page refresh / file re-inject.
          */
-        navigate(`/chat/${newUrlId}`);
+        navigate(`/${project.id}/${newUrlId}`);
         toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
       } catch (e) {
         console.error('[ProjectSidebar] Failed to load project:', e);
@@ -372,6 +372,14 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       }
 
       try {
+        /*
+         * Before creating the new chat, reset the workbench and chat state.
+         * This "destroys" the current workspace environment to prevent glitches
+         * and ensure the new chat starts with a fresh, clean state.
+         */
+        workbenchStore.resetForNewChat();
+        chatStore.setKey('started', false);
+
         const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
           projectId: project.id,
           projectInitiated: true,
@@ -384,7 +392,9 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
 
         setSelectedProject(project.id);
         loadEntries();
-        navigate(`/chat/${newUrlId}`);
+
+        // Navigate to the new chat using the project-based URL structure.
+        navigate(`/${project.id}/${newUrlId}`);
         toast.success('New chat created in project', { autoClose: 2000 });
       } catch (e) {
         console.error('[ProjectSidebar] Failed to create chat in project:', e);
@@ -507,8 +517,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
     (project: Project) => {
       const projectChatIds = projectStore.getProjectChatIds(project.id);
       const currentChat = chatId.get();
-      const currentChatBelongsToProject =
-        currentChat && projectChatIds.includes(currentChat);
+      const currentChatBelongsToProject = currentChat && projectChatIds.includes(currentChat);
 
       projectStore.deleteProject(project.id);
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
@@ -949,6 +958,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   onDelete={(item) => setDialogContent({ type: 'delete', item })}
                   onDuplicate={handleDuplicate}
                   exportChat={exportChat}
+                  navigate={navigate}
                 />
               ) : (
                 /*
@@ -1104,6 +1114,7 @@ interface SelectedProjectChatsListProps {
   onDelete: (item: ChatHistoryItem) => void;
   onDuplicate: (id: string) => void;
   exportChat: (id?: string) => void;
+  navigate: (to: string) => void;
 }
 
 function SelectedProjectChatsList({
@@ -1117,6 +1128,7 @@ function SelectedProjectChatsList({
   onDelete,
   onDuplicate,
   exportChat,
+  navigate,
 }: SelectedProjectChatsListProps) {
   return (
     <>
@@ -1226,6 +1238,7 @@ function SelectedProjectChatsList({
               onDelete(item);
             }}
             onDuplicate={() => onDuplicate(item.id)}
+            onNavigate={() => navigate(`/${project.id}/${item.urlId}`)}
           />
         ))
       )}

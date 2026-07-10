@@ -216,8 +216,7 @@ export async function getNextId(db: IDBDatabase): Promise<string> {
     const request = store.getAllKeys();
 
     request.onsuccess = () => {
-      const highestId = request.result.reduce((cur, acc) => Math.max(+cur, +acc), 0);
-      resolve(String(+highestId + 1));
+      resolve(crypto.randomUUID());
     };
 
     request.onerror = () => reject(request.error);

@@ -14,48 +14,15 @@
  *     working on the project's global file state + memory.
  *
  * The selection is intentionally separate from `chatId` so it survives chat
- * switches inside the same project. It is also persisted to localStorage so
- * the user returns to the same project after a refresh.
+ * switches inside the same project.
  */
 
 import { atom } from 'nanostores';
 
-const SELECTED_PROJECT_KEY = 'amplify_selected_project';
-
-function loadInitial(): string | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
-  }
-
-  try {
-    return localStorage.getItem(SELECTED_PROJECT_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The currently selected project ID (or undefined if no project is selected,
- * meaning the sidebar is showing personal chats).
- */
-export const selectedProjectId = atom<string | undefined>(loadInitial());
+export const selectedProjectId = atom<string | undefined>(undefined);
 
 export function setSelectedProject(projectId: string | undefined): void {
   selectedProjectId.set(projectId);
-
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    if (projectId) {
-      localStorage.setItem(SELECTED_PROJECT_KEY, projectId);
-    } else {
-      localStorage.removeItem(SELECTED_PROJECT_KEY);
-    }
-  } catch {
-    /* ignore quota / privacy errors */
-  }
 }
 
 /**
