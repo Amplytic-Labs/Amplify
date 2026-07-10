@@ -2868,3 +2868,199 @@ Stage Summary:
 - Template/git click now correctly navigates to `/<projectId>/<chatId>` and loads the project chat (no more redirect to `/`).
 - Project auto-setup (npm install + start) is now VISIBLE on the "Amplify Terminal" tab. AI commands run on the separate "AI Terminal" tab. Both are visible, both are isolated.
 - Pushing to origin/rebrand/amplify.
+
+---
+Task ID: 11-b
+Agent: general-purpose (research only)
+Task: Investigate why the sidebar does not visually highlight the currently-active chat. RESEARCH ONLY — no code changes.
+
+Work Log:
+- Read worklog.md rounds 6–10 (lines 2442–2870) for context on the sidebar rework, project-chat URL structure (`/<projectId>/<chatId>`), and the round-8 urlId-vs-internalId fix.
+- Read end-to-end: app/components/sidebar/ProjectSidebar.tsx (1549 lines), app/components/sidebar/HistoryItem.tsx (legacy), app/components/sidebar/Menu.client.tsx (legacy overlay), app/lib/persistence/useChatHistory.ts (1024 lines), app/components/chat/Chat.client.tsx (relevant slices), app/lib/persistence/db.ts (getMessages/getMessagesById/getMessagesByUrlId).
+- Read all four route files that render the sidebar layout: app/routes/_index.tsx, app/routes/chat.$id.tsx, app/routes/$projectId.tsx, app/routes/$projectId.$chatId.tsx.
+- Cross-referenced Remix `useParams()` vs `useLoaderData()` semantics against the route param names.
+
+Findings:
+
+(a) Exact code that renders chat list items + active-state logic
+
+  The single source of truth for the sidebar chat list is `SidebarHistoryItem` (defined in ProjectSidebar.tsx, lines 1378–1548). It is rendered in TWO places:
+
+  1. PERSONAL CHATS — ProjectSidebar.tsx lines 979–992 (inside the binned-chats map, shown when no project is selected):
+     ```tsx
+     {items.map((item) => (
+       <SidebarHistoryItem
+         key={item.id}
+         item={item}
+         isActive={urlId === item.urlId}        // ← line 983
+         exportChat={exportChat}
+         onDelete={...}
+         onDuplicate={() => handleDuplicate(item.id)}
+       />
+     ))}
+     ```
+
+  2. PROJECT CHATS — ProjectSidebar.tsx lines 1229–1242 (inside `SelectedProjectChatsList`, shown when a project is selected):
+     ```tsx
+     chats.map((item) => (
+       <SidebarHistoryItem
+         key={item.id}
+         item={item}
+         isActive={currentUrlId === item.urlId}  // ← line 1233
+         exportChat={exportChat}
+         onDelete={...}
+         onDuplicate={() => onDuplicate(item.id)}
+       />
+     ))
+     ```
+     `currentUrlId` is the prop passed in at line 945: `currentUrlId={urlId}`.
+
+  The `SidebarHistoryItem` itself applies the active class at lines 1416–1421:
+     ```tsx
+     <div
+       className={classNames(
+         'group relative w-full flex items-center gap-[10px] px-[9px] py-[7px] rounded cursor-pointer transition-colors',
+         isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/50',
+       )}
+     >
+     ```
+  So when `isActive` is true the row gets `bg-sidebar-accent`; otherwise only a 50%-opacity hover tint. The styling is fine — the problem is that `isActive` is never true for project chats.
+
+(b) How "active" is currently determined
+
+  `urlId` is computed ONCE at the top of `ProjectSidebar` (line 70):
+     ```tsx
+     const { id: urlId } = useParams();
+     ```
+  It reads ONLY the `id` param from Remix's `useParams()`. The chatId atom (`currentChatId = useStore(chatId)` at line 72) is read but ONLY used by the project-sync `useEffect` at lines 233–254 (to set/clear `selectedProjectId`) — it is NOT used anywhere in the active-state check.
+
+  The active-state comparison is always `urlId === item.urlId` (or its alias `currentUrlId === item.urlId`). This is comparing the URL path segment to each `ChatHistoryItem.urlId`. That comparison is correct in principle — `SidebarHistoryItem` builds its `href` from `item.urlId` (lines 1386–1388: `/chat/${item.urlId}` or `/${item.metadata.projectId}/${item.urlId}`), so the URL segment IS the chat's `urlId`.
+
+(c) Why it's broken for project chats (and works for normal chats)
+
+  The bug is a route-param NAME mismatch. Remix's `useParams()` returns an object keyed by the param names declared in the route filename:
+
+  Route file                  | URL pattern              | useParams() returns
+  ----------------------------|--------------------------|-------------------------------------
+  app/routes/_index.tsx       | /                        | {}
+  app/routes/chat.$id.tsx     | /chat/<id>               | { id: "<id>" }                    ✓
+  app/routes/$projectId.tsx   | /<projectId>             | { projectId: "<projectId>" }
+  app/routes/$projectId.$chatId.tsx | /<projectId>/<chatId> | { projectId, chatId: "<chatId>" }
+
+  (Confirmed by reading each route's loader: `args.params.id`, `args.params.projectId`, `args.params.chatId`.)
+
+  So `useParams().id`:
+    • `/chat/<id>`        → returns "<id>" (the chat's urlId) ✓
+    • `/<projectId>/<chatId>` → returns `undefined` ✗  (the param is named `chatId`, not `id`)
+    • `/<projectId>`      → returns `undefined`
+    • `/`                 → returns `undefined`
+
+  Consequences for the active check:
+    • PERSONAL CHAT at `/chat/<id>`: `isActive = (urlId === item.urlId) = ("<id>" === item.urlId)` → TRUE for the matching item. Highlight WORKS. ✓
+    • PROJECT CHAT at `/<projectId>/<chatId>`: `urlId` is `undefined`, so `isActive = (currentUrlId === item.urlId) = (undefined === item.urlId)` → ALWAYS FALSE. NO item is ever highlighted. ✗
+
+  This is the bug the user is reporting. Given the recent rounds 6–10 migrated everything to project-scoped chats (`/<projectId>/<chatId>`), the user is almost always on a project-chat URL when they notice the missing highlight, which is why it appears "always broken".
+
+  Note: the chatId atom IS set correctly for both normal and project chats (useChatHistory.ts line 433 and 463: `chatId.set(storedMessages.id)` after `getMessages` resolves), so the project-sync `useEffect` at line 233 correctly selects the project and shows the `SelectedProjectChatsList`. The chat list renders the right chats — they just all appear unhighlighted because the active comparison value (`urlId`) is `undefined`.
+
+(d) Concrete fix recommendations
+
+  Three viable approaches. Option A is the minimal, lowest-risk fix.
+
+  ── Option A (RECOMMENDED — minimal, synchronous, URL-derived) ──
+  Replace ProjectSidebar.tsx line 70:
+     ```tsx
+     const { id: urlId } = useParams();
+     ```
+  with:
+     ```tsx
+     const params = useParams();
+     const urlId = params.id ?? params.chatId;
+     ```
+  This handles both route shapes (`/chat/<id>` exposes `id`, `/<projectId>/<chatId>` exposes `chatId`). No other code changes needed — `urlId` then flows correctly to both `isActive={urlId === item.urlId}` (line 983) and `currentUrlId={urlId}` (line 945 → line 1233).
+
+  ── Option B (also clean — use the loader data, which is already consistent) ──
+  The route loaders already normalize the chat id into an `id` field across all four routes (verified by reading each loader):
+    • _index.tsx:           `json({})`
+    • chat.$id.tsx:         `json({ id: args.params.id })`
+    • $projectId.$chatId.tsx: `json({ id: args.params.chatId, projectId: args.params.projectId })`
+    • $projectId.tsx:       `json({ id: undefined, projectId: args.params.projectId })`
+  So:
+    1. Update the import on line 23:
+         `import { useLoaderData, useNavigate, Link } from '@remix-run/react';`
+    2. Replace line 70:
+         `const { id: urlId } = useParams();`
+       with:
+         `const { id: urlId } = useLoaderData<{ id?: string; projectId?: string }>();`
+  This is more "Remix-idiomatic" but slightly more invasive (adds a hook + import). Same end behavior as Option A.
+
+  ── Option C (NOT recommended — use the chatId atom + internal id) ──
+  The sidebar already reads `currentChatId = useStore(chatId)` (line 72). One could change line 983 to `isActive={currentChatId === item.id}` and pass `currentChatId` (instead of `currentUrlId`) to `SelectedProjectChatsList` for use at line 1233. This works because the `chatId` atom is set to `storedMessages.id` for both normal and project chats.
+  DOWNSIDE: `chatId` is updated ASYNCHRONOUSLY by useChatHistory's load effect (after `getMessages(db, …)` resolves — see lines 433/463), so the sidebar highlight LAGS behind the URL change on every navigation. There is also a brief window on first paint where `chatId` is `undefined` even though the URL is already `/chat/<id>`, so no item would highlight until the async load completes. Options A and B are URL-derived and therefore update synchronously on navigation — strictly better UX.
+
+  ── Active-state styling suggestion (optional) ──
+  The current active styling (`bg-sidebar-accent` on line 1419) is somewhat subtle. To make the active chat more visually obvious (the user said "we cannot see … which chat is active"), consider strengthening it, e.g.:
+     ```tsx
+     isActive
+       ? 'bg-sidebar-accent font-medium ring-1 ring-inset ring-purple-500/30'
+       : 'hover:bg-sidebar-accent/50',
+     ```
+  and/or adding a left accent border (`border-l-2 border-purple-500`). This is purely cosmetic; the actual bug is the param-name mismatch, not the styling.
+
+(e) Related broken pieces / latent issues
+
+  1. LEGACY HistoryItem.tsx (lines 28–29) has the IDENTICAL bug:
+       ```tsx
+       const { id: urlId } = useParams();
+       const isActiveChat = urlId === item.urlId;
+       ```
+     This component is used by `Menu.client.tsx` (the old floating overlay, still rendered via BaseChat.tsx line 378 → Chat.client.tsx line 1902). The ProjectSidebar comments (line 81, 1078) say the old Menu overlay is "unreachable in the new layout", so this is latent — but if the Menu is ever re-shown (e.g. via `sidebarStore`), project chats will not be highlighted there either. Fixing Option A/B in ProjectSidebar.tsx should be mirrored in HistoryItem.tsx for consistency:
+       ```tsx
+       const params = useParams();
+       const urlId = params.id ?? params.chatId;
+       ```
+
+  2. The `chatId` atom (useChatHistory.ts line 44) holds the INTERNAL id, not the urlId. The sidebar's `currentChatId = useStore(chatId)` (line 72) is only used for the project-sync `useEffect`, not for highlighting. There is no separate `urlId` atom exported from `~/lib/persistence`. If a future fix wanted to drive highlight off the atom (Option C above), a `urlId`-valued atom would need to be added and set in the load effect (line 431/461 already call `setUrlId(storedMessages.urlId)`, but that `setUrlId` is the local `useState` setter inside `useChatHistory`, not an atom). This is more invasive than Options A/B and not recommended.
+
+  3. No issue with `item.urlId` ever being undefined in the rendered lists:
+       • `loadEntries` (line 419) filters out items without urlId before `setList`.
+       • The selected-project-chats effect (line 199) filters with `!!c && !!c.urlId`.
+     So `item.urlId` is always a string in both render paths; the only `undefined` value in the comparison is `urlId`/`currentUrlId` itself on project-chat URLs.
+
+  4. No issue with the `chatId` atom failing to be set for project chats — verified it is set on both the messages-present branch (line 433) and the empty-messages project-chat branch (line 463). So the project-sync `useEffect` correctly selects the project for project-chat URLs; only the active-row highlight is broken.
+
+  5. No re-render / reactivity issue: `useParams()` is reactive to route changes in Remix, so the sidebar re-renders with the new param values on every navigation. The bug is purely the param NAME (`id` vs `chatId`), not a reactivity problem.
+
+Bottom line: ONE-LINE ROOT CAUSE — `ProjectSidebar.tsx` line 70 reads `useParams().id`, which is `undefined` on the `/<projectId>/<chatId>` route (where the param is named `chatId`). Fix is to also read `params.chatId` (Option A) or to switch to `useLoaderData().id` (Option B). Normal chats at `/chat/<id>` already highlight correctly; project chats never do.
+
+---
+Task ID: 12
+Agent: main (continuation)
+Task: Fix two new bugs reported by user: (1) in new chat the workspace does not load; (2) cannot see in the sidebar which chat is active.
+
+Work Log:
+- Dispatched subagent 11-b for sidebar investigation (completed) and 11-a for workspace investigation (timed out — analyzed manually).
+
+Bug 1 — Workspace does not load in new chat:
+- ROOT CAUSE: The IIFE at useChatHistory.ts ~line 342 loads project files (clearWorkspace → getProjectFiles → restoreFileMap → files.set → showWorkbench.set(true) → runProjectAutoSetup). It is fire-and-forget — runs in parallel with Promise.all([getMessages, getSnapshot]). If the IIFE fails (e.g. WebContainer slow to boot on full page reload, clearWorkspace/restoreFileMap throws), the catch block swallows the error and files are NEVER loaded.
+- The else-if branch (empty messages, round-10 change) sets showWorkbench=true but does NOT load files — relies entirely on the IIFE. So hasFiles stays false → "Loading workspace…" forever.
+- The if branch (project chats WITH messages) had TWO problems: (a) never called showWorkbench.set(true) — relied on IIFE; (b) restoreSnapshot writes to WebContainer FS but does NOT update workbenchStore.files, so hasFiles stayed false even after successful restoreSnapshot if IIFE failed.
+- FIX: added file-loading safety nets to ALL branches in the .then() callback:
+  * if/linkedProject+snapshot: set showWorkbench(true) + populate file store from snapshot.files if IIFE failed
+  * if/linkedProject+no-snapshot: set showWorkbench(true) + load from getProjectFiles as fallback
+  * if/!linkedProject+projectInitiated: set showWorkbench(true) + populate file store from snapshot
+  * else-if (empty messages): load from getProjectFiles if file store still empty (round-10 already had showWorkbench.set)
+  Each safety net checks if workbenchStore.files is empty before loading → idempotent, no double-load.
+
+Bug 2 — Sidebar doesn't show active chat:
+- ROOT CAUSE (confirmed by subagent 11-b): ProjectSidebar.tsx line 70 used `const { id: urlId } = useParams()`. Remix route param names come from the route filename: chat.$id.tsx → { id }; $projectId.$chatId.tsx → { projectId, chatId } — NO `id`. So useParams().id was undefined on project-chat routes → active-chat comparison (urlId === item.urlId) always false → no project chat highlighted.
+- FIX: `const params = useParams(); const urlId = params.id ?? params.chatId;` — falls back to chatId for project-chat routes. Applied to both ProjectSidebar.tsx and HistoryItem.tsx (same bug).
+
+Verification:
+- npx tsc --noEmit: 1 error total (pre-existing in app/lib/.server/llm/utils.ts). Zero errors in modified files.
+- npx eslint --fix: all auto-fixable resolved. Remaining errors are pre-existing (validSnapshot unused, navigate unused in ProjectSidebar, consistent-return).
+- Dev server OOMs when browser hits it (recurring Vite memory issue) — could not do browser-based verification. Verified via tsc + code analysis.
+
+Stage Summary:
+- 3 files changed: app/lib/persistence/useChatHistory.ts (+91), app/components/sidebar/ProjectSidebar.tsx (+44/-24), app/components/sidebar/HistoryItem.tsx (+2/-1).
+- Commit 5e7afb1 on rebrand/amplify. Pushed to origin/rebrand/amplify.
