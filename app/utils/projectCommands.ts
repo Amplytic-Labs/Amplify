@@ -44,19 +44,58 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
       const scripts = packageJson?.scripts || {};
 
       /*
-       * Detect the package manager from lock files. This ensures we use the
-       * correct install + run commands for the project's package manager.
-       * Priority: bun > pnpm > yarn > npm (default).
+       * Detect the package manager, but ONLY emit commands for managers that
+       * actually run inside WebContainer.
+       *
+       * WebContainer runtime support (verified Nov 2025):
+       *   ✅ npm           — native, always available (ships with Node)
+       *   ✅ pnpm          — native
+       *   ✅ yarn v1       — native (`yarn` resolves to classic)
+       *   ❌ yarn berry    — NOT supported (stackblitz/webcontainer-core#1235,
+       *                       `yarnPath` explicitly ignored)
+       *   ❌ bun           — NOT supported (stackblitz/webcontainer-core#1249
+       *                       closed "no plans"; #1891 still open). Bun is a
+       *                       native Zig binary and cannot run in the WASM
+       *                       Node.js runtime.
+       *
+       * So bun.lock* and yarn-berry projects MUST fall back to `npm`, otherwise
+       * the auto-setup terminal will fail with "command not found".
+       *
+       * Detection order:
+       *   1. `packageManager` field in package.json (Corepack standard) — most
+       *      reliable, encodes both name + version.
+       *   2. Lockfile presence (fallback when packageManager is absent).
+       *
+       * Resulting `pkgManager` is always one of: 'npm' | 'pnpm' | 'yarn'.
        */
-      let pkgManager = 'npm';
+      const pkgManagerField: string | undefined = packageJson?.packageManager;
 
-      if (hasFile('bun.lockb') || hasFile('bun.lock')) {
-        pkgManager = 'bun';
+      let pkgManager: 'npm' | 'pnpm' | 'yarn' = 'npm';
+
+      if (pkgManagerField) {
+        // Corepack field, e.g. "pnpm@9.10.0", "yarn@1.22.22", "yarn@4.5.0",
+        // "bun@1.1.0", "npm@10.5.0".
+        const match = /^([a-z]+)@(\d+)/i.exec(pkgManagerField.trim());
+        const name = match?.[1]?.toLowerCase();
+        const major = match?.[2] ? Number(match[2]) : 0;
+
+        if (name === 'pnpm') {
+          pkgManager = 'pnpm';
+        } else if (name === 'yarn' && major === 1) {
+          pkgManager = 'yarn'; // yarn classic — supported
+        } else if (name === 'npm') {
+          pkgManager = 'npm';
+        }
+        // bun@*, yarn@2+ → unsupported → stays 'npm' (fallback)
       } else if (hasFile('pnpm-lock.yaml')) {
         pkgManager = 'pnpm';
       } else if (hasFile('yarn.lock')) {
-        pkgManager = 'yarn';
+        // A bare `yarn.lock` is ambiguous (v1 vs berry share the filename).
+        // Berry projects also ship `.yarnrc.yml`; if that file is present we
+        // cannot use yarn and fall back to npm.
+        pkgManager = hasFile('.yarnrc.yml') ? 'npm' : 'yarn';
       }
+      // bun.lockb / bun.lock → unsupported → stays 'npm' (fallback)
 
       const installCmd = pkgManager === 'npm' ? 'npm install' : `${pkgManager} install`;
       const runCmd = pkgManager === 'yarn' ? 'yarn' : `${pkgManager} run`;
