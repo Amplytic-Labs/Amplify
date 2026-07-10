@@ -4,16 +4,24 @@
  * When a project is loaded (either by opening a project chat or by selecting
  * a project in the sidebar), this module is responsible for:
  *
- *   1. Running the project's `setupCommand` (e.g. `npm install`) — once per
- *      project lifetime (controlled by `Project.isSetupComplete`).
- *   2. Running the project's `startCommand` (e.g. `npm run dev`) — once per
- *      browser session (controlled by `workbenchStore.projectAutoStarted`).
+ *   1. Running the project's `setupCommand` (e.g. `npm install`) — on every
+ *      project load (controlled by `workbenchStore.projectAutoStarted`).
+ *   2. Running the project's `startCommand` (e.g. `npm run dev`) — on every
+ *      project load, after setup completes.
  *
  * Both commands are persisted on the project (detected from `package.json`
  * via `detectProjectCommands`) so the AI never has to manually run them.
  *
- * The helper is idempotent: it short-circuits if `projectAutoStarted` is
- * already true, and it only runs setup when `isSetupComplete` is false.
+ * ── Silent + Isolated ──
+ * The commands run on the DEDICATED `initTerminal` (a separate AmplifyShell
+ * from the AI's `amplifyTerminal`). This means:
+ *  - The AI's shell commands don't interfere with the running dev server.
+ *  - The dev server's output doesn't pollute the AI's terminal.
+ *  - Ctrl+C in the AI terminal doesn't kill the dev server.
+ *
+ * The commands are SILENT — no toast notifications, no chat messages. The
+ * user sees the output in the init terminal's scrollback (visible if they
+ * switch to the init terminal tab, but not in the chat).
  */
 
 import { toast } from 'react-toastify';
@@ -22,35 +30,27 @@ import { projectStore } from './project-store';
 import { workbenchStore } from '~/lib/stores/workbench';
 
 /**
- * Session-scoped memo: which projects have we already attempted to auto-run
- * in this session? Prevents re-running setup even if `isSetupComplete` gets
- * cleared mid-session.
- */
-const attemptedThisSession = new Set<string>();
-
-/**
- * Run the project's setup + start commands in the Amplify shell.
+ * Run the project's setup + start commands in the INIT shell (separate from
+ * the AI's terminal).
  *
- * Safe to call multiple times — it short-circuits when the session flag is
- * already set, and only runs setup when `project.isSetupComplete` is false.
+ * On every project load this runs `npm install` (waits for completion) then
+ * fires the start command (detached/backgrounded). The session guard
+ * (`projectAutoStarted`) prevents double-running within the same load cycle,
+ * but is reset on every chat switch so each new chat load re-runs setup.
  */
 export async function runProjectAutoSetup(project: Project): Promise<void> {
   if (!project) {
     return;
   }
 
-  // Session-level guard: never auto-run twice in the same browser session.
+  // Session-level guard: prevents double-running within the same load cycle.
+  // This is reset to false on every chat switch (by useChatHistory setting
+  // projectAutoStarted.set(false) when loadedProjectId changes), so each
+  // new chat load re-triggers setup + start.
   if (workbenchStore.projectAutoStarted.get()) {
     return;
   }
 
-  // Per-attempt guard: even if the session flag was reset (e.g. by HMR),
-  // don't re-attempt the same project twice.
-  if (attemptedThisSession.has(project.id)) {
-    return;
-  }
-
-  attemptedThisSession.add(project.id);
   workbenchStore.projectAutoStarted.set(true);
 
   // No commands detected? Nothing to do.
@@ -58,79 +58,68 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
     return;
   }
 
-  // Wait for the Amplify shell to be ready (terminal is attached on first
-  // render of the workbench terminal panel).
-  const shell = workbenchStore.amplifyTerminal;
+  // Use the INIT terminal (separate from the AI's amplifyTerminal) so the
+  // dev server isn't killed when the AI runs a shell command later.
+  const shell = workbenchStore.initTerminal;
 
   try {
     await shell.ready();
   } catch {
-    /*
-     * If the shell isn't initialized yet (e.g. workbench never opened), we
-     * still mark `projectAutoStarted` so a later project-switch can re-trigger
-     * by clearing the flag. The user can also click "Run setup" in the UI.
-     */
-    console.warn('[auto-run] Amplify shell not ready — deferring auto-setup.');
+    console.warn('[auto-run] Init shell not ready — deferring auto-setup.');
     workbenchStore.projectAutoStarted.set(false);
     return;
   }
-
-  // Make sure the terminal is visible so the user sees what's happening.
-  workbenchStore.toggleTerminal(true);
 
   const sessionId = `auto-${project.id}-${Date.now()}`;
 
   try {
     /*
-     * Step 1 — setup (npm install). Skip if already complete.
+     * Step 1 — setup (npm install). Wait for completion before starting
+     * the dev server. Silent — no toast, the output goes to the init
+     * terminal.
      */
     if (project.setupCommand && !project.isSetupComplete) {
-      toast.info(`Installing dependencies for "${project.name}"…`, { autoClose: 2500 });
+      console.log(`[auto-run] Running setup: ${project.setupCommand}`);
 
       const result = await shell.executeCommand(sessionId, project.setupCommand);
 
       if (result && result.exitCode === 0) {
         projectStore.updateProject(project.id, { isSetupComplete: true });
-        toast.success('Dependencies installed — project ready', { autoClose: 2500 });
+        console.log('[auto-run] Setup complete');
       } else if (result) {
         console.warn('[auto-run] Setup exited with non-zero code:', result.exitCode);
-        toast.warning('Setup completed with warnings — see terminal', { autoClose: 3500 });
       }
     }
 
     /*
-     * Step 2 — start command (npm run dev). Runs DETACHED (backgrounded,
-     * not tracked in the shell's executionState) so the dev server keeps
-     * running without blocking subsequent shell commands. Previously this
-     * held executionState.active forever, which caused every later
-     * executeCommand (e.g. an AI-emitted `npm install`) to send Ctrl+C and
-     * kill the dev server.
+     * Step 2 — start command (npm run dev). Runs DETACHED (backgrounded)
+     * on the init terminal so the dev server keeps running. Because this
+     * is a SEPARATE shell from the AI's terminal, the AI's shell commands
+     * won't Ctrl+C the dev server.
      */
     if (project.startCommand) {
-      toast.info(`Starting project (${project.startCommand})…`, { autoClose: 2000 });
+      console.log(`[auto-run] Starting: ${project.startCommand}`);
 
-      // Detached: backgrounds the dev server so the prompt returns.
       shell
         .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
         .catch((e) => console.warn('[auto-run] Start command error:', e));
     }
   } catch (e) {
     console.error('[auto-run] Failed:', e);
-    toast.error('Failed to auto-setup project — see terminal');
     workbenchStore.projectAutoStarted.set(false);
   }
 }
 
 /**
  * Manually re-trigger setup + start for a project (used by the "Re-run setup"
- * button in the sidebar). Bypasses the session guard.
+ * button in the sidebar). Bypasses the session guard. Runs on the init terminal.
  */
 export async function rerunProjectSetup(project: Project): Promise<void> {
   if (!project) {
     return;
   }
 
-  const shell = workbenchStore.amplifyTerminal;
+  const shell = workbenchStore.initTerminal;
 
   try {
     await shell.ready();

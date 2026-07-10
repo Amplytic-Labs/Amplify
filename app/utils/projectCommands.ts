@@ -43,32 +43,43 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
       const packageJson = JSON.parse(packageJsonFile.content);
       const scripts = packageJson?.scripts || {};
 
+      /*
+       * Detect the package manager from lock files. This ensures we use the
+       * correct install + run commands for the project's package manager.
+       * Priority: bun > pnpm > yarn > npm (default).
+       */
+      let pkgManager = 'npm';
+
+      if (hasFile('bun.lockb') || hasFile('bun.lock')) {
+        pkgManager = 'bun';
+      } else if (hasFile('pnpm-lock.yaml')) {
+        pkgManager = 'pnpm';
+      } else if (hasFile('yarn.lock')) {
+        pkgManager = 'yarn';
+      }
+
+      const installCmd = pkgManager === 'npm' ? 'npm install' : `${pkgManager} install`;
+      const runCmd = pkgManager === 'yarn' ? 'yarn' : `${pkgManager} run`;
+
       // Check for preferred commands in priority order
       const preferredCommands = ['dev', 'start', 'preview'];
       const availableCommand = preferredCommands.find((cmd) => scripts[cmd]);
 
-      /*
-       * Keep the setup command simple: just `npm install`.
-       * (Previously this also ran `npx update-browserslist-db@latest` and, for
-       * shadcn projects, `npx shadcn@latest init` — both removed per user
-       * request. The start command runs only after install completes.)
-       */
-      const setupCommand = makeNonInteractive('npm install');
+      const setupCommand = makeNonInteractive(installCmd);
 
       if (availableCommand) {
         return {
           type: 'Node.js',
           setupCommand,
-          startCommand: `npm run ${availableCommand}`,
-          followupMessage: `Found "${availableCommand}" script in package.json. Running "npm run ${availableCommand}" after installation.`,
+          startCommand: `${runCmd} ${availableCommand}`,
+          followupMessage: '',
         };
       }
 
       return {
         type: 'Node.js',
         setupCommand,
-        followupMessage:
-          'Would you like me to inspect package.json to determine the available scripts for running this project?',
+        followupMessage: '',
       };
     } catch (error) {
       console.error('Error parsing package.json:', error);

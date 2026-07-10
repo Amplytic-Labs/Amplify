@@ -146,6 +146,15 @@ export class WorkbenchStore {
   get amplifyTerminal() {
     return this.#terminalStore.amplifyTerminal;
   }
+
+  /*
+   * Dedicated shell for project initialization (npm install + start).
+   * Separate from amplifyTerminal (which AI actions use) so the dev server
+   * isn't killed when the AI runs a shell command.
+   */
+  get initTerminal() {
+    return this.#terminalStore.initTerminal;
+  }
   get alert() {
     return this.actionAlert;
   }
@@ -178,6 +187,9 @@ export class WorkbenchStore {
   }
   attachAmplifyTerminal(terminal: ITerminal) {
     this.#terminalStore.attachAmplifyTerminal(terminal);
+  }
+  attachInitTerminal(terminal: ITerminal) {
+    this.#terminalStore.attachInitTerminal(terminal);
   }
 
   detachTerminal(terminal: ITerminal) {
@@ -232,6 +244,79 @@ export class WorkbenchStore {
         }
       }
     }
+  }
+
+  /**
+   * DESTROY the current workspace and reinitialize for a new chat load.
+   *
+   * This is called on EVERY chat switch to ensure terminal processes from
+   * the previous chat don't leak into the new one. It:
+   *   1. Kills any running processes on the init terminal (dev server).
+   *   2. Kills any running processes on the AI terminal.
+   *   3. Clears the WebContainer filesystem (removes all files/dirs in the
+   *      workdir so orphan files from a previous project don't persist).
+   *   4. Resets the in-memory file store, editor, and artifacts.
+   *   5. Resets `projectAutoStarted` so `runProjectAutoSetup` will fire.
+   *
+   * After this, the caller restores the new project's files via
+   * `restoreFileMap` and triggers `runProjectAutoSetup`.
+   */
+  async clearWorkspace() {
+    /*
+     * Step 1+2: Kill running processes on both terminals.
+     * The init terminal likely has a detached dev server running — Ctrl+C
+     * kills it so the port is freed for the new project.
+     */
+    try {
+      this.initTerminal.killRunningProcesses();
+    } catch {
+      /* ignore — shell may not be initialized yet */
+    }
+
+    try {
+      this.amplifyTerminal.killRunningProcesses();
+    } catch {
+      /* ignore */
+    }
+
+    /*
+     * Step 3: Clear the WebContainer filesystem. Remove all entries in the
+     * workdir so files from the previous project don't leak into the new one.
+     */
+    try {
+      const container = await webcontainer;
+      const entries = await container.fs.readdir(container.workdir);
+
+      for (const entry of entries) {
+        try {
+          await container.fs.rm(`${container.workdir}/${entry}`, { recursive: true });
+        } catch {
+          /* ignore individual rm errors */
+        }
+      }
+    } catch (e) {
+      console.warn('[WorkbenchStore] Failed to clear WebContainer FS:', e);
+    }
+
+    /*
+     * Step 4: Reset in-memory state.
+     */
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.modifiedFiles.clear();
+    this.setSelectedFile(undefined);
+    this.#editorStore.setDocuments({});
+    this.#filesStore.files.set({});
+    this.#filesStore.resetFileModifications();
+
+    /*
+     * Step 5: Reset project state so the new project's auto-setup runs.
+     */
+    this.loadedProjectId.set('<none>');
+    this.projectAutoStarted.set(false);
   }
 
   /**

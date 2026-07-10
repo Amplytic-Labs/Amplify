@@ -320,6 +320,40 @@ export class AmplifyShell {
     return this.#process;
   }
 
+  /*
+   * Kill any running processes on this shell. Called when switching chats
+   * to ensure terminal processes from the previous chat don't leak into
+   * the new one.
+   *
+   * Sends Ctrl+C (\x03) to the terminal input, which kills the foreground
+   * process. For detached (backgrounded) processes like `npm run dev &`,
+   * this may not be sufficient — but the WebContainer's process table is
+   * scoped to the jsh process, and when the shell receives Ctrl+C it
+   * typically propagates the SIGINT to child processes.
+   *
+   * Also resets executionState so the next executeCommand doesn't think
+   * a command is still running.
+   */
+  killRunningProcesses() {
+    if (!this.#terminal) {
+      return;
+    }
+
+    try {
+      // Send Ctrl+C to kill the foreground process
+      this.#terminal.input('\x03');
+    } catch {
+      /* ignore */
+    }
+
+    // Reset execution state
+    this.executionState.set({
+      sessionId: '',
+      active: false,
+      abort: undefined,
+    });
+  }
+
   async executeCommand(
     sessionId: string,
     command: string,

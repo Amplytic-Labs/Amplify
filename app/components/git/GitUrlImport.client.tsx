@@ -1,5 +1,4 @@
 import { useSearchParams, useNavigate } from '@remix-run/react';
-import { generateId, type Message } from 'ai';
 import ignore from 'ignore';
 import { useEffect, useState } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
@@ -7,7 +6,7 @@ import { BaseChat } from '~/components/chat/BaseChat';
 import { Chat } from '~/components/chat/Chat.client';
 import { useGit } from '~/lib/hooks/useGit';
 import { useChatHistory } from '~/lib/persistence';
-import { createCommandsMessage, detectProjectCommands, escapeAmplifyTags } from '~/utils/projectCommands';
+import { detectProjectCommands } from '~/utils/projectCommands';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
 import { toast } from 'react-toastify';
 import type { FileMap } from '~/lib/stores/files';
@@ -93,7 +92,7 @@ export function GitUrlImport() {
       const ig = ignore().add(IGNORE_PATTERNS);
 
       try {
-        const { workdir, data } = await gitClone(repoUrl);
+        const { data } = await gitClone(repoUrl);
 
         if (importChat) {
           const filePaths = Object.keys(data).filter((filePath) => !ig.ignores(filePath));
@@ -111,48 +110,23 @@ export function GitUrlImport() {
             .filter((f) => f.content);
 
           const commands = await detectProjectCommands(fileContents);
-          const commandsMessage = createCommandsMessage(commands);
-
-          const filesMessage: Message = {
-            role: 'assistant',
-            content: `Cloning the repo ${repoUrl} into ${workdir}
-<amplifyArtifact id="imported-files" title="Git Cloned Files"  type="bundled">
-${fileContents
-  .map(
-    (file) =>
-      `<amplifyAction type="file" filePath="${file.path}">
-${escapeAmplifyTags(file.content)}
-</amplifyAction>`,
-  )
-  .join('\n')}
-</amplifyArtifact>`,
-            id: generateId(),
-            createdAt: new Date(),
-          };
-
-          const messages = [filesMessage];
-
-          if (commandsMessage) {
-            messages.push({
-              role: 'user',
-              id: generateId(),
-              content: 'Setup the codebase and Start the application',
-            });
-            messages.push(commandsMessage);
-          }
 
           /*
-           * Build a FileMap from the cloned files so `importChat` can persist
-           * them to IndexedDB (project_files / project_commits). Without this,
-           * only the chat that initiated the clone can see the files — new
-           * chats linked to the same project get an empty workspace because
-           * `getProjectFiles()` returns undefined.
+           * SILENT FILE LOADING: No chat messages for system-initiated file
+           * loading. Files are persisted to IndexedDB via `initialFileMap`;
+           * project commands are detected inside `importChat`. After reload,
+           * `restoreFileMap` writes files to the WebContainer and
+           * `runProjectAutoSetup` silently runs npm install + start. The chat
+           * starts clean — no "Cloning..." / "Created N files" / "Found
+           * 'start' script..." messages.
            */
+          void commands;
+
           const initialFileMap = buildFileMapFromContents(fileContents);
 
           await importChat(
             `Git Project:${repoUrl.split('/').slice(-1)[0]}`,
-            messages,
+            [],
             { gitUrl: repoUrl },
             initialFileMap,
           );

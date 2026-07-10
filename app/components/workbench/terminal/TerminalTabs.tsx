@@ -286,6 +286,31 @@ export const TerminalTabs = memo(() => {
             }
           })}
         </div>
+
+        {/*
+          ── Hidden Init Terminal ──────────────────────────────────────
+          This terminal is NEVER visible to the user. It exists solely to
+          host the AmplifyShell instance that runs project initialization
+          (npm install + npm run dev). It needs a real xterm instance to
+          receive stdin/stdout from the WebContainer process, but it's
+          positioned off-screen so it doesn't affect layout.
+
+          Keeping project-init on a SEPARATE shell from the AI's terminal
+          means:
+           - The AI's `npm install some-package` doesn't send Ctrl+C to
+             the dev server.
+           - The dev server's output doesn't pollute the AI's terminal.
+           - The dev server survives across multiple AI shell commands.
+        */}
+        <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '80x24', opacity: 0, pointerEvents: 'none' }} aria-hidden="true">
+          <Terminal
+            id="terminal_init"
+            className="h-full overflow-hidden"
+            onTerminalReady={(terminal) => workbenchStore.attachInitTerminal(terminal)}
+            onTerminalResize={(cols, rows) => workbenchStore.onTerminalResize(cols, rows)}
+            theme={theme}
+          />
+        </div>
       </div>
     </Panel>
   );

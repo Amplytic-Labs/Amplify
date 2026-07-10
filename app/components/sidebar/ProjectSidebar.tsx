@@ -1238,7 +1238,6 @@ function SelectedProjectChatsList({
               onDelete(item);
             }}
             onDuplicate={() => onDuplicate(item.id)}
-            onNavigate={() => navigate(`/${project.id}/${item.urlId}`)}
           />
         ))
       )}
@@ -1377,6 +1376,16 @@ interface SidebarHistoryItemProps {
 }
 
 function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat }: SidebarHistoryItemProps) {
+  /*
+   * Compute the correct navigation URL based on whether this chat belongs
+   * to a project. Project chats use `/{projectId}/{chatId}`; personal chats
+   * use `/chat/{chatId}`. Previously this was hardcoded to `/chat/${urlId}`
+   * which broke project chats — the workspace + project files weren't loaded
+   * because the route loader didn't receive the projectId param.
+   */
+  const href = item.metadata?.projectId
+    ? `/${item.metadata.projectId}/${item.urlId}`
+    : `/chat/${item.urlId}`;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -1440,7 +1449,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
             already loaded (loadedProjectId check).
           */}
           <Link
-            to={`/chat/${item.urlId}`}
+            to={href}
             className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline"
           >
             {currentDescription}

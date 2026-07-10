@@ -112,7 +112,7 @@ export function HistoryItem({
         </form>
       ) : (
         <a
-          href={`/chat/${item.urlId}`}
+          href={item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`}
           className="flex w-full relative truncate block"
           onClick={selectionMode ? handleItemClick : undefined}
         >

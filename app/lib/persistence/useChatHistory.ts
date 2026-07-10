@@ -331,37 +331,44 @@ export function useChatHistory() {
           console.log('[ChatHistory] Project found in store:', project.name);
           (async () => {
             try {
+              /*
+               * DESTROY + REINITIALIZE the workspace on every chat switch.
+               *
+               * This is critical: without it, terminal processes (dev server)
+               * from the previous chat leak into the new one, and orphan files
+               * from a previous project persist in the WebContainer FS.
+               *
+               * clearWorkspace() kills running processes, clears the FS, and
+               * resets projectAutoStarted so runProjectAutoSetup will fire.
+               */
+              await workbenchStore.clearWorkspace();
+
               const projectFiles = await getProjectFiles(db, project.id);
               console.log(
                 '[ChatHistory] Project files retrieved:',
                 projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
                 'files',
               );
-              const currentlyLoadedProjectId = workbenchStore.loadedProjectId.get();
 
               if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
                 await restoreFileMap(projectFiles.files);
                 workbenchStore.files.set(projectFiles.files);
-
-                if (currentlyLoadedProjectId !== project.id) {
-                  workbenchStore.projectAutoStarted.set(false);
-                }
-                workbenchStore.loadedProjectId.set(project.id);
               } else {
                 console.warn('[ChatHistory] No files found for project:', project.id);
                 workbenchStore.files.set({});
-                workbenchStore.loadedProjectId.set(project.id);
-                if (currentlyLoadedProjectId !== project.id) {
-                  workbenchStore.projectAutoStarted.set(false);
-                }
               }
 
+              workbenchStore.loadedProjectId.set(project.id);
               workbenchStore.showWorkbench.set(true);
 
-              if (!workbenchStore.projectAutoStarted.get()) {
-                console.log('[ChatHistory] Running auto setup for project:', project.id);
-                runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
-              }
+              /*
+               * Always run auto-setup (npm install + start) on every chat
+               * load. clearWorkspace() already reset projectAutoStarted to
+               * false, so runProjectAutoSetup will fire. This ensures the
+               * dev server is always running for the current project.
+               */
+              console.log('[ChatHistory] Running auto setup for project:', project.id);
+              runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
             } catch (e) {
               console.error('[ChatHistory] Immediate project load failed:', e);
             }
@@ -393,15 +400,13 @@ export function useChatHistory() {
 
             if (!linkedProject) {
               /*
-               * NOTE: `currentlyLoadedProjectId` is only defined inside the
-               * `urlProjectId` IIFE above (line ~340). Referencing it here, in
-               * the `Promise.all().then()` callback, is a ReferenceError that
-               * silently breaks loading of personal (non-project) chats that
-               * have stored messages. Use the live store value instead.
+               * Personal chat loaded via /chat/{chatId}. If a project was
+               * previously loaded, destroy the workspace (kill processes,
+               * clear FS) so terminal processes from the project don't leak
+               * into this personal chat.
                */
               if (workbenchStore.loadedProjectId.get() !== '<none>') {
-                workbenchStore.loadedProjectId.set('<none>');
-                workbenchStore.projectAutoStarted.set(false);
+                await workbenchStore.clearWorkspace();
               }
 
               if (storedMessages.metadata?.projectInitiated && snapshot) {
@@ -870,6 +875,40 @@ export function useChatHistory() {
               console.log(
                 `[ChatHistory] Saved ${Object.keys(initialFileMap).length} initial project files for ${projectId}`,
               );
+
+              /*
+               * Detect setup/start commands from the imported files (e.g.
+               * `npm install` + `npm run dev` from package.json) and persist
+               * them on the project. This is critical: after the page reload,
+               * `runProjectAutoSetup` reads `project.setupCommand` /
+               * `project.startCommand` to silently auto-inject npm install +
+               * start. Without this, the project has no commands and nothing
+               * auto-runs.
+               *
+               * Previously the commands were embedded in a chat message
+               * (createCommandsMessage) which (a) cluttered the chat with
+               * "Found 'start' script..." text, and (b) was suppressed by
+               * the Round-5 replay suppression on reload anyway. Now the
+               * commands are set directly on the project — no chat message,
+               * no clutter, and the auto-run works on every load.
+               */
+              const fileList = Object.entries(initialFileMap)
+                .filter(([, v]) => v?.type === 'file')
+                .map(([path, v]) => ({
+                  path: path.replace(/^\/home\/project\//, ''),
+                  content: (v as any).content ?? '',
+                }));
+
+              if (fileList.length > 0) {
+                const detected = await detectProjectCommands(fileList);
+
+                if (detected.setupCommand || detected.startCommand) {
+                  projectStore.setProjectCommands(projectId, detected, true);
+                  console.log(
+                    `[ChatHistory] Detected project commands: setup="${detected.setupCommand}" start="${detected.startCommand}"`,
+                  );
+                }
+              }
             } catch (e) {
               console.error('[ChatHistory] Failed to save initial project files:', e);
             }

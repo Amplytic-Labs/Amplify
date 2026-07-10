@@ -1,8 +1,6 @@
 import ignore from 'ignore';
 import { useGit } from '~/lib/hooks/useGit';
-import type { Message } from 'ai';
-import { detectProjectCommands, createCommandsMessage, escapeAmplifyTags } from '~/utils/projectCommands';
-import { generateId } from '~/utils/fileUtils';
+import { detectProjectCommands } from '~/utils/projectCommands';
 import { useState } from 'react';
 import { toast } from 'react-toastify';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
@@ -102,7 +100,7 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
     setSelectedProvider(null);
 
     try {
-      const { workdir, data } = await gitClone(repoUrl);
+      const { data } = await gitClone(repoUrl);
 
       if (importChat) {
         const filePaths = Object.keys(data).filter((filePath) => !ig.ignores(filePath));
@@ -157,46 +155,35 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
         }
 
         const commands = await detectProjectCommands(fileContents);
-        const commandsMessage = createCommandsMessage(commands);
-
-        const filesMessage: Message = {
-          role: 'assistant',
-          content: `Cloning the repo ${repoUrl} into ${workdir}
-${
-  skippedFiles.length > 0
-    ? `\nSkipped files (${skippedFiles.length}):
-${skippedFiles.map((f) => `- ${f}`).join('\n')}`
-    : ''
-}
-
-<amplifyArtifact id="imported-files" title="Git Cloned Files" type="bundled">
-${fileContents
-  .map(
-    (file) =>
-      `<amplifyAction type="file" filePath="${file.path}">
-${escapeAmplifyTags(file.content)}
-</amplifyAction>`,
-  )
-  .join('\n')}
-</amplifyArtifact>`,
-          id: generateId(),
-          createdAt: new Date(),
-        };
-
-        const messages = [filesMessage];
-
-        if (commandsMessage) {
-          messages.push(commandsMessage);
-        }
 
         /*
-         * Persist the cloned files to IndexedDB via importChat's
-         * `initialFileMap` parameter so that NEW chats opened for this
-         * project can restore them (instead of getting an empty workspace).
+         * SILENT FILE LOADING: Do NOT create chat messages for system-initiated
+         * file loading. Previously this built a `filesMessage` (with
+         * "Cloning the repo..." text + a bundled artifact that rendered as
+         * "Created N files") and a `commandsMessage` (with "Found 'start'
+         * script..." text). Those messages cluttered the chat and confused
+         * users into thinking the AI created the files.
+         *
+         * Now we pass an EMPTY messages array. The files are persisted to
+         * IndexedDB via `initialFileMap` (importChat calls createProjectCommit
+         * + detectProjectCommands + setProjectCommands). After the page
+         * reload, `restoreFileMap` writes files to the WebContainer from
+         * IndexedDB, and `runProjectAutoSetup` silently runs npm install +
+         * start. The chat starts clean — no file-loading messages.
+         *
+         * The `commands` variable is still computed here for potential future
+         * use but is NOT embedded in any message. importChat detects commands
+         * independently from the FileMap.
          */
+        void commands; // detected inside importChat via initialFileMap
+
+        if (skippedFiles.length > 0) {
+          console.log(`[GitClone] Skipped ${skippedFiles.length} files:`, skippedFiles);
+        }
+
         const initialFileMap = buildFileMapFromContents(fileContents);
 
-        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages, undefined, initialFileMap);
+        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, [], undefined, initialFileMap);
       }
     } catch (error) {
       console.error('Error during import:', error);
