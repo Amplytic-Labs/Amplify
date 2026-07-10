@@ -2515,3 +2515,356 @@ Stage Summary:
 - Bun projects auto-setup now correctly runs `npm install` + `npm run <script>` instead of failing on `bun`.
 - Yarn berry projects (with .yarnrc.yml) fall back to npm; yarn v1 projects keep using yarn.
 - Commit 9a2450f made locally on rebrand/amplify. Push pending — no PAT available in this session (previous session's PAT was not persisted). User will need to push or supply PAT.
+
+---
+Task ID: 9-b
+Agent: general-purpose (research only)
+Task: Investigate the terminal architecture — why the "amplify terminal / bolt terminal" auto-setup command is "absent yet running", confirm AI commands vs project auto-setup use different terminals, and verify the auto-setup is silent in chat. RESEARCH ONLY — no code changes.
+
+Work Log:
+- Read worklog.md round-6 (line 2443) and round-7 (line 2392) entries to understand prior work: round-6 added a separate `#initTerminal` (hidden, off-screen) for project auto-setup; round-7 added `markActionAsReplayed` to suppress destructive chat-replay. Read all relevant source files: app/lib/stores/terminal.ts, app/lib/stores/workbench.ts, app/lib/runtime/action-runner.ts, app/lib/persistence/project-auto-run.ts, app/components/workbench/terminal/TerminalTabs.tsx, app/components/workbench/terminal/Terminal.tsx, app/components/workbench/terminal/TerminalManager.tsx, app/utils/shell.ts, plus call-sites in app/lib/persistence/useChatHistory.ts and app/components/sidebar/ProjectSidebar.tsx.
+
+Findings:
+
+(a) Current terminal architecture — 3 terminal-like entities exist:
+
+  1. `#amplifyTerminal` — an `AmplifyShell` instance.
+     - Defined: app/lib/stores/terminal.ts:10 (`#amplifyTerminal = newAmplifyShellProcess();`) and exposed via `get amplifyTerminal()` at terminal.ts:37-39.
+     - Re-exposed at workbench.ts:146-148 (`get amplifyTerminal() { return this.#terminalStore.amplifyTerminal; }`).
+     - This is the AI's terminal. `ActionRunner` is constructed with `() => this.amplifyTerminal` as the shell getter inside `addArtifact` (workbench.ts:797). All AI `shell` actions (`#runShellAction`, action-runner.ts:302-332, via `const shell = this.#shellTerminal();` at line 307) and all AI `start` actions (`#runStartAction`, action-runner.ts:334-395, via `const shell = this.#shellTerminal();` at line 362) run on this shell.
+     - Attached to the VISIBLE "Amplify Terminal" tab (index 0) in TerminalTabs.tsx:252 via `onTerminalReady={(terminal) => workbenchStore.attachAmplifyTerminal(terminal)}`. The visible label "Amplify Terminal" is at TerminalTabs.tsx:156.
+     - Reset button at TerminalTabs.tsx:209 calls `workbenchStore.amplifyTerminal.resetTerminal()`.
+
+  2. `#initTerminal` — a SECOND `AmplifyShell` instance.
+     - Defined: app/lib/stores/terminal.ts:26 (`#initTerminal = newAmplifyShellProcess();`) and exposed via `get initTerminal()` at terminal.ts:41-43.
+     - Re-exposed at workbench.ts:155-157 (`get initTerminal() { return this.#terminalStore.initTerminal; }`).
+     - This is the project-init terminal. `runProjectAutoSetup` (project-auto-run.ts:63 `const shell = workbenchStore.initTerminal;`) runs `npm install` (line 84 `await shell.executeCommand(sessionId, project.setupCommand)`) and `npm run dev` detached (line 103-105 `shell.executeCommand(..., { detached: true })`) on it. `rerunProjectSetup` (project-auto-run.ts:122) also uses it.
+     - Attached to a HIDDEN off-screen `<Terminal>` rendered at TerminalTabs.tsx:305-313 inside a `<div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '80x24', opacity: 0, pointerEvents: 'none' }} aria-hidden="true">`. The `onTerminalReady` at line 309 calls `workbenchStore.attachInitTerminal(terminal)`.
+     - There is NO visible tab for it — the only label is the code comment "── Hidden Init Terminal ──" at TerminalTabs.tsx:291.
+
+  3. User-added terminals — the `#terminals: Array<{terminal, process}>` array in terminal.ts:9, populated by `attachTerminal` (terminal.ts:74-82) which calls `newShellProcess` (shell.ts:7-90) — a DIFFERENT process type than `AmplifyShell`. These are extra tabs the user adds via the + button (max 3, TerminalTabs.tsx:15 `MAX_TERMINALS = 3`). Default count is 0, so only the "Amplify Terminal" tab (index 0) is visible by default.
+
+  Routing summary:
+   • AI `shell` action → `amplifyTerminal` (visible "Amplify Terminal" tab).
+   • AI `start` action → `amplifyTerminal` (visible "Amplify Terminal" tab).
+   • AI `build` action → one-off `webcontainer.spawn('npm', ['run', 'build'])` (action-runner.ts:498) — NOT routed through any persistent shell/terminal.
+   • Project auto-setup (`runProjectAutoSetup`) `npm install` + `npm run dev` → `initTerminal` (HIDDEN off-screen).
+   • Manual re-run setup (`rerunProjectSetup`) `npm install` + `npm run dev` → `initTerminal` (HIDDEN off-screen).
+
+(b) Is the "amplify terminal" / "bolt terminal" actually a separate terminal from AI's command terminal?
+
+  YES, they are separate `AmplifyShell` instances (terminal.ts:10 vs terminal.ts:26) — round-6's claim was implemented correctly at the STORE level. The two shells have independent jsh processes, independent `executionState` atoms, independent stdin/stdout pipes — so an AI Ctrl+C on `amplifyTerminal` does NOT propagate to the dev server running on `initTerminal`.
+
+  HOWEVER there is a TERMINOLOGY MISMATCH between the user's mental model and the code:
+   • User's "amplify terminal / bolt terminal" = the VISIBLE project-init terminal where `npm install` + `start` should show.
+   • Code's `amplifyTerminal` (variable name) = the AI's terminal (visible "Amplify Terminal" tab).
+   • Code's `initTerminal` (variable name) = the project-init terminal (HIDDEN off-screen).
+
+  So the user's "amplify terminal" conceptually maps to the code's `initTerminal`, NOT to the code's `amplifyTerminal`. The visible "Amplify Terminal" tab in the UI is actually the AI's terminal — it is EMPTY when no AI shell/start actions have fired.
+
+(c) Why is the running command "absent" in the UI?
+
+  Root cause: the auto-setup command runs on the HIDDEN off-screen `initTerminal` (TerminalTabs.tsx:305-313), so its output (npm install progress, dev-server URL) is rendered into an xterm instance that is positioned at left:-9999px / top:-9999px / opacity:0 — invisible to the user.
+
+  Meanwhile, the terminal PANEL itself IS visible by default (`showTerminal` atom defaults to `true` at terminal.ts:28 `atom(true)`), and it shows the "Amplify Terminal" tab (index 0, TerminalTabs.tsx:156, 241-255) which is attached to `amplifyTerminal` — the AI's terminal. Since no AI shell/start actions have run yet on a freshly-loaded project chat, that visible tab is EMPTY.
+
+  Net effect: the user sees an open terminal panel showing an empty "Amplify Terminal" tab while `npm install` + `npm run dev` are actually running in the invisible off-screen init terminal. Hence "the terminal commands seem absent yet it's running".
+
+  Additional contributing factor: there is NO affordance in the UI to switch to the init terminal — only the Amplify Terminal tab is visible by default, and the + button adds user-terminals (not the init terminal). So even a savvy user cannot navigate to the init terminal's output.
+
+(d) Is the auto-setup silent in chat (per requirement 1)?
+
+  YES — confirmed silent. `runProjectAutoSetup` (project-auto-run.ts:41-111):
+   • Never calls `workbenchStore.addArtifact` or `addAction` or `runAction` — so no artifact/action chip is created in the chat.
+   • Never writes to the chat message stream — it directly calls `shell.executeCommand(sessionId, ...)` on the init terminal (lines 84, 103-105).
+   • Removed all toast notifications in round-6 (worklog.md:2470) — only `console.log` / `console.warn` remain, which are invisible to the end-user.
+   • Side-effects: `projectStore.updateProject(project.id, { isSetupComplete: true })` (line 87) writes to IndexedDB, not to the chat.
+
+  So requirement (1) — "the command should NOT appear in the chat as a message" — IS satisfied. The only thing missing from requirement (1) is the OTHER half: "the command should be visible IN the amplify terminal panel" — which is broken per (c).
+
+(e) Concrete fix recommendations:
+
+  The cleanest fix is to SWAP which xterm instance each AmplifyShell attaches to, at the UI layer only — no store/runtime changes needed. Three sub-options:
+
+  ── Option A (minimal swap, 2-line change in TerminalTabs.tsx) ──
+   1. TerminalTabs.tsx:252 — change the VISIBLE tab's `onTerminalReady` from `attachAmplifyTerminal` to `attachInitTerminal`. Now the visible "Amplify Terminal" tab hosts the init shell → `npm install` + `start` output becomes visible.
+   2. TerminalTabs.tsx:309 — change the HIDDEN off-screen terminal's `onTerminalReady` from `attachInitTerminal` to `attachAmplifyTerminal`. Now the AI's shell/start actions run on the hidden terminal (still isolated from the visible dev-server terminal).
+   3. Update the Reset-button branch at TerminalTabs.tsx:201-210 to call `workbenchStore.initTerminal.resetTerminal()` (since index-0 tab now hosts the init shell) — otherwise the Reset button resets the wrong (hidden) shell.
+   4. Update the doc-comments at terminal.ts:12-25, workbench.ts:150-157, and TerminalTabs.tsx:291-304 to reflect the swap.
+   Pros: 2-line behavioral change; isolation preserved (AI commands still don't touch the dev server); auto-setup output now visible. Cons: AI command output becomes invisible — the user can no longer see what `npm install some-package` the AI ran. The action chip in chat still shows the command text, but the live output is lost.
+
+  ── Option B (two visible tabs — recommended for UX) ──
+   1. Keep the hidden off-screen terminal for the AI's `amplifyTerminal` (or make it visible).
+   2. Render TWO visible tabs by default: index 0 "Amplify Terminal" → `initTerminal` (project init, visible); index 1 "AI Shell" → `amplifyTerminal` (AI commands, visible). Adjust `terminalCount` initial state to 1 and render the second tab via the index>0 branch (TerminalTabs.tsx:262-286) but with `onTerminalReady={(t) => workbenchStore.attachAmplifyTerminal(t)}` instead of `attachTerminal`.
+   3. Update `closeTerminal` (TerminalTabs.tsx:36-65) to also protect index 1 from being closed (the AI terminal must persist).
+   Pros: both terminals visible, user can switch between them. Cons: more UI code to touch; changes the tab model.
+
+  ── Option C (rename for clarity) ──
+   Rename `amplifyTerminal` → `aiTerminal` and `initTerminal` → `amplifyTerminal` everywhere (terminal.ts, workbench.ts, action-runner call-site at workbench.ts:797, project-auto-run.ts:63/122, TerminalTabs.tsx:252/309, shell.ts reset comments). This aligns the variable names with the user's mental model: "amplify terminal" = the visible project-init terminal. Combine with Option A's attach-swap so the visible tab is the new `amplifyTerminal` (= old `initTerminal`). Pros: removes the terminology confusion permanently. Cons: larger diff, touches many files.
+
+  All three options preserve the silence-in-chat property (no `addArtifact`/`addAction` calls added) and the isolation property (two separate `AmplifyShell` instances with independent jsh processes). Recommendation: Option A for the immediate fix (smallest blast radius), then Option C as a follow-up cleanup.
+
+(f) Half-finished / broken pieces in this flow:
+
+  1. **`rerunProjectSetup` opens the wrong terminal.** project-auto-run.ts:131 calls `workbenchStore.toggleTerminal(true)` to open the panel — but the panel shows the EMPTY "Amplify Terminal" tab while the actual `npm install` + `start` run on the hidden init terminal. The user clicks "Re-run setup" and sees an empty terminal. (Same root cause as the main "absent" bug.)
+
+  2. **Reset button resets the wrong shell.** TerminalTabs.tsx:209 calls `workbenchStore.amplifyTerminal.resetTerminal()` — this resets the AI's (currently visible but empty) terminal, NOT the init terminal where the dev server output is. After Option A's swap, this line must be updated to call `initTerminal.resetTerminal()`.
+
+  3. **Invalid CSS width on the hidden terminal.** TerminalTabs.tsx:305 has `width: '80x24'` — `'80x24'` is not a valid CSS width value (should be e.g. `'80ch'` or `'480px'`). The xterm inside renders into a zero-width box, which may cause FitAddon to compute 0 cols and the underlying jsh to be spawned with `cols: terminal.cols ?? 80` (defaults to 80 only if `terminal.cols` is undefined). Likely harmless because the terminal is invisible, but is a latent bug — xterm may emit warnings or produce malformed output that gets fed back into the shell's prompt detection.
+
+  4. **No UI affordance to view the init terminal.** Even if the user knows about the hidden init terminal, there is no tab, button, or shortcut to switch to it. The + button at TerminalTabs.tsx:190 adds a user-terminal (`attachTerminal` → `newShellProcess`), which is a DIFFERENT process type than `AmplifyShell` and is NOT the init shell. So the user can never see the running dev-server output under the current UI.
+
+  5. **The label "Amplify Terminal" (TerminalTabs.tsx:156) is misleading.** It implies the tab is the "main" / "project" terminal, but it is actually the AI's terminal. After the Option A swap, the label becomes accurate (the visible tab will host the project init shell).
+
+  6. **`clearWorkspace` (workbench.ts:264-320) kills processes on BOTH terminals** (init at line 271, amplify at line 277) — this is correct for a full chat-switch reset, but means switching chats kills the AI's in-flight shell command too. Not necessarily a bug, but worth noting: if the AI is mid-`npm install` when the user switches chats, the AI command is killed along with the dev server. Acceptable behavior, but the user should be aware.
+
+  7. **The `markActionAsReplayed` path (round-7) bypasses the terminal entirely** — reloaded historical actions neither execute nor show output anywhere. This is by design (the dev server is started by `runProjectAutoSetup`, not by replaying the AI's `start` action). Confirmed consistent with the new architecture.
+
+Stage Summary:
+- RESEARCH ONLY — no files modified except this worklog entry.
+- Root cause of "absent yet running": the auto-setup command runs on the HIDDEN off-screen `#initTerminal` (TerminalTabs.tsx:305-313), while the visible "Amplify Terminal" tab (index 0, TerminalTabs.tsx:252) is attached to the AI's `#amplifyTerminal` — which is empty because no AI shell/start actions have fired on a freshly-loaded project chat.
+- The user's "amplify terminal / bolt terminal" maps conceptually to the code's `initTerminal`, NOT to the code's `amplifyTerminal` — a terminology mismatch that is the source of confusion.
+- AI commands and project auto-setup DO use separate `AmplifyShell` instances (terminal.ts:10 vs 26) — isolation requirement (2) IS satisfied at the store level.
+- Auto-setup IS silent in chat (no artifact/action/message created) — requirement (1)'s silence half IS satisfied; only the "visible in amplify terminal panel" half is broken.
+- Recommended fix: Option A — swap the two `attach*` callbacks in TerminalTabs.tsx (lines 252 and 309) so the visible tab hosts `initTerminal` and the hidden terminal hosts `amplifyTerminal`, then update the Reset button (line 209) and doc-comments. ~5 lines of behavioral change, preserves isolation and silence.
+- Broken pieces flagged: rerunProjectSetup shows empty terminal; Reset button resets wrong shell; invalid `width: '80x24'` CSS on hidden terminal; no UI to view init terminal; misleading "Amplify Terminal" label.
+
+---
+Task ID: 9-a
+Agent: general-purpose (research only)
+Task: Investigate the template-click redirect bug — user clicks a starter template, expects to land on a chat URL like `/<projectId>/<chatId>`, but instead the main tab appears to be loading/hung while the URL bar shows the root directory `/`, and terminal commands appear absent in the UI yet are running. RESEARCH ONLY — no code changes.
+
+Work Log:
+- Read worklog.md round-6 (line 2443), round-7 (line 2392, referenced as "round 7" inside the round-6 entry — actually the round-6 entry IS the "7 fixes" round), task 8 (line 2493, package-manager detection), and task 9-b (line 2520, terminal "absent yet running" investigation) for context.
+- Read all relevant source files end-to-end: app/components/chat/StarterTemplates.tsx, app/components/sidebar/TemplatesModal.tsx, app/utils/selectStarterTemplate.ts, app/components/git/GitUrlImport.client.tsx, app/components/chat/GitCloneButton.tsx, app/components/chat/Chat.client.tsx (workspaceReadyRef + inject_template gate, lines 560-909), app/components/chat/BaseChat.tsx, app/lib/persistence/useChatHistory.ts (importChat + load effect, lines 293-445 and 810-931), app/lib/persistence/db.ts (createChatFromMessages, setMessages), app/lib/persistence/project-store/index.ts (linkChatToProject, saveProjectData), app/lib/persistence/project-auto-run.ts (runProjectAutoSetup), app/lib/stores/workbench.ts (clearWorkspace, initTerminal), app/components/workbench/terminal/TerminalTabs.tsx (hidden init terminal), app/root.tsx, app/routes/_index.tsx, app/routes/git.tsx, app/routes/$projectId.tsx, app/routes/$projectId.$chatId.tsx, app/routes/chat.$id.tsx, app/components/ui/LoadingOverlay.tsx.
+
+Findings:
+
+(a) Exact code path from "user clicks template" → "files get injected" → "navigation happens" (or doesn't):
+
+  STEP 1 — Template click renders a plain `<a href>` (NOT Remix `<Link>` / `navigate()`):
+   - app/components/chat/StarterTemplates.tsx:9-21 — `FrameworkLink` returns `<a href={`/git?url=https://github.com/${template.githubRepo}.git`}>`. Plain browser navigation; no client-side `navigate()`.
+   - app/components/sidebar/TemplatesModal.tsx:60-73 — same `<a href={`/git?url=https://github.com/${item.githubRepo}.git`}>` for each template entry.
+   - Both render to the SAME `/git?url=...` route. There is no `useNavigate()` call here. The only `useNavigate()` in TemplatesModal (line 8) is used by `handleCreateBlank` (line 14-17), not by template clicks.
+
+  STEP 2 — Browser full-page-navigates to `/git?url=...`:
+   - app/routes/git.tsx:15-17 — loader is a no-op: `return json({ url: args.params.url })`. NOTE: `args.params.url` is always undefined because `url` is a SEARCH param, not a route param — this is a pre-existing minor bug, but it's unused downstream so it doesn't matter.
+   - app/routes/git.tsx:25-31 — `<ClientOnly fallback={<div>Loading...</div>}>` then `<GitImportLayout />`. So the user sees "Loading..." until hydration, then the import layout.
+   - app/components/git/GitUrlImport.client.tsx:78-176 — `GitUrlImport` mounts. Initial `loading=true` (line 84). The `useEffect` at line 145 waits for `historyReady && gitReady && !imported`, then calls `importRepo(url)`.
+
+  STEP 3 — `importRepo` clones the repo and calls `importChat` with an EMPTY messages array:
+   - GitUrlImport.client.tsx:86-143 — `importRepo`:
+     * line 95: `const { data } = await gitClone(repoUrl);` (network call to /api/git-proxy/...)
+     * line 125: `const initialFileMap = buildFileMapFromContents(fileContents);`
+     * line 127-132: `await importChat(`Git Project:${repoName}`, [], { gitUrl: repoUrl }, initialFileMap);`
+       — messages = [] (silent file loading per round-6 fix 2)
+       — metadata = `{ gitUrl: repoUrl }` (NO `projectId` field)
+       — initialFileMap = the cloned files
+   - app/components/chat/GitCloneButton.tsx:186 — same flow: `importChat(`Git Project:...`, [], undefined, initialFileMap);` (metadata = undefined, also no projectId).
+
+  STEP 4 — `importChat` creates the chat, the project, persists files to IndexedDB, then forces a full-page reload to `/<projectId>/<chatId>`:
+   - app/lib/persistence/useChatHistory.ts:810-931 — `importChat`:
+     * line 821: `const newId = await createChatFromMessages(db, description, messages, metadata);`
+       — IMPORTANT: db.ts:316 `createChatFromMessages` returns the **urlId** (not the actual chat id). So `newId` is the urlId.
+       — The chat is saved to IndexedDB with `metadata = { gitUrl: repoUrl }` (NO projectId field).
+     * line 823-835: derives `projectId`. Since `metadata?.projectId` is falsy AND description starts with `'Git Project:'`:
+       - line 829-832: `const project = projectStore.createProject({ name: projectName, hasWorkspace: true });`
+       - line 834: `projectStore.linkChatToProject(newId, projectId);`
+         — NOTE: `linkChatToProject` (project-store/index.ts:309-326) only updates `_data.chatToProject[chatId] = projectId` and `saveProjectData(this._data)` — which writes to **localStorage** (project-store/index.ts:186-197), NOT to the chat's metadata in IndexedDB. The chat record in IndexedDB remains `metadata = { gitUrl }`.
+       - **THE BUG: `importChat` never calls `updateChatMetadata(db, newId, { ...metadata, projectId })` to persist the projectId on the chat record.**
+     * line 837-916: if `projectId`, sets `workbenchStore.loadedProjectId.set(projectId)` + `showWorkbench.set(true)` (line 840-841); calls `createProjectCommit(db, projectId, 'Project files imported', initialFileMap, newId)` (line 867) to persist the cloned files; calls `detectProjectCommands(fileList)` (line 903) + `projectStore.setProjectCommands(projectId, detected, true)` (line 906) to persist setup/start commands.
+     * line 918-922: `window.location.href = /${projectId}/${newId};` — **FULL PAGE RELOAD** (not client-side navigate). `newId` here is the **urlId**, so the URL becomes `/<projectId>/<urlId>`.
+
+  STEP 5 — Browser reloads at `/<projectId>/<urlId>`:
+   - app/routes/$projectId.$chatId.tsx:4-6 — loader returns `{ id: args.params.chatId, projectId: args.params.projectId }`. Both are strings.
+   - The route component is `export default IndexRoute` (re-exports `_index.tsx`), so the same `<MainLayout />` renders.
+   - app/routes/_index.tsx:37 — `<ClientOnly fallback={<div>Loading...</div>}>` shows "Loading..." until hydration. After hydration, `<MainLayout />` renders `<Chat />`.
+   - app/components/chat/Chat.client.tsx:49-79 — `<Chat />` calls `useChatHistory()`. `ready` gates `<ChatImpl>` (line 67). Returns `<></>` while `ready=false`.
+
+  STEP 6 — `useChatHistory` effect runs at `/<projectId>/<urlId>`:
+   - useChatHistory.ts:121 — `const { id: mixedId, projectId: urlProjectId } = useLoaderData();`
+     — `mixedId = urlId` (string), `urlProjectId = projectId` (string).
+   - useChatHistory.ts:306-307 — `if (mixedId || urlProjectId) { setReady(false); setInitialMessages([]); ... }`
+   - useChatHistory.ts:327-379 — IMMEDIATE project load (async IIFE) because `urlProjectId` is truthy:
+     * line 344: `await workbenchStore.clearWorkspace();` (kills both terminals, clears WebContainer FS, sets `loadedProjectId = '<none>'`, `projectAutoStarted = false`).
+     * line 346: `const projectFiles = await getProjectFiles(db, project.id);` (reads from IndexedDB — the files persisted by `createProjectCommit` in step 4).
+     * line 354: `await restoreFileMap(projectFiles.files);` (writes files to WebContainer FS).
+     * line 355: `workbenchStore.files.set(projectFiles.files);` (updates React state).
+     * line 361-362: `workbenchStore.loadedProjectId.set(project.id); workbenchStore.showWorkbench.set(true);`
+     * line 371: `runProjectAutoSetup(project).catch(...);` — fire-and-forget auto-setup on the HIDDEN init terminal (see Finding (d)).
+   - useChatHistory.ts:381-441 — in parallel, `Promise.all([getMessages(db, finalChatIdToLoad), getSnapshot(db, finalChatIdToLoad)])`:
+     * `getMessages(db, urlId)` (db.ts:140-142) → `getMessagesById` (fails — id≠urlId) → `getMessagesByUrlId` (succeeds via the urlId index).
+     * Returns `{ id: <actualChatId>, urlId, description: 'Git Project:...', messages: [], metadata: { gitUrl: repoUrl }, timestamp }`.
+     * `.then(async ([storedMessages, snapshot]) => { ... })`:
+       - line 383: `if (storedMessages && storedMessages.messages.length > 0)` — **FALSE** (messages array is empty by design — silent file loading).
+       - line 425: `else if (storedMessages && storedMessages.metadata?.projectId)` — **FALSE** because `importChat` never persisted `projectId` on the chat record (see Finding (b)).
+       - line 431-433: `else { navigate('/', { replace: true }); }` — **FALLS THROUGH TO THIS BRANCH**. Client-side navigate to `/`.
+       - line 435: `setReady(true);` runs after navigate.
+
+  STEP 7 — URL becomes `/`. `<Chat />` re-mounts with `mixedId=undefined`, `urlProjectId=undefined`. The `else { setReady(true); }` branch (line 442-444) runs. `<ChatImpl key={chatKey ?? 'home'} />` mounts with `chatKey=undefined → 'home'`.
+   - `<ChatImpl>` renders with `initialMessages=[]`, `showWorkbench=true` (leftover from step 6's `workbenchStore.showWorkbench.set(true)` — nanostores persist across client-side navigation), so `chatStarted=true` (Chat.client.tsx:140-141).
+   - The workbench panel renders on the right (files restored in step 6).
+   - The chat input area renders on the left, empty (no messages).
+   - `chatId` atom was NEVER set (only `setChatId` is called in the `if (messages.length > 0)` and `else if (metadata?.projectId)` branches — never in the `else` branch). So `chatId.get() === undefined` — see Finding (f).
+
+(b) Why the URL stays at `/` — is `navigate()` never called? Is it called but failing? Is it waiting on something that never resolves?
+
+  `navigate('/', { replace: true })` IS called — explicitly, at useChatHistory.ts:432. It is NOT failing and NOT waiting. It is the EXPLICIT fallback in the `else` branch when:
+   (1) `storedMessages.messages.length === 0` (empty chat — by design, silent file loading), AND
+   (2) `storedMessages.metadata?.projectId` is falsy.
+
+  Condition (2) is the bug. `importChat` (useChatHistory.ts:810-931) creates a project and links it via `projectStore.linkChatToProject(newId, projectId)` (line 834), but this writes ONLY to the project-store's localStorage-backed `chatToProject` map (project-store/index.ts:320). It does NOT update the chat's `metadata` in IndexedDB. So when the page reloads and `getMessages(db, urlId)` returns the chat, `storedMessages.metadata` is still `{ gitUrl: repoUrl }` — no `projectId`.
+
+  The condition at line 425 should ALSO check `urlProjectId` (the project ID from the URL — clearly a project chat) OR `projectStore.getProjectByChat(storedMessages.id)` (the localStorage-backed lookup). Currently it only checks `storedMessages.metadata?.projectId`, which is never set by `importChat`.
+
+  Note: the `if (storedMessages.messages.length > 0)` branch (line 383) DOES use `projectStore.getProjectByChat(storedMessages.id)` as a fallback (line 395-399). But the `else if (storedMessages.metadata?.projectId)` branch (line 425) does NOT. This is an inconsistency — the empty-chat case is stricter than the non-empty-chat case, and the empty-chat case is exactly what `importChat` produces.
+
+(c) Why the tab appears loading — is there an unresolved promise, a stuck Suspense boundary, a never-resolving workspaceReadyRef?
+
+  THREE concurrent "loading" states the user sees during the flow:
+
+  1. **`/git?url=...` phase (LoadingOverlay):** GitUrlImport.client.tsx:171 renders `{loading && <LoadingOverlay message="Please wait while we clone the repository..." />}`. `loading` starts `true` (line 84) and is only set `false` in the error paths (lines 137, 160). On the happy path, `loading` is NEVER set to false — but it doesn't matter because `importChat` ends with `window.location.href = ...` which triggers a full page reload, unmounting the `<GitUrlImport>` component. So the overlay is visible for the entire duration of: gitClone + importChat's IndexedDB work + createProjectCommit + detectProjectCommands.
+
+  2. **`/<projectId>/<urlId>` phase (ClientOnly "Loading..." + Chat empty):** After `window.location.href` reload, the new HTML loads. Before hydration: `_index.tsx:37` `<ClientOnly fallback={<div>Loading...</div>}>` shows "Loading...". After hydration but before `useChatHistory`'s effect resolves: `ready=false` → `<Chat />` returns `<></>` (Chat.client.tsx:67) → the chat area is empty. The sidebar+header render (from `<MainLayout />`), but the main content is blank. This blank state, combined with the browser tab's loading spinner (still active during the fetch/parse/hydrate), reads as "loading" to the user.
+
+  3. **After `navigate('/', { replace: true })`:** The URL changes to `/` client-side. The `<Chat />` re-mounts. `useChatHistory`'s effect runs with `mixedId=undefined, urlProjectId=undefined` → `else { setReady(true); }` (line 442-444) → `ready=true` immediately. `<ChatImpl>` mounts with `chatKey='home'`. `showWorkbench=true` (leftover nanostore), `initialMessages=[]`, `chatStarted=true`. The workbench renders on the right; an empty chat input renders on the left. The page IS interactive at this point — but it's an empty chat with the project's workspace, with NO chat URL, NO chat ID, and NO visible terminal output. To a user expecting to "land on a chat", this looks like the page never finished loading.
+
+  **The workspaceReadyRef gate (Chat.client.tsx:661, 758, 793) is NOT the cause of the hang.** It only gates auto-approval of read-only native tools (line 953) and file-mutation tool calls (line 598). It does NOT gate rendering, navigation, or message sending. The stabilization timer (lines 826-909) also does not gate rendering. So the "Preserved" workspaceReadyRef waiting method (referenced in worklog.md:2484) is innocent here.
+
+(d) Why terminal commands appear absent but run — is the auto-setup running on a hidden terminal? Is the terminal panel not shown until navigation completes?
+
+  YES — this is the EXACT same bug investigated in detail in task 9-b (worklog.md:2520-2630). Summary:
+   - `runProjectAutoSetup` (project-auto-run.ts:41-111) runs `npm install` (line 84) and `npm run dev` detached (line 103-105) on `workbenchStore.initTerminal` — the HIDDEN off-screen AmplifyShell.
+   - TerminalTabs.tsx:305-313 renders the init terminal inside `<div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '80x24', opacity: 0, pointerEvents: 'none' }} aria-hidden="true">` — completely invisible.
+   - The VISIBLE "Amplify Terminal" tab (TerminalTabs.tsx:252, label at line 156) is attached to `workbenchStore.amplifyTerminal` — the AI's terminal, which is empty on a freshly-loaded project chat (no AI shell/start actions have fired).
+   - So `npm install` + `npm run dev` ARE running (on the hidden init terminal), but their output is invisible. The user sees an empty terminal panel.
+   - Additionally, the auto-setup is fire-and-forget from useChatHistory.ts:371 — `runProjectAutoSetup(project).catch((e) => console.warn(...))`. There's no UI affordance to surface "auto-setup is running" to the user.
+   - And since the URL is now `/` (after the bug in Finding (b)), the user has no chat context — making the running terminal output even more disconnected from anything visible.
+
+  This is the SAME root cause as task 9-b. The terminal "absent yet running" symptom is NOT new — it's the existing round-6 architecture (separate hidden init terminal) compounding the redirect bug.
+
+(e) Concrete fix recommendations:
+
+  ── Fix #1 (PRIMARY — fixes the redirect bug, ~5 lines in useChatHistory.ts) ──
+   In `importChat` (useChatHistory.ts:810-931), after determining `projectId` (line 823-835), persist it on the chat's metadata BEFORE the `window.location.href` reload. Two implementation options:
+
+   Option 1a — call `updateChatMetadata`:
+   ```ts
+   // after line 834 (projectStore.linkChatToProject)
+   if (projectId) {
+     const updatedMetadata = { ...metadata, projectId };
+     await updateChatMetadata(db, newId, updatedMetadata);
+     chatMetadata.set(updatedMetadata);
+   }
+   ```
+   `updateChatMetadata` already exists in db.ts:333-345. This is the cleanest fix.
+
+   Option 1b — derive projectId BEFORE calling createChatFromMessages, then pass `{ ...metadata, projectId }` as the metadata arg:
+   ```ts
+   let projectId: string | undefined = metadata?.projectId;
+   if (!projectId && description.startsWith('Git Project:')) {
+     const projectName = description.replace('Git Project:', '').trim();
+     const project = projectStore.createProject({ name: projectName, hasWorkspace: true });
+     projectId = project.id;
+     // linkChatToProject after the chat exists
+   }
+   const newId = await createChatFromMessages(db, description, messages, projectId ? { ...metadata, projectId } : metadata);
+   if (projectId && !metadata?.projectId) {
+     projectStore.linkChatToProject(newId, projectId);
+   }
+   ```
+   This avoids a second IndexedDB write but reorders the logic.
+
+   Recommendation: Option 1a is the smaller, safer diff.
+
+  ── Fix #2 (DEFENSE-IN-DEPTH — also fix the `else if` condition, ~1 line) ──
+   useChatHistory.ts:425 — broaden the condition so the URL's `urlProjectId` and/or `projectStore.getProjectByChat` are also accepted:
+   ```ts
+   } else if (storedMessages && (storedMessages.metadata?.projectId || urlProjectId || projectStore.getProjectByChat(storedMessages.id))) {
+   ```
+   This ensures that even if some other code path creates an empty project-linked chat without setting metadata.projectId, the user still lands on the chat URL instead of being bounced to `/`.
+
+  ── Fix #3 (UX — make the loading state visible/short, ~3 lines in GitUrlImport.client.tsx) ──
+   - Set `setLoading(false)` in the success path too (after `importChat` resolves, just before `window.location.href`), so the overlay doesn't briefly flash if the reload is delayed. Currently `setLoading(false)` is only in the catch (line 137) and the .catch wrapper (line 160).
+   - Consider replacing `window.location.href` (full reload) with a Remix `navigate()` (client-side) — but this is a larger change because `useChatHistory`'s effect depends on `useLoaderData()` changing, which only happens on a route change. Actually `navigate(`/${projectId}/${newId}`)` would work since `/$projectId.$chatId.tsx` is the same route module — the loader would re-run and `useLoaderData` would update. This would eliminate the "Loading..." hydration phase entirely. (Caveat: the WebContainer instance survives client-side nav, but `clearWorkspace` is called at the start of the load effect anyway, so this should be safe.)
+
+  ── Fix #4 (UX — make the running terminal command visible, see task 9-b) ──
+   Adopt task 9-b's Option A: swap `attachAmplifyTerminal` ↔ `attachInitTerminal` in TerminalTabs.tsx (lines 252 and 309), update the Reset button (line 209) to call `initTerminal.resetTerminal()`, update doc-comments. ~5 lines. This makes the auto-setup output visible in the default terminal tab.
+
+  ── Fix #5 (ROBUSTNESS — set `chatId` in the `else` branch too, ~1 line) ──
+   useChatHistory.ts:431-433 — the `else { navigate('/', { replace: true }); }` branch never sets `chatId`, `chatMetadata`, `description`. If for any reason this branch IS hit (e.g. a corrupted chat record), the user is left in a state where typed messages silently fail to persist (see Finding (f)). Consider also calling `workbenchStore.resetForNewChat()` here to clean up the leftover `showWorkbench=true` state, so the user lands on a TRULY fresh home screen instead of a half-broken "started chat with empty messages".
+
+(f) Code that looks broken or half-finished in this flow:
+
+  1. **`importChat` does not persist `projectId` on the chat record** (useChatHistory.ts:823-835). The bug. `projectStore.linkChatToProject` writes to localStorage; `importChat` never calls `updateChatMetadata` to mirror this on the IndexedDB chat record. This breaks the `else if (storedMessages.metadata?.projectId)` branch in the load effect (line 425) → falls through to `else { navigate('/', { replace: true }); }` → URL becomes `/`.
+
+  2. **The `else if` condition at useChatHistory.ts:425 is inconsistent with the `if` branch at line 395-399.** The `if` branch uses `projectStore.getProjectByChat(storedMessages.id) ?? storedMessages.metadata?.projectId` to find the linked project. The `else if` branch ONLY checks `storedMessages.metadata?.projectId`. This asymmetry is what makes the empty-chat case (which `importChat` produces) fragile.
+
+  3. **The `else { navigate('/', { replace: true }); }` branch (line 431-433) leaves stale state behind.** It does NOT call `workbenchStore.resetForNewChat()` or `clearWorkspace()`. So `showWorkbench=true`, `loadedProjectId=<projectId>`, and the restored files all persist into the `/` route. The user lands on `/` with a half-loaded project workspace but no chat context. (`chatId` atom is also left undefined — see #4.)
+
+  4. **`chatId` atom is never set in the `else` branch** (useChatHistory.ts:431-433). `chatId.set(storedMessages.id)` is called at line 423 (messages>0 branch) and line 429 (metadata.projectId branch), but NOT in the else branch. So after the bug triggers, `chatId.get() === undefined`. Downstream: `takeSnapshot` (line 216-220) early-returns when `chatId.get()` is falsy; `storeMessageHistory` (line 542-590) calls `takeSnapshot` — so any message the user types after the bug is NOT persisted. The user's typed messages silently vanish.
+
+  5. **`GitUrlImport.client.tsx` `loading` state is never cleared on the success path** (line 84 starts `true`; only cleared in error paths at lines 137, 160). Not strictly a bug because `window.location.href` unmounts the component, but it's brittle — if the reload is delayed (e.g. by a browser permission prompt or a slow network), the overlay stays up with no progress indicator. Also `loading` is not used to gate `importRepo` itself, just the overlay.
+
+  6. **`git.tsx` loader returns the wrong value** (line 16: `return json({ url: args.params.url })`). `args.params.url` is always `undefined` because `url` is a SEARCH param (`?url=...`), not a route param. The returned `{ url: undefined }` is unused by `GitUrlImport` (which reads `searchParams.get('url')` directly via `useSearchParams()` at line 79). Cosmetic / dead-code bug, but worth cleaning up.
+
+  7. **`createChatFromMessages` returns the urlId, not the chat id** (db.ts:316: `return newUrlId;`). This is by design (the comment says "Return the urlId instead of id for navigation") but it makes downstream code confusing: `importChat`'s local variable `newId` is actually the urlId, and `window.location.href = /${projectId}/${newId}` puts the urlId in the URL. Then `useChatHistory` reads it back as `mixedId` and `getMessages(db, mixedId)` does `getMessagesById` (fails) → `getMessagesByUrlId` (succeeds). The two-step lookup works but is fragile — a future change to `getMessages` that drops the urlId fallback would break the entire template-import flow.
+
+  8. **The `resetForNewChat` method (workbench.ts:328-365) is NOT called anywhere in the template-import flow.** It was added in round-4 fix 3 (worklog.md:2357-2359) for the "New Chat" sidebar button. The template-import flow goes through `importChat` → `window.location.href` → reload → `useChatHistory` load effect → `clearWorkspace` (NOT `resetForNewChat`). `clearWorkspace` clears files but does NOT set `showWorkbench=false`. So if the load effect's `else` branch fires, `showWorkbench=true` persists. The user sees a "started" UI on `/` with no chat — confusing.
+
+  9. **`projectStore.linkChatToProject(newId, projectId)` (useChatHistory.ts:834) uses `newId` (the urlId), not the actual chat id.** Looking at project-store/index.ts:309-326, `linkChatToProject` stores `_data.chatToProject[chatId] = projectId`. So the localStorage map is keyed by the urlId, not the actual chat id. Then in useChatHistory.ts:396, `projectStore.getProjectByChat(storedMessages.id)` uses the ACTUAL chat id (from `storedMessages.id`). These don't match! So even the `if (storedMessages.messages.length > 0)` branch's `getProjectByChat` fallback would fail for an imported-then-reloaded chat. (This is a LATENT bug — currently masked because imported chats start with `messages.length === 0`, so they hit the `else if` / `else` branches instead of the `if` branch. But the moment the user types a message and reloads, `messages.length > 0`, the `if` branch runs, `getProjectByChat(storedMessages.id)` returns undefined because the localStorage map is keyed by urlId, and the chat is misclassified as a personal chat. This may be the source of future "project chat loses its project association after first message" bugs.)
+
+Stage Summary:
+- RESEARCH ONLY — no files modified except this worklog entry.
+- ROOT CAUSE of "URL bar shows root directory": `importChat` (useChatHistory.ts:810-931) creates a project via `projectStore.createProject` + `linkChatToProject` (which writes to localStorage), but NEVER mirrors the `projectId` onto the chat's `metadata` in IndexedDB. After the `window.location.href = /<projectId>/<urlId>` reload, `useChatHistory`'s load effect (line 381-441) calls `getMessages(db, urlId)` which returns the chat with `metadata = { gitUrl }` (no projectId). The `else if (storedMessages.metadata?.projectId)` branch (line 425) is FALSE → falls through to `else { navigate('/', { replace: true }); }` (line 432) → URL becomes `/`.
+- ROOT CAUSE of "main tab seems loading": (1) on `/git?url=...` the `<LoadingOverlay>` is shown while `gitClone` + IndexedDB writes run; (2) after the reload at `/<projectId>/<urlId>`, `_index.tsx` shows the `<ClientOnly fallback={<div>Loading...</div>}>` "Loading..." until hydration, then `<Chat />` returns `<></>` while `useChatHistory.ready=false`; (3) after `navigate('/')`, the page IS interactive but presents an empty chat with no chat URL/ID — reads as "stuck loading" to the user. The workspaceReadyRef gate is NOT involved.
+- ROOT CAUSE of "terminal commands absent yet running": the same bug investigated in task 9-b — `runProjectAutoSetup` runs `npm install` + `npm run dev` on the HIDDEN off-screen `initTerminal` (TerminalTabs.tsx:305-313), while the visible "Amplify Terminal" tab is attached to the AI's `amplifyTerminal` (empty on fresh project load). Compounded by the redirect bug — the user lands on `/` with no chat context, so the running terminal output is doubly disconnected.
+- BROKEN / HALF-FINISHED pieces flagged: (1) importChat missing `updateChatMetadata` call; (2) `else if` condition at line 425 inconsistent with `if` branch at line 395-399; (3) `else` branch leaves stale `showWorkbench=true` + `loadedProjectId` state; (4) `chatId` atom never set in `else` branch → typed messages silently fail to persist; (5) `loading` state never cleared on success path in GitUrlImport; (6) `git.tsx` loader returns wrong value (unused); (7) `createChatFromMessages` returns urlId not chat id (fragile); (8) `resetForNewChat` not called in template-import flow; (9) **LATENT BUG**: `linkChatToProject(newId, projectId)` keys the localStorage map by urlId, but `getProjectByChat(storedMessages.id)` looks up by actual chat id — these don't match, so once the user sends a message and reloads, the project association is lost.
+- RECOMMENDED FIX PRIORITY:
+   1. (P0, ~5 lines) Fix #1 — `importChat` calls `updateChatMetadata(db, newId, { ...metadata, projectId })` after `linkChatToProject`. This eliminates the redirect-to-`/` bug.
+   2. (P1, ~1 line) Fix #2 — broaden the `else if` condition at line 425 to also accept `urlProjectId || projectStore.getProjectByChat(storedMessages.id)`. Defense-in-depth.
+   3. (P1, ~1 line) Fix #5 — in the `else` branch, also call `workbenchStore.resetForNewChat()` and clear `chatId` so future failed loads land on a clean home screen instead of a broken hybrid state.
+   4. (P2, ~5 lines) Fix #4 — adopt task 9-b's Option A (swap init/amplify terminal attachments in TerminalTabs.tsx) so the auto-setup output is visible.
+   5. (P2, ~3 lines) Fix #3 — clear `loading` on the success path in GitUrlImport; consider switching `window.location.href` to Remix `navigate()` to skip the hydration "Loading..." phase.
+   6. (P3, ~1 line) Fix #9 (latent) — change `linkChatToProject(newId, projectId)` to use the actual chat id (require `createChatFromMessages` to return both, OR change it to return the actual id and update the navigation URL to use the urlId separately). This prevents future "project association lost after first message" bugs.
+
+
+---
+Task ID: 10
+Agent: main (continuation)
+Task: Fix two bugs reported by user: (1) clicking a template doesn't redirect to a chat — URL stays at `/`, tab appears loading; (2) terminal commands (npm install + start) are absent in the UI yet running — need them visible on the "Amplify Terminal" tab, with AI commands on a separate terminal. Also push all commits to rebrand/amplify using provided PAT.
+
+Work Log:
+- Pushed round-8 commits (9a2450f, 536a675) to origin/rebrand/amplify using PAT. Reset remote URL afterward to avoid persisting token.
+- Dispatched two parallel research subagents (9-a: template-click redirect bug, 9-b: terminal architecture). Both appended detailed findings to worklog.md.
+
+Bug 1 — Template click redirects to `/` instead of `/<projectId>/<chatId>`:
+- ROOT CAUSE (confirmed): `importChat` in useChatHistory.ts linked the chat to the project via `projectStore.linkChatToProject` (localStorage only) but NEVER persisted `projectId` onto the chat's `metadata` in IndexedDB. After `window.location.href = /<projectId>/<urlId>` reload, the load effect's `else if (storedMessages.metadata?.projectId)` was FALSE (metadata only had `{ gitUrl }`) → fell through to `navigate('/', { replace: true })` → URL became `/`.
+- LATENT BUG also fixed: `linkChatToProject(newId, projectId)` was keyed by urlId (createChatFromMessages returns urlId, not the internal chat id), but `getProjectByChat(storedMessages.id)` looks up by the internal id — mismatch. Now resolve the actual chat id via `getMessages(db, newId)` before linking.
+- FIX in useChatHistory.ts importChat():
+  * Added `updateChatMetadata` to imports from './db'.
+  * After createChatFromMessages, look up the actual chat record (`getMessages(db, newId)`) to get the internal id.
+  * Link with `actualChatId` (not urlId).
+  * Call `updateChatMetadata(db, actualChatId, { ...chatRecord.metadata, projectId })` to persist projectId on the chat record in IndexedDB.
+- FIX in load effect (else-if branch at ~line 426): broadened the condition to also accept `urlProjectId` or `projectStore.getProjectByChat(storedMessages.id)` as project signals (belt-and-suspenders). Now resolves the linked project and sets `loadedProjectId` + `showWorkbench` so the workbench opens immediately.
+
+Bug 2 — Terminal commands absent yet running (architecture backwards):
+- ROOT CAUSE (confirmed): Two AmplifyShell instances existed — `#amplifyTerminal` (visible "Amplify Terminal" tab, index 0) used by AI's shell/start actions, and `#initTerminal` (HIDDEN off-screen at left:-9999px, opacity:0) used by runProjectAutoSetup (npm install + start). So the user saw an EMPTY terminal while project init ran invisibly. The naming was backwards from the user's mental model.
+- FIX in TerminalTabs.tsx — restructured to TWO fixed visible tabs + user tabs:
+  * Index 0 "Amplify Terminal" (fixed, no close) → `attachInitTerminal` — project auto-setup (npm install + npm run dev). Visible by default so user SEES the running command. Silent in chat (no message).
+  * Index 1 "AI Terminal" (fixed, no close) → `attachAmplifyTerminal` — AI's shell + start actions. Separate shell so AI commands don't Ctrl+C the dev server.
+  * Index 2+ — user-added terminals (attachTerminal), max MAX_TERMINALS=3.
+  * Removed the hidden off-screen init terminal div (no longer needed — init is now visible at tab 0).
+  * Updated reset button: index 0 → initTerminal.resetTerminal(), index 1 → amplifyTerminal.resetTerminal(), index >= 2 → detach+reattach.
+  * Updated addTerminal/closeTerminal/cleanup-useEffect index math for the two fixed tabs.
+- Updated doc comments in terminal.ts and (via worklog) workbench.ts to reflect init terminal is now visible at tab 0.
+
+Verification:
+- `npx tsc --noEmit`: ZERO errors in modified files (1 pre-existing unrelated error in app/lib/.server/llm/utils.ts).
+- `npx eslint --fix`: all auto-fixable issues resolved; only remaining error is pre-existing `validSnapshot` unused (not from these changes).
+
+Stage Summary:
+- 3 files changed: app/lib/persistence/useChatHistory.ts (+79), app/components/workbench/terminal/TerminalTabs.tsx (+153/-56 approx), app/lib/stores/terminal.ts (+14/-14 doc).
+- Template/git click now correctly navigates to `/<projectId>/<chatId>` and loads the project chat (no more redirect to `/`).
+- Project auto-setup (npm install + start) is now VISIBLE on the "Amplify Terminal" tab. AI commands run on the separate "AI Terminal" tab. Both are visible, both are isolated.
+- Pushing to origin/rebrand/amplify.

@@ -19,9 +19,10 @@ export class TerminalStore {
    *  - The dev server's output doesn't pollute the AI's terminal scrollback.
    *  - Ctrl+C in the AI terminal doesn't kill the dev server.
    *
-   * The init terminal is attached to a hidden <Terminal> component in
-   * TerminalTabs.tsx — it needs a real xterm instance to receive stdin/stdout
-   * from the WebContainer process, but it's not visible to the user.
+   * The init terminal is attached to the VISIBLE "Amplify Terminal" tab
+   * (index 0) in TerminalTabs.tsx so the user can see `npm install` + the
+   * dev server output. The AI's `#amplifyTerminal` is attached to the
+   * "AI Terminal" tab (index 1).
    */
   #initTerminal = newAmplifyShellProcess();
 
@@ -56,10 +57,9 @@ export class TerminalStore {
   }
 
   /*
-   * Attach the hidden init terminal. Called from TerminalTabs.tsx which
-   * renders an off-screen <Terminal> for this purpose. Safe to call
-   * multiple times — `AmplifyShell.init()` is guarded by
-   * `#initializedOnce`.
+   * Attach the init terminal (project auto-setup shell). Called from
+   * TerminalTabs.tsx tab 0 ("Amplify Terminal"). Safe to call multiple
+   * times — `AmplifyShell.init()` is guarded by `#initializedOnce`.
    */
   async attachInitTerminal(terminal: ITerminal) {
     try {

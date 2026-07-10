@@ -14,6 +14,7 @@ import {
   setMessages,
   duplicateChat,
   createChatFromMessages,
+  updateChatMetadata,
   getSnapshot,
   setSnapshot,
   type IChatMetadata,
@@ -183,6 +184,7 @@ export function useChatHistory() {
 
     for (const [key, value] of entries) {
       let filePath = key;
+
       if (filePath.startsWith(container.workdir)) {
         filePath = filePath.replace(container.workdir, '');
       }
@@ -194,6 +196,7 @@ export function useChatHistory() {
 
     for (const [key, value] of entries) {
       let filePath = key;
+
       if (filePath.startsWith(container.workdir)) {
         filePath = filePath.replace(container.workdir, '');
       }
@@ -310,8 +313,10 @@ export function useChatHistory() {
       const chatIdToLoad = mixedId ?? (urlProjectId ? generateId() : undefined);
 
       let finalChatIdToLoad = chatIdToLoad;
+
       if (!mixedId && urlProjectId) {
         const project = projectStore.getProject(urlProjectId);
+
         if (project && project.chatIds.length > 0) {
           finalChatIdToLoad = project.chatIds[project.chatIds.length - 1];
         }
@@ -321,14 +326,19 @@ export function useChatHistory() {
         finalChatIdToLoad = generateId();
       }
 
-      // Immediately load project workspace if a project ID is in the URL.
-      // This avoids the "Loading workspace..." hang by ensuring files are restored
-      // in parallel with chat messages, rather than waiting for them.
+      /*
+       * Immediately load project workspace if a project ID is in the URL.
+       * This avoids the "Loading workspace..." hang by ensuring files are restored
+       * in parallel with chat messages, rather than waiting for them.
+       */
       if (urlProjectId) {
         console.log('[ChatHistory] urlProjectId detected:', urlProjectId);
+
         const project = projectStore.getProject(urlProjectId);
+
         if (project) {
           console.log('[ChatHistory] Project found in store:', project.name);
+
           (async () => {
             try {
               /*
@@ -422,7 +432,31 @@ export function useChatHistory() {
             description.set(storedMessages.description);
             chatId.set(storedMessages.id);
             chatMetadata.set(storedMessages.metadata);
-          } else if (storedMessages && storedMessages.metadata?.projectId) {
+          } else if (
+            storedMessages &&
+            (storedMessages.metadata?.projectId || urlProjectId || projectStore.getProjectByChat(storedMessages.id))
+          ) {
+            /*
+             * Empty-messages project chat (e.g. git/template import). Load
+             * it as long as ANY project signal exists: explicit
+             * metadata.projectId, a projectId in the URL, or a project
+             * linked in the store. Previously this ONLY checked
+             * metadata.projectId, so if importChat failed to persist it
+             * the chat fell through to `navigate('/')` and the URL became
+             * `/` — the "template click redirects to root" bug.
+             */
+            const linkedProject =
+              (storedMessages.metadata?.projectId
+                ? projectStore.getProject(storedMessages.metadata.projectId)
+                : undefined) ??
+              (urlProjectId ? projectStore.getProject(urlProjectId) : undefined) ??
+              projectStore.getProjectByChat(storedMessages.id);
+
+            if (linkedProject) {
+              workbenchStore.loadedProjectId.set(linkedProject.id);
+              workbenchStore.showWorkbench.set(true);
+            }
+
             setInitialMessages([]);
             setUrlId(storedMessages.urlId);
             description.set(storedMessages.description || '');
@@ -820,6 +854,20 @@ export function useChatHistory() {
       try {
         const newId = await createChatFromMessages(db, description, messages, metadata);
 
+        /*
+         * createChatFromMessages returns the urlId, NOT the internal chat
+         * id. We need the actual chat id for two reasons:
+         *  1. projectStore.linkChatToProject must be keyed by the SAME id
+         *     that getProjectByChat(storedMessages.id) looks up by later
+         *     (storedMessages.id is the internal id, not urlId). Linking by
+         *     urlId created a latent mismatch that broke project
+         *     association after the first message.
+         *  2. updateChatMetadata below needs the id to persist projectId
+         *     on the chat record.
+         */
+        const chatRecord = await getMessages(db, newId);
+        const actualChatId = chatRecord?.id ?? newId;
+
         let projectId: string | undefined;
 
         if (metadata?.projectId) {
@@ -831,11 +879,31 @@ export function useChatHistory() {
             hasWorkspace: true,
           });
           projectId = project.id;
-          projectStore.linkChatToProject(newId, projectId);
+          projectStore.linkChatToProject(actualChatId, projectId);
+        }
+
+        /*
+         * Persist projectId on the chat's metadata in IndexedDB. Without
+         * this, after the window.location.href reload below, the load
+         * effect's `else if (storedMessages.metadata?.projectId)` branch
+         * is FALSE (metadata only had { gitUrl }) and the chat falls
+         * through to `navigate('/', { replace: true })` — which is the
+         * bug where the URL stays at `/` after clicking a template.
+         */
+        if (projectId && chatRecord) {
+          try {
+            await updateChatMetadata(db, actualChatId, {
+              ...chatRecord.metadata,
+              projectId,
+            });
+          } catch (e) {
+            console.warn('[ChatHistory] Failed to persist projectId on chat metadata:', e);
+          }
         }
 
         if (projectId) {
           const project = projectStore.getProject(projectId);
+
           if (project) {
             workbenchStore.loadedProjectId.set(projectId);
             workbenchStore.showWorkbench.set(true);
@@ -920,6 +988,7 @@ export function useChatHistory() {
         } else {
           window.location.href = `/chat/${newId}`;
         }
+
         toast.success('Chat imported successfully');
       } catch (error) {
         if (error instanceof Error) {
