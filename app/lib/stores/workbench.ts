@@ -787,6 +787,45 @@ export class WorkbenchStore {
       return;
     }
 
+    /*
+     * ── Replay suppression for loaded (historical) chats ──────────────
+     *
+     * When an old chat is opened, its messages are re-parsed by the message
+     * parser, which re-fires `onActionOpen` / `onActionClose` /
+     * `onActionStream` for every action stored in the chat history. Those
+     * callbacks route back here into `_runAction`, which — without this
+     * guard — would RE-EXECUTE every file write, shell command, and start
+     * command against the live WebContainer.
+     *
+     * That replay is destructive:
+     *  • File writes overwrite any manual modifications the user made since
+     *    the chat was last active (the AI's stale version clobbers the
+     *    user's current version, "breaking the project again and again").
+     *  • Shell actions re-run `npm install` (slow, wastes bandwidth).
+     *  • Start actions kill and relaunch the dev server.
+     *
+     * The project files have ALREADY been restored into the WebContainer
+     * from IndexedDB (the latest committed version) via `restoreFileMap()`
+     * in `useChatHistory` — or, for non-project chats, via
+     * `restoreSnapshot()`. So replaying the action stream is both
+     * redundant AND destructive.
+     *
+     * `Chat.client.tsx` calls `workbenchStore.setReloadedMessages(
+     * initialMessages.map((m) => m.id))` before parsing begins, so every
+     * message that came from IndexedDB is in `#reloadedMessages`. For
+     * those messages we register the action in the UI (already done by
+     * `addAction` above) but mark it complete WITHOUT executing it — the
+     * message still renders correctly (action chip shows "done", no stuck
+     * spinner) and the workspace is left untouched.
+     *
+     * Brand-new messages (the user just sent one) are NOT in the set, so
+     * they execute normally.
+     */
+    if (this.#reloadedMessages.has(data.messageId)) {
+      artifact.runner.markActionAsReplayed(data.actionId);
+      return;
+    }
+
     const isBundled = artifact.type === 'bundled';
 
     if (data.action.type === 'file') {

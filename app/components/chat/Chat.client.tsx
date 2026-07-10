@@ -41,6 +41,8 @@ import { planStore } from '~/lib/planning/plan-store';
 import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 import { useProjectContextString } from '~/lib/persistence/useProjectContext';
 import { useScreenshotCapture } from '~/lib/services/screenshotCapture';
+import type { IChatMetadata } from '~/lib/persistence/db';
+import type { FileMap } from '~/lib/stores/files';
 
 const logger = createScopedLogger('Chat');
 
@@ -97,7 +99,12 @@ const processSampledMessages = createSampler(
 interface ChatProps {
   initialMessages: Message[];
   storeMessageHistory: (messages: Message[]) => Promise<void>;
-  importChat: (description: string, messages: Message[]) => Promise<void>;
+  importChat: (
+    description: string,
+    messages: Message[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
   exportChat: () => void;
   description?: string;
 }

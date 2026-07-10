@@ -392,7 +392,14 @@ export function useChatHistory() {
                 : undefined);
 
             if (!linkedProject) {
-              if (currentlyLoadedProjectId !== '<none>') {
+              /*
+               * NOTE: `currentlyLoadedProjectId` is only defined inside the
+               * `urlProjectId` IIFE above (line ~340). Referencing it here, in
+               * the `Promise.all().then()` callback, is a ReferenceError that
+               * silently breaks loading of personal (non-project) chats that
+               * have stored messages. Use the live store value instead.
+               */
+              if (workbenchStore.loadedProjectId.get() !== '<none>') {
                 workbenchStore.loadedProjectId.set('<none>');
                 workbenchStore.projectAutoStarted.set(false);
               }
@@ -795,7 +802,12 @@ export function useChatHistory() {
         console.log(error);
       }
     },
-    importChat: async (description: string, messages: Message[], metadata?: IChatMetadata) => {
+    importChat: async (
+      description: string,
+      messages: Message[],
+      metadata?: IChatMetadata,
+      initialFileMap?: FileMap,
+    ) => {
       if (!db) {
         return;
       }
@@ -822,6 +834,45 @@ export function useChatHistory() {
           if (project) {
             workbenchStore.loadedProjectId.set(projectId);
             workbenchStore.showWorkbench.set(true);
+          }
+
+          /*
+           * ── Persist initial project files to IndexedDB ───────────────────
+           *
+           * This is the fix for: "new chats linked to a project can't access
+           * the project files — only the chat that initialized the project
+           * can".
+           *
+           * Root cause: for git/template imports ALL messages are pre-populated
+           * as "initial" messages. After the page reload below, `Chat.client.tsx`
+           * gates `storeMessageHistory()` behind `messages.length >
+           * initialMessages.length`, which is FALSE for these imports — so
+           * `storeMessageHistory()` (and therefore `createProjectCommit()`) is
+           * NEVER called. The files only live in the ephemeral WebContainer
+           * filesystem + the artifact messages, never in IndexedDB. When a NEW
+           * chat is opened for this project, `getProjectFiles()` returns
+           * undefined → empty workspace.
+           *
+           * Fix: persist the freshly-cloned FileMap to IndexedDB right here,
+           * before the reload, so every subsequent chat for this project can
+           * restore it via `getProjectFiles()`.
+           */
+          if (initialFileMap && Object.keys(initialFileMap).length > 0) {
+            try {
+              const commitId = await createProjectCommit(
+                db,
+                projectId,
+                `Project files imported`,
+                initialFileMap,
+                newId,
+              );
+              projectStore.updateProject(projectId, { currentCommitId: commitId });
+              console.log(
+                `[ChatHistory] Saved ${Object.keys(initialFileMap).length} initial project files for ${projectId}`,
+              );
+            } catch (e) {
+              console.error('[ChatHistory] Failed to save initial project files:', e);
+            }
           }
         }
 

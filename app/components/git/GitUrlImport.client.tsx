@@ -10,6 +10,46 @@ import { useChatHistory } from '~/lib/persistence';
 import { createCommandsMessage, detectProjectCommands, escapeAmplifyTags } from '~/utils/projectCommands';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
 import { toast } from 'react-toastify';
+import type { FileMap } from '~/lib/stores/files';
+import { WORK_DIR } from '~/utils/constants';
+
+/*
+ * Build a FileMap (keyed by full WORK_DIR paths, matching how the
+ * `workbenchStore.files` store and the file watcher key entries) from a list
+ * of `{ path, content }` records whose `path` is relative to the workdir.
+ *
+ * Also synthesizes `folder` entries for every parent directory so the file
+ * tree renders correctly when the map is restored into the workbench store.
+ */
+function buildFileMapFromContents(
+  files: Array<{ path: string; content: string }>,
+): FileMap {
+  const fileMap: FileMap = {};
+
+  for (const file of files) {
+    const fullPath = `${WORK_DIR}/${file.path}`;
+    fileMap[fullPath] = {
+      type: 'file',
+      content: file.content,
+      isBinary: false,
+    };
+
+    // Create folder entries for every parent directory (relative parts).
+    const parts = file.path.split('/');
+
+    let current = WORK_DIR;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current = `${current}/${parts[i]}`;
+
+      if (!fileMap[current]) {
+        fileMap[current] = { type: 'folder' };
+      }
+    }
+  }
+
+  return fileMap;
+}
 
 const IGNORE_PATTERNS = [
   'node_modules/**',
@@ -101,7 +141,21 @@ ${escapeAmplifyTags(file.content)}
             messages.push(commandsMessage);
           }
 
-          await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages, { gitUrl: repoUrl });
+          /*
+           * Build a FileMap from the cloned files so `importChat` can persist
+           * them to IndexedDB (project_files / project_commits). Without this,
+           * only the chat that initiated the clone can see the files — new
+           * chats linked to the same project get an empty workspace because
+           * `getProjectFiles()` returns undefined.
+           */
+          const initialFileMap = buildFileMapFromContents(fileContents);
+
+          await importChat(
+            `Git Project:${repoUrl.split('/').slice(-1)[0]}`,
+            messages,
+            { gitUrl: repoUrl },
+            initialFileMap,
+          );
         }
       } catch (error) {
         console.error('Error during import:', error);

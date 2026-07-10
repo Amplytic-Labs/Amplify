@@ -36,6 +36,8 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 import { OpenWorkspaceButton } from './OpenWorkspaceButton';
+import type { IChatMetadata } from '~/lib/persistence/db';
+import type { FileMap } from '~/lib/stores/files';
 
 /*
  * OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
@@ -68,7 +70,12 @@ interface BaseChatProps {
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
   handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   enhancePrompt?: () => void;
-  importChat?: (description: string, messages: Message[]) => Promise<void>;
+  importChat?: (
+    description: string,
+    messages: Message[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
   exportChat?: () => void;
   uploadedFiles?: File[];
   setUploadedFiles?: (files: File[]) => void;

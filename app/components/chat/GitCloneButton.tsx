@@ -11,6 +11,40 @@ import { classNames } from '~/utils/classNames';
 import { Button } from '~/components/ui/Button';
 import type { IChatMetadata } from '~/lib/persistence/db';
 import { X, Github, GitBranch } from 'lucide-react';
+import type { FileMap } from '~/lib/stores/files';
+import { WORK_DIR } from '~/utils/constants';
+
+/*
+ * Build a FileMap (keyed by full WORK_DIR paths, matching how the
+ * `workbenchStore.files` store and the file watcher key entries) from a list
+ * of `{ path, content }` records whose `path` is relative to the workdir.
+ * Also synthesizes `folder` entries for every parent directory.
+ */
+function buildFileMapFromContents(files: Array<{ path: string; content: string }>): FileMap {
+  const fileMap: FileMap = {};
+
+  for (const file of files) {
+    const fullPath = `${WORK_DIR}/${file.path}`;
+    fileMap[fullPath] = {
+      type: 'file',
+      content: file.content,
+      isBinary: false,
+    };
+
+    const parts = file.path.split('/');
+    let current = WORK_DIR;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current = `${current}/${parts[i]}`;
+
+      if (!fileMap[current]) {
+        fileMap[current] = { type: 'folder' };
+      }
+    }
+  }
+
+  return fileMap;
+}
 
 // Import the new repository selector components
 import { GitHubRepositorySelector } from '~/components/@settings/tabs/github/components/GitHubRepositorySelector';
@@ -44,7 +78,12 @@ const MAX_TOTAL_SIZE = 500 * 1024; // 500KB total limit
 
 interface GitCloneButtonProps {
   className?: string;
-  importChat?: (description: string, messages: Message[], metadata?: IChatMetadata) => Promise<void>;
+  importChat?: (
+    description: string,
+    messages: Message[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
 }
 
 export default function GitCloneButton({ importChat, className }: GitCloneButtonProps) {
@@ -150,7 +189,14 @@ ${escapeAmplifyTags(file.content)}
           messages.push(commandsMessage);
         }
 
-        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages);
+        /*
+         * Persist the cloned files to IndexedDB via importChat's
+         * `initialFileMap` parameter so that NEW chats opened for this
+         * project can restore them (instead of getting an empty workspace).
+         */
+        const initialFileMap = buildFileMapFromContents(fileContents);
+
+        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages, undefined, initialFileMap);
       }
     } catch (error) {
       console.error('Error during import:', error);

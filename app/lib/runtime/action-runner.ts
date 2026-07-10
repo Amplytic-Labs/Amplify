@@ -120,6 +120,39 @@ export class ActionRunner {
     });
   }
 
+  /**
+   * Mark an action as complete WITHOUT executing it.
+   *
+   * Used when loading an old (historical) chat: the message parser re-fires
+   * `onActionOpen` / `onActionClose` / `onActionStream` for every action in
+   * the stored history, which would normally trigger `runAction` →
+   * `#executeAction` → `#runFileAction` / `#runShellAction` / `#runStartAction`.
+   *
+   * Re-executing those actions against the live WebContainer is destructive:
+   *  - File writes overwrite any manual modifications the user made since
+   *    the chat was last active (the AI's stale version clobbers the user's
+   *    current version, breaking the project "again and again").
+   *  - Shell actions re-run `npm install`, killing time and the running dev
+   *    server.
+   *  - Start actions kill + relaunch the dev server.
+   *
+   * The project files have ALREADY been restored from IndexedDB (the latest
+   * committed version) via `restoreFileMap()` / `restoreSnapshot()` in
+   * `useChatHistory`, so re-execution is redundant as well as destructive.
+   *
+   * This method chains onto `#currentExecutionPromise` (same as `runAction`)
+   * so ordering is preserved relative to the `status: 'running'` scheduled
+   * by `addAction` — the action ends up `complete` with `executed: true`,
+   * which makes the UI render the action as done (no stuck spinner) while
+   * skipping every side-effect.
+   */
+  markActionAsReplayed(actionId: string) {
+    this.#currentExecutionPromise = this.#currentExecutionPromise.then(() => {
+      this.#updateAction(actionId, { status: 'complete', executed: true });
+    });
+    return this.#currentExecutionPromise;
+  }
+
   async runAction(data: ActionCallbackData, isStreaming: boolean = false) {
     const { actionId } = data;
     const action = this.actions.get()[actionId];
