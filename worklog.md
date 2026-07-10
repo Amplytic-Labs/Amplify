@@ -2438,3 +2438,53 @@ Stage Summary:
   7. app/lib/stores/workbench.ts — reloaded-message early-return guard in _runAction
 - Both fixes are surgical, commented, and do not regress any existing behavior.
 - Ready to push to origin/rebrand/amplify using the user-provided PAT.
+
+---
+Task ID: round-6-silent-init-isolation-routing
+Agent: main session
+Task: 7 fixes addressing user feedback: (1) sidebar routing bug — project chats linked to /chat/{chatId} instead of /{projectId}/{chatId}; (2) silent file loading — git clone/template inject creates "Created N files" + "Cloning..." messages that confuse users; (3) separate init terminal so AI commands don't kill the dev server; (4) auto-inject npm install + start on every chat load, silently; (5) workspace destroy + reinit on chat switch; (6) improve start command detector; (7) remove "Found start script" + package.json context text from template injection.
+
+Work Log:
+- Launched 3 parallel Explore subagents to investigate: routing bug, workspace/terminal lifecycle, silent file loading. All 3 returned comprehensive reports identifying root causes and fix locations.
+- Implemented all 7 fixes across 13 files. npx tsc --noEmit --skipLibCheck: ZERO errors in modified files (only pre-existing $_0 error in utils.ts remains). Vite HMR picked up all changes with no compile errors.
+- Committed as f760412, pushed to origin/rebrand/amplify using PAT (one-time URL, not stored in .git/config).
+
+Fix 1 — Sidebar URL routing (ProjectSidebar.tsx, HistoryItem.tsx):
+  - SidebarHistoryItem: compute href from item.metadata.projectId. Project chats → /{projectId}/{chatId}, personal chats → /chat/{chatId}. Removed dead onNavigate prop.
+  - HistoryItem.tsx: same metadata-based href computation.
+  - Root cause: <Link to={`/chat/${item.urlId}`}> was hardcoded; onNavigate was passed but never declared/destructured in the child.
+
+Fix 2 — Silent file loading (GitCloneButton.tsx, GitUrlImport.client.tsx, useChatHistory.ts, selectStarterTemplate.ts, projectCommands.ts, fileUtils.ts):
+  - GitCloneButton + GitUrlImport: pass EMPTY messages array to importChat. Files persisted via initialFileMap → IndexedDB → restoreFileMap after reload. No "Cloning..." / "Created N files" / "Found start script" messages.
+  - importChat: after createProjectCommit, call detectProjectCommands on the FileMap + setProjectCommands so runProjectAutoSetup has commands to execute.
+  - selectStarterTemplate: removed <amplifyAction type=shell>npm install</amplifyAction> from template artifact (auto-init handles it). Removed packageJsonContext text ("check the scripts section to determine the correct development start command").
+  - projectCommands + fileUtils: emptied followupMessage for all return paths.
+
+Fix 3 — Separate init terminal (terminal.ts, workbench.ts, TerminalTabs.tsx, project-auto-run.ts):
+  - terminal.ts: added #initTerminal (second AmplifyShell) + attachInitTerminal method.
+  - workbench.ts: exposed initTerminal getter + attachInitTerminal.
+  - TerminalTabs.tsx: rendered hidden off-screen <Terminal> that attaches to init shell.
+  - project-auto-run.ts: runProjectAutoSetup + rerunProjectSetup use initTerminal instead of amplifyTerminal. AI's shell/start actions stay on amplifyTerminal.
+
+Fix 4 — Silent auto-inject on every load (project-auto-run.ts, useChatHistory.ts):
+  - project-auto-run: removed attemptedThisSession Set (blocked re-running setup). Removed all toast notifications (silent, console.log only).
+  - useChatHistory: always call runProjectAutoSetup after restoring files (clearWorkspace resets projectAutoStarted). Removed "only if currentlyLoadedProjectId !== project.id" guard.
+
+Fix 5 — Workspace destroy + reinit on switch (workbench.ts, shell.ts, useChatHistory.ts):
+  - workbench.ts: added clearWorkspace() — kills processes on both terminals, clears WebContainer FS (rm -rf all workdir entries), resets in-memory state + projectAutoStarted.
+  - shell.ts: added killRunningProcesses() on AmplifyShell — sends Ctrl+C + resets executionState.
+  - useChatHistory: call clearWorkspace() at start of every project chat load + when switching from project to personal chat.
+
+Fix 6 — Start command detector (projectCommands.ts):
+  - detectProjectCommands now detects package manager from lock files: bun.lockb/bun.lock → bun, pnpm-lock.yaml → pnpm, yarn.lock → yarn, default → npm. Uses correct install + run commands for each.
+
+Fix 7 — Removed followupMessage + package.json context text:
+  - Covered in Fix 2 above.
+
+Preserved: the workspaceReadyRef waiting method in Chat.client.tsx (inject_template gate) is unchanged.
+
+Stage Summary:
+- Commit f760412 on rebrand/amplify (13 files, +366/-176 lines).
+- npx tsc --noEmit --skipLibCheck: ZERO errors in modified files.
+- Vite HMR: all changes picked up cleanly, no compile errors.
+- Pushed to origin/rebrand/amplify. PAT not stored in .git/config.
