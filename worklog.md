@@ -2488,3 +2488,30 @@ Stage Summary:
 - npx tsc --noEmit --skipLibCheck: ZERO errors in modified files.
 - Vite HMR: all changes picked up cleanly, no compile errors.
 - Pushed to origin/rebrand/amplify. PAT not stored in .git/config.
+
+---
+Task ID: 8
+Agent: main (continuation)
+Task: User flagged that detectProjectCommands emits `bun install` / `bun run` for bun.lock* and `yarn install` for yarn.lock, but bun (and possibly yarn) may not be supported in WebContainer. Research what WebContainer actually supports and fix the detector.
+
+Work Log:
+- Researched WebContainer package-manager support via web search + official StackBlitz docs/GitHub issues.
+- Confirmed: WebContainer natively supports ONLY npm, pnpm, and yarn v1 (classic).
+- Bun: NOT supported, not planned (stackblitz/webcontainer-core#1249 closed "no immediate plans"; #1891 still open). Bun is a native Zig binary and cannot run in the WASM Node.js runtime — there is no `bun` binary on the WebContainer PATH.
+- Yarn berry (v2/v3/v4): NOT supported (stackblitz/webcontainer-core#1235, open + tracked). `yarnPath` is explicitly ignored with a warning; even invoking the berry .cjs directly fails with brotli decompression errors.
+- Yarn v1 (classic): supported — `yarn` resolves to v1.
+- pnpm: supported.
+- npm: supported (default).
+- Previous code (Fix 6 from round 7) emitted `bun install` / `bun run` for bun.lock* → would fail with "command not found" in the auto-setup terminal. Also emitted `yarn install` for ANY yarn.lock, including berry projects → would fail for berry.
+- Rewrote detection in app/utils/projectCommands.ts:
+  * Primary signal: `packageManager` (Corepack) field in package.json — most reliable, encodes name+version. pnpm@* → pnpm; yarn@1 → yarn; npm@* → npm; bun@* and yarn@2+ → fall back to npm.
+  * Fallback (no packageManager field): pnpm-lock.yaml → pnpm; yarn.lock → yarn ONLY if no .yarnrc.yml (berry marker), else npm; bun.lockb/bun.lock → npm.
+  * pkgManager is now strictly typed 'npm' | 'pnpm' | 'yarn' — never emits an unsupported command.
+- Verified: `npx tsc --noEmit` — ZERO errors in projectCommands.ts (one pre-existing unrelated error in app/lib/.server/llm/utils.ts).
+- Committed as 9a2450f on rebrand/amplify.
+
+Stage Summary:
+- app/utils/projectCommands.ts: +47/-8 lines. Detection now respects WebContainer's actual runtime limits.
+- Bun projects auto-setup now correctly runs `npm install` + `npm run <script>` instead of failing on `bun`.
+- Yarn berry projects (with .yarnrc.yml) fall back to npm; yarn v1 projects keep using yarn.
+- Commit 9a2450f made locally on rebrand/amplify. Push pending — no PAT available in this session (previous session's PAT was not persisted). User will need to push or supply PAT.
