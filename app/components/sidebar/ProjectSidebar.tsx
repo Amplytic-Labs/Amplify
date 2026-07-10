@@ -67,7 +67,21 @@ interface ProjectSidebarProps {
 
 export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   const { duplicateCurrentChat, exportChat } = useChatHistory();
-  const { id: urlId } = useParams();
+
+  /*
+   * Active-chat detection: derive the current chat's urlId from the URL.
+   *
+   * Remix route param names come from the route filename:
+   *   chat.$id.tsx          → /chat/<id>          → useParams() = { id }
+   *   $projectId.$chatId.tsx → /<projectId>/<chatId> → useParams() = { projectId, chatId }
+   *
+   * Previously this used `const { id: urlId } = useParams()`, which returned
+   * undefined on project-chat routes (the param is `chatId`, not `id`), so no
+   * project chat was ever highlighted in the sidebar. Fall back to `chatId`
+   * for the project-chat route.
+   */
+  const params = useParams();
+  const urlId = params.id ?? params.chatId;
   const navigate = useNavigate();
   const currentChatId = useStore(chatId);
 
@@ -76,11 +90,13 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
 
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
 
-  // Settings / ControlPanel visibility. Previously the ONLY entry point to the
-  // full Settings UI (providers, API keys, cloud connections, data export,
-  // MCP, memory, etc.) lived inside the old Menu overlay, which is unreachable
-  // in the new ProjectSidebar-based layout. Surfacing it here restores access
-  // to the entire Settings surface.
+  /*
+   * Settings / ControlPanel visibility. Previously the ONLY entry point to the
+   * full Settings UI (providers, API keys, cloud connections, data export,
+   * MCP, memory, etc.) lived inside the old Menu overlay, which is unreachable
+   * in the new ProjectSidebar-based layout. Surfacing it here restores access
+   * to the entire Settings surface.
+   */
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const theme = useStore(themeStore);
@@ -418,6 +434,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
          */
         .then((list) => list.filter((item) => item.urlId))
         .then((list) =>
+
           /*
            * Sort newest-first by timestamp so the most recent chat
            * appears at the top of the list immediately after creation.
@@ -522,8 +539,10 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       projectStore.deleteProject(project.id);
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
 
-      // Clear the selected project + workbench state so the workspace
-      // doesn't show stale files from the deleted project.
+      /*
+       * Clear the selected project + workbench state so the workspace
+       * doesn't show stale files from the deleted project.
+       */
       if (selectedProjectId.get() === project.id) {
         clearSelectedProject();
       }
@@ -532,8 +551,10 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       workbenchStore.loadedProjectId.set('<none>');
       workbenchStore.projectAutoStarted.set(false);
 
-      // If we're currently viewing one of the project's chats, navigate
-      // home — the chat was deleted along with the project.
+      /*
+       * If we're currently viewing one of the project's chats, navigate
+       * home — the chat was deleted along with the project.
+       */
       if (currentChatBelongsToProject) {
         navigate('/');
       }
@@ -759,12 +780,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   type="button"
                   onClick={() => {
                     setIsNewChatDropdownOpen(false);
-                    // Navigate to the /git route which renders the GitUrlImport
-                    // flow (clone a repo by URL into a new chat). Previously
-                    // this button had no onClick and did nothing. A full-page
-                    // navigation is used here because the dropdown's
-                    // AnimatePresence exit can race with Remix's client-side
-                    // navigate() and swallow it.
+
+                    /*
+                     * Navigate to the /git route which renders the GitUrlImport
+                     * flow (clone a repo by URL into a new chat). Previously
+                     * this button had no onClick and did nothing. A full-page
+                     * navigation is used here because the dropdown's
+                     * AnimatePresence exit can race with Remix's client-side
+                     * navigate() and swallow it.
+                     */
                     window.location.assign('/git');
                   }}
                   className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent"
@@ -933,6 +957,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 chats — either the selected project's chats, or personal chats.
               */}
               {selectedProject ? (
+
                 /*
                  * A project is selected → show the project's chats. Switching
                  * between these chats does NOT reload the workspace (handled in
@@ -961,6 +986,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   navigate={navigate}
                 />
               ) : (
+
                 /*
                  * No project selected → personal chats (binned by date).
                  */
@@ -1201,6 +1227,7 @@ function SelectedProjectChatsList({
       {loadingChats ? (
         <div className="px-[10px] py-[7px] text-[12px] text-muted-foreground">Loading chats…</div>
       ) : chats.length === 0 ? (
+
         // Better empty state — icon + descriptive copy + CTA
         <div className="px-[8px] py-[16px] flex flex-col items-center justify-center gap-2 text-center">
           <div className="relative">
@@ -1383,9 +1410,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
    * which broke project chats — the workspace + project files weren't loaded
    * because the route loader didn't receive the projectId param.
    */
-  const href = item.metadata?.projectId
-    ? `/${item.metadata.projectId}/${item.urlId}`
-    : `/chat/${item.urlId}`;
+  const href = item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -1448,10 +1473,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
             short-circuits the file-restore step when the same project is
             already loaded (loadedProjectId check).
           */}
-          <Link
-            to={href}
-            className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline"
-          >
+          <Link to={href} className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline">
             {currentDescription}
           </Link>
 

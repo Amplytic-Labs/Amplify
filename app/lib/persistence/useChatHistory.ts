@@ -421,10 +421,66 @@ export function useChatHistory() {
 
               if (storedMessages.metadata?.projectInitiated && snapshot) {
                 restoreSnapshot(mixedId || '', snapshot);
+
+                /*
+                 * Safety net: restoreSnapshot writes to the WebContainer FS
+                 * but does NOT update workbenchStore.files. Without this,
+                 * hasFiles stays false and the workspace shows "Loading…"
+                 * forever if the IIFE failed. Populate the file store from
+                 * the snapshot.
+                 */
+                if (snapshot?.files && Object.keys(snapshot.files).length > 0) {
+                  const currentFiles = workbenchStore.files.get();
+
+                  if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                    workbenchStore.files.set(snapshot.files);
+                  }
+                }
+
+                workbenchStore.showWorkbench.set(true);
               }
             } else if (storedMessages.metadata?.projectInitiated && snapshot) {
               restoreSnapshot(mixedId || '', snapshot);
               workbenchStore.loadedProjectId.set(linkedProject?.id || '<none>');
+              workbenchStore.showWorkbench.set(true);
+
+              /*
+               * Safety net: same as above — restoreSnapshot writes to the
+               * WebContainer but not to the file store. If the IIFE failed,
+               * populate the file store from the snapshot so hasFiles
+               * becomes true and the workspace renders.
+               */
+              if (snapshot?.files && Object.keys(snapshot.files).length > 0) {
+                const currentFiles = workbenchStore.files.get();
+
+                if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                  workbenchStore.files.set(snapshot.files);
+                }
+              }
+            } else {
+              /*
+               * Project chat with messages but no snapshot (e.g. project
+               * chat created via handleNewChatInProject that has since
+               * received messages but no snapshot was taken). Show the
+               * workbench and load project-global files as a fallback.
+               */
+              workbenchStore.loadedProjectId.set(linkedProject.id);
+              workbenchStore.showWorkbench.set(true);
+
+              const currentFiles = workbenchStore.files.get();
+
+              if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                try {
+                  const projectFiles = await getProjectFiles(db, linkedProject.id);
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                  }
+                } catch (e) {
+                  console.warn('[ChatHistory] Safety net failed for project chat without snapshot:', e);
+                }
+              }
             }
 
             setInitialMessages(filteredMessages);
@@ -455,6 +511,41 @@ export function useChatHistory() {
             if (linkedProject) {
               workbenchStore.loadedProjectId.set(linkedProject.id);
               workbenchStore.showWorkbench.set(true);
+
+              /*
+               * ── File-loading safety net ──────────────────────────────
+               *
+               * The IIFE above (line ~342) is responsible for loading
+               * project files into the WebContainer + file store. But it's
+               * fire-and-forget — it runs in parallel with this Promise.all
+               * chain, and if it fails (e.g. WebContainer slow to boot on a
+               * full page reload, or clearWorkspace/restoreFileMap throws)
+               * the catch block swallows the error and files are NEVER
+               * loaded. The user sees showWorkbench=true but hasFiles=false
+               * → "Loading workspace…" forever.
+               *
+               * This safety net checks if files are still empty and, if so,
+               * loads them right here in the sequential .then() chain. If
+               * the IIFE already succeeded, this is a no-op (files already
+               * set). If the IIFE failed, this rescues the workspace.
+               */
+              const currentFiles = workbenchStore.files.get();
+
+              if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                try {
+                  const projectFiles = await getProjectFiles(db, linkedProject.id);
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                    console.log(
+                      `[ChatHistory] Safety net loaded ${Object.keys(projectFiles.files).length} files for project ${linkedProject.id}`,
+                    );
+                  }
+                } catch (e) {
+                  console.warn('[ChatHistory] Safety net failed to load project files:', e);
+                }
+              }
             }
 
             setInitialMessages([]);
