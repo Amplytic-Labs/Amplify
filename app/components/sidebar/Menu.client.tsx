@@ -6,7 +6,15 @@ import { ThemeSwitch } from '~/components/ui/ThemeSwitch';
 import { ControlPanel } from '~/components/@settings/core/ControlPanel';
 import { SettingsButton, HelpButton } from '~/components/ui/SettingsButton';
 import { Button } from '~/components/ui/Button';
-import { db, deleteById, getAll, chatId, chatListVersion, type ChatHistoryItem, useChatHistory } from '~/lib/persistence';
+import {
+  db,
+  deleteById,
+  getAll,
+  chatId,
+  chatListVersion,
+  type ChatHistoryItem,
+  useChatHistory,
+} from '~/lib/persistence';
 import { projectStore } from '~/lib/persistence/project-store';
 import { cubicEasingFn } from '~/utils/easings';
 import { HistoryItem } from './HistoryItem';
@@ -14,7 +22,6 @@ import { binDates } from './date-binning';
 import { useSearchFilter } from '~/lib/hooks/useSearchFilter';
 import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
-import { useNavigate } from '@remix-run/react';
 import { sidebarStore } from '~/lib/stores/sidebar';
 
 const menuVariants = {
@@ -67,7 +74,6 @@ function CurrentDateTime() {
 
 export const Menu = () => {
   const { duplicateCurrentChat, exportChat } = useChatHistory();
-  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
   const [list, setList] = useState<ChatHistoryItem[]>([]);
   const open = useStore(sidebarStore);
@@ -85,24 +91,37 @@ export const Menu = () => {
   // Compute category counts for tabs
   const tabCounts = useMemo(() => {
     const counts = { all: filteredList.length, chats: 0, projects: 0 };
+
     for (const item of filteredList) {
       const category = projectStore.getChatCategory(item.id);
+
       if (category === 'project') {
         counts.projects++;
       } else {
         counts.chats++;
       }
     }
+
     return counts;
   }, [filteredList]);
 
   // Filter list by active tab (search happens first via useSearchFilter, then tab filter)
   const categorizedList = useMemo(() => {
-    if (activeTab === 'all') return filteredList;
+    if (activeTab === 'all') {
+      return filteredList;
+    }
+
     return filteredList.filter((item) => {
       const category = projectStore.getChatCategory(item.id);
-      if (activeTab === 'chats') return category === 'chat';
-      if (activeTab === 'projects') return category === 'project';
+
+      if (activeTab === 'chats') {
+        return category === 'chat';
+      }
+
+      if (activeTab === 'projects') {
+        return category === 'project';
+      }
+
       return true;
     });
   }, [filteredList, activeTab]);
@@ -119,11 +138,14 @@ export const Menu = () => {
          */
         .then((list) => list.filter((item) => item.urlId))
         .then((list) =>
-          // Sort newest-first by timestamp so the most recent chat
-          // appears at the top of the list immediately after creation.
+          /*
+           * Sort newest-first by timestamp so the most recent chat
+           * appears at the top of the list immediately after creation.
+           */
           list.sort((a, b) => {
             const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
             const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+
             return tb - ta;
           }),
         )
@@ -173,9 +195,9 @@ export const Menu = () => {
           loadEntries();
 
           if (chatId.get() === item.id) {
-            // Use Remix navigate() to preserve WebContainer and in-memory state
+            // Full page reload — tears down workspace cleanly.
             console.log('Navigating away from deleted chat');
-            navigate('/');
+            window.location.href = '/';
           }
         })
         .catch((error) => {
@@ -189,7 +211,7 @@ export const Menu = () => {
           loadEntries();
         });
     },
-    [loadEntries, deleteChat, navigate],
+    [loadEntries, deleteChat],
   );
 
   const deleteSelectedItems = useCallback(
@@ -240,10 +262,10 @@ export const Menu = () => {
       // Navigate if needed
       if (shouldNavigate) {
         console.log('Navigating away from deleted chat');
-        navigate('/');
+        window.location.href = '/';
       }
     },
-    [deleteChat, loadEntries, db, navigate],
+    [deleteChat, loadEntries, db],
   );
 
   const closeDialog = () => {

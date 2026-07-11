@@ -1,4 +1,4 @@
-import { useSearchParams, useNavigate } from '@remix-run/react';
+import { useSearchParams } from '@remix-run/react';
 import ignore from 'ignore';
 import { useEffect, useState } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
@@ -20,9 +20,7 @@ import { WORK_DIR } from '~/utils/constants';
  * Also synthesizes `folder` entries for every parent directory so the file
  * tree renders correctly when the map is restored into the workbench store.
  */
-function buildFileMapFromContents(
-  files: Array<{ path: string; content: string }>,
-): FileMap {
+function buildFileMapFromContents(files: Array<{ path: string; content: string }>): FileMap {
   const fileMap: FileMap = {};
 
   for (const file of files) {
@@ -77,7 +75,7 @@ const IGNORE_PATTERNS = [
 
 export function GitUrlImport() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
+
   const { ready: historyReady, importChat } = useChatHistory();
   const { ready: gitReady, gitClone } = useGit();
   const [imported, setImported] = useState(false);
@@ -124,18 +122,13 @@ export function GitUrlImport() {
 
           const initialFileMap = buildFileMapFromContents(fileContents);
 
-          await importChat(
-            `Git Project:${repoUrl.split('/').slice(-1)[0]}`,
-            [],
-            { gitUrl: repoUrl },
-            initialFileMap,
-          );
+          await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, [], { gitUrl: repoUrl }, initialFileMap);
         }
       } catch (error) {
         console.error('Error during import:', error);
         toast.error('Failed to import repository');
         setLoading(false);
-        navigate('/');
+        window.location.href = '/';
 
         return;
       }
@@ -150,7 +143,7 @@ export function GitUrlImport() {
     const url = searchParams.get('url');
 
     if (!url) {
-      navigate('/');
+      window.location.href = '/';
       return;
     }
 
@@ -158,10 +151,10 @@ export function GitUrlImport() {
       console.error('Error importing repo:', error);
       toast.error('Failed to import repository');
       setLoading(false);
-      navigate('/');
+      window.location.href = '/';
     });
     setImported(true);
-  }, [searchParams, historyReady, gitReady, imported, navigate]);
+  }, [searchParams, historyReady, gitReady, imported]);
 
   return (
     <ClientOnly fallback={<BaseChat />}>

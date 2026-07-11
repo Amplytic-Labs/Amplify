@@ -1,4 +1,4 @@
-import { useLoaderData, useNavigate, useSearchParams } from '@remix-run/react';
+import { useLoaderData, useSearchParams } from '@remix-run/react';
 import { useState, useEffect, useCallback } from 'react';
 import { atom } from 'nanostores';
 import { generateId, type JSONValue, type Message } from 'ai';
@@ -118,7 +118,6 @@ async function generateChatTitle(_chatId: string, firstMessage: string): Promise
 }
 
 export function useChatHistory() {
-  const navigate = useNavigate();
   const { id: mixedId, projectId: urlProjectId } = useLoaderData<{ id?: string; projectId?: string }>();
   const [searchParams] = useSearchParams();
 
@@ -247,9 +246,8 @@ export function useChatHistory() {
           });
 
           try {
-            const { detectProjectMemory, mergeDetectedMemory } = await import(
-              '~/lib/persistence/project-memory-detect'
-            );
+            const { detectProjectMemory, mergeDetectedMemory } =
+              await import('~/lib/persistence/project-memory-detect');
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);
@@ -554,7 +552,7 @@ export function useChatHistory() {
             chatId.set(storedMessages.id);
             chatMetadata.set(storedMessages.metadata);
           } else {
-            navigate('/', { replace: true });
+            window.location.replace('/');
           }
 
           setReady(true);
@@ -567,7 +565,7 @@ export function useChatHistory() {
     } else {
       setReady(true);
     }
-  }, [mixedId, urlProjectId, db, navigate, searchParams, restoreFileMap, restoreSnapshot]);
+  }, [mixedId, urlProjectId, db, searchParams, restoreFileMap, restoreSnapshot]);
 
   useEffect(() => {
     if (!db) {
@@ -925,7 +923,7 @@ export function useChatHistory() {
 
       try {
         const newId = await duplicateChat(db, mixedId || listItemId);
-        navigate(`/chat/${newId}`);
+        window.location.href = `/chat/${newId}`;
         toast.success('Chat duplicated successfully');
       } catch (error) {
         toast.error('Failed to duplicate chat');

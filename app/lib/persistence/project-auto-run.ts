@@ -43,10 +43,12 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
     return;
   }
 
-  // Session-level guard: prevents double-running within the same load cycle.
-  // This is reset to false on every chat switch (by useChatHistory setting
-  // projectAutoStarted.set(false) when loadedProjectId changes), so each
-  // new chat load re-triggers setup + start.
+  /*
+   * Session-level guard: prevents double-running within the same load cycle.
+   * This is reset to false on every chat switch (by useChatHistory setting
+   * projectAutoStarted.set(false) when loadedProjectId changes), so each
+   * new chat load re-triggers setup + start.
+   */
   if (workbenchStore.projectAutoStarted.get()) {
     return;
   }
@@ -58,8 +60,10 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
     return;
   }
 
-  // Use the INIT terminal (separate from the AI's amplifyTerminal) so the
-  // dev server isn't killed when the AI runs a shell command later.
+  /*
+   * Use the INIT terminal (separate from the AI's amplifyTerminal) so the
+   * dev server isn't killed when the AI runs a shell command later.
+   */
   const shell = workbenchStore.initTerminal;
 
   try {
@@ -67,6 +71,7 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
   } catch {
     console.warn('[auto-run] Init shell not ready — deferring auto-setup.');
     workbenchStore.projectAutoStarted.set(false);
+
     return;
   }
 
@@ -78,7 +83,7 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
      * the dev server. Silent — no toast, the output goes to the init
      * terminal.
      */
-    if (project.setupCommand && !project.isSetupComplete) {
+    if (project.setupCommand) {
       console.log(`[auto-run] Running setup: ${project.setupCommand}`);
 
       const result = await shell.executeCommand(sessionId, project.setupCommand);
@@ -135,6 +140,7 @@ export async function rerunProjectSetup(project: Project): Promise<void> {
   try {
     if (project.setupCommand) {
       toast.info(`Re-running setup for "${project.name}"…`, { autoClose: 2500 });
+
       const result = await shell.executeCommand(sessionId, project.setupCommand);
 
       if (result && result.exitCode === 0) {
