@@ -3695,3 +3695,17 @@ Verification:
 Stage Summary:
 - 7 source files modified. Every user-initiated URL change now triggers a full page reload → workspace + WebContainer + files + auto-setup all rebuilt from IndexedDB. npm install now ALWAYS runs before start on every reload.
 - Pushing to origin/rebrand/amplify using PAT (one-time, not persisted).
+
+---
+Task ID: 14
+Agent: main session
+Task: Fix stray & in start command + double-click chat switching.
+
+Work Log:
+- Bug 1 (& in start command): Added spawnDetached() to AmplifyShell — spawns dev server directly via webcontainer.spawn(), bypassing jsh. No & appended, no input echo. Updated 3 callers (project-auto-run x2, action-runner x1). Updated killRunningProcesses to kill directly-spawned processes.
+- Bug 2 (double-click chat switch): Stretched-link pattern in SidebarHistoryItem — absolute inset-0 <a> covers whole row, icon/text use pointer-events-none, more-button is z-10. Single click anywhere navigates.
+- Verified: tsc (0 new errors), eslint (0 new errors), agent-browser (single-click navigation confirmed: / → /chat/... with one click).
+
+Stage Summary:
+- 4 files: shell.ts, project-auto-run.ts, action-runner.ts, ProjectSidebar.tsx.
+- Commit: 5e8e853.
