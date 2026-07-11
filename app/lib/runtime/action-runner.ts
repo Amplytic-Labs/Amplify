@@ -1,7 +1,14 @@
 import type { WebContainer } from '@webcontainer/api';
 import { path as nodePath } from '~/utils/path';
 import { atom, map, type MapStore } from 'nanostores';
-import type { ActionAlert, AmplifyAction, DeployAlert, FileHistory, SupabaseAction, SupabaseAlert } from '~/types/actions';
+import type {
+  ActionAlert,
+  AmplifyAction,
+  DeployAlert,
+  FileHistory,
+  SupabaseAction,
+  SupabaseAlert,
+} from '~/types/actions';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 import type { ActionCallbackData } from './message-parser';
@@ -222,9 +229,11 @@ export class ActionRunner {
           break;
         }
         case 'start': {
-          // Start commands (dev servers) run indefinitely, so we mark them
-          // complete once they've been running for a short period — meaning
-          // the server launched without an immediate error.
+          /*
+           * Start commands (dev servers) run indefinitely, so we mark them
+           * complete once they've been running for a short period — meaning
+           * the server launched without an immediate error.
+           */
 
           this.#runStartAction(action, actionId)
             .then(() => {
@@ -350,7 +359,9 @@ export class ActionRunner {
     );
 
     if (startAlreadyActive) {
-      logger.debug('[start]: A start action is already running/complete — skipping re-launch to avoid killing the dev server.');
+      logger.debug(
+        '[start]: A start action is already running/complete — skipping re-launch to avoid killing the dev server.',
+      );
 
       return undefined;
     }
@@ -367,31 +378,18 @@ export class ActionRunner {
     }
 
     /*
-     * Run the dev server DETACHED (backgrounded, not tracked in
-     * executionState). A dev server never exits, so the normal
-     * executeCommand path would hold executionState.active forever and cause
-     * every subsequent shell command to send Ctrl+C — killing the server.
-     * Detached mode backgrounds it so the prompt returns and later commands
-     * run without interrupting it.
+     * Spawn the dev server DIRECTLY via webcontainer.spawn() (not through
+     * jsh). A dev server never exits, so the normal executeCommand path
+     * would either hold executionState.active forever (causing every later
+     * shell command to send Ctrl+C and kill the server) or — in detached
+     * mode — append a visible ` &` to the command that jsh echoes to the
+     * terminal. Spawning directly avoids both: no `&`, no echo, and the
+     * process runs independently of jsh so the prompt stays usable.
      */
-    const resp = await shell.executeCommand(
-      this.runnerId.get(),
-      action.content,
-      () => {
-        logger.debug(`[${action.type}]:Aborting Action\n\n`, action);
-        action.abort();
-      },
-      { detached: true },
-    );
-    logger.debug(`${action.type} Shell Response: [exit code:${resp?.exitCode}]`);
+    await shell.spawnDetached(action.content);
+    logger.debug(`${action.type} spawned detached (dev server running)`);
 
-    // Detached commands return undefined (the dev server is still running).
-    // A defined non-zero exit means the background launch itself failed.
-    if (resp?.exitCode != null && resp.exitCode !== 0) {
-      throw new ActionCommandError('Failed To Start Application', resp?.output || 'No Output Available');
-    }
-
-    return resp;
+    return undefined;
   }
 
   async #runFileAction(action: ActionState) {

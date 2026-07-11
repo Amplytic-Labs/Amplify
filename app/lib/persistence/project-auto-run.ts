@@ -105,9 +105,13 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
     if (project.startCommand) {
       console.log(`[auto-run] Starting: ${project.startCommand}`);
 
-      shell
-        .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
-        .catch((e) => console.warn('[auto-run] Start command error:', e));
+      /*
+       * Spawn the dev server DIRECTLY via webcontainer.spawn() (not through
+       * jsh). This avoids the visible ` &` backgrounding operator that jsh
+       * would echo to the terminal — the user just sees the dev server
+       * output, not `npm run dev &`.
+       */
+      shell.spawnDetached(project.startCommand).catch((e) => console.warn('[auto-run] Start command error:', e));
     }
   } catch (e) {
     console.error('[auto-run] Failed:', e);
@@ -150,9 +154,11 @@ export async function rerunProjectSetup(project: Project): Promise<void> {
     }
 
     if (project.startCommand) {
-      shell
-        .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
-        .catch((e) => console.warn('[rerun] Start command error:', e));
+      /*
+       * Spawn directly (see runProjectAutoSetup) — avoids the visible ` &`
+       * backgrounding operator that jsh would echo.
+       */
+      shell.spawnDetached(project.startCommand).catch((e) => console.warn('[rerun] Start command error:', e));
     }
   } catch (e) {
     console.error('[rerun] Failed:', e);

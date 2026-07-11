@@ -105,13 +105,21 @@ export class AmplifyShell {
 
   /*
    * Track the onData disposable + pipe so we can tear them down before re-init
-   * (prevents the “characters multiply on reset” bug where each reset adds a
+   * (prevents the "characters multiply on reset" bug where each reset adds a
    * duplicate onData listener + echo pipe on the same long-lived XTerm).
    */
   #onDataDisposable: { dispose: () => void } | undefined;
   #terminalPipeController: AbortController | undefined;
   #expoUrlAbort: AbortController | undefined;
   #initializedOnce = false;
+
+  /*
+   * Track directly-spawned detached processes (dev servers started via
+   * spawnDetached()). These are NOT children of the jsh shell, so the Ctrl+C
+   * sent to jsh in killRunningProcesses() won't reach them — we kill them
+   * explicitly here on chat switch / reset.
+   */
+  #detachedProcesses: WebContainerProcess[] = [];
 
   constructor() {
     this.#readyPromise = new Promise((resolve) => {
@@ -335,6 +343,20 @@ export class AmplifyShell {
    * a command is still running.
    */
   killRunningProcesses() {
+    /*
+     * Kill directly-spawned detached processes (dev servers started via
+     * spawnDetached()). These are NOT children of jsh, so the Ctrl+C sent to
+     * jsh below will NOT reach them — we must kill them explicitly.
+     */
+    for (const proc of this.#detachedProcesses) {
+      try {
+        proc.kill();
+      } catch {
+        /* process may already be dead */
+      }
+    }
+    this.#detachedProcesses = [];
+
     if (!this.#terminal) {
       return;
     }
@@ -352,6 +374,78 @@ export class AmplifyShell {
       active: false,
       abort: undefined,
     });
+  }
+
+  /**
+   * Spawn a long-running command (e.g. `npm run dev` dev server) as a DIRECT
+   * WebContainer process, bypassing the jsh shell entirely.
+   *
+   * Why this exists (instead of using executeCommand with detached:true):
+   * The detached executeCommand path appends ` &` to background the command so
+   * the jsh prompt returns — but jsh ECHOES the input, so the user sees
+   * `npm run dev &` in the terminal, which looks like a stray character.
+   * Spawning directly via webcontainer.spawn() avoids both issues:
+   *  - No `&` needed (the process runs independently of jsh, not as a child).
+   *  - No input echo (we're not typing into jsh).
+   *
+   * The process's stdout/stderr are piped to the terminal so the user still
+   * sees the dev server output (port info, errors, HMR logs, etc.).
+   *
+   * The spawned process is tracked in #detachedProcesses so
+   * killRunningProcesses() can terminate it when switching chats.
+   */
+  async spawnDetached(command: string): Promise<void> {
+    if (!this.#webcontainer || !this.#terminal) {
+      console.warn('[spawnDetached] Shell not initialized — cannot spawn.');
+
+      return;
+    }
+
+    const trimmed = command.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    /*
+     * Parse the command into program + args. Simple whitespace-splitting is
+     * sufficient here because start commands come from detectProjectCommands
+     * and are always simple: `npm run dev`, `pnpm run dev`, `yarn dev`,
+     * `npx --yes serve`. No pipes, no &&, no quotes, no env vars.
+     */
+    const parts = trimmed.split(/\s+/);
+    const program = parts[0];
+    const args = parts.slice(1);
+
+    try {
+      const proc = await this.#webcontainer.spawn(program, args);
+
+      this.#detachedProcesses.push(proc);
+
+      // Pipe the process output to the terminal so the user sees dev server output.
+      const terminal = this.#terminal;
+
+      proc.output
+        .pipeTo(
+          new WritableStream({
+            write(data) {
+              terminal.write(data);
+            },
+          }),
+        )
+        .catch(() => {
+          /* stream closed — ignore */
+        });
+    } catch (e) {
+      console.error(`[spawnDetached] Failed to spawn "${trimmed}":`, e);
+
+      // Surface the error in the terminal so the user knows the start failed.
+      try {
+        this.#terminal.write(`\r\nFailed to start: ${trimmed}\r\n${(e as Error)?.message || e}\r\n`);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   async executeCommand(

@@ -1417,7 +1417,18 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
         isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/50',
       )}
     >
-      <CircleDashed size={15} className="text-muted-foreground shrink-0" />
+      <CircleDashed
+        size={15}
+        className={classNames(
+          'text-muted-foreground shrink-0',
+
+          /*
+           * When NOT editing, clicks on the icon should fall through to the
+           * stretched link below — so disable pointer events on the icon.
+           */
+          !editing && 'pointer-events-none relative z-0',
+        )}
+      />
 
       {editing ? (
         <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-1 min-w-0">
@@ -1440,19 +1451,26 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
       ) : (
         <>
           {/*
-            Full page navigation (plain <a>) — forces a complete reload on
+            Stretched link — absolutely positioned to cover the ENTIRE row
+            (icon + text + padding) so a SINGLE click anywhere on the row
+            navigates. Previously the <a> only wrapped the text, so clicks on
+            the icon or the row padding missed the link and did nothing —
+            which felt like the user had to "double-click" to switch chats.
+            The more-button container below is z-10 so it stays ABOVE this
+            stretched link and remains independently clickable.
+
+            Plain <a href> (not Remix <Link>) forces a full page reload on
             every chat switch so the workspace, WebContainer, files, and
             auto-setup (npm install + start) are all rebuilt from IndexedDB.
-            This eliminates stale-state races that occurred with SPA <Link>
-            navigation (where the URL changed but the workspace wasn't
-            reliably rebuilt).
           */}
-          <a href={href} className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline">
-            {currentDescription}
-          </a>
+          <a href={href} aria-label={currentDescription} className="absolute inset-0 z-0 rounded no-underline" />
 
-          {/* More button - visible on hover */}
-          <div className="relative shrink-0" ref={menuRef}>
+          <span className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate pointer-events-none relative z-0">
+            {currentDescription}
+          </span>
+
+          {/* More button - visible on hover. z-10 keeps it above the stretched link. */}
+          <div className="relative z-10 shrink-0" ref={menuRef}>
             <button
               onClick={(e) => {
                 e.preventDefault();
