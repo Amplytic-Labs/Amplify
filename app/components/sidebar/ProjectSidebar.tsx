@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { useParams } from '@remix-run/react';
+import { useParams, useNavigate } from '@remix-run/react';
 import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';
 import { ControlPanel } from '~/components/@settings/core/ControlPanel';
@@ -1376,6 +1376,8 @@ interface SidebarHistoryItemProps {
 }
 
 function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat }: SidebarHistoryItemProps) {
+  const navigate = useNavigate();
+
   /*
    * Compute the correct navigation URL based on whether this chat belongs
    * to a project. Project chats use `/{projectId}/{chatId}`; personal chats
@@ -1384,6 +1386,38 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
    * because the route loader didn't receive the projectId param.
    */
   const href = item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`;
+
+  /*
+   * SMART NAVIGATION: Use SPA navigation (no page reload) when switching
+   * between chats in the SAME project. The workspace (WebContainer, files,
+   * dev server) is already correct — a full reload would needlessly destroy
+   * it, causing:
+   *   - The workspace to "reset" (dev server killed + restarted)
+   *   - A visible sidebar flash (state re-hydration after reload)
+   *   - npm install to re-run unnecessarily
+   *
+   * For cross-project switches or personal chats, use a full page reload
+   * so the workspace is cleanly torn down and rebuilt from IndexedDB.
+   *
+   * The project-change guard in useChatHistory's load effect
+   * (workbenchStore.loadedProjectId check) ensures clearWorkspace() is
+   * skipped on same-project SPA navigation.
+   */
+  const handleNavigate = useCallback(() => {
+    const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
+    const targetProjectId = item.metadata?.projectId;
+    const sameProject =
+      targetProjectId && currentLoadedProjectId === targetProjectId && currentLoadedProjectId !== '<none>';
+
+    if (sameProject) {
+      // SPA navigation — workspace stays intact, no flash, no reset
+      navigate(href);
+    } else {
+      // Cross-project or personal — full reload for clean workspace rebuild
+      window.location.href = href;
+    }
+  }, [href, item.metadata?.projectId, navigate]);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -1451,19 +1485,32 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
       ) : (
         <>
           {/*
-            Stretched link — absolutely positioned to cover the ENTIRE row
-            (icon + text + padding) so a SINGLE click anywhere on the row
-            navigates. Previously the <a> only wrapped the text, so clicks on
-            the icon or the row padding missed the link and did nothing —
-            which felt like the user had to "double-click" to switch chats.
+            Stretched click target — absolutely positioned to cover the
+            ENTIRE row (icon + text + padding) so a SINGLE click anywhere
+            navigates. Previously the <a> only wrapped the text, so clicks
+            on the icon or the row padding missed the link and did nothing
+            — which felt like the user had to "double-click" to switch chats.
             The more-button container below is z-10 so it stays ABOVE this
-            stretched link and remains independently clickable.
+            stretched target and remains independently clickable.
 
-            Plain <a href> (not Remix <Link>) forces a full page reload on
-            every chat switch so the workspace, WebContainer, files, and
-            auto-setup (npm install + start) are all rebuilt from IndexedDB.
+            Uses handleNavigate() instead of a plain <a href> so that
+            same-project chat switches use SPA navigation (no page reload,
+            no workspace reset, no sidebar flash). Cross-project switches
+            still trigger a full page reload for a clean workspace rebuild.
           */}
-          <a href={href} aria-label={currentDescription} className="absolute inset-0 z-0 rounded no-underline" />
+          <div
+            onClick={handleNavigate}
+            aria-label={currentDescription}
+            role="link"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleNavigate();
+              }
+            }}
+            className="absolute inset-0 z-0 rounded cursor-pointer"
+          />
 
           <span className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate pointer-events-none relative z-0">
             {currentDescription}

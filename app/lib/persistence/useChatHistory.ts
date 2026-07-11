@@ -1,4 +1,4 @@
-import { useLoaderData, useSearchParams } from '@remix-run/react';
+import { useSearchParams, useMatches } from '@remix-run/react';
 import { useState, useEffect, useCallback } from 'react';
 import { atom } from 'nanostores';
 import { generateId, type JSONValue, type Message } from 'ai';
@@ -118,7 +118,35 @@ async function generateChatTitle(_chatId: string, firstMessage: string): Promise
 }
 
 export function useChatHistory() {
-  const { id: mixedId, projectId: urlProjectId } = useLoaderData<{ id?: string; projectId?: string }>();
+  const matches = useMatches();
+
+  /*
+   * ROUTE DATA RESOLUTION — why we use useMatches() instead of useLoaderData()
+   * ========================================================================
+   *
+   * Remix v2 flat routes create an implicit PARENT-CHILD relationship between:
+   *   - routes/$projectId.tsx        (matches /:projectId — PARENT LAYOUT)
+   *   - routes/$projectId.$chatId.tsx (matches /:projectId/:chatId — CHILD)
+   *
+   * Both files `export default IndexRoute` (the same component from _index.tsx).
+   * When the URL is /:projectId/:chatId, BOTH routes match. The parent's
+   * component renders first. Since MainLayout does NOT render <Outlet/>, the
+   * child's component never mounts — but useLoaderData() returns the PARENT's
+   * loader data ({ projectId } with NO id field).
+   *
+   * This caused Bug 1: mixedId was always undefined for project chats, so the
+   * load effect's `!mixedId && urlProjectId` branch fired and picked the LATEST
+   * chat (project.chatIds[last]) instead of the chat from the URL.
+   *
+   * FIX: Scan useMatches() for the most specific route that has `id` in its
+   * data. That's the $projectId.$chatId child route. If no child matches (URL
+   * is /:projectId with no chatId), fall back to the $projectId parent's data.
+   */
+  const chatMatch = matches.find((m) => m.data && typeof (m.data as Record<string, unknown>).id !== 'undefined');
+  const projectMatch = matches.find((m) => m.data && 'projectId' in (m.data as Record<string, unknown>));
+  const resolvedData = (chatMatch?.data ?? projectMatch?.data ?? {}) as { id?: string; projectId?: string };
+  const { id: mixedId, projectId: urlProjectId } = resolvedData;
+
   const [searchParams] = useSearchParams();
 
   const [archivedMessages, setArchivedMessages] = useState<Message[]>([]);
@@ -286,7 +314,23 @@ export function useChatHistory() {
 
   const navigateChat = useCallback((nextId: string) => {
     const url = new URL(window.location.href);
-    url.pathname = `/chat/${nextId}`;
+
+    /*
+     * Preserve the projectId segment if the current chat belongs to a
+     * project. Previously this hardcoded `/chat/${nextId}`, which DROPPED
+     * the project context — the URL became `/chat/<id>` instead of
+     * `/<projectId>/<id>`. On a subsequent reload, the load effect's
+     * `!mixedId && urlProjectId` branch would then fail to find the
+     * projectId, and in some cases fall through to loading the LATEST chat
+     * in the project (project.chatIds[last]) instead of the correct one.
+     */
+    const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
+
+    if (currentLoadedProjectId && currentLoadedProjectId !== '<none>') {
+      url.pathname = `/${currentLoadedProjectId}/${nextId}`;
+    } else {
+      url.pathname = `/chat/${nextId}`;
+    }
 
     window.history.replaceState({}, '', url);
   }, []);
@@ -326,61 +370,82 @@ export function useChatHistory() {
 
       /*
        * Immediately load project workspace if a project ID is in the URL.
-       * This avoids the "Loading workspace..." hang by ensuring files are restored
-       * in parallel with chat messages, rather than waiting for them.
+       *
+       * PROJECT-CHANGE GUARD: Only destroy + rebuild the workspace when
+       * switching to a DIFFERENT project. When switching between chats in
+       * the SAME project, the workspace (WebContainer, files, dev server)
+       * is already correct — destroying it would:
+       *   - Kill the running dev server (workspace "reset" the user sees)
+       *   - Wipe node_modules (forces npm install to re-run unnecessarily)
+       *   - Cause a visible sidebar flash (state re-hydration)
+       *
+       * The guard compares urlProjectId against workbenchStore.loadedProjectId.
+       * On a full page reload, loadedProjectId starts as '<none>' so the
+       * workspace IS rebuilt. On SPA navigation within the same project,
+       * loadedProjectId already equals the target project, so we skip the
+       * expensive teardown and just ensure the workbench is visible.
        */
       if (urlProjectId) {
-        console.log('[ChatHistory] urlProjectId detected:', urlProjectId);
-
         const project = projectStore.getProject(urlProjectId);
 
         if (project) {
-          console.log('[ChatHistory] Project found in store:', project.name);
+          const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
+          const projectChanged = currentLoadedProjectId !== project.id;
 
-          (async () => {
-            try {
-              /*
-               * DESTROY + REINITIALIZE the workspace on every chat switch.
-               *
-               * This is critical: without it, terminal processes (dev server)
-               * from the previous chat leak into the new one, and orphan files
-               * from a previous project persist in the WebContainer FS.
-               *
-               * clearWorkspace() kills running processes, clears the FS, and
-               * resets projectAutoStarted so runProjectAutoSetup will fire.
-               */
-              await workbenchStore.clearWorkspace();
+          if (projectChanged) {
+            console.log(
+              '[ChatHistory] Project changed:',
+              currentLoadedProjectId,
+              '→',
+              project.id,
+              '(destroying + rebuilding workspace)',
+            );
 
-              const projectFiles = await getProjectFiles(db, project.id);
-              console.log(
-                '[ChatHistory] Project files retrieved:',
-                projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
-                'files',
-              );
+            (async () => {
+              try {
+                /*
+                 * DESTROY + REINITIALIZE the workspace — only when the
+                 * project actually changed. This kills the previous
+                 * project's dev server, clears its files from the
+                 * WebContainer FS, and resets projectAutoStarted so the
+                 * new project's npm install + start will fire.
+                 */
+                await workbenchStore.clearWorkspace();
 
-              if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
-                await restoreFileMap(projectFiles.files);
-                workbenchStore.files.set(projectFiles.files);
-              } else {
-                console.warn('[ChatHistory] No files found for project:', project.id);
-                workbenchStore.files.set({});
+                const projectFiles = await getProjectFiles(db, project.id);
+                console.log(
+                  '[ChatHistory] Project files retrieved:',
+                  projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
+                  'files',
+                );
+
+                if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                  await restoreFileMap(projectFiles.files);
+                  workbenchStore.files.set(projectFiles.files);
+                } else {
+                  console.warn('[ChatHistory] No files found for project:', project.id);
+                  workbenchStore.files.set({});
+                }
+
+                workbenchStore.loadedProjectId.set(project.id);
+                workbenchStore.showWorkbench.set(true);
+
+                console.log('[ChatHistory] Running auto setup for project:', project.id);
+                runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
+              } catch (e) {
+                console.error('[ChatHistory] Immediate project load failed:', e);
               }
-
-              workbenchStore.loadedProjectId.set(project.id);
-              workbenchStore.showWorkbench.set(true);
-
-              /*
-               * Always run auto-setup (npm install + start) on every chat
-               * load. clearWorkspace() already reset projectAutoStarted to
-               * false, so runProjectAutoSetup will fire. This ensures the
-               * dev server is always running for the current project.
-               */
-              console.log('[ChatHistory] Running auto setup for project:', project.id);
-              runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
-            } catch (e) {
-              console.error('[ChatHistory] Immediate project load failed:', e);
-            }
-          })();
+            })();
+          } else {
+            /*
+             * Same project — workspace is already loaded. Just ensure the
+             * workbench is visible. The dev server keeps running, files
+             * stay in place, and only the chat messages + description are
+             * swapped (handled by the Promise.all chain below).
+             */
+            console.log('[ChatHistory] Same project — skipping workspace rebuild');
+            workbenchStore.showWorkbench.set(true);
+          }
         } else {
           console.warn('[ChatHistory] Project not found in store for ID:', urlProjectId);
         }
@@ -438,7 +503,21 @@ export function useChatHistory() {
                 workbenchStore.showWorkbench.set(true);
               }
             } else if (storedMessages.metadata?.projectInitiated && snapshot) {
-              restoreSnapshot(mixedId || '', snapshot);
+              /*
+               * Only restore the snapshot if the workspace is empty (initial
+               * load) or the project changed. When switching between chats
+               * in the same project that's already loaded, skip the snapshot
+               * restore to avoid resetting the WebContainer FS — the dev
+               * server keeps running and project-global files stay in place.
+               */
+              const currentFiles = workbenchStore.files.get();
+              const hasFiles = currentFiles && Object.keys(currentFiles).length > 0;
+              const sameProject = workbenchStore.loadedProjectId.get() === linkedProject?.id;
+
+              if (!hasFiles || !sameProject) {
+                restoreSnapshot(mixedId || '', snapshot);
+              }
+
               workbenchStore.loadedProjectId.set(linkedProject?.id || '<none>');
               workbenchStore.showWorkbench.set(true);
 
@@ -449,9 +528,7 @@ export function useChatHistory() {
                * becomes true and the workspace renders.
                */
               if (snapshot?.files && Object.keys(snapshot.files).length > 0) {
-                const currentFiles = workbenchStore.files.get();
-
-                if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                if (!hasFiles) {
                   workbenchStore.files.set(snapshot.files);
                 }
               }
