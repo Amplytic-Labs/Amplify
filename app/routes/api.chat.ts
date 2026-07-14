@@ -1,5 +1,11 @@
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { createDataStream, generateId } from 'ai';
+import {
+  createUIMessageStream,
+  generateId,
+  isStepCount,
+  type UIMessage,
+  type UIMessageStreamWriter,
+} from 'ai';
 import { MAX_RESPONSE_SEGMENTS, MAX_TOKENS, type FileMap } from '~/lib/.server/llm/constants';
 import { CONTINUE_PROMPT } from '~/lib/common/prompts/new-prompt';
 import { streamText, type Messages, type StreamingOptions } from '~/lib/.server/llm/stream-text';
@@ -40,6 +46,28 @@ function parseCookies(cookieHeader: string): Record<string, string> {
   });
 
   return cookies;
+}
+
+/**
+ * Helper to write a progress data chunk via the UIMessageStreamWriter.
+ * Replaces the old dataStream.writeData({ type: 'progress', ... }) pattern.
+ */
+function writeProgress(
+  writer: UIMessageStreamWriter,
+  annotation: ProgressAnnotation,
+) {
+  writer.write({ type: 'data-progress' as const, data: annotation });
+}
+
+/**
+ * Helper to write a message annotation data chunk via the UIMessageStreamWriter.
+ * Replaces the old dataStream.writeMessageAnnotation({ ... }) pattern.
+ */
+function writeAnnotation(
+  writer: UIMessageStreamWriter,
+  annotation: Record<string, any>,
+) {
+  writer.write({ type: 'data-annotation' as const, data: annotation });
 }
 
 async function chatAction({ context, request }: ActionFunctionArgs) {
@@ -104,13 +132,18 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
   try {
     const mcpService = MCPService.getInstance();
-    const totalMessageContent = messages.reduce((acc, message) => acc + message.content, '');
+    const totalMessageContent = messages.reduce((acc, message) => {
+      // UIMessage uses parts array, not content string
+      const textParts = message.parts?.filter((p: any) => p.type === 'text') || [];
+      const text = textParts.map((p: any) => p.text || '').join('');
+      return acc + text;
+    }, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
     const lastChunk: string | undefined = undefined;
 
-    const dataStream = createDataStream({
-      async execute(dataStream) {
+    const uiStream = createUIMessageStream({
+      async execute({ writer }) {
         streamRecovery.startMonitoring();
 
         const filePaths = getFilePaths(files || {});
@@ -118,7 +151,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         let summary: string | undefined = undefined;
         let messageSliceId = 0;
 
-        const processedMessages = await mcpService.processToolInvocations(messages, dataStream, files);
+        const processedMessages = await mcpService.processToolInvocations(messages as UIMessage[], writer, files);
 
         /*
          * Context-length-based summarization gate.
@@ -157,13 +190,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
         if (summarizeDecision.shouldRun) {
           logger.debug('Generating Chat Summary (context budget approaching limit)');
-          dataStream.writeData({
+          writeProgress(writer, {
             type: 'progress',
             label: 'summary',
             status: 'in-progress',
             order: progressCounter++,
             message: 'Condensing conversation to fit context window…',
-          } satisfies ProgressAnnotation);
+          });
 
           // Create a summary of the chat
           console.log(`Messages count: ${processedMessages.length}, est tokens: ${summarizeDecision.estimatedTokens}`);
@@ -177,22 +210,23 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             contextOptimization,
             onFinish(resp) {
               if (resp.usage) {
+                const u = resp.usage as any;
                 logger.debug('createSummary token usage', JSON.stringify(resp.usage));
-                cumulativeUsage.completionTokens += resp.usage.completionTokens || 0;
-                cumulativeUsage.promptTokens += resp.usage.promptTokens || 0;
-                cumulativeUsage.totalTokens += resp.usage.totalTokens || 0;
+                cumulativeUsage.completionTokens += u.completionTokens || u.outputTokens || 0;
+                cumulativeUsage.promptTokens += u.promptTokens || u.inputTokens || 0;
+                cumulativeUsage.totalTokens += u.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
               }
             },
           });
-          dataStream.writeData({
+          writeProgress(writer, {
             type: 'progress',
             label: 'summary',
             status: 'complete',
             order: progressCounter++,
             message: 'Conversation condensed',
-          } satisfies ProgressAnnotation);
+          });
 
-          dataStream.writeMessageAnnotation({
+          writeAnnotation(writer, {
             type: 'chatSummary',
             summary,
             chatId: processedMessages.slice(-1)?.[0]?.id,
@@ -200,13 +234,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
           // Update context buffer
           logger.debug('Updating Context Buffer');
-          dataStream.writeData({
+          writeProgress(writer, {
             type: 'progress',
             label: 'context',
             status: 'in-progress',
             order: progressCounter++,
             message: 'Selecting relevant workspace files…',
-          } satisfies ProgressAnnotation);
+          });
 
           // Select context files
           console.log(`Messages count: ${processedMessages.length}`);
@@ -221,10 +255,11 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             summary,
             onFinish(resp) {
               if (resp.usage) {
+                const u = resp.usage as any;
                 logger.debug('selectContext token usage', JSON.stringify(resp.usage));
-                cumulativeUsage.completionTokens += resp.usage.completionTokens || 0;
-                cumulativeUsage.promptTokens += resp.usage.promptTokens || 0;
-                cumulativeUsage.totalTokens += resp.usage.totalTokens || 0;
+                cumulativeUsage.completionTokens += u.completionTokens || u.outputTokens || 0;
+                cumulativeUsage.promptTokens += u.promptTokens || u.inputTokens || 0;
+                cumulativeUsage.totalTokens += u.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
               }
             },
           });
@@ -233,7 +268,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             logger.debug(`files in context : ${JSON.stringify(Object.keys(filteredFiles))}`);
           }
 
-          dataStream.writeMessageAnnotation({
+          writeAnnotation(writer, {
             type: 'codeContext',
             files: Object.keys(filteredFiles).map((key) => {
               let path = key;
@@ -246,13 +281,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             }),
           } as ContextAnnotation);
 
-          dataStream.writeData({
+          writeProgress(writer, {
             type: 'progress',
             label: 'context',
             status: 'complete',
             order: progressCounter++,
             message: 'Code Files Selected',
-          } satisfies ProgressAnnotation);
+          });
 
           // logger.debug('Code Files Selected');
         }
@@ -261,24 +296,25 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           supabaseConnection: supabase,
           toolChoice: 'auto',
           tools: mcpService.toolsWithoutExecute,
-          maxSteps: maxLLMSteps,
-          onStepFinish: ({ toolCalls }) => {
+          stopWhen: isStepCount(maxLLMSteps),
+          onStepEnd: ({ toolCalls }) => {
             // add tool call annotations for frontend processing
-            toolCalls.forEach((toolCall) => {
-              mcpService.processToolCall(toolCall, dataStream);
+            toolCalls.forEach((toolCall: any) => {
+              mcpService.processToolCall(toolCall, writer);
             });
           },
           onFinish: async ({ text: content, finishReason, usage }) => {
             logger.debug('usage', JSON.stringify(usage));
 
             if (usage) {
-              cumulativeUsage.completionTokens += usage.completionTokens || 0;
-              cumulativeUsage.promptTokens += usage.promptTokens || 0;
-              cumulativeUsage.totalTokens += usage.totalTokens || 0;
+              const usageAny = usage as any;
+              cumulativeUsage.completionTokens += usageAny.completionTokens || usageAny.outputTokens || 0;
+              cumulativeUsage.promptTokens += usageAny.promptTokens || usageAny.inputTokens || 0;
+              cumulativeUsage.totalTokens += usageAny.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
             }
 
             if (finishReason !== 'length') {
-              dataStream.writeMessageAnnotation({
+              writeAnnotation(writer, {
                 type: 'usage',
                 value: {
                   completionTokens: cumulativeUsage.completionTokens,
@@ -286,13 +322,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
                   totalTokens: cumulativeUsage.totalTokens,
                 },
               });
-              dataStream.writeData({
+              writeProgress(writer, {
                 type: 'progress',
                 label: 'response',
                 status: 'complete',
                 order: progressCounter++,
                 message: 'Response Generated',
-              } satisfies ProgressAnnotation);
+              });
               await new Promise((resolve) => setTimeout(resolve, 0));
 
               // stream.close();
@@ -307,13 +343,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
             logger.info(`Reached max token limit (${MAX_TOKENS}): Continuing message (${switchesLeft} switches left)`);
 
-            const lastUserMessage = processedMessages.filter((x) => x.role == 'user').slice(-1)[0];
+            const lastUserMessage = processedMessages.filter((x: any) => x.role == 'user').slice(-1)[0];
             const { model, provider } = extractPropertiesFromMessage(lastUserMessage);
-            processedMessages.push({ id: generateId(), role: 'assistant', content });
+            processedMessages.push({ id: generateId(), role: 'assistant' as const, parts: [{ type: 'text' as const, text: content }] });
             processedMessages.push({
               id: generateId(),
-              role: 'user',
-              content: `[Model: ${model}]\n\n[Provider: ${provider}]\n\n${CONTINUE_PROMPT}`,
+              role: 'user' as const,
+              parts: [{ type: 'text' as const, text: `[Model: ${model}]\n\n[Provider: ${provider}]\n\n${CONTINUE_PROMPT}` }],
             });
 
             const result = await streamText({
@@ -330,7 +366,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               designScheme,
               summary,
               messageSliceId,
-              dataStream,
+              dataStream: writer,
               skills,
               memory,
               userContext,
@@ -338,7 +374,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               projectContinuation,
             });
 
-            result.mergeIntoDataStream(dataStream, { sendReasoning: true });
+            writer.merge(result.toUIMessageStream({ sendReasoning: true }));
 
             (async () => {
               for await (const part of result.fullStream) {
@@ -355,13 +391,13 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           },
         };
 
-        dataStream.writeData({
+        writeProgress(writer, {
           type: 'progress',
           label: 'response',
           status: 'in-progress',
           order: progressCounter++,
           message: 'Generating Response',
-        } satisfies ProgressAnnotation);
+        });
 
         // Load skills and memory for prompt injection
         const skillLoader = SkillLoader.getInstance();
@@ -382,7 +418,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           designScheme,
           summary,
           messageSliceId,
-          dataStream,
+          dataStream: writer,
           skills,
           memory,
           userContext,
@@ -411,7 +447,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           }
           streamRecovery.stop();
         })();
-        result.mergeIntoDataStream(dataStream, { sendReasoning: true });
+        writer.merge(result.toUIMessageStream({ sendReasoning: true }));
       },
       onError: (error: any) => {
         // Provide more specific error messages for common issues
@@ -479,7 +515,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       },
     });
 
-    return new Response(dataStream.pipeThrough(new TextEncoderStream()), {
+    return new Response(uiStream.pipeThrough(new TextEncoderStream() as any), {
       status: 200,
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',

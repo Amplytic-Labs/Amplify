@@ -1,8 +1,8 @@
-import { generateText, type CoreTool, type GenerateTextResult, type Message } from 'ai';
+import { generateText, type GenerateTextResult } from 'ai';
 import ignore from 'ignore';
 import type { IProviderSetting } from '~/types/model';
 import { IGNORE_PATTERNS, type FileMap } from './constants';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
 import { createFilesContext, extractCurrentContext, extractPropertiesFromMessage, simplifyBoltActions } from './utils';
 import { createScopedLogger } from '~/utils/logger';
 import { LLMManager } from '~/lib/modules/llm/manager';
@@ -13,7 +13,7 @@ const ig = ignore().add(IGNORE_PATTERNS);
 const logger = createScopedLogger('select-context');
 
 export async function selectContext(props: {
-  messages: Message[];
+  messages: any[];
   env?: Env;
   apiKeys?: Record<string, string>;
   files: FileMap;
@@ -21,7 +21,7 @@ export async function selectContext(props: {
   promptId?: string;
   contextOptimization?: boolean;
   summary: string;
-  onFinish?: (resp: GenerateTextResult<Record<string, CoreTool<any, any>>, never>) => void;
+  onFinish?: (resp: GenerateTextResult<any, any, any>) => void;
 }) {
   const { messages, env: serverEnv, apiKeys, files, providerSettings, summary, onFinish } = props;
   let currentModel = DEFAULT_MODEL;
@@ -80,7 +80,7 @@ export async function selectContext(props: {
 
   let filePaths = getFilePaths(files || {});
   filePaths = filePaths.filter((x) => {
-    const relPath = x.replace('/home/project/', '');
+    const relPath = x.startsWith(WORK_DIR + '/') ? x.slice(WORK_DIR.length + 1) : x;
     return !ig.ignores(relPath);
   });
 
@@ -93,8 +93,8 @@ export async function selectContext(props: {
     Object.keys(files || {}).forEach((path) => {
       let relativePath = path;
 
-      if (path.startsWith('/home/project/')) {
-        relativePath = path.replace('/home/project/', '');
+      if (path.startsWith(WORK_DIR + '/')) {
+        relativePath = path.slice(WORK_DIR.length + 1);
       }
 
       if (codeContextFiles.includes(relativePath)) {
@@ -107,10 +107,10 @@ export async function selectContext(props: {
 
   const summaryText = `Here is the summary of the chat till now: ${summary}`;
 
-  const extractTextContent = (message: Message) =>
-    Array.isArray(message.content)
-      ? (message.content.find((item) => item.type === 'text')?.text as string) || ''
-      : message.content;
+  const extractTextContent = (message: any) =>
+    Array.isArray(message.parts)
+      ? (message.parts.find((item: any) => item.type === 'text')?.text as string) || ''
+      : message.content || '';
 
   const lastUserMessage = processedMessages.filter((x) => x.role == 'user').pop();
 
@@ -199,8 +199,8 @@ export async function selectContext(props: {
   includeFiles.forEach((path) => {
     let fullPath = path;
 
-    if (!path.startsWith('/home/project/')) {
-      fullPath = `/home/project/${path}`;
+    if (!path.startsWith(WORK_DIR + '/')) {
+      fullPath = `${WORK_DIR}/${path}`;
     }
 
     if (!filePaths.includes(fullPath)) {
@@ -236,7 +236,7 @@ export async function selectContext(props: {
 export function getFilePaths(files: FileMap) {
   let filePaths = Object.keys(files);
   filePaths = filePaths.filter((x) => {
-    const relPath = x.replace('/home/project/', '');
+    const relPath = x.startsWith(WORK_DIR + '/') ? x.slice(WORK_DIR.length + 1) : x;
     return !ig.ignores(relPath);
   });
 

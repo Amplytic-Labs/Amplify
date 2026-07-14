@@ -456,30 +456,78 @@ export function buildNativeTools(): Record<string, any> {
       execute: async ({ query, maxResults }: { query: string; maxResults?: number }, ctx: NativeToolContext = {}) => {
         try {
           const fetchFn = ctx.fetch || fetch;
-          const base = ctx.apiBaseUrl || '';
-          const resp = await fetchFn(`${base}/api/web-search?query=${encodeURIComponent(query)}`, {
-            method: 'GET',
+          const limit = maxResults ?? 5;
+
+          // Primary: DuckDuckGo Instant Answer API
+          const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+          const ddgResp = await fetchFn(ddgUrl, {
             headers: { Accept: 'application/json' },
           });
 
-          if (!resp.ok) {
-            return `Web search failed: HTTP ${resp.status}`;
+          if (ddgResp.ok) {
+            const data: any = await ddgResp.json();
+            const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+            // Abstract (instant answer)
+            if (data.AbstractText) {
+              results.push({
+                title: data.AbstractSource || 'DuckDuckGo',
+                url: data.AbstractURL || '',
+                snippet: data.AbstractText,
+              });
+            }
+
+            // Related topics
+            if (Array.isArray(data.RelatedTopics)) {
+              for (const topic of data.RelatedTopics) {
+                if (results.length >= limit) {
+                  break;
+                }
+
+                if (topic.Text && topic.FirstURL) {
+                  results.push({
+                    title: topic.Text.split(' - ')[0] || 'Related',
+                    url: topic.FirstURL,
+                    snippet: topic.Text,
+                  });
+                }
+              }
+            }
+
+            if (results.length > 0) {
+              const lines = results
+                .slice(0, limit)
+                .map(
+                  (r, i) =>
+                    `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet.slice(0, 300)}`,
+                );
+
+              return `Web search results for "${query}":\n\n${lines.join('\n\n')}`;
+            }
           }
 
-          const data: any = await resp.json();
-          const results: any[] = Array.isArray(data?.results) ? data.results : [];
+          // Fallback: try fetching the query as a URL via the existing web fetch utility
+          try {
+            const base = ctx.apiBaseUrl || '';
+            const fallbackResp = await fetchFn(`${base}/api/web-search`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }),
+            });
 
-          if (results.length === 0) {
-            return `No web results found for: ${query}`;
+            if (fallbackResp.ok) {
+              const fallbackData: any = await fallbackResp.json();
+              const fallbackContent = fallbackData?.content || fallbackData?.text || '';
+
+              if (fallbackContent) {
+                return `Web search results for "${query}" (via page fetch):\n\n${fallbackContent.slice(0, 2000)}`;
+              }
+            }
+          } catch {
+            // Fallback also failed, fall through
           }
 
-          const limited = results.slice(0, maxResults ?? 5);
-          const lines = limited.map(
-            (r, i) =>
-              `${i + 1}. ${r.title || '(no title)'}\n   ${r.url || r.link || ''}\n   ${(r.snippet || r.description || '').slice(0, 300)}`,
-          );
-
-          return `Web search results for "${query}":\n\n${lines.join('\n\n')}`;
+          return `No web results found for: ${query}`;
         } catch (e: any) {
           logger.error('web_search failed', e);
           return `Web search error: ${e.message}`;

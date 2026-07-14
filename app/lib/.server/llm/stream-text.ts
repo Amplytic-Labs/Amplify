@@ -1,9 +1,8 @@
 import {
-  convertToCoreMessages,
+  convertToModelMessages,
   streamText as _streamText,
-  type Message,
-  formatDataStreamPart,
-  type DataStreamWriter,
+  type UIMessage,
+  type UIMessageStreamWriter,
 } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
@@ -21,7 +20,7 @@ import { fetchWebPage } from '~/lib/utils/web-fetch';
 import { getTemplates } from '~/utils/selectStarterTemplate';
 import { SkillLoader } from '~/lib/services/skillLoader';
 
-export type Messages = Message[];
+export type Messages = UIMessage[];
 
 /**
  * Project-marker filenames that indicate the workspace already contains an
@@ -152,7 +151,7 @@ function sanitizeText(text: string): string {
 }
 
 export async function streamText(props: {
-  messages: Omit<Message, 'id'>[];
+  messages: Omit<UIMessage, 'id'>[];
   env?: Env;
   options?: StreamingOptions;
   apiKeys?: Record<string, string>;
@@ -167,7 +166,7 @@ export async function streamText(props: {
   designScheme?: DesignScheme;
   skills?: string;
   memory?: string;
-  dataStream?: DataStreamWriter;
+  dataStream?: UIMessageStreamWriter;
   userContext?: string;
   projectContext?: string;
 
@@ -207,9 +206,15 @@ export async function streamText(props: {
       const { model, provider, content } = extractPropertiesFromMessage(message);
       currentModel = model;
       currentProvider = provider;
-      newMessage.content = sanitizeText(content);
+      // In UIMessage, content is accessed via parts; store sanitized content for compatibility
+      if (typeof content === 'string') {
+        (newMessage as any).content = sanitizeText(content);
+      }
     } else if (message.role == 'assistant') {
-      newMessage.content = sanitizeText(message.content);
+      const textContent = Array.isArray(message.parts)
+        ? message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+        : (message as any).content || '';
+      (newMessage as any).content = sanitizeText(textContent);
     }
 
     // Sanitize all text parts in parts array, if present
@@ -481,7 +486,7 @@ export async function streamText(props: {
     model: modelInstance,
     system: chatMode === 'build' ? systemPrompt : discussPrompt(),
     ...tokenParams,
-    messages: convertToCoreMessages(processedMessages as any),
+    messages: convertToModelMessages(processedMessages as any),
     ...filteredOptions,
 
     tools: {
@@ -624,7 +629,7 @@ export async function streamText(props: {
                   }
 
                   if (props.dataStream) {
-                    props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
+                    props.dataStream.write({ type: 'text-delta', id: 'template', delta: result.assistantMessage });
                   }
 
                   return {
@@ -695,7 +700,7 @@ export async function streamText(props: {
     ),
   );
 
-  const result = await _streamText(streamParams);
+  const result = await _streamText(streamParams as any);
 
   return result;
 }

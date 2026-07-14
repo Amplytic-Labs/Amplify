@@ -638,7 +638,7 @@ export class WorkbenchStore {
       | { op: 'replace'; filePath: string; oldString: string; newString: string }
       | { op: 'multi_replace'; filePath: string; edits: Array<{ oldString: string; newString: string }> },
   ): Promise<string> {
-    const fullPath = op.filePath.startsWith('/home/') ? op.filePath : `${WORK_DIR}/${op.filePath}`;
+    const fullPath = op.filePath.startsWith(WORK_DIR) ? op.filePath : `${WORK_DIR}/${op.filePath}`;
 
     try {
       if (op.op === 'create') {
