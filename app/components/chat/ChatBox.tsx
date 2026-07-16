@@ -24,100 +24,15 @@ import { WebSearch } from './WebSearch.client';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
 
-// Custom theme style injector to guarantee custom variables are active
-// NOTE: @import removed — font loading belongs in root.tsx <head> links, not
-// inline <style> in the body (blocks main thread on every re-render).
-// NOTE: `* { transition }` removed — it caused severe input jank because
-// every keystroke triggered style recalculation on ALL elements.
-// NOTE: `.dark` changed to `[data-theme='dark']` to match the actual theme
-// mechanism used by root.tsx and variables.scss.
-const InjectThemeStyles = () => {
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: `
-      :root {
-        --background: oklch(1 0 0);
-        --foreground: oklch(0.145 0 0);
-        --card: oklch(1 0 0);
-        --card-foreground: oklch(0.145 0 0);
-        --popover: oklch(1 0 0);
-        --popover-foreground: oklch(0.145 0 0);
-        --primary: oklch(0.205 0 0);
-        --primary-foreground: oklch(0.985 0 0);
-        --secondary: oklch(0.97 0 0);
-        --secondary-foreground: oklch(0.205 0 0);
-        --muted: oklch(0.97 0 0);
-        --muted-foreground: oklch(0.556 0 0);
-        --accent: oklch(0.97 0 0);
-        --accent-foreground: oklch(0.205 0 0);
-        --destructive: oklch(0.577 0.245 27.325);
-        --destructive-foreground: oklch(0.577 0.245 27.325);
-        --border: oklch(0.922 0 0);
-        --input: oklch(0.922 0 0);
-        --ring: oklch(0.708 0 0);
-        
-        --font-sans: Almarai, sans-serif;
-        --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-        --font-mono: Geist Mono, ui-monospace, monospace;
-        --radius: 0.625rem;
-        
-        --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.03), 0 1px 2px -1px rgba(0,0,0,0.03);
-        --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.05), 0 2px 6px -1px rgba(0,0,0,0.03);
-        --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 16px -6px rgba(0,0,0,0.04);
-        --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.12), 0 12px 20px -8px rgba(0,0,0,0.06);
-      }
-
-      [data-theme='dark'] {
-        --background: oklch(0.145 0 0);
-        --foreground: oklch(0.985 0 0);
-        --card: oklch(0.145 0 0);
-        --card-foreground: oklch(0.985 0 0);
-        --popover: oklch(0.145 0 0);
-        --popover-foreground: oklch(0.985 0 0);
-        --primary: oklch(0.985 0 0);
-        --primary-foreground: oklch(0.205 0 0);
-        --secondary: oklch(0.269 0 0);
-        --secondary-foreground: oklch(0.985 0 0);
-        --muted: oklch(0.269 0 0);
-        --muted-foreground: oklch(0.708 0 0);
-        --accent: oklch(0.269 0 0);
-        --accent-foreground: oklch(0.985 0 0);
-        --destructive: oklch(0.396 0.141 25.723);
-        --destructive-foreground: oklch(0.637 0.237 25.331);
-        --border: oklch(0.269 0 0);
-        --input: oklch(0.269 0 0);
-        --ring: oklch(0.439 0 0);
-        
-        --shadow-sm: 0 1px 3px 0px rgba(0,0,0,0.3);
-        --shadow-md: 0 4px 12px -2px rgba(0,0,0,0.4);
-        --shadow-lg: 0 10px 25px -5px rgba(0,0,0,0.45);
-        --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.5);
-      }
-
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
-
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: var(--border);
-        border-radius: 9999px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: var(--muted-foreground);
-      }
-    `,
-      }}
-    />
-  );
-};
+// NOTE: InjectThemeStyles component removed — it was re-rendering a
+// <style dangerouslySetInnerHTML> on every keystroke, forcing the browser
+// to re-parse CSS and recalculate styles for ALL elements on every input
+// change. This blocked the main thread and prevented the controlled
+// textarea from visually updating. All the CSS it injected is already
+// provided by the global stylesheets:
+//   • CSS custom properties → variables.scss
+//   • box-sizing: border-box  → @unocss/reset/tailwind-compat.css
+//   • Scrollbar styles        → index.scss (with !important)
 
 interface ChatBoxProps {
   provider: any;
@@ -288,8 +203,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   return (
     <div className="relative w-full max-w-chat mx-auto z-prompt">
-      <InjectThemeStyles />
-
       {props.selectedElement && (
         <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-amplify-elements-borderColor text-amplify-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
           <div className="flex gap-2 items-center lowercase">

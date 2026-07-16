@@ -27,21 +27,11 @@ import {
   type WindowSizeOption,
 } from '~/lib/stores/previewHeader';
 
-const InjectFonts = () => (
-  <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&display=swap');
-    .custom-scroll::-webkit-scrollbar {
-      width: 4px;
-    }
-    .custom-scroll::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .custom-scroll::-webkit-scrollbar-thumb {
-      background: var(--amplify-elements-borderColor);
-      border-radius: 2px;
-    }
-  `}</style>
-);
+// NOTE: InjectFonts component removed — @import url() inside an inline
+// <style> tag blocks the main thread during CSS parsing and re-triggers
+// on every re-render. The Roboto Mono font is now loaded via root.tsx
+// <link> tags (alongside Inter), and scrollbar styles are handled by
+// the global index.scss.
 
 const springTransition = {
   type: 'spring',
@@ -235,7 +225,6 @@ export const PreviewHeader = memo(() => {
       className="w-full flex items-center justify-center p-2 select-none relative z-40"
       style={{ fontFamily: "'Roboto Mono', monospace" }}
     >
-      <InjectFonts />
       <LayoutGroup>
         <motion.div layout transition={springTransition} className="flex items-center gap-[2px] relative">
           {/* ═══ PORT SELECTOR ═══ */}
