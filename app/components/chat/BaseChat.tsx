@@ -723,7 +723,7 @@ function ScrollToBottom() {
   return (
     !isAtBottom && (
       <>
-        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-card to-transparent h-20 z-10" />
+        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-card to-transparent h-20 z-10 pointer-events-none" />
         <button
           className="sticky z-50 bottom-0 left-0 right-0 text-4xl rounded-lg px-1.5 py-0.5 flex items-center justify-center mx-auto gap-2 bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary text-sm"
           onClick={() => scrollToBottom()}

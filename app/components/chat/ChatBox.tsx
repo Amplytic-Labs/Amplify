@@ -25,13 +25,17 @@ import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
 
 // Custom theme style injector to guarantee custom variables are active
+// NOTE: @import removed — font loading belongs in root.tsx <head> links, not
+// inline <style> in the body (blocks main thread on every re-render).
+// NOTE: `* { transition }` removed — it caused severe input jank because
+// every keystroke triggered style recalculation on ALL elements.
+// NOTE: `.dark` changed to `[data-theme='dark']` to match the actual theme
+// mechanism used by root.tsx and variables.scss.
 const InjectThemeStyles = () => {
   return (
     <style
       dangerouslySetInnerHTML={{
         __html: `
-      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
-
       :root {
         --background: oklch(1 0 0);
         --foreground: oklch(0.145 0 0);
@@ -64,7 +68,7 @@ const InjectThemeStyles = () => {
         --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.12), 0 12px 20px -8px rgba(0,0,0,0.06);
       }
 
-      .dark {
+      [data-theme='dark'] {
         --background: oklch(0.145 0 0);
         --foreground: oklch(0.985 0 0);
         --card: oklch(0.145 0 0);
@@ -91,9 +95,8 @@ const InjectThemeStyles = () => {
         --shadow-xl: 0 20px 35px -10px rgba(0,0,0,0.5);
       }
 
-      * {
+      *, *::before, *::after {
         box-sizing: border-box;
-        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
       }
 
       ::-webkit-scrollbar {
