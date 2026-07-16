@@ -220,7 +220,7 @@ export const ChatImpl = memo(
      *
      * We manage input locally and map old API calls to the new ones:
      *   isLoading → status === 'streaming' || status === 'submitted'
-     *   append(msg) → sendMessage(msg)   (user messages)
+     *   append(msg) → sdkSendMessage(msg)   (user messages)
      *   append(assistantMsg) → setMessages([...messages, assistantMsg])
      *   reload() → regenerate()
      *   data/setData → removed (not used in new API)
@@ -239,7 +239,7 @@ export const ChatImpl = memo(
       status,
       stop,
       setMessages,
-      sendMessage,
+      sendMessage: sdkSendMessage,
       regenerate,
       error,
       addToolResult,
@@ -319,11 +319,11 @@ export const ChatImpl = memo(
     // Derived: isLoading equivalent from new status API
     const isLoading = status === 'streaming' || status === 'submitted';
 
-    // Adapter: append user message → sendMessage; append assistant message → setMessages
+    // Adapter: append user message → sdkSendMessage; append assistant message → setMessages
     const append = useCallback(
       (message: { role: string; content: string; parts?: any }, options?: any) => {
         if (message.role === 'user') {
-          sendMessage(
+          sdkSendMessage(
             {
               role: 'user' as const,
               content: message.content,
@@ -339,7 +339,7 @@ export const ChatImpl = memo(
           ]);
         }
       },
-      [sendMessage, setMessages],
+      [sdkSendMessage, setMessages],
     );
 
     // Adapter: reload → regenerate
