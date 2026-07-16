@@ -213,20 +213,37 @@ export const ChatImpl = memo(
      */
     const projectContinuation = !!loadedProjectId && loadedProjectId !== '<none>' && Object.keys(files).length > 0;
 
+    /*
+     * @ai-sdk/react v4 migration: useChat no longer manages input state.
+     * Missing from old API: input, setInput, handleInputChange, isLoading,
+     * append, reload, data, setData.
+     *
+     * We manage input locally and map old API calls to the new ones:
+     *   isLoading → status === 'streaming' || status === 'submitted'
+     *   append(msg) → sendMessage(msg)   (user messages)
+     *   append(assistantMsg) → setMessages([...messages, assistantMsg])
+     *   reload() → regenerate()
+     *   data/setData → removed (not used in new API)
+     */
+    const [input, setInput] = useState(Cookies.get(PROMPT_COOKIE_KEY) || '');
+
+    const handleInputChange = useCallback(
+      (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        setInput(e.target.value);
+      },
+      [],
+    );
+
     const {
       messages,
-      isLoading,
-      input,
-      handleInputChange,
-      setInput,
+      status,
       stop,
-      append,
       setMessages,
-      reload,
+      sendMessage,
+      regenerate,
       error,
-      data: chatData,
-      setData,
       addToolResult,
+      addToolOutput,
     } = useChat({
       api: '/api/chat',
       fetch: debugFetch,
@@ -249,7 +266,6 @@ export const ChatImpl = memo(
         projectContext: projectContextForPrompt,
         projectContinuation,
       },
-      sendExtraMessageFields: true,
 
       /*
        * Enable client-side multi-step continuation. Without this, calling
@@ -266,21 +282,7 @@ export const ChatImpl = memo(
         setFakeLoading(false);
         handleError(e, 'chat');
       },
-      onFinish: (message, response) => {
-        const usage = response.usage;
-        setData(undefined);
-
-        if (usage) {
-          logStore.logProvider('Chat response completed', {
-            component: 'Chat',
-            action: 'response',
-            model,
-            provider: provider.name,
-            usage,
-            messageLength: message.content.length,
-          });
-        }
-
+      onFinish: (message) => {
         logger.debug('Finished streaming');
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
@@ -289,9 +291,10 @@ export const ChatImpl = memo(
         if (lastUserMsg?.content) {
           import('~/lib/hooks/useVectorContext')
             .then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
-              extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
+              const content = typeof message.content === 'string' ? message.content : '';
+              extractAndStoreUserFacts(lastUserMsg.content as string, content).catch(() => {});
 
-              const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
+              import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
                 const cid = chatId.get();
 
                 if (cid) {
@@ -300,7 +303,7 @@ export const ChatImpl = memo(
                   if (project) {
                     extractAndStoreProjectContext(
                       project.id,
-                      `Implemented: ${message.content.slice(0, 200)}`,
+                      `Implemented: ${content.slice(0, 200)}`,
                       'conversation_summary',
                     ).catch(() => {});
                   }
@@ -311,8 +314,42 @@ export const ChatImpl = memo(
         }
       },
       initialMessages,
-      initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
+
+    // Derived: isLoading equivalent from new status API
+    const isLoading = status === 'streaming' || status === 'submitted';
+
+    // Adapter: append user message → sendMessage; append assistant message → setMessages
+    const append = useCallback(
+      (message: { role: string; content: string; parts?: any }, options?: any) => {
+        if (message.role === 'user') {
+          sendMessage(
+            {
+              role: 'user' as const,
+              content: message.content,
+              ...(message.parts ? { parts: message.parts } : {}),
+            },
+            options,
+          );
+        } else {
+          // Assistant messages are appended locally (not sent to API)
+          setMessages((prev: any[]) => [
+            ...prev,
+            { ...message, id: `local-${Date.now()}` } as any,
+          ]);
+        }
+      },
+      [sendMessage, setMessages],
+    );
+
+    // Adapter: reload → regenerate
+    const reload = useCallback(
+      (options?: any) => {
+        regenerate(options);
+      },
+      [regenerate],
+    );
+
     useEffect(() => {
       const prompt = searchParams.get('prompt');
 
@@ -1569,7 +1606,7 @@ export const ChatImpl = memo(
           provider: provider.name,
           errorType,
         });
-        setData([]);
+        // Note: setData removed in @ai-sdk/react v4 — data is no longer managed by useChat
       },
       [provider.name, stop],
     );
@@ -1961,7 +1998,7 @@ export const ChatImpl = memo(
           clearDeployAlert={() => workbenchStore.clearDeployAlert()}
           llmErrorAlert={llmErrorAlert}
           clearLlmErrorAlert={clearApiErrorAlert}
-          data={chatData}
+          data={undefined}
           chatMode={chatMode}
           setChatMode={setChatMode}
           append={append}
