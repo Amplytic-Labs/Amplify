@@ -237,32 +237,87 @@ export const ChatImpl = memo(
       [],
     );
 
-    // Custom fetch wrapper that enhances request body with workspace context
-    // Must handle both Request objects and string URLs properly
-    const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
-      // Convert input to Request if needed, then extract and enhance body
-      const request = input instanceof Request ? input : new Request(String(input), init);
-      const body: Record<string, any> = await request.json();
-      
-      const enhancedBody = {
-        ...body,
+    /*
+     * CRITICAL FIX FOR AI SDK V7 INTEGRATION:
+     *
+     * Problem: The previous implementation created a new DefaultChatTransport instance
+     * whenever any dependency of customFetch changed (apiKeys, files, context, etc.).
+     * This caused useChat to detect a transport change and potentially reset its
+     * internal state or lose track of active streams.
+     *
+     * Solution: Use a ref to hold the current context values and create a stable
+     * fetch function that reads from the ref at call time. This ensures:
+     * 1. Transport is created once and never recreated
+     * 2. Always uses latest context values when making requests
+     * 3. useChat maintains stable reference throughout component lifecycle
+     */
+    const contextRef = useRef({
+      apiKeys,
+      promptId,
+      contextOptimizationEnabled,
+      chatMode,
+      designScheme,
+      supabaseConn,
+      selectedProject,
+      mcpSettings: mcpSettings.maxLLMSteps,
+      vectorUserContext,
+      projectContextForPrompt,
+      projectContinuation,
+      files,
+    });
+
+    // Keep ref updated without causing re-renders or transport recreation
+    useEffect(() => {
+      contextRef.current = {
         apiKeys,
         promptId,
-        contextOptimization: contextOptimizationEnabled,
+        contextOptimizationEnabled,
         chatMode,
         designScheme,
+        supabaseConn,
+        selectedProject,
+        mcpSettings: mcpSettings.maxLLMSteps,
+        vectorUserContext,
+        projectContextForPrompt,
+        projectContinuation,
+        files,
+      };
+    });
+
+    // Stable custom fetch wrapper - reads context from ref to maintain stability
+    // This function identity never changes, so transport is created only once
+    const stableCustomFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // Convert input to Request if needed, then extract and enhance body
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      let body: Record<string, any>;
+      
+      try {
+        body = await request.json();
+      } catch (e) {
+        // If body parsing fails, pass through to original request
+        return debugFetch(request, init);
+      }
+      
+      const ctx = contextRef.current;
+      const enhancedBody = {
+        ...body,
+        apiKeys: ctx.apiKeys,
+        promptId: ctx.promptId,
+        contextOptimization: ctx.contextOptimizationEnabled,
+        chatMode: ctx.chatMode,
+        designScheme: ctx.designScheme,
         supabase: {
-          isConnected: supabaseConn.isConnected,
-          hasSelectedProject: !!selectedProject,
+          isConnected: ctx.supabaseConn.isConnected,
+          hasSelectedProject: !!ctx.selectedProject,
           credentials: {
-            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-            anonKey: supabaseConn?.credentials?.anonKey,
+            supabaseUrl: ctx.supabaseConn?.credentials?.supabaseUrl,
+            anonKey: ctx.supabaseConn?.credentials?.anonKey,
           },
         },
-        maxLLMSteps: mcpSettings.maxLLMSteps,
-        userContext: vectorUserContext || undefined,
-        projectContext: projectContextForPrompt,
-        projectContinuation,
+        maxLLMSteps: ctx.mcpSettings,
+        userContext: ctx.vectorUserContext || undefined,
+        projectContext: ctx.projectContextForPrompt,
+        projectContinuation: ctx.projectContinuation,
 
         /*
          * CRITICAL: Send workspace files to the server with every request.
@@ -275,7 +330,7 @@ export const ChatImpl = memo(
          * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
          * which match what nativeTools.ts expects in getFileFromMap().
          */
-        files: files,
+        files: ctx.files,
       };
       
       // Create new request with enhanced body, preserving original method/headers
@@ -285,13 +340,13 @@ export const ChatImpl = memo(
         body: JSON.stringify(enhancedBody),
         credentials: request.credentials,
       }), init);
-    }, [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
+    }, []); // Empty deps - this function is completely stable
 
-    // Create transport with custom fetch - memoized to avoid unnecessary recreations
+    // Create transport ONCE - never recreates due to stable fetch function
     const chatTransport = useMemo(() => new DefaultChatTransport({
       api: '/api/chat',
-      fetch: customFetch,
-    }), [customFetch]);
+      fetch: stableCustomFetch,
+    }), []); // Empty deps - transport is stable for entire component lifecycle
 
     const {
       messages,
@@ -325,7 +380,15 @@ export const ChatImpl = memo(
         handleError(e, 'chat');
       },
       onFinish: (message) => {
-        logger.debug('Finished streaming');
+        logger.debug('[Chat] Finished streaming - message received:', {
+          messageId: message?.id,
+          role: message?.role,
+          hasParts: Array.isArray(message?.parts),
+          partsCount: message?.parts?.length,
+          contentPreview: typeof message?.content === 'string' ? message.content?.slice(0, 100) : '(not a string)',
+          totalMessages: messages?.length,
+          allMessageIds: messages?.map(m => ({ id: m.id, role: m.role })),
+        });
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
         const lastUserMsg = (messages || []).filter((m) => m.role === 'user').pop();
@@ -479,6 +542,25 @@ export const ChatImpl = memo(
         });
       }
     }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory]);
+
+    // Debug: Log messages state changes to trace AI message flow
+    useEffect(() => {
+      if ((messages?.length ?? 0) > 0) {
+        logger.debug('[Chat] Messages state updated:', {
+          count: messages?.length,
+          lastMessage: {
+            id: messages[messages.length - 1]?.id,
+            role: messages[messages.length - 1]?.role,
+            hasParts: Array.isArray(messages[messages.length - 1]?.parts),
+          },
+          chatStarted: {
+            ref: chatStartedRef.current,
+            state: chatStartedInternal,
+            derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+          },
+        });
+      }
+    }, [messages?.length, messages?.[messages?.length - 1]?.id]);
 
     // Query vector stores for RAG context when user messages change
     useEffect(() => {
@@ -1785,20 +1867,36 @@ export const ChatImpl = memo(
       return () => window.removeEventListener('amplify:quote-text', handleQuoteText);
     }, [input, handleInputChange]);
 
+    /*
+     * CRITICAL: runAnimation must set chatStarted SYNCHRONOUSLY before any async
+     * operations. This ensures:
+     * 1. Messages component renders immediately (not after await)
+     * 2. UI transitions happen without flicker
+     * 3. Background transparency applies before response arrives
+     */
     const runAnimation = async () => {
-      if (chatStartedRef.current) {
-        return;
+      // Synchronous update - takes effect BEFORE first render after this call
+      if (!chatStartedRef.current) {
+        chatStartedRef.current = true;
+        setChatStartedInternal(true);
+        chatStore.setKey('started', true);
+
+        // Force synchronous update to nanostores for immediate propagation
+        // This ensures child components see the updated value without waiting
+        // for React's async batched updates
+        chatStore.setKey('started', true);
       }
 
-      // Update ref SYNCHRONOUSLY - takes effect immediately
-      chatStartedRef.current = true;
-      setChatStartedInternal(true);
-      chatStore.setKey('started', true);
-
-      await Promise.all([
-        animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
-        animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
-      ]);
+      // Run animations asynchronously - they don't affect message rendering
+      try {
+        await Promise.all([
+          animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
+          animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
+        ]);
+      } catch (e) {
+        // Animation errors shouldn't block chat functionality
+        logger.warn('[Chat] Animation failed:', e);
+      }
     };
 
     // Helper function to create message parts array from text and images
@@ -1879,6 +1977,13 @@ export const ChatImpl = memo(
       }
 
       runAnimation();
+
+      // Debug: Verify chatStarted is set before sending
+      logger.debug('[Chat] sendMessage called, chatStarted:', {
+        ref: chatStartedRef.current,
+        state: chatStartedInternal,
+        derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+      });
 
       // Use ref for synchronous check (not stale state)
       if (!chatStartedRef.current && !showWorkbench && (initialMessages?.length ?? 0) === 0) {
