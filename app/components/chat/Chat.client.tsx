@@ -238,30 +238,18 @@ export const ChatImpl = memo(
     );
 
     /*
-     * Custom fetch wrapper for AI SDK v7 transport.
-     * Enhances the request body with workspace context (apiKeys, files, etc.)
-     * before sending to /api/chat endpoint.
+     * AI SDK v7 Native Transport Configuration
+     * 
+     * Using DefaultChatTransport with NATIVE `body` option - NO CUSTOM FETCH!
+     * The SDK handles merging body data with messages automatically.
+     * This is identical to how bolt.diy v4 used `useChat({ body: {...} })`
+     * but adapted for v7's transport-based architecture.
      */
-    const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
-      // Debug: Log fetch call
-      console.log('[DEBUG Chat] customFetch called:', { input: String(input).slice(0, 100) });
-      
-      // Convert input to Request if needed, then extract and enhance body
-      const request = input instanceof Request ? input : new Request(String(input), init);
-      let body: Record<string, any>;
-      
-      try {
-        body = await request.json();
-        console.log('[DEBUG Chat] Request body parsed, messages count:', body.messages?.length);
-      } catch (e) {
-        // If body parsing fails, pass through to original request
-        console.warn('[DEBUG Chat] Failed to parse request body:', e);
-        return debugFetch(request, init);
-      }
-      
-      const enhancedBody = {
-        ...body,
+    const chatTransport = useMemo(() => new DefaultChatTransport({
+      api: '/api/chat',
+      body: {
         apiKeys,
+        files,
         promptId,
         contextOptimization: contextOptimizationEnabled,
         chatMode,
@@ -278,32 +266,10 @@ export const ChatImpl = memo(
         userContext: vectorUserContext || undefined,
         projectContext: projectContextForPrompt,
         projectContinuation,
-        files,
-      };
-      
-      // Create new request with enhanced body, preserving original method/headers
-      const response = await debugFetch(new Request(request.url, { 
-        method: request.method,
-        headers: request.headers,
-        body: JSON.stringify(enhancedBody),
-        credentials: request.credentials,
-      }), init);
-      
-      // Debug: Log response
-      console.log('[DEBUG Chat] Response received:', {
-        status: response.status,
-        ok: response.ok,
-        hasBody: !!response.body,
-      });
-      
-      return response;
-    }, [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
-
-    // Create transport with custom fetch for enhanced body
-    const chatTransport = useMemo(() => new DefaultChatTransport({
-      api: '/api/chat',
-      fetch: customFetch,
-    }), [customFetch]);
+      },
+      // Use debugFetch ONLY for debug page interception (optional)
+      fetch: debugFetch,
+    }), [apiKeys, files, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, debugFetch]);
 
     const {
       messages,
@@ -316,8 +282,8 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      // AI SDK v4/v7: Use transport with custom fetch for enhanced body
-      // The customFetch handles workspace files, API keys, and other context
+      // AI SDK v7: Use transport with NATIVE body option (no custom fetch needed)
+      // The SDK automatically merges body data with messages on each request
       transport: chatTransport,
       // Pass initial messages if available (for chat history restoration)
       ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
