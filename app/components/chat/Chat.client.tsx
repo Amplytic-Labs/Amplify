@@ -245,8 +245,11 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      api: '/api/chat',
-      fetch: debugFetch,
+      chat: {
+        type: 'http',
+        url: '/api/chat',
+        fetch: debugFetch,
+      } as any,
       body: {
         apiKeys,
         promptId,
@@ -288,11 +291,26 @@ export const ChatImpl = memo(
         // M-1 fix: Auto-extract user facts and project context after each AI response
         const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
 
-        if (lastUserMsg?.content) {
+        // Helper to extract text content from UIMessage parts (v7 uses parts, not content)
+        const getMessageContent = (msg: any): string => {
+          if (!msg) return '';
+          if (typeof msg.content === 'string') return msg.content;
+          if (Array.isArray(msg.parts)) {
+            return msg.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('');
+          }
+          return '';
+        };
+
+        const lastUserContent = getMessageContent(lastUserMsg);
+        const assistantContent = getMessageContent(message);
+
+        if (lastUserContent) {
           import('~/lib/hooks/useVectorContext')
             .then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
-              const content = typeof message.content === 'string' ? message.content : '';
-              extractAndStoreUserFacts(lastUserMsg.content as string, content).catch(() => {});
+              extractAndStoreUserFacts(lastUserContent, assistantContent).catch(() => {});
 
               import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
                 const cid = chatId.get();
@@ -438,7 +456,19 @@ export const ChatImpl = memo(
 
           // Get last user message for context query
           const userMessages = messages.filter((m) => m.role === 'user');
-          const lastMsg = userMessages[userMessages.length - 1]?.content || '';
+          // Extract content from UIMessage v7 (uses parts array)
+          const lastUserMsg = userMessages[userMessages.length - 1];
+          let lastMsg = '';
+          if (lastUserMsg) {
+            if (typeof (lastUserMsg as any).content === 'string') {
+              lastMsg = (lastUserMsg as any).content;
+            } else if (Array.isArray((lastUserMsg as any).parts)) {
+              lastMsg = (lastUserMsg as any).parts
+                .filter((p: any) => p.type === 'text')
+                .map((p: any) => p.text)
+                .join('');
+            }
+          }
 
           if (!lastMsg) {
             setVectorUserContext('');
@@ -486,11 +516,23 @@ export const ChatImpl = memo(
     useEffect(() => {
       const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
 
-      if (!lastAssistantMessage?.content) {
-        return;
+      // Extract content from UIMessage v7 (uses parts array)
+      let content = '';
+      if (lastAssistantMessage) {
+        if (typeof (lastAssistantMessage as any).content === 'string') {
+          content = (lastAssistantMessage as any).content.trim();
+        } else if (Array.isArray((lastAssistantMessage as any).parts)) {
+          content = (lastAssistantMessage as any).parts
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text)
+            .join('')
+            .trim();
+        }
       }
 
-      const content = lastAssistantMessage.content.trim();
+      if (!content) {
+        return;
+      }
 
       /*
        * M-4 fix: Check for the signal marker before attempting JSON.parse
@@ -585,6 +627,8 @@ export const ChatImpl = memo(
         }
       }
 
+      // Note: toolInvocations is deprecated in AI SDK v7, but kept for backward compatibility
+      // In v7, tool invocations are in message.parts as 'tool-invocation' type parts
       if (Array.isArray((lastAssistant as any).toolInvocations)) {
         allInvocations.push(...(lastAssistant as any).toolInvocations);
       }
@@ -840,11 +884,14 @@ export const ChatImpl = memo(
             const pending = [...pendingAutoApprovalsRef.current];
             pendingAutoApprovalsRef.current = [];
 
-            for (const { toolCallId } of pending) {
+            for (const { toolCallId, toolName } of pending) {
               logger.debug(`[auto-approve] flushing delayed ${toolCallId}`);
+              // AI SDK v7 signature: { tool, toolCallId, output, state }
               addToolResult({
+                tool: toolName || 'unknown',
                 toolCallId,
-                result: TOOL_EXECUTION_APPROVAL.APPROVE,
+                output: TOOL_EXECUTION_APPROVAL.APPROVE,
+                state: 'result',
               });
             }
           }
@@ -933,11 +980,14 @@ export const ChatImpl = memo(
               const pending = [...pendingAutoApprovalsRef.current];
               pendingAutoApprovalsRef.current = [];
 
-              for (const { toolCallId } of pending) {
+              for (const { toolCallId, toolName } of pending) {
                 logger.debug(`[auto-approve] flushing delayed ${toolCallId} (stabilize timer)`);
+                // AI SDK v7 signature: { tool, toolCallId, output, state }
                 addToolResult({
+                  tool: toolName || 'unknown',
                   toolCallId,
-                  result: TOOL_EXECUTION_APPROVAL.APPROVE,
+                  output: TOOL_EXECUTION_APPROVAL.APPROVE,
+                  state: 'result',
                 });
               }
             }
@@ -989,14 +1039,17 @@ export const ChatImpl = memo(
            */
           if (!workspaceReadyRef.current) {
             logger.debug(`[auto-approve] delaying ${inv.toolName} (${inv.toolCallId}) — workspace not ready`);
-            pendingAutoApprovalsRef.current.push({ toolCallId: inv.toolCallId });
+            pendingAutoApprovalsRef.current.push({ toolCallId: inv.toolCallId, toolName: inv.toolName });
             continue;
           }
 
           logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
+          // AI SDK v7 signature: { tool, toolCallId, output, state }
           addToolResult({
+            tool: inv.toolName,
             toolCallId: inv.toolCallId,
-            result: TOOL_EXECUTION_APPROVAL.APPROVE,
+            output: TOOL_EXECUTION_APPROVAL.APPROVE,
+            state: 'result',
           });
         }
       }
@@ -1117,14 +1170,28 @@ export const ChatImpl = memo(
           projectContext: currentProjectContext,
         });
 
-        // Get tool execution results from recent messages (simplified extraction)
+        // Get tool execution results from recent messages (extract from parts for v7)
+        const getToolInvocations = (msg: any): any[] => {
+          if (!msg || !Array.isArray(msg.parts)) return [];
+          return msg.parts
+            .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation)
+            .map((p: any) => p.toolInvocation);
+        };
         const toolResults = messages
-          .filter((m) => m.role === 'assistant' && m.toolInvocations)
-          .flatMap((m) =>
-            (m.toolInvocations || []).map(
+          .filter((m) => m.role === 'assistant')
+          .flatMap((m) => {
+            // Try v7 parts first, fallback to legacy toolInvocations
+            const invocations = getToolInvocations(m);
+            if (invocations.length > 0) {
+              return invocations.map(
+                (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
+              );
+            }
+            // Fallback for backward compatibility
+            return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-            ),
-          )
+            );
+          })
           .join('\n');
 
         // Execute the plan
@@ -1385,13 +1452,28 @@ export const ChatImpl = memo(
           })),
         );
 
+        // Get tool execution results from recent messages (extract from parts for v7)
+        const getToolInvocationsForResume = (msg: any): any[] => {
+          if (!msg || !Array.isArray(msg.parts)) return [];
+          return msg.parts
+            .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation)
+            .map((p: any) => p.toolInvocation);
+        };
         const toolResults = messages
-          .filter((m) => m.role === 'assistant' && m.toolInvocations)
-          .flatMap((m) =>
-            (m.toolInvocations || []).map(
+          .filter((m) => m.role === 'assistant')
+          .flatMap((m) => {
+            // Try v7 parts first, fallback to legacy toolInvocations
+            const invocations = getToolInvocationsForResume(m);
+            if (invocations.length > 0) {
+              return invocations.map(
+                (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
+              );
+            }
+            // Fallback for backward compatibility
+            return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-            ),
-          )
+            );
+          })
           .join('\n');
 
         await resumePlan(plan, {
@@ -1763,7 +1845,7 @@ export const ChatImpl = memo(
           {
             id: `${new Date().getTime()}`,
             role: 'user',
-            content: userMessageText,
+            // UIMessage v7: use parts array instead of content property
             parts: createMessageParts(userMessageText, imageDataList),
             experimental_attachments: attachments,
           },
