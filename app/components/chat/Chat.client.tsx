@@ -245,61 +245,59 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      chat: {
-        type: 'http',
-        url: '/api/chat',
-        // In AI SDK v7, body is not a direct option - we use fetch to inject extra data
-        fetch: async (request: Request, init?: RequestInit) => {
-          // Create a modified request that includes our extra body fields
-          const body: Record<string, any> = await request.json();
-          const enhancedBody = {
-            ...body,
-            apiKeys,
-            promptId,
-            contextOptimization: contextOptimizationEnabled,
-            chatMode,
-            designScheme,
-            supabase: {
-              isConnected: supabaseConn.isConnected,
-              hasSelectedProject: !!selectedProject,
-              credentials: {
-                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-                anonKey: supabaseConn?.credentials?.anonKey,
-              },
+      // AI SDK v4/v7: Pass API URL and custom fetch directly (NOT as nested chat object)
+      // The previous pattern of `chat: { type: 'http', ... }` was incorrect and caused
+      // "registerMessagesCallback is not a function" because useChat treated it as a Chat instance
+      api: '/api/chat',
+      fetch: async (request: Request, init?: RequestInit) => {
+        // Create a modified request that includes our extra body fields
+        const body: Record<string, any> = await request.json();
+        const enhancedBody = {
+          ...body,
+          apiKeys,
+          promptId,
+          contextOptimization: contextOptimizationEnabled,
+          chatMode,
+          designScheme,
+          supabase: {
+            isConnected: supabaseConn.isConnected,
+            hasSelectedProject: !!selectedProject,
+            credentials: {
+              supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+              anonKey: supabaseConn?.credentials?.anonKey,
             },
-            maxLLMSteps: mcpSettings.maxLLMSteps,
-            userContext: vectorUserContext || undefined,
-            projectContext: projectContextForPrompt,
-            projectContinuation,
+          },
+          maxLLMSteps: mcpSettings.maxLLMSteps,
+          userContext: vectorUserContext || undefined,
+          projectContext: projectContextForPrompt,
+          projectContinuation,
 
-            /*
-             * CRITICAL: Send workspace files to the server with every request.
-             *
-             * The native tools (read_file, list_dir, find_files, grep_search, etc.)
-             * operate on this files map server-side. Without it, ctx.files is
-             * undefined and every read_file call returns "File not found" even
-             * though the file exists in the WebContainer.
-             *
-             * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
-             * which match what nativeTools.ts expects in getFileFromMap().
-             */
-            files: files,
-          };
-          return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
-        },
-      } as any,
+          /*
+           * CRITICAL: Send workspace files to the server with every request.
+           *
+           * The native tools (read_file, list_dir, find_files, grep_search, etc.)
+           * operate on this files map server-side. Without it, ctx.files is
+           * undefined and every read_file call returns "File not found" even
+           * though the file exists in the WebContainer.
+           *
+           * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
+           * which match what nativeTools.ts expects in getFileFromMap().
+           */
+          files: files,
+        };
+        return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
+      },
 
       /*
        * Enable client-side multi-step continuation. Without this, calling
        * `addToolResult` (used for native-tool auto-approve + mutating-tool
        * approval) would only update local state and NEVER send the result
-       * back to the server — so the server-side `execute` would never run
+       * back to the server - so the server-side `execute` would never run
        * and tools would appear to "do nothing". With maxSteps set, the AI
        * SDK automatically fires a follow-up /api/chat request carrying the
        * tool result, `processToolInvocations` runs the real execute, and
        * the actual result is streamed back. Mirrors the server's maxLLMSteps.
        */
-      // AI SDK v7: maxSteps is still valid but may need type assertion
       ...(mcpSettings.maxLLMSteps > 0 ? { maxSteps: mcpSettings.maxLLMSteps } : {}),
       onError: (e) => {
         setFakeLoading(false);
@@ -351,10 +349,9 @@ export const ChatImpl = memo(
             .catch(() => {});
         }
       },
-      // AI SDK v7: initialMessages may need to be passed differently
-      // Using spread with type assertion to bypass strict checking
+      // Initial messages for chat history restoration
       ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
-    });
+    } as any);
 
     // Derived: isLoading equivalent from new status API
     const isLoading = status === 'streaming' || status === 'submitted';
