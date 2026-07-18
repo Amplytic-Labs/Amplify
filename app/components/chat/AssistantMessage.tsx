@@ -179,7 +179,7 @@ export const AssistantMessage = memo(
      * Streaming-safe: an unclosed `<docxartifact>` still yields its (partial)
      * inner markdown so the live preview updates as content arrives.
      */
-    const { visibleText: docxStrippedText, docxMarkdown, streaming: docxStreaming } = useMemo(
+    const { visibleText: docxStrippedText, docxMarkdown, streaming: docxStreaming, theme: docxTheme } = useMemo(
       () => extractDocxArtifact(answerText),
       [answerText],
     );
@@ -191,11 +191,11 @@ export const AssistantMessage = memo(
      */
     useEffect(() => {
       if (docxMarkdown) {
-        setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming);
+        setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming, docxTheme);
         workbenchStore.showWorkbench.set(true);
         workbenchStore.currentView.set('document');
       }
-    }, [docxMarkdown, messageId, docxStreaming]);
+    }, [docxMarkdown, messageId, docxStreaming, docxTheme]);
 
     /*
      * Smooth-stream only the visible answer so we never animate thought chars

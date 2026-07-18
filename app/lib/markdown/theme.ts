@@ -16,8 +16,26 @@
  * Framework-agnostic: zero Next.js imports — copy-paste ready for Remix+Vite.
  */
 
-/** Colour overrides for a single document. ALL fields optional. */
+/**
+ * Colour + typography overrides for a single document. ALL fields optional.
+ *
+ * This is designed to be writable as a React Native–style inline object on
+ * the `<docxartifact theme={{...}}>` tag, e.g.:
+ *
+ *   <docxartifact theme={{
+ *     heading1: "#0B4F6C",
+ *     link: "#1B6CA8",
+ *     fontFamily: "Georgia",
+ *     bodyFontSize: 12,
+ *     margin: 1.25
+ *   }}>
+ *
+ * Every field is optional — omitting any field (or passing no theme at all)
+ * falls back to the default, which is the exact look the formatter has always
+ * used. So themes are a purely additive overlay.
+ */
 export interface DocxTheme {
+  // ---- Colour fields ----
   /** Body paragraph text colour. */
   body?: string;
   /** H1–H6 text colours (independent). */
@@ -47,6 +65,9 @@ export interface DocxTheme {
    * without leading `#`). When a class is present here it takes precedence
    * over the built-in `oneLight` palette; classes not listed keep their
    * default colour. This is how an AI can recolour code to match a doc theme.
+   *
+   * NOTE: syntaxColors is NOT supported in the inline `theme={{...}}` tag
+   * (it's a nested object). It's only usable programmatically / via presets.
    */
   syntaxColors?: Record<string, string>;
 
@@ -58,6 +79,29 @@ export interface DocxTheme {
   blockquoteBorder?: string;
   /** Horizontal-rule (`---`) border colour. */
   thematicBreak?: string;
+
+  // ---- Typography fields (React Native style-object keys) ----
+  /** Body + heading font family, e.g. "Arial", "Georgia", "Times New Roman". */
+  fontFamily?: string;
+  /** Heading font family override (defaults to fontFamily when omitted). */
+  headingFontFamily?: string;
+  /** Code/monospace font family, e.g. "Consolas", "Courier New". */
+  codeFontFamily?: string;
+  /** Body font size in points (8–16 typical, default 11). */
+  bodyFontSize?: number;
+  /** Heading 1–6 font sizes in points (independent). */
+  heading1Size?: number;
+  heading2Size?: number;
+  heading3Size?: number;
+  heading4Size?: number;
+  heading5Size?: number;
+  heading6Size?: number;
+  /** Page margin in inches (0.5–2 typical, default 1). */
+  margin?: number;
+  /** Line spacing multiplier (1.0 single, 1.15 default, 1.5, 2.0 double). */
+  lineSpacing?: number;
+  /** Page size preset (default "letter"). */
+  pageSize?: "letter" | "a4";
 }
 
 /**
@@ -65,6 +109,7 @@ export interface DocxTheme {
  * exclusively with this type so downstream code never has to null-check.
  */
 export interface ResolvedDocxTheme {
+  // ---- Colour fields ----
   body: string;
   heading1: string;
   heading2: string;
@@ -83,6 +128,23 @@ export interface ResolvedDocxTheme {
   tableHeaderBg: string;
   blockquoteBorder: string;
   thematicBreak: string;
+  // ---- Typography fields ----
+  fontFamily: string;
+  headingFontFamily: string;
+  codeFontFamily: string;
+  /** Body font size in POINTS (e.g. 11). Convert to half-points for docx. */
+  bodyFontSize: number;
+  heading1Size: number;
+  heading2Size: number;
+  heading3Size: number;
+  heading4Size: number;
+  heading5Size: number;
+  heading6Size: number;
+  /** Page margin in INCHES (e.g. 1). Convert to twips for docx. */
+  margin: number;
+  /** Line spacing multiplier (e.g. 1.15). Convert to 240ths for docx. */
+  lineSpacing: number;
+  pageSize: "letter" | "a4";
 }
 
 /**
@@ -112,6 +174,20 @@ export const DEFAULT_DOCX_THEME: ResolvedDocxTheme = {
   tableHeaderBg: "F0F0F0",
   blockquoteBorder: "CCCCCC",
   thematicBreak: "BFBFBF",
+  // Typography defaults — the exact look the formatter has always used.
+  fontFamily: "Arial",
+  headingFontFamily: "Arial",
+  codeFontFamily: "Consolas",
+  bodyFontSize: 11,
+  heading1Size: 20,
+  heading2Size: 16,
+  heading3Size: 14,
+  heading4Size: 12,
+  heading5Size: 11,
+  heading6Size: 11,
+  margin: 1,
+  lineSpacing: 1.15,
+  pageSize: "letter",
 };
 
 /**
@@ -123,35 +199,109 @@ export const DEFAULT_DOCX_THEME: ResolvedDocxTheme = {
 export function resolveTheme(theme?: DocxTheme): ResolvedDocxTheme {
   if (!theme) return DEFAULT_DOCX_THEME;
   const r: ResolvedDocxTheme = { ...DEFAULT_DOCX_THEME, syntaxColors: { ...DEFAULT_DOCX_THEME.syntaxColors } };
-  const set = (key: keyof ResolvedDocxTheme, value: string | undefined) => {
+
+  // ---- Colour fields ----
+  const setColor = (key: keyof ResolvedDocxTheme, value: string | undefined) => {
     if (value == null) return;
     const clean = sanitizeColor(value);
     if (clean) (r as any)[key] = clean;
   };
-  set("body", theme.body);
-  set("heading1", theme.heading1);
-  set("heading2", theme.heading2);
-  set("heading3", theme.heading3);
-  set("heading4", theme.heading4);
-  set("heading5", theme.heading5);
-  set("heading6", theme.heading6);
-  set("link", theme.link);
-  set("inlineCodeColor", theme.inlineCodeColor);
-  set("inlineCodeBg", theme.inlineCodeBg);
-  set("codeBlockColor", theme.codeBlockColor);
-  set("codeBlockBg", theme.codeBlockBg);
-  set("codeBlockBorder", theme.codeBlockBorder);
-  set("tableBorder", theme.tableBorder);
-  set("tableHeaderBg", theme.tableHeaderBg);
-  set("blockquoteBorder", theme.blockquoteBorder);
-  set("thematicBreak", theme.thematicBreak);
+  setColor("body", theme.body);
+  setColor("heading1", theme.heading1);
+  setColor("heading2", theme.heading2);
+  setColor("heading3", theme.heading3);
+  setColor("heading4", theme.heading4);
+  setColor("heading5", theme.heading5);
+  setColor("heading6", theme.heading6);
+  setColor("link", theme.link);
+  setColor("inlineCodeColor", theme.inlineCodeColor);
+  setColor("inlineCodeBg", theme.inlineCodeBg);
+  setColor("codeBlockColor", theme.codeBlockColor);
+  setColor("codeBlockBg", theme.codeBlockBg);
+  setColor("codeBlockBorder", theme.codeBlockBorder);
+  setColor("tableBorder", theme.tableBorder);
+  setColor("tableHeaderBg", theme.tableHeaderBg);
+  setColor("blockquoteBorder", theme.blockquoteBorder);
+  setColor("thematicBreak", theme.thematicBreak);
   if (theme.syntaxColors) {
     for (const [k, v] of Object.entries(theme.syntaxColors)) {
       const clean = sanitizeColor(v);
       if (clean) r.syntaxColors[k] = clean;
     }
   }
+
+  // ---- Typography fields ----
+  const setStr = (key: keyof ResolvedDocxTheme, value: string | undefined) => {
+    if (typeof value === "string" && value.trim()) (r as any)[key] = value.trim();
+  };
+  setStr("fontFamily", theme.fontFamily);
+  setStr("headingFontFamily", theme.headingFontFamily);
+  setStr("codeFontFamily", theme.codeFontFamily);
+  // If a headingFontFamily wasn't given but fontFamily was, inherit it.
+  if (!theme.headingFontFamily && theme.fontFamily) {
+    r.headingFontFamily = r.fontFamily;
+  }
+
+  const setSize = (key: keyof ResolvedDocxTheme, value: number | undefined) => {
+    const clean = sanitizeFontSize(value);
+    if (clean !== null) (r as any)[key] = clean;
+  };
+  setSize("bodyFontSize", theme.bodyFontSize);
+  setSize("heading1Size", theme.heading1Size);
+  setSize("heading2Size", theme.heading2Size);
+  setSize("heading3Size", theme.heading3Size);
+  setSize("heading4Size", theme.heading4Size);
+  setSize("heading5Size", theme.heading5Size);
+  setSize("heading6Size", theme.heading6Size);
+
+  const margin = sanitizeMargin(theme.margin);
+  if (margin !== null) r.margin = margin;
+
+  const ls = sanitizeLineSpacing(theme.lineSpacing);
+  if (ls !== null) r.lineSpacing = ls;
+
+  if (theme.pageSize === "letter" || theme.pageSize === "a4") {
+    r.pageSize = theme.pageSize;
+  }
+
   return r;
+}
+
+/**
+ * Validate a font-size in points. Returns a number clamped to [6, 72], or
+ * null if the input is invalid. Half-points are NOT used here — the caller
+ * (docx-builder) converts pt → half-points via `ptToHalfPoints()`.
+ */
+export function sanitizeFontSize(n: number | null | undefined): number | null {
+  if (n == null || typeof n !== "number" || !isFinite(n)) return null;
+  return Math.min(72, Math.max(6, Math.round(n)));
+}
+
+/** Validate a page margin in inches. Clamped to [0.25, 3]. */
+export function sanitizeMargin(n: number | null | undefined): number | null {
+  if (n == null || typeof n !== "number" || !isFinite(n)) return null;
+  return Math.min(3, Math.max(0.25, Math.round(n * 100) / 100));
+}
+
+/** Validate a line-spacing multiplier. Clamped to [0.5, 3]. */
+export function sanitizeLineSpacing(n: number | null | undefined): number | null {
+  if (n == null || typeof n !== "number" || !isFinite(n)) return null;
+  return Math.min(3, Math.max(0.5, Math.round(n * 100) / 100));
+}
+
+/** Convert points → docx half-points (11pt → 22). */
+export function ptToHalfPoints(pt: number): number {
+  return Math.round(pt * 2);
+}
+
+/** Convert a line-spacing multiplier → docx 240ths-of-a-line (1.15 → 276). */
+export function lineSpacingTo240ths(ls: number): number {
+  return Math.round(ls * 240);
+}
+
+/** Convert inches → docx twips (1in → 1440). */
+export function inchesToTwips(inches: number): number {
+  return Math.round(inches * 1440);
 }
 
 /**
@@ -336,4 +486,139 @@ export const THEME_PRESETS: DocxThemePreset[] = [
       inlineCodeBg: "F3E9D9",
     },
   },
+  {
+    id: "manuscript",
+    name: "Manuscript",
+    description: "Serif typography (Georgia), 12pt body, 1.5 spacing — academic feel.",
+    theme: {
+      fontFamily: "Georgia",
+      headingFontFamily: "Georgia",
+      codeFontFamily: "Courier New",
+      bodyFontSize: 12,
+      heading1Size: 22,
+      heading2Size: 18,
+      heading3Size: 15,
+      heading4Size: 13,
+      lineSpacing: 1.5,
+      margin: 1.25,
+      heading1: "1A1A1A",
+      heading2: "1A1A1A",
+      heading3: "333333",
+      link: "1A1A1A",
+      blockquoteBorder: "999999",
+      thematicBreak: "999999",
+    },
+  },
+  {
+    id: "compact",
+    name: "Compact",
+    description: "10pt body, 0.75in margins, single spacing — maximum density.",
+    theme: {
+      bodyFontSize: 10,
+      heading1Size: 16,
+      heading2Size: 13,
+      heading3Size: 11,
+      heading4Size: 10,
+      lineSpacing: 1.0,
+      margin: 0.75,
+    },
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// Inline theme parser — React Native–style object literal → DocxTheme
+// ---------------------------------------------------------------------------
+
+/**
+ * Recognised theme field names, grouped by value type, so the inline parser
+ * can validate keys before assignment. Unknown keys are silently dropped
+ * (forgiving, like CSS).
+ */
+const COLOR_THEME_FIELDS = new Set([
+  "body", "heading1", "heading2", "heading3", "heading4", "heading5", "heading6",
+  "link", "inlineCodeColor", "inlineCodeBg", "codeBlockColor", "codeBlockBg",
+  "codeBlockBorder", "tableBorder", "tableHeaderBg", "blockquoteBorder",
+  "thematicBreak",
+]);
+const NUM_THEME_FIELDS = new Set([
+  "bodyFontSize", "heading1Size", "heading2Size", "heading3Size",
+  "heading4Size", "heading5Size", "heading6Size", "margin", "lineSpacing",
+]);
+const STR_THEME_FIELDS = new Set(["fontFamily", "headingFontFamily", "codeFontFamily"]);
+const PAGE_SIZE_VALUES = new Set(["letter", "a4"]);
+
+/**
+ * Parse a React Native–style inline theme object from a raw string like:
+ *
+ *     { heading1: "#0B4F6C", link: "#1B6CA8", fontFamily: "Georgia", bodyFontSize: 12 }
+ *
+ * Accepts BOTH quoted and unquoted keys, single OR double-quoted string values,
+ * and bare numeric values — exactly how React Native style objects are written.
+ * Invalid keys / values are silently dropped (the matching field keeps its
+ * default), so a typo from the AI never breaks the export.
+ *
+ * `syntaxColors` (a nested object) is NOT supported here — it's only usable
+ * programmatically / via presets. Every other DocxTheme field is supported.
+ *
+ * Streaming-safe: if the object is truncated mid-value, the regex simply won't
+ * match the incomplete pair and it's skipped. Complete pairs before the
+ * truncation are still captured, so the live preview updates progressively.
+ *
+ * Returns a partial `DocxTheme` (only the fields that parsed successfully).
+ */
+export function parseInlineTheme(src: string): DocxTheme {
+  const theme: DocxTheme = {};
+
+  if (!src || typeof src !== "string") return theme;
+
+  /*
+   * Match one key:value pair at a time. The key can be:
+   *   - an unquoted identifier:   heading1
+   *   - a double-quoted string:   "heading1"
+   *   - a single-quoted string:   'heading1'
+   * The value can be:
+   *   - a double-quoted string:   "#0B4F6C"
+   *   - a single-quoted string:   '#0B4F6C'
+   *   - a bare number:            12  or  1.25  or  -5
+   * Trailing commas / whitespace between pairs are ignored by the regex
+   * advance (the `g` flag + exec loop naturally skips unmatched chars).
+   */
+  const pairRe =
+    /(?:["']?([A-Za-z_]\w*)["']?\s*:\s*(?:"([^"]*)"|'([^']*)'|(-?\d+(?:\.\d+)?)))/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = pairRe.exec(src)) !== null) {
+    const key = m[1];
+    // m[2] = double-quoted value, m[3] = single-quoted value, m[4] = numeric value
+    const strVal = m[2] !== undefined ? m[2] : m[3] !== undefined ? m[3] : undefined;
+    const numVal = m[4] !== undefined ? parseFloat(m[4]) : undefined;
+
+    applyThemeField(theme, key, strVal, numVal);
+  }
+
+  return theme;
+}
+
+/**
+ * Map a single parsed key/value pair onto the `theme` object, validating the
+ * key name and value type. Unknown keys are dropped silently.
+ */
+function applyThemeField(
+  theme: DocxTheme,
+  key: string,
+  strVal: string | undefined,
+  numVal: number | undefined,
+): void {
+  if (COLOR_THEME_FIELDS.has(key)) {
+    if (strVal) (theme as any)[key] = strVal;
+  } else if (NUM_THEME_FIELDS.has(key)) {
+    if (numVal !== undefined && isFinite(numVal)) (theme as any)[key] = numVal;
+  } else if (STR_THEME_FIELDS.has(key)) {
+    if (strVal) (theme as any)[key] = strVal;
+  } else if (key === "pageSize") {
+    if (strVal && PAGE_SIZE_VALUES.has(strVal)) {
+      theme.pageSize = strVal as "letter" | "a4";
+    }
+  }
+  // Unknown keys are silently dropped — forgiving, like CSS.
+}

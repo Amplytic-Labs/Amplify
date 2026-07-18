@@ -9,7 +9,7 @@ import { latexToOmml } from "./math";
 import { svgToCroppedPng, pngDataUrlToCroppedPng, pngDimensions } from "./assets";
 import { highlightCode, colorForClass } from "./highlight";
 import { renderHtmlBlock } from "./html-to-docx";
-import { resolveTheme } from "./theme";
+import { resolveTheme, ptToHalfPoints, lineSpacingTo240ths, inchesToTwips } from "./theme";
 import type { DocxTheme, ResolvedDocxTheme } from "./theme";
 
 // Units cheat-sheet (docx):
@@ -52,9 +52,16 @@ interface BuildContext {
    *  (preview-docx route) uses this to later swap the placeholder for
    *  KaTeX-rendered HTML. */
   onMath?: (placeholder: string, latex: string, displayMode: boolean) => void;
-  /** Fully-resolved colour theme. Defaults to DEFAULT_DOCX_THEME (the exact
-   *  colours the formatter has always used), so omitting a theme is a no-op. */
+  /** Fully-resolved colour + typography theme. Defaults to DEFAULT_DOCX_THEME
+   *  (the exact look the formatter has always used), so omitting a theme is
+   *  a no-op. */
   theme: ResolvedDocxTheme;
+  /** Precomputed: body font size in half-points (e.g. 22 for 11pt). */
+  bodySizeHalfPt: number;
+  /** Precomputed: line spacing in 240ths (e.g. 276 for 1.15). */
+  lineSpacing240: number;
+  /** Precomputed: page margin in twips (e.g. 1440 for 1in). */
+  marginTwip: number;
 }
 
 export interface BuildDocxOptions {
@@ -100,43 +107,53 @@ export async function buildDocx(
     forPreview: !!options.forPreview,
     onMath: options.onMath,
     theme,
+    bodySizeHalfPt: ptToHalfPoints(theme.bodyFontSize),
+    lineSpacing240: lineSpacingTo240ths(theme.lineSpacing),
+    marginTwip: inchesToTwips(theme.margin),
   };
 
   const children = await walkChildren(tree.children, ctx);
 
   const codeBlockBorder = { style: BorderStyle.SINGLE, size: 2, color: theme.codeBlockBorder, space: 8 };
+
+  // Page size: A4 = 210mm × 297mm = 11906 × 16838 twips; Letter = 8.5×11in = 12240 × 15840.
+  const pageSize = theme.pageSize === "a4"
+    ? { width: 11906, height: 16838 }
+    : { width: 12240, height: 15840 };
+  const m = ctx.marginTwip;
+
   const doc = new Document({
     creator: "Markdown Formatter",
     title: "Document",
     styles: {
       default: {
         document: {
-          run: { font: FONT, size: BODY_SIZE, color: theme.body },
-          paragraph: { spacing: { line: LINE_115, after: 160 } },
+          run: { font: theme.fontFamily, size: ctx.bodySizeHalfPt, color: theme.body },
+          paragraph: { spacing: { line: ctx.lineSpacing240, after: 160 } },
         },
         heading1: {
-          run: { font: FONT, size: 40, bold: true, color: theme.heading1 }, // 20pt
-          paragraph: { spacing: { before: 360, after: 120, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading1Size), bold: true, color: theme.heading1 },
+          paragraph: { spacing: { before: 360, after: 120, line: ctx.lineSpacing240 } },
         },
         heading2: {
-          run: { font: FONT, size: 32, bold: true, color: theme.heading2 }, // 16pt
-          paragraph: { spacing: { before: 280, after: 120, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading2Size), bold: true, color: theme.heading2 },
+          paragraph: { spacing: { before: 280, after: 120, line: ctx.lineSpacing240 } },
         },
         heading3: {
-          run: { font: FONT, size: 28, bold: true, color: theme.heading3 }, // 14pt
-          paragraph: { spacing: { before: 240, after: 100, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading3Size), bold: true, color: theme.heading3 },
+          paragraph: { spacing: { before: 240, after: 100, line: ctx.lineSpacing240 } },
         },
         heading4: {
-          run: { font: FONT, size: 24, bold: true, color: theme.heading4 }, // 12pt
-          paragraph: { spacing: { before: 200, after: 80, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading4Size), bold: true, color: theme.heading4 },
+          paragraph: { spacing: { before: 200, after: 80, line: ctx.lineSpacing240 } },
         },
         heading5: {
-          run: { font: FONT, size: BODY_SIZE, bold: true, color: theme.heading5 },
-          paragraph: { spacing: { before: 160, after: 80, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading5Size), bold: true, color: theme.heading5 },
+          paragraph: { spacing: { before: 160, after: 80, line: ctx.lineSpacing240 } },
         },
         heading6: {
-          run: { font: FONT, size: BODY_SIZE, bold: true, italics: true, color: theme.heading6 },
-          paragraph: { spacing: { before: 160, after: 80, line: LINE_115 } },
+          run: { font: theme.headingFontFamily, size: ptToHalfPoints(theme.heading6Size), bold: true, italics: true, color: theme.heading6 },
+          paragraph: { spacing: { before: 160, after: 80, line: ctx.lineSpacing240 } },
         },
       },
       paragraphStyles: [
@@ -146,7 +163,7 @@ export async function buildDocx(
           basedOn: "Normal",
           next: "Normal",
           quickFormat: true,
-          run: { font: FONT_MONO, size: 20, color: theme.codeBlockColor },
+          run: { font: theme.codeFontFamily, size: 20, color: theme.codeBlockColor },
           paragraph: {
             spacing: { before: 80, after: 160, line: 260 },
             shading: { type: ShadingType.CLEAR, fill: theme.codeBlockBg, color: "auto" },
@@ -163,7 +180,8 @@ export async function buildDocx(
     sections: [{
       properties: {
         page: {
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }, // 1 inch
+          size: pageSize,
+          margin: { top: m, right: m, bottom: m, left: m },
         },
       },
       children,
@@ -201,7 +219,7 @@ async function walkNode(node: any, ctx: BuildContext): Promise<any | any[] | nul
     case "paragraph":
       return new Paragraph({
         children: await inlineRuns(node.children, ctx),
-        spacing: { after: 160, line: LINE_115 },
+        spacing: { after: 160, line: ctx.lineSpacing240 },
       });
 
     case "text":
@@ -219,7 +237,7 @@ async function walkNode(node: any, ctx: BuildContext): Promise<any | any[] | nul
         return new Paragraph({
           alignment: AlignmentType.CENTER,
           children: [new TextRun({ text: placeholder })],
-          spacing: { before: 120, after: 160, line: LINE_115 },
+          spacing: { before: 120, after: 160, line: ctx.lineSpacing240 },
         });
       }
       const omml = latexToOmml(node.value, true);
@@ -228,13 +246,13 @@ async function walkNode(node: any, ctx: BuildContext): Promise<any | any[] | nul
         return new Paragraph({
           alignment: AlignmentType.CENTER,
           children: [new TextRun({ text: placeholder })],
-          spacing: { before: 120, after: 160, line: LINE_115 },
+          spacing: { before: 120, after: 160, line: ctx.lineSpacing240 },
         });
       }
       // fallback: render latex verbatim
       return new Paragraph({
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: node.value, font: FONT_MONO, italics: true })],
+        children: [new TextRun({ text: node.value, font: ctx.theme.codeFontFamily, italics: true })],
         spacing: { before: 120, after: 160 },
       });
     }
@@ -263,7 +281,7 @@ async function walkNode(node: any, ctx: BuildContext): Promise<any | any[] | nul
             children: runs,
             indent: { left: convertInchesToTwip(0.3) },
             border: { left: { style: BorderStyle.SINGLE, size: 18, color: ctx.theme.blockquoteBorder, space: 12 } },
-            spacing: { after: 80, line: LINE_115 },
+            spacing: { after: 80, line: ctx.lineSpacing240 },
           }));
         } else {
           const r = await walkNode(child, ctx);
@@ -375,13 +393,13 @@ async function renderList(node: any, ctx: BuildContext, depth: number): Promise<
           items.push(new Paragraph({
             children: [new TextRun({ text: marker }), ...runs],
             indent: { left: leftIndent, hanging: indentStep },
-            spacing: { after: 80, line: LINE_115 },
+            spacing: { after: 80, line: ctx.lineSpacing240 },
           }));
         } else {
           items.push(new Paragraph({
             children: runs,
             indent: { left: leftIndent },
-            spacing: { after: 80, line: LINE_115 },
+            spacing: { after: 80, line: ctx.lineSpacing240 },
           }));
         }
         isFirst = false;
@@ -398,7 +416,7 @@ async function renderList(node: any, ctx: BuildContext, depth: number): Promise<
       items.push(new Paragraph({
         children: [new TextRun({ text: marker })],
         indent: { left: leftIndent, hanging: indentStep },
-        spacing: { after: 80, line: LINE_115 },
+        spacing: { after: 80, line: ctx.lineSpacing240 },
       }));
     }
   }
@@ -464,7 +482,7 @@ async function inlineRun(node: any, ctx: BuildContext): Promise<TextRun | TextRu
     case "inlineCode":
       return new TextRun({
         text: node.value,
-        font: FONT_MONO,
+        font: ctx.theme.codeFontFamily,
         color: ctx.theme.inlineCodeColor,
         shading: { type: ShadingType.CLEAR, fill: ctx.theme.inlineCodeBg, color: "auto" },
       });
@@ -482,7 +500,7 @@ async function inlineRun(node: any, ctx: BuildContext): Promise<TextRun | TextRu
         ctx.ommlMap.set(placeholder, omml);
         return new TextRun({ text: placeholder });
       }
-      return new TextRun({ text: node.value, font: FONT_MONO, italics: true });
+      return new TextRun({ text: node.value, font: ctx.theme.codeFontFamily, italics: true });
     }
 
     case "link": {
@@ -550,7 +568,7 @@ function codeBlockParagraphs(code: string, language: string = "", ctx?: BuildCon
     const color = colorForClass(tok.className, syntaxOverride);
     runs.push(new TextRun({
       text: tok.text,
-      font: FONT_MONO,
+      font: ctx?.theme.codeFontFamily ?? FONT_MONO,
       size: 20, // 10pt for code
       color,
     }));
@@ -647,7 +665,7 @@ async function buildTable(node: any, ctx: BuildContext): Promise<Table> {
       if (!hasBlock) {
         // All children are inline nodes → build one paragraph from them.
         const runs = await inlineRuns(tc.children, ctx);
-        paras = [new Paragraph({ children: runs, spacing: { after: 60, line: LINE_115 } })];
+        paras = [new Paragraph({ children: runs, spacing: { after: 60, line: ctx.lineSpacing240 } })];
       } else {
         const cellChildren = await walkChildren(tc.children, ctx);
         paras = cellChildren.length

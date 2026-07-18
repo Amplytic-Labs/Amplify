@@ -270,6 +270,15 @@ ${STARTER_TEMPLATES.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
   in a code fence. Load the \`docx\` skill (\`get_skill "docx"\`) for the full
   feature matrix before first use. NEVER generate docx-building JS or a
   workspace project for documents — always use \`<docxartifact>\`.
+
+  THEME: optionally add a \`theme={{...}}\` attribute to the opening tag to
+  customise colours, fonts, sizes, margins, page size — React Native–style
+  object (camelCase keys, quoted strings, bare numbers), all optional &
+  additive. Example:
+  \`<docxartifact theme={{ fontFamily: "Georgia", heading1: "#0B4F6C", bodyFontSize: 12, lineSpacing: 1.5 }}>\`.
+  Load the \`docx\` skill for the full field reference. Choose a theme that
+  fits the document's purpose (academic → serif + 1.5 spacing; tech spec →
+  sans-serif + compact; marketing → bold accent colours).
 </docx_instructions>
 
 <examples>
@@ -516,6 +525,14 @@ ${projectContext || 'No project context available.'}
   $$block math$$, \`\`\`mermaid diagrams, and \`\`\`chartjs charts.
   </docxartifact>
 
+  THEME (optional): add a \`theme={{...}}\` attribute to the opening tag to
+  customise the document's look — colours, fonts, sizes, margins, page size.
+  React Native–style object: camelCase keys, quoted strings, bare numbers.
+  Every field is optional & additive (omitted fields keep defaults). Example:
+  \`<docxartifact theme={{ fontFamily: "Georgia", heading1: "#0B4F6C", bodyFontSize: 12, lineSpacing: 1.5, margin: 1.25 }}>\`
+  Choose a theme that fits the content. Load the \`docx\` skill for the full
+  field reference (colour fields, typography fields, recipes).
+
   RULES:
     - The \`<docxartifact>\` block MUST be the LAST thing in your response.
       Write all prose BEFORE the tag; write NOTHING after the closing tag.
@@ -523,6 +540,8 @@ ${projectContext || 'No project context available.'}
     - Do NOT wrap the tag in a code fence — write it directly.
     - Math (\$...\$ / \$\$...\$\$) becomes native OMML Word equations.
     - Mermaid/chartjs blocks inside the document render as embedded images.
+    - The \`theme={{...}}\` attribute is optional — omit it for the default
+      professional look (Arial 11pt, black ink, 1" Letter margins).
     - Load the \`docx\` skill (call \`get_skill\` with "docx") for the full
       feature matrix and a worked example before your first use.
 

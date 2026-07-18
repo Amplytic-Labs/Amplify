@@ -41,6 +41,10 @@ export const DocxPreviewPanel = memo(() => {
   const docxState = useStore(docxArtifactStore);
   const markdown = docxState?.markdown || '';
   const isStreaming = docxState?.streaming ?? false;
+  const theme = docxState?.theme ?? null;
+  // Serialised theme for change-detection in effect deps (avoids re-fetching
+  // when the theme object identity changes but content is identical).
+  const themeKey = JSON.stringify(theme);
 
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,7 +57,7 @@ export const DocxPreviewPanel = memo(() => {
   const assetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assetsRef = useRef<DiagramAsset[]>([]);
   const assetsReadyRef = useRef(false);
-  const lastFetchedMarkdownRef = useRef('');
+  const lastFetchedKeyRef = useRef('');
 
   /*
    * Collect rendered diagram assets (mermaid SVGs + chart.js canvas PNGs)
@@ -102,8 +106,14 @@ export const DocxPreviewPanel = memo(() => {
         return;
       }
 
-      // Skip if nothing changed (avoid re-fetch on identical streaming ticks)
-      if (!force && md === lastFetchedMarkdownRef.current && assetsReadyRef.current) {
+      // Read the current theme fresh from the store on every call — the
+      // theme may have been updated since the last render (streaming ticks).
+      const currentTheme = docxArtifactStore.get()?.theme ?? null;
+      const key = md + '\u0000' + JSON.stringify(currentTheme);
+
+      // Skip if nothing changed (avoid re-fetch on identical streaming ticks).
+      // Both markdown AND theme must match the last-fetched values.
+      if (!force && key === lastFetchedKeyRef.current && assetsReadyRef.current) {
         return;
       }
 
@@ -115,7 +125,7 @@ export const DocxPreviewPanel = memo(() => {
         const res = await fetch('/api/preview-docx', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markdown: md, assets }),
+          body: JSON.stringify({ markdown: md, assets, theme: currentTheme }),
         });
 
         if (!res.ok) {
@@ -126,7 +136,7 @@ export const DocxPreviewPanel = memo(() => {
         const data = (await res.json()) as { html?: string; meta?: PreviewMeta };
         setHtml(data.html || '');
         setMeta(data.meta || null);
-        lastFetchedMarkdownRef.current = md;
+        lastFetchedKeyRef.current = key;
       } catch (e: any) {
         setError(e?.message || 'Failed to render document preview');
       } finally {
@@ -169,7 +179,7 @@ export const DocxPreviewPanel = memo(() => {
     return () => {
       if (assetTimerRef.current) clearTimeout(assetTimerRef.current);
     };
-  }, [markdown, collectAssets, fetchPreview]);
+  }, [markdown, themeKey, collectAssets, fetchPreview]);
 
   // Re-fetch with fresh assets once streaming completes (final render)
   useEffect(() => {
@@ -184,7 +194,7 @@ export const DocxPreviewPanel = memo(() => {
         if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
       };
     }
-  }, [isStreaming, markdown, collectAssets, fetchPreview]);
+  }, [isStreaming, markdown, themeKey, collectAssets, fetchPreview]);
 
   const handleDownload = useCallback(async () => {
     if (!markdown) return;
@@ -193,10 +203,11 @@ export const DocxPreviewPanel = memo(() => {
 
     try {
       const assets = collectAssets();
+      const currentTheme = docxArtifactStore.get()?.theme ?? null;
       const res = await fetch('/api/export-docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown, assets }),
+        body: JSON.stringify({ markdown, assets, theme: currentTheme }),
       });
 
       if (!res.ok) {
