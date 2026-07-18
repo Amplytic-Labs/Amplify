@@ -238,55 +238,11 @@ export const ChatImpl = memo(
     );
 
     /*
-     * CRITICAL FIX FOR AI SDK V7 INTEGRATION:
-     *
-     * Problem: The previous implementation created a new DefaultChatTransport instance
-     * whenever any dependency of customFetch changed (apiKeys, files, context, etc.).
-     * This caused useChat to detect a transport change and potentially reset its
-     * internal state or lose track of active streams.
-     *
-     * Solution: Use a ref to hold the current context values and create a stable
-     * fetch function that reads from the ref at call time. This ensures:
-     * 1. Transport is created once and never recreated
-     * 2. Always uses latest context values when making requests
-     * 3. useChat maintains stable reference throughout component lifecycle
+     * Custom fetch wrapper for AI SDK v7 transport.
+     * Enhances the request body with workspace context (apiKeys, files, etc.)
+     * before sending to /api/chat endpoint.
      */
-    const contextRef = useRef({
-      apiKeys,
-      promptId,
-      contextOptimizationEnabled,
-      chatMode,
-      designScheme,
-      supabaseConn,
-      selectedProject,
-      mcpSettings: mcpSettings.maxLLMSteps,
-      vectorUserContext,
-      projectContextForPrompt,
-      projectContinuation,
-      files,
-    });
-
-    // Keep ref updated without causing re-renders or transport recreation
-    useEffect(() => {
-      contextRef.current = {
-        apiKeys,
-        promptId,
-        contextOptimizationEnabled,
-        chatMode,
-        designScheme,
-        supabaseConn,
-        selectedProject,
-        mcpSettings: mcpSettings.maxLLMSteps,
-        vectorUserContext,
-        projectContextForPrompt,
-        projectContinuation,
-        files,
-      };
-    });
-
-    // Stable custom fetch wrapper - reads context from ref to maintain stability
-    // This function identity never changes, so transport is created only once
-    const stableCustomFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
       // Convert input to Request if needed, then extract and enhance body
       const request = input instanceof Request ? input : new Request(String(input), init);
       let body: Record<string, any>;
@@ -298,39 +254,26 @@ export const ChatImpl = memo(
         return debugFetch(request, init);
       }
       
-      const ctx = contextRef.current;
       const enhancedBody = {
         ...body,
-        apiKeys: ctx.apiKeys,
-        promptId: ctx.promptId,
-        contextOptimization: ctx.contextOptimizationEnabled,
-        chatMode: ctx.chatMode,
-        designScheme: ctx.designScheme,
+        apiKeys,
+        promptId,
+        contextOptimization: contextOptimizationEnabled,
+        chatMode,
+        designScheme,
         supabase: {
-          isConnected: ctx.supabaseConn.isConnected,
-          hasSelectedProject: !!ctx.selectedProject,
+          isConnected: supabaseConn.isConnected,
+          hasSelectedProject: !!selectedProject,
           credentials: {
-            supabaseUrl: ctx.supabaseConn?.credentials?.supabaseUrl,
-            anonKey: ctx.supabaseConn?.credentials?.anonKey,
+            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+            anonKey: supabaseConn?.credentials?.anonKey,
           },
         },
-        maxLLMSteps: ctx.mcpSettings,
-        userContext: ctx.vectorUserContext || undefined,
-        projectContext: ctx.projectContextForPrompt,
-        projectContinuation: ctx.projectContinuation,
-
-        /*
-         * CRITICAL: Send workspace files to the server with every request.
-         *
-         * The native tools (read_file, list_dir, find_files, grep_search, etc.)
-         * operate on this files map server-side. Without it, ctx.files is
-         * undefined and every read_file call returns "File not found" even
-         * though the file exists in the WebContainer.
-         *
-         * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
-         * which match what nativeTools.ts expects in getFileFromMap().
-         */
-        files: ctx.files,
+        maxLLMSteps: mcpSettings.maxLLMSteps,
+        userContext: vectorUserContext || undefined,
+        projectContext: projectContextForPrompt,
+        projectContinuation,
+        files,
       };
       
       // Create new request with enhanced body, preserving original method/headers
@@ -340,13 +283,13 @@ export const ChatImpl = memo(
         body: JSON.stringify(enhancedBody),
         credentials: request.credentials,
       }), init);
-    }, []); // Empty deps - this function is completely stable
+    }, [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
 
-    // Create transport ONCE - never recreates due to stable fetch function
+    // Create transport with custom fetch for enhanced body
     const chatTransport = useMemo(() => new DefaultChatTransport({
       api: '/api/chat',
-      fetch: stableCustomFetch,
-    }), []); // Empty deps - transport is stable for entire component lifecycle
+      fetch: customFetch,
+    }), [customFetch]);
 
     const {
       messages,
@@ -362,19 +305,9 @@ export const ChatImpl = memo(
       // AI SDK v4/v7: Use transport with custom fetch for enhanced body
       // The customFetch handles workspace files, API keys, and other context
       transport: chatTransport,
-      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
-
-      /*
-       * Enable client-side multi-step continuation. Without this, calling
-       * `addToolResult` (used for native-tool auto-approve + mutating-tool
-       * approval) would only update local state and NEVER send the result
-       * back to the server - so the server-side `execute` would never run
-       * and tools would appear to "do nothing". With maxSteps set, the AI
-       * SDK automatically fires a follow-up /api/chat request carrying the
-       * tool result, `processToolInvocations` runs the real execute, and
-       * the actual result is streamed back. Mirrors the server's maxLLMSteps.
-       */
-      ...(mcpSettings.maxLLMSteps > 0 ? { maxSteps: mcpSettings.maxLLMSteps } : {}),
+      // Pass initial messages if available (for chat history restoration)
+      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
+      
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');
@@ -1868,26 +1801,28 @@ export const ChatImpl = memo(
     }, [input, handleInputChange]);
 
     /*
-     * CRITICAL: runAnimation must set chatStarted SYNCHRONOUSLY before any async
+     * runAnimation - toggles chatStarted and runs exit animations.
+     * 
+     * CRITICAL: chatStartedRef.current is set SYNCHRONOUSLY before any async
      * operations. This ensures:
      * 1. Messages component renders immediately (not after await)
-     * 2. UI transitions happen without flicker
-     * 3. Background transparency applies before response arrives
+     * 2. UI shows chat area before AI response arrives
+     * 3. Background transitions to transparent state
+     *
+     * Matches bolt.diy pattern but with synchronous state update for reliability.
      */
     const runAnimation = async () => {
-      // Synchronous update - takes effect BEFORE first render after this call
-      if (!chatStartedRef.current) {
-        chatStartedRef.current = true;
-        setChatStartedInternal(true);
-        chatStore.setKey('started', true);
-
-        // Force synchronous update to nanostores for immediate propagation
-        // This ensures child components see the updated value without waiting
-        // for React's async batched updates
-        chatStore.setKey('started', true);
+      // Only run if not already started
+      if (chatStartedRef.current) {
+        return;
       }
 
-      // Run animations asynchronously - they don't affect message rendering
+      // SYNCHRONOUS: Set chatStarted immediately - takes effect on next render
+      chatStartedRef.current = true;
+      setChatStartedInternal(true);
+      chatStore.setKey('started', true);
+
+      // Run animations asynchronously (cosmetic only, doesn't affect rendering)
       try {
         await Promise.all([
           animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
