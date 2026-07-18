@@ -139,7 +139,9 @@ export const ChatImpl = memo(
      * never sees a stale false during the effect-to-render cycle.
      */
     const [chatStartedInternal, setChatStartedInternal] = useState((initialMessages?.length ?? 0) > 0 || showWorkbench);
-    const chatStarted = chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0;
+    // Use ref for synchronous access to avoid race condition with async state updates
+    const chatStartedRef = useRef((initialMessages?.length ?? 0) > 0 || showWorkbench);
+    const chatStarted = chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -1784,10 +1786,12 @@ export const ChatImpl = memo(
     }, [input, handleInputChange]);
 
     const runAnimation = async () => {
-      if (chatStartedInternal) {
+      if (chatStartedRef.current) {
         return;
       }
 
+      // Update ref SYNCHRONOUSLY - takes effect immediately
+      chatStartedRef.current = true;
       setChatStartedInternal(true);
       chatStore.setKey('started', true);
 
@@ -1876,7 +1880,8 @@ export const ChatImpl = memo(
 
       runAnimation();
 
-      if (!chatStarted) {
+      // Use ref for synchronous check (not stale state)
+      if (!chatStartedRef.current && !showWorkbench && (initialMessages?.length ?? 0) === 0) {
         setFakeLoading(true);
 
         // If autoSelectTemplate is disabled or template selection failed, proceed with normal message
