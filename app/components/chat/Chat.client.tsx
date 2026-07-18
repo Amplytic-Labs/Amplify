@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react';
 import type { UIMessage } from 'ai';
-import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
+import { Chat as AISDKChat, useChat } from '@ai-sdk/react';
 import { useAnimate } from 'framer-motion';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
@@ -234,6 +235,53 @@ export const ChatImpl = memo(
       [],
     );
 
+    // Create custom transport with enhanced body for workspace files, API keys, etc.
+    const customTransport = useMemo(() => new DefaultChatTransport({
+      api: '/api/chat',
+      fetch: ((request: Request, init?: RequestInit) => {
+        // Create a modified request that includes our extra body fields
+        const body: Record<string, any> = request.json() as any;
+        // Use setTimeout to make it async without async/await type issues
+        return (async () => {
+          const resolvedBody = await body;
+          const enhancedBody = {
+            ...resolvedBody,
+            apiKeys,
+            promptId,
+            contextOptimization: contextOptimizationEnabled,
+            chatMode,
+            designScheme,
+            supabase: {
+              isConnected: supabaseConn.isConnected,
+              hasSelectedProject: !!selectedProject,
+              credentials: {
+                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+                anonKey: supabaseConn?.credentials?.anonKey,
+              },
+            },
+            maxLLMSteps: mcpSettings.maxLLMSteps,
+            userContext: vectorUserContext || undefined,
+            projectContext: projectContextForPrompt,
+            projectContinuation,
+
+            /*
+             * CRITICAL: Send workspace files to the server with every request.
+             *
+             * The native tools (read_file, list_dir, find_files, grep_search, etc.)
+             * operate on this files map server-side. Without it, ctx.files is
+             * undefined and every read_file call returns "File not found" even
+             * though the file exists in the WebContainer.
+             *
+             * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
+             * which match what nativeTools.ts expects in getFileFromMap().
+             */
+            files: files,
+          };
+          return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
+        })();
+      }) as any,
+    }), [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
+
     const {
       messages,
       status,
@@ -245,48 +293,12 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      // AI SDK v4/v7: Pass API URL and custom fetch directly (NOT as nested chat object)
-      // The previous pattern of `chat: { type: 'http', ... }` was incorrect and caused
-      // "registerMessagesCallback is not a function" because useChat treated it as a Chat instance
-      api: '/api/chat',
-      fetch: async (request: Request, init?: RequestInit) => {
-        // Create a modified request that includes our extra body fields
-        const body: Record<string, any> = await request.json();
-        const enhancedBody = {
-          ...body,
-          apiKeys,
-          promptId,
-          contextOptimization: contextOptimizationEnabled,
-          chatMode,
-          designScheme,
-          supabase: {
-            isConnected: supabaseConn.isConnected,
-            hasSelectedProject: !!selectedProject,
-            credentials: {
-              supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-              anonKey: supabaseConn?.credentials?.anonKey,
-            },
-          },
-          maxLLMSteps: mcpSettings.maxLLMSteps,
-          userContext: vectorUserContext || undefined,
-          projectContext: projectContextForPrompt,
-          projectContinuation,
-
-          /*
-           * CRITICAL: Send workspace files to the server with every request.
-           *
-           * The native tools (read_file, list_dir, find_files, grep_search, etc.)
-           * operate on this files map server-side. Without it, ctx.files is
-           * undefined and every read_file call returns "File not found" even
-           * though the file exists in the WebContainer.
-           *
-           * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
-           * which match what nativeTools.ts expects in getFileFromMap().
-           */
-          files: files,
-        };
-        return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
-      },
+      // AI SDK v4/v7: Pass a properly constructed Chat instance with custom transport
+      // This ensures registerMessagesCallback and all other methods work correctly
+      chat: new AISDKChat({
+        transport: customTransport,
+        ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
+      }) as any,
 
       /*
        * Enable client-side multi-step continuation. Without this, calling
@@ -349,9 +361,7 @@ export const ChatImpl = memo(
             .catch(() => {});
         }
       },
-      // Initial messages for chat history restoration
-      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
-    } as any);
+    });
 
     // Derived: isLoading equivalent from new status API
     const isLoading = status === 'streaming' || status === 'submitted';
