@@ -1,4 +1,4 @@
-import { memo, Fragment, useMemo } from 'react';
+import { memo, Fragment, useMemo, useEffect } from 'react';
 import { Markdown } from './Markdown';
 import type { JSONValue, UIMessage } from 'ai';
 import Popover from '~/components/ui/Popover';
@@ -18,6 +18,8 @@ import { isToolPart } from '~/lib/chat/tool-parts';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
+import { extractDocxArtifact } from '~/lib/chat/docx-artifact';
+import { setDocxArtifact } from '~/lib/stores/docx-artifact';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -169,10 +171,37 @@ export const AssistantMessage = memo(
     }, [rawAnswerText, isTemplateInjection]);
 
     /*
-     * Smooth-stream only the visible answer so we never animate thought chars
-     * (or stripped artifact chars).
+     * Extract a `<docxartifact>…</docxartifact>` block (if present) from the
+     * answer text. The inner markdown is captured into the DocxArtifact store
+     * so the Document preview panel can render it as a real .docx; the block
+     * itself is stripped from the chat-visible text so it isn't shown twice.
+     *
+     * Streaming-safe: an unclosed `<docxartifact>` still yields its (partial)
+     * inner markdown so the live preview updates as content arrives.
      */
-    const smoothAnswer = useSmoothStream(answerText, isStreaming, 25);
+    const { visibleText: docxStrippedText, docxMarkdown, streaming: docxStreaming } = useMemo(
+      () => extractDocxArtifact(answerText),
+      [answerText],
+    );
+
+    /*
+     * Push the extracted document into the store + surface the Document panel
+     * in the workbench. Latest-wins: a newer message's document replaces an
+     * older one. Only acts when there's actually markdown to show.
+     */
+    useEffect(() => {
+      if (docxMarkdown) {
+        setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming);
+        workbenchStore.showWorkbench.set(true);
+        workbenchStore.currentView.set('document');
+      }
+    }, [docxMarkdown, messageId, docxStreaming]);
+
+    /*
+     * Smooth-stream only the visible answer so we never animate thought chars
+     * (or stripped artifact chars) — and never the docx block either.
+     */
+    const smoothAnswer = useSmoothStream(docxStrippedText, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
 

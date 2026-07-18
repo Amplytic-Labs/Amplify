@@ -37,7 +37,7 @@ export type ArtifactUpdateState = Pick<ArtifactState, 'title' | 'closed'>;
 
 type Artifacts = MapStore<Record<string, ArtifactState>>;
 
-export type WorkbenchViewType = 'code' | 'diff' | 'preview' | 'render';
+export type WorkbenchViewType = 'code' | 'diff' | 'preview' | 'render' | 'document';
 
 export class WorkbenchStore {
   #previewsStore = new PreviewsStore(webcontainer);

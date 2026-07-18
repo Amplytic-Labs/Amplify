@@ -322,20 +322,17 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   whileHover={{ scale: 1.02, opacity: 0.8 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--muted)] text-xs font-medium text-[var(--card-foreground)] transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--muted)] text-xs font-medium text-[var(--card-foreground)] transition-all cursor-pointer max-w-[200px] sm:max-w-[240px]"
+                  title={activeModel?.label || activeModel?.name || props.model || 'Select model'}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
-                  <span>{activeModel?.label || activeModel?.name || props.model || 'Select model'}</span>
-                  {activeModel?.maxTokenAllowed && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[9px] font-semibold font-mono leading-none">
-                      {activeModel.maxTokenAllowed >= 1000000
-                        ? `${(activeModel.maxTokenAllowed / 1000000).toFixed(1)}M`
-                        : `${Math.floor(activeModel.maxTokenAllowed / 1000)}K`}
-                    </span>
-                  )}
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)] flex-shrink-0" />
+                  <span className="truncate">
+                    {activeModel?.label?.split(' - ')[0] || activeModel?.name || props.model || 'Select model'}
+                  </span>
                   <motion.div
                     animate={{ rotate: isModelDropdownOpen ? 180 : 0 }}
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="flex-shrink-0"
                   >
                     <ChevronDown className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
                   </motion.div>
@@ -467,18 +464,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             <div className="flex items-center gap-2">
               <ContextBudgetIndicator maxTokenAllowed={activeModel?.maxTokenAllowed} messages={props.messages} />
               <SummarizationToast messages={props.messages} />
-              <AnimatePresence>
-                {props.input.length > 0 && (
-                  <motion.span
-                    initial={{ opacity: 0, x: 5 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 5 }}
-                    className="hidden sm:inline text-[10px] text-[var(--muted-foreground)] font-mono px-1"
-                  >
-                    {props.input.length} chars
-                  </motion.span>
-                )}
-              </AnimatePresence>
 
               <motion.button
                 whileHover={

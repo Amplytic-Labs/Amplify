@@ -254,6 +254,24 @@ ${STARTER_TEMPLATES.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
   again ends with the new chart block.
 </visualization_instructions>
 
+<docx_instructions>
+  You can produce a downloadable Word (.docx) document directly in chat — no
+  workspace, no script, no install — by wrapping the full document markdown in
+  a \`<docxartifact>\` tag. The system renders the inner markdown as a real
+  Word file (native OMML equations, embedded diagrams, tables) in a Document
+  panel with a one-click download. ~70% cheaper than generating docx code.
+
+  WHEN: user asks for a document, report, paper, letter, resume, .docx, Word
+  file, or any written deliverable for Word/Google Docs.
+
+  HOW: brief intro, then ONE \`<docxartifact>\` block with the full document as
+  markdown (GFM + KaTeX math + mermaid + chartjs). The block MUST be the LAST
+  thing in your response — no text after the closing tag. Do NOT wrap the tag
+  in a code fence. Load the \`docx\` skill (\`get_skill "docx"\`) for the full
+  feature matrix before first use. NEVER generate docx-building JS or a
+  workspace project for documents — always use \`<docxartifact>\`.
+</docx_instructions>
+
 <examples>
   <example>
     <user_query>Start with a basic vanilla Vite template and do nothing. I will tell you in my next message what to do.</user_query>
@@ -475,6 +493,42 @@ ${projectContext || 'No project context available.'}
   If the user asks a follow-up that needs another chart, the new response
   again ends with the new chart block.
 </visualization_instructions>
+
+<docx_instructions>
+  You can produce a downloadable Word (.docx) document directly in chat — no
+  workspace, no script, no install — by wrapping the full document markdown in
+  a \`<docxartifact>\` tag. The system renders the inner markdown as a real
+  Word file (with native equations, embedded diagrams, tables) in a Document
+  panel and offers a one-click download. This is ~70% cheaper than generating
+  docx-building code.
+
+  WHEN: the user asks for a document, report, paper, letter, resume, .docx,
+  Word file, or any written deliverable they'd open in Word/Google Docs.
+
+  HOW: write a brief one-sentence intro, then emit ONE \`<docxartifact>\` block
+  containing the entire document as standard markdown (GFM + KaTeX math):
+
+  <docxartifact>
+  # Document Title
+
+  Your full markdown here. Supports: headings, **bold**, *italic*, lists,
+  tables, blockquotes, \`code\`, code blocks, images, $inline math$,
+  $$block math$$, \`\`\`mermaid diagrams, and \`\`\`chartjs charts.
+  </docxartifact>
+
+  RULES:
+    - The \`<docxartifact>\` block MUST be the LAST thing in your response.
+      Write all prose BEFORE the tag; write NOTHING after the closing tag.
+    - ONE tag per document. Put ALL content inside it.
+    - Do NOT wrap the tag in a code fence — write it directly.
+    - Math (\$...\$ / \$\$...\$\$) becomes native OMML Word equations.
+    - Mermaid/chartjs blocks inside the document render as embedded images.
+    - Load the \`docx\` skill (call \`get_skill\` with "docx") for the full
+      feature matrix and a worked example before your first use.
+
+  DO NOT generate docx-building JavaScript, install the \`docx\` npm package,
+  or create a workspace project for documents. Always use \`<docxartifact>\`.
+</docx_instructions>
 
 <optimized_tool_selection>
   Choose the RIGHT tool for each job — this saves tokens and round-trips:

@@ -1,0 +1,156 @@
+/*
+ * Styling for the DOCX preview panel's rendered HTML.
+ *
+ * The /api/preview-docx route builds a real .docx from the chat markdown,
+ * converts it back to HTML with mammoth, post-processes math (KaTeX) + lists
+ * + tables, and returns the HTML. This stylesheet makes that HTML look like
+ * a clean Word document page (Arial 11pt, proper heading sizes, table
+ * borders, code shading) so the preview faithfully represents the downloaded
+ * .docx file.
+ */
+
+.docx-preview-content {
+  font-family: Arial, 'Liberation Sans', sans-serif;
+  font-size: 11pt;
+  line-height: 1.5;
+  color: #1a1a1a;
+
+  h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    margin: 18pt 0 8pt;
+    line-height: 1.2;
+  }
+
+  h2 {
+    font-size: 16pt;
+    font-weight: 700;
+    margin: 14pt 0 6pt;
+    line-height: 1.25;
+  }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 12pt 0 4pt;
+  }
+
+  h4 {
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 10pt 0 4pt;
+  }
+
+  h5,
+  h6 {
+    font-size: 11pt;
+    font-weight: 700;
+    font-style: italic;
+    margin: 8pt 0 4pt;
+  }
+
+  p {
+    margin: 0 0 8pt;
+  }
+
+  ul,
+  ol {
+    margin: 0 0 8pt;
+    padding-left: 24pt;
+
+    ul,
+    ol {
+      margin: 4pt 0;
+    }
+  }
+
+  li {
+    margin: 2pt 0;
+  }
+
+  blockquote {
+    margin: 8pt 0;
+    padding: 4pt 12pt;
+    border-left: 3px solid #ccc;
+    color: #555;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8pt 0;
+    font-size: 10.5pt;
+
+    th,
+    td {
+      border: 1px solid #999;
+      padding: 4pt 8pt;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f0f0f0;
+      font-weight: 700;
+    }
+
+    thead {
+      th {
+        border-bottom: 2px solid #666;
+      }
+    }
+  }
+
+  pre {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 8pt 12pt;
+    margin: 8pt 0;
+    font-family: 'Consolas', 'Liberation Mono', monospace;
+    font-size: 9.5pt;
+    line-height: 1.4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  code {
+    font-family: 'Consolas', 'Liberation Mono', monospace;
+    font-size: 10pt;
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  a {
+    color: #0563c1;
+    text-decoration: underline;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    margin: 8pt 0;
+    display: block;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #ccc;
+    margin: 12pt 0;
+  }
+
+  /* KaTeX math — both inline and display */
+  .katex {
+    font-size: 1.05em;
+  }
+
+  .katex-display {
+    margin: 10pt 0;
+    text-align: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2pt 0;
+  }
+}

@@ -20,11 +20,13 @@ import { renderLogger } from '~/utils/logger';
 import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
 import { RenderPanel } from './RenderPanel';
+import { DocxPreviewPanel } from './DocxPreviewPanel';
 import { findRenderableFiles } from '~/lib/renderable/registry';
 import useViewport from '~/lib/hooks';
 
 import { usePreviewStore } from '~/lib/stores/previews';
 import { chatStore } from '~/lib/stores/chat';
+import { docxArtifactStore } from '~/lib/stores/docx-artifact';
 import type { ElementInfo } from './Inspector';
 import { streamingState } from '~/lib/stores/streaming';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -317,6 +319,14 @@ export const Workbench = memo(
     );
 
     /*
+     * A chat-generated `<docxartifact>` document. The Document view must be
+     * reachable even when the workspace has NO files (a pure document chat
+     * with no project), so this is tracked separately from `hasFiles`.
+     */
+    const docxArtifact = useStore(docxArtifactStore);
+    const hasDocx = !!docxArtifact?.markdown;
+
+    /*
      * Show the "Initializing project…" veil ONLY during the initial workspace
      * bootstrapping — i.e. while the AI is streaming AND no files have been
      * written to the WebContainer yet. Once files exist the project is
@@ -326,7 +336,7 @@ export const Workbench = memo(
      * for projects that don't expose a preview port, hiding the editor the
      * user was trying to look at.
      */
-    const showVeil = streaming && !hasFiles;
+    const showVeil = streaming && !hasFiles && !hasDocx;
 
     // Check if ANY file in the workspace is renderable (for tab visibility).
     const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
@@ -509,7 +519,7 @@ export const Workbench = memo(
           >
             <div className="h-full ">
               <div className="h-full flex flex-col bg-amplify-elements-background-depth-2  overflow-hidden">
-                {!hasFiles && showWorkbench && (
+                {!hasFiles && !hasDocx && showWorkbench && (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="flex flex-col items-center gap-3 text-amplify-elements-textTertiary">
                       <div className="i-ph:folder-open text-3xl" />
@@ -517,7 +527,7 @@ export const Workbench = memo(
                     </div>
                   </div>
                 )}
-                {hasFiles && (
+                {(hasFiles || hasDocx) && (
                 <div className="relative flex-1 overflow-hidden">
                   <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
                     <EditorPanel
@@ -554,6 +564,9 @@ export const Workbench = memo(
                   </View>
                   <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
                     <RenderPanel />
+                  </View>
+                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'document' ? '0%' : '100%' }}>
+                    <DocxPreviewPanel />
                   </View>
                 </div>
                 )}
