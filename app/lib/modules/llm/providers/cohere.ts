@@ -1,7 +1,7 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
+import type { LanguageModel } from 'ai';
 import { createCohere } from '@ai-sdk/cohere';
 
 export default class CohereProvider extends BaseProvider {

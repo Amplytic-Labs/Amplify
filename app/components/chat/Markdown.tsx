@@ -7,7 +7,7 @@ import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
 import { FilePill } from './copilot/FilePill';
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import styles from './Markdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
 

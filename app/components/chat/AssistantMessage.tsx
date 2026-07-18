@@ -6,7 +6,7 @@ import { useSmoothStream } from '~/utils/useSmoothStream';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
 import WithTooltip from '~/components/ui/Tooltip';
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import type { ProviderInfo } from '~/types/model';
 import type {
   TextUIPart,

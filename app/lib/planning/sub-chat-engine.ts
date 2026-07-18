@@ -45,7 +45,7 @@ import { planStore } from './plan-store';
 import { projectContextStore } from '~/lib/vector-store/project-context-store';
 import { userProfileStore } from '~/lib/vector-store/user-profile-store';
 import { runVerification } from '~/lib/verification/runner';
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { ExecutionManager } from './execution-manager';
 import { ExecutionStateManager } from './execution-state';
 import { CheckpointManager } from './checkpoint';

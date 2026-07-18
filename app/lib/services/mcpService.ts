@@ -774,7 +774,7 @@ export class MCPService {
             const toolContext = {
               files: liveFiles,
               toolCallId,
-              messages: convertToModelMessages(messages),
+              messages: await convertToModelMessages(messages),
             };
             result = await toolInstance.execute(toolInvocation.args, toolContext);
 

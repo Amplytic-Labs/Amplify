@@ -98,7 +98,7 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
     // Handle streaming errors in a non-blocking way
     (async () => {
       try {
-        for await (const part of result.fullStream) {
+        for await (const part of result.stream) {
           if (part.type === 'error') {
             const error: any = part.error;
             logger.error('Streaming error:', error);

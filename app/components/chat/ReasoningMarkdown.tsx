@@ -5,7 +5,7 @@ import { createScopedLogger } from '~/utils/logger';
 import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markdown';
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import styles from './ReasoningMarkdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
 

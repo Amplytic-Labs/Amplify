@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { generateId } from './fileUtils';
 import { detectProjectCommands, createCommandsMessage, escapeAmplifyTags } from './projectCommands';
 

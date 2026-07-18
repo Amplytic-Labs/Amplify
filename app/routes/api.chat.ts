@@ -208,7 +208,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             providerSettings,
             promptId,
             contextOptimization,
-            onFinish(resp) {
+            onEnd(resp) {
               if (resp.usage) {
                 const u = resp.usage as any;
                 logger.debug('createSummary token usage', JSON.stringify(resp.usage));
@@ -253,7 +253,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             promptId,
             contextOptimization,
             summary,
-            onFinish(resp) {
+            onEnd(resp) {
               if (resp.usage) {
                 const u = resp.usage as any;
                 logger.debug('selectContext token usage', JSON.stringify(resp.usage));
@@ -303,7 +303,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               mcpService.processToolCall(toolCall, writer);
             });
           },
-          onFinish: async ({ text: content, finishReason, usage }) => {
+          onEnd: async ({ text: content, finishReason, usage }) => {
             logger.debug('usage', JSON.stringify(usage));
 
             if (usage) {
@@ -377,7 +377,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             writer.merge(result.toUIMessageStream({ sendReasoning: true }));
 
             (async () => {
-              for await (const part of result.fullStream) {
+              for await (const part of result.stream) {
                 if (part.type === 'error') {
                   const error: any = part.error;
                   logger.error(`${error}`);
@@ -427,7 +427,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         });
 
         (async () => {
-          for await (const part of result.fullStream) {
+          for await (const part of result.stream) {
             streamRecovery.updateActivity();
 
             if (part.type === 'error') {

@@ -21,7 +21,7 @@
  *   - The last few messages (kept verbatim via messageSliceId)
  */
 
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import type { IProviderSetting } from '~/types/model';
 import { countTokens } from '~/lib/utils/token-counter';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';

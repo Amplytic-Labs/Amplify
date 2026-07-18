@@ -486,7 +486,7 @@ export async function streamText(props: {
     model: modelInstance,
     system: chatMode === 'build' ? systemPrompt : discussPrompt(),
     ...tokenParams,
-    messages: convertToModelMessages(processedMessages as any),
+    messages: await convertToModelMessages(processedMessages as any),
     ...filteredOptions,
 
     tools: {
