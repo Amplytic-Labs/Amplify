@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { fetchWebPage } from '~/lib/utils/web-fetch';
 import { getTemplates } from '~/utils/selectStarterTemplate';
 import { SkillLoader } from '~/lib/services/skillLoader';
+import { stripChatName } from '~/lib/chat/chatname';
 
 export type Messages = UIMessage[];
 
@@ -214,14 +215,29 @@ export async function streamText(props: {
       const textContent = Array.isArray(message.parts)
         ? message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
         : (message as any).content || '';
-      (newMessage as any).content = sanitizeText(textContent);
+      /*
+       * Strip any `<chatname>…</chatname>` tag the model emitted on a
+       * PREVIOUS turn. The tag is a one-shot naming signal consumed by
+       * the client on the first response; it must NEVER be re-sent to
+       * the model on subsequent turns (the model should not "see" its
+       * own prior chatname, and the user should never see it either).
+       */
+      (newMessage as any).content = sanitizeText(stripChatName(textContent));
     }
 
     // Sanitize all text parts in parts array, if present
     if (Array.isArray(message.parts)) {
       newMessage.parts = message.parts.map((part) => {
         if (part.type === 'text') {
-          return { ...part, text: sanitizeText(part.text) };
+          /*
+           * For ASSISTANT text parts, also strip `<chatname>` tags so the
+           * one-shot naming signal never leaks back into the model's
+           * context on subsequent turns. (For user parts this is a no-op
+           * since users never emit the tag.)
+           */
+          const stripped = message.role === 'assistant' ? stripChatName(part.text) : part.text;
+
+          return { ...part, text: sanitizeText(stripped) };
         }
 
         /*
@@ -448,6 +464,51 @@ export async function streamText(props: {
   - Do NOT re-explain the project setup, re-run install, or re-inject 
     templates unless the user explicitly asks for it.
 </project_continuation>
+    `;
+  }
+
+  /*
+   * ONE-SHOT CHAT NAMING (token-efficient method).
+   *
+   * On the FIRST user turn of a brand-new chat (i.e. there are NO prior
+   * assistant messages in the conversation), append a short instruction
+   * asking the model to prepend `<chatname>name</chatname>` to its
+   * response. The client extracts the name from that tag and uses it as
+   * the chat / project title — NO separate AI call, NO extra round-trip.
+   *
+   * The instruction is SILENT on every subsequent turn:
+   *   - It is only appended when `isFirstMessage` is true (no assistant
+   *     messages yet), so it costs zero tokens on turn 2+.
+   *   - The `<chatname>` tag the model emits is stripped from prior
+   *     assistant messages (see `stripChatName` above) before they are
+   *     re-sent, so the model never "sees" its own previous chatname.
+   *
+   * This replaces the old `/api/chat-title` endpoint which made a whole
+   * second LLM call just to name the chat.
+   */
+  const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
+
+  if (isFirstMessage && chatMode === 'build') {
+    systemPrompt = `${systemPrompt}
+
+<chat_naming>
+  This is the FIRST message of a new conversation. Before your actual
+  answer, output a single line of the form:
+
+      <chatname>a short 2-6 word title for this chat</chatname>
+
+  Rules for the title:
+  - 2 to 6 words, no quotes, no trailing punctuation.
+  - Title Case (capitalize major words).
+  - Capture the core intent of the user's request.
+  - If the user's message is a bare greeting ("hi", "hello"), use
+    "New Conversation".
+  - Output the tag ONCE, at the very start of your response, then
+    continue with your normal answer (markdown / artifacts / tool calls).
+  - Do NOT mention the tag or the title to the user in your answer text.
+  - Do NOT output this tag again in any future message — only this first
+    response.
+</chat_naming>
     `;
   }
 

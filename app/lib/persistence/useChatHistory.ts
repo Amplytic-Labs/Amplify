@@ -26,7 +26,7 @@ import { detectProjectCommands } from '~/utils/projectCommands';
 import { projectStore } from './project-store';
 import { getProjectFiles, createProjectCommit } from './project-files';
 import { runProjectAutoSetup } from './project-auto-run';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';
+import { extractChatName } from '~/lib/chat/chatname';
 
 export interface ChatHistoryItem {
   id: string;
@@ -47,75 +47,30 @@ export const chatMetadata = atom<IChatMetadata | undefined>(undefined);
 
 export const chatListVersion = atom(0);
 
-const _titleGenerationStarted = new Set<string>();
-
-async function generateChatTitle(_chatId: string, firstMessage: string): Promise<string | null> {
-  try {
-    let model = DEFAULT_MODEL;
-    let provider: { name: string } = { name: DEFAULT_PROVIDER.name };
-
-    const getCookie = (name: string): string | null => {
-      const match = document.cookie.split('; ').find((c) => c.startsWith(`${name}=`));
-
-      if (!match) {
-        return null;
-      }
-
-      try {
-        return decodeURIComponent(match.split('=').slice(1).join('='));
-      } catch {
-        return null;
-      }
-    };
-
-    const modelCookie = getCookie('selectedModel');
-
-    if (modelCookie) {
-      model = modelCookie;
-    }
-
-    const providerCookie = getCookie('selectedProvider');
-
-    if (providerCookie) {
-      const found = PROVIDER_LIST.find((p) => p.name === providerCookie);
-
-      if (found) {
-        provider = found;
-      } else {
-        provider = { name: providerCookie };
-      }
-    }
-
-    let apiKeys: Record<string, string> = {};
-
-    try {
-      const stored = localStorage.getItem('apiKeys');
-
-      if (stored) {
-        apiKeys = JSON.parse(stored);
-      }
-    } catch {
-      // ignore
-    }
-
-    const response = await fetch('/api/chat-title', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: firstMessage, model, provider, apiKeys }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data: any = await response.json();
-
-    return data.title || null;
-  } catch (e) {
-    console.warn('[ChatHistory] generateChatTitle error:', e);
-    return null;
-  }
-}
+/*
+ * Module-level guard that prevents the project-load IIFE (the
+ * `clearWorkspace → restoreFileMap → runProjectAutoSetup` chain) from
+ * running TWICE for the same project within a single page session.
+ *
+ * WHY THIS EXISTS:
+ * After cloning a repo, `importChat` navigates to `/${projectId}/${chatId}`
+ * which triggers a full page reload. On reload, the load effect fires and
+ * starts the IIFE. The IIFE is ASYNC — between `clearWorkspace()` and
+ * `loadedProjectId.set(project.id)` there is a window where the effect can
+ * re-fire (e.g. when `Chat.client.tsx` strips a `prompt` query param via
+ * `setSearchParams({})`). At that point `loadedProjectId` is still the old
+ * value, so `projectChanged === true` and a SECOND IIFE starts.
+ *
+ * The second IIFE's `clearWorkspace()` sends Ctrl+C to the first `npm install`
+ * (which is still running), then `runProjectAutoSetup()` re-injects `npm install`
+ * — producing the "auto injected → stopped (^C) → injected again" redundancy.
+ *
+ * This guard makes the second IIFE a no-op for the same project. It is cleared
+ * as soon as the first IIFE sets `loadedProjectId` (after which `projectChanged`
+ * is false anyway), and in a `finally` block for safety. It does NOT block a
+ * genuine project switch (different project id) — only same-project re-entries.
+ */
+let _projectLoadingInProgress: string | undefined;
 
 export function useChatHistory() {
   const matches = useMatches();
@@ -393,49 +348,72 @@ export function useChatHistory() {
           const projectChanged = currentLoadedProjectId !== project.id;
 
           if (projectChanged) {
-            console.log(
-              '[ChatHistory] Project changed:',
-              currentLoadedProjectId,
-              '→',
-              project.id,
-              '(destroying + rebuilding workspace)',
-            );
+            /*
+             * Same-project re-entry guard: if an IIFE for THIS project is
+             * already in flight (between clearWorkspace and setting
+             * loadedProjectId), skip — otherwise the second IIFE's
+             * clearWorkspace would Ctrl+C the first npm install and
+             * re-inject it (the "injected → stopped → injected again"
+             * redundancy). See `_projectLoadingInProgress` docs above.
+             */
+            if (_projectLoadingInProgress === project.id) {
+              console.log('[ChatHistory] Project load already in progress for', project.id, '— skipping duplicate');
+            } else {
+              _projectLoadingInProgress = project.id;
 
-            (async () => {
-              try {
-                /*
-                 * DESTROY + REINITIALIZE the workspace — only when the
-                 * project actually changed. This kills the previous
-                 * project's dev server, clears its files from the
-                 * WebContainer FS, and resets projectAutoStarted so the
-                 * new project's npm install + start will fire.
-                 */
-                await workbenchStore.clearWorkspace();
+              console.log(
+                '[ChatHistory] Project changed:',
+                currentLoadedProjectId,
+                '→',
+                project.id,
+                '(destroying + rebuilding workspace)',
+              );
 
-                const projectFiles = await getProjectFiles(db, project.id);
-                console.log(
-                  '[ChatHistory] Project files retrieved:',
-                  projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
-                  'files',
-                );
+              (async () => {
+                try {
+                  /*
+                   * DESTROY + REINITIALIZE the workspace — only when the
+                   * project actually changed. This kills the previous
+                   * project's dev server, clears its files from the
+                   * WebContainer FS, and resets projectAutoStarted so the
+                   * new project's npm install + start will fire.
+                   */
+                  await workbenchStore.clearWorkspace();
 
-                if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
-                  await restoreFileMap(projectFiles.files);
-                  workbenchStore.files.set(projectFiles.files);
-                } else {
-                  console.warn('[ChatHistory] No files found for project:', project.id);
-                  workbenchStore.files.set({});
+                  const projectFiles = await getProjectFiles(db, project.id);
+                  console.log(
+                    '[ChatHistory] Project files retrieved:',
+                    projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
+                    'files',
+                  );
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                  } else {
+                    console.warn('[ChatHistory] No files found for project:', project.id);
+                    workbenchStore.files.set({});
+                  }
+
+                  workbenchStore.loadedProjectId.set(project.id);
+                  workbenchStore.showWorkbench.set(true);
+
+                  /*
+                   * Loading is complete — clear the guard so a genuine
+                   * future switch to a DIFFERENT project can proceed.
+                   * (Same-project re-entries are now blocked by
+                   * `projectChanged === false` anyway.)
+                   */
+                  _projectLoadingInProgress = undefined;
+
+                  console.log('[ChatHistory] Running auto setup for project:', project.id);
+                  runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
+                } catch (e) {
+                  console.error('[ChatHistory] Immediate project load failed:', e);
+                  _projectLoadingInProgress = undefined;
                 }
-
-                workbenchStore.loadedProjectId.set(project.id);
-                workbenchStore.showWorkbench.set(true);
-
-                console.log('[ChatHistory] Running auto setup for project:', project.id);
-                runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
-              } catch (e) {
-                console.error('[ChatHistory] Immediate project load failed:', e);
-              }
-            })();
+              })();
+            }
           } else {
             /*
              * Same project — workspace is already loaded. Just ensure the
@@ -905,104 +883,145 @@ export function useChatHistory() {
         chatMetadata.get(),
       );
 
-      const firstUserMessage = messages.find((m) => m.role === 'user');
       const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
 
-      if (firstUserMessage) {
-        // AI SDK v7: extract content from parts or fallback to legacy content
-        let rawContent: any;
-        if (Array.isArray(firstUserMessage.parts)) {
-          rawContent = firstUserMessage.parts;
-        } else {
-          rawContent = (firstUserMessage as any).content;
-        }
-        let userText: string =
-          typeof rawContent === 'string'
-            ? rawContent
-            : Array.isArray(rawContent)
-              ? rawContent
-                  .filter((p: any) => p.type === 'text')
-                  .map((p: any) => p.text)
-                  .join(' ')
-              : '';
+      /*
+       * NEW chat-naming method (token-efficient, no separate AI call).
+       *
+       * The system prompt asks the AI to prepend a `<chatname>…</chatname>`
+       * tag to its FIRST response. Here we extract that tag from the first
+       * assistant message and use it as the chat description (and rename
+       * the linked project if its name is still a default/placeholder).
+       *
+       * `extractChatName` returns null while the tag is still streaming
+       * (closing tag not yet seen), so this is safe to run on every tick
+       * — it only commits a name once the tag is complete. Once committed,
+       * the subsequent `setMessages` calls below re-save the (now-named)
+       * chat, and later ticks find no new `<chatname>` (the tag is stripped
+       * from stored messages by stream-text.ts) so they no-op.
+       *
+       * The old method (a separate POST to /api/chat-title that fired a
+       * whole second LLM call) has been removed.
+       */
+      if (firstAssistantMessage) {
+        const assistantText = Array.isArray(firstAssistantMessage.parts)
+          ? firstAssistantMessage.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+          : (firstAssistantMessage as any).content || '';
 
-        userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
+        const chatName = extractChatName(assistantText);
 
-        if (!firstArtifact && !description.get()) {
-          const provisionalTitle =
-            userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '') || 'New Conversation';
-          description.set(provisionalTitle);
+        if (chatName) {
+          const currentDesc = description.get() || '';
 
-          await setMessages(
-            db,
-            finalChatId,
-            [...archivedMessages, ...messages],
-            _finalUrlId,
-            description.get(),
-            undefined,
-            chatMetadata.get(),
-          );
-        }
+          /*
+           * Only apply the extracted name if the current description is
+           * empty or a default/placeholder. This avoids clobbering a name
+           * the user manually set, or a name set by an artifact title
+           * (firstArtifact.title) for AI-injected templates.
+           */
+          const isRenameableDesc =
+            !currentDesc ||
+            currentDesc === 'Create initial files' ||
+            currentDesc === 'Untitled Project' ||
+            currentDesc === 'New project chat' ||
+            currentDesc === 'New Conversation' ||
+            currentDesc === 'Imported Project' ||
+            /^Start with .+ Template$/.test(currentDesc) ||
+            /^Git Project:/i.test(currentDesc);
 
-        if (firstAssistantMessage && !_titleGenerationStarted.has(finalChatId)) {
-          _titleGenerationStarted.add(finalChatId);
+          const firstArtifactTitle = firstArtifact?.title;
+          const descIsArtifactTitle = firstArtifactTitle && currentDesc === firstArtifactTitle;
+          const shouldApply = isRenameableDesc || !!descIsArtifactTitle;
 
-          generateChatTitle(finalChatId, userText)
-            .then((title) => {
-              if (!title || chatId.get() !== finalChatId) {
-                return;
-              }
+          if (shouldApply && chatName !== currentDesc) {
+            description.set(chatName);
 
-              const currentDesc = description.get() || '';
-              const isDefaultPlaceholder =
-                !currentDesc ||
-                currentDesc === 'Create initial files' ||
-                currentDesc === 'Untitled Project' ||
-                currentDesc === 'New project chat' ||
-                currentDesc === 'New Conversation';
+            await setMessages(
+              db,
+              finalChatId,
+              [...archivedMessages, ...messages],
+              _finalUrlId,
+              chatName,
+              undefined,
+              chatMetadata.get(),
+            );
 
-              const shouldApply = !firstArtifact || isDefaultPlaceholder;
+            chatListVersion.set(chatListVersion.get() + 1);
 
-              if (!shouldApply) {
-                return;
-              }
+            /*
+             * Rename the linked project too, so the sidebar / project list
+             * reflects the AI-provided name. Only rename if the project's
+             * current name is itself a default/placeholder (produced by
+             * chatNameForRepo or the promote path) — never clobber a name
+             * the user explicitly set.
+             */
+            try {
+              const linkedProject = projectStore.getProjectByChat(finalChatId);
 
-              description.set(title);
+              if (linkedProject) {
+                const isDefaultProjectName =
+                  linkedProject.name === 'Create initial files' ||
+                  linkedProject.name === 'Untitled Project' ||
+                  linkedProject.name === 'New project chat' ||
+                  linkedProject.name === 'Imported Project' ||
+                  /^Project \d+$/.test(linkedProject.name) ||
+                  /^Start with .+ Template$/.test(linkedProject.name) ||
+                  /^Git Project:/i.test(linkedProject.name);
 
-              setMessages(
-                db,
-                finalChatId,
-                [...archivedMessages, ...messages],
-                _finalUrlId,
-                title,
-                undefined,
-                chatMetadata.get(),
-              ).then(() => {
-                chatListVersion.set(chatListVersion.get() + 1);
-
-                try {
-                  const linkedProject = projectStore.getProjectByChat(finalChatId);
-
-                  if (linkedProject) {
-                    const isDefaultProjectName =
-                      linkedProject.name === 'Create initial files' ||
-                      linkedProject.name === 'Untitled Project' ||
-                      linkedProject.name === 'New project chat' ||
-                      /^Project \d+$/.test(linkedProject.name);
-
-                    if (isDefaultProjectName) {
-                      projectStore.updateProject(linkedProject.id, { name: title });
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[ChatHistory] Failed to rename project after title gen:', e);
+                if (isDefaultProjectName) {
+                  projectStore.updateProject(linkedProject.id, { name: chatName });
                 }
-              });
-            })
-            .catch((e) => {
-              console.warn('[ChatHistory] Title generation failed:', e);
-              _titleGenerationStarted.delete(finalChatId);
-            });
+              }
+            } catch (e) {
+              console.warn('[ChatHistory] Failed to rename project from chatname tag:', e);
+            }
+          }
+        } else if (!description.get() && !firstArtifact) {
+          /*
+           * Brief provisional title so the chat appears in the sidebar
+           * immediately while the AI's first response (containing the
+           * `<chatname>` tag) is still streaming. This is replaced as
+           * soon as the `<chatname>` tag arrives (above). If the model
+           * never emits the tag, this truncated user text remains as a
+           * reasonable fallback name.
+           */
+          const firstUserMessage = messages.find((m) => m.role === 'user');
+
+          if (firstUserMessage) {
+            let rawContent: any;
+
+            if (Array.isArray(firstUserMessage.parts)) {
+              rawContent = firstUserMessage.parts;
+            } else {
+              rawContent = (firstUserMessage as any).content;
+            }
+
+            let userText: string =
+              typeof rawContent === 'string'
+                ? rawContent
+                : Array.isArray(rawContent)
+                  ? rawContent
+                      .filter((p: any) => p.type === 'text')
+                      .map((p: any) => p.text)
+                      .join(' ')
+                  : '';
+
+            userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
+
+            const provisionalTitle =
+              userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '') || 'New Conversation';
+            description.set(provisionalTitle);
+
+            await setMessages(
+              db,
+              finalChatId,
+              [...archivedMessages, ...messages],
+              _finalUrlId,
+              description.get(),
+              undefined,
+              chatMetadata.get(),
+            );
+          }
         }
       }
 
@@ -1053,8 +1072,22 @@ export function useChatHistory() {
 
         if (metadata?.projectId) {
           projectId = metadata.projectId;
-        } else if (description.startsWith('Git Project:')) {
-          const projectName = description.replace('Git Project:', '').trim();
+        } else if (initialFileMap && Object.keys(initialFileMap).length > 0) {
+          /*
+           * Create a project whenever files are being imported (git clone
+           * or starter template). The `description` is already a clean,
+           * human-readable name (e.g. "Start with Expo Template") produced
+           * by `chatNameForRepo` — it is used as the initial project name.
+           *
+           * This replaces the old `description.startsWith('Git Project:')`
+           * check, which forced an ugly `Git Project:Expo-Starter-Template.git`
+           * name into both the chat description and the project name.
+           *
+           * Backward compat: if an old chat has a description that still
+           * starts with `Git Project:`, strip the prefix so the stored
+           * project name is clean.
+           */
+          const projectName = description.replace(/^Git Project:/i, '').trim() || 'Imported Project';
           const project = projectStore.createProject({
             name: projectName,
             hasWorkspace: true,

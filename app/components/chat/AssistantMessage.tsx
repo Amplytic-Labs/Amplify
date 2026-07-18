@@ -18,6 +18,7 @@ import type {
 } from '@ai-sdk/ui-utils';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
+import { stripChatName } from '~/lib/chat/chatname';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -112,13 +113,25 @@ export const AssistantMessage = memo(
     ) || []) as { type: string; value: any } & { [key: string]: any }[];
 
     /*
+     * Strip the one-shot `<chatname>…</chatname>` naming tag from the
+     * streamed content BEFORE any parsing/rendering. The tag is a hidden
+     * signal consumed by `useChatHistory` to name the chat — the user must
+     * never see it. Streaming-safe: an unclosed `<chatname>` (still
+     * streaming) is also dropped so no partial name leaks to the UI.
+     */
+    const visibleContent = useMemo(() => stripChatName(content), [content]);
+
+    /*
      * Parse `<thought>` tags out of the streamed content. The answer text
      * (everything outside the tags) feeds the typewriter + markdown body;
      * the thought text feeds the collapsible panel. Re-runs every tick
      * during streaming — cheap (a single indexOf scan).
      */
-    const { thoughtText, answerText: rawAnswerText, hasThoughts } = useMemo(() => parseThoughts(content), [content]);
-    const thoughtStreaming = useMemo(() => isThoughtStreaming(content), [content]);
+    const { thoughtText, answerText: rawAnswerText, hasThoughts } = useMemo(
+      () => parseThoughts(visibleContent),
+      [visibleContent],
+    );
+    const thoughtStreaming = useMemo(() => isThoughtStreaming(visibleContent), [visibleContent]);
 
     /*
      * SEVER the template-injected artifact trace-tree from the chat while
@@ -313,7 +326,7 @@ export const AssistantMessage = memo(
          * Copilot-style hover action bar: 👍 👎 | 📋 ↻ 🔊 + token-usage pill.
          * Hidden while streaming; fades in on group-hover.
          */}
-        <AnswerActions content={content} usage={usage} isStreaming={isStreaming} onRegenerate={onRegenerate} />
+        <AnswerActions content={visibleContent} usage={usage} isStreaming={isStreaming} onRegenerate={onRegenerate} />
       </div>
     );
   },

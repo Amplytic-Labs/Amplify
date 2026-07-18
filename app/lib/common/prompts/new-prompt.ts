@@ -290,10 +290,6 @@ ${projectContext || 'No project context available.'}
   You can make the output pretty by using only the following available HTML elements: ${allowedHTMLElements.map((tagName) => `<${tagName}>`).join(', ')}
 </message_formatting_info>
 
-<chain_of_thought_instructions>
-  Before providing a solution, think step by step INSIDE a \`<thought>…</thought>\` block (see <response_formatting> below for the exact contract). Keep the thought concise: a short plan, the files you'll touch, and any key decisions. Then give the user-facing answer AFTER the closing \`</thought>\` tag.
-</chain_of_thought_instructions>
-
 <output_integrity>
   CRITICAL: All XML output MUST be well-formed:
   - Every opening tag MUST have a matching closing tag.
@@ -364,68 +360,8 @@ ${projectContext || 'No project context available.'}
 </enhanced_tools_and_capabilities>
 
 <response_formatting>
-  CRITICAL — How your response is rendered in the UI (matches VSCode Copilot Chat):
-
-  The chat UI splits each assistant message into TWO regions:
-    1. "Thought for Ns" — a single collapsible panel at the TOP of the
-       message. It is populated from your \`<thought>\` block (see below)
-       and from any tool calls you make. The user can expand it to see
-       your reasoning + tool activity, or leave it collapsed.
-    2. "Answer" — the user-facing markdown response, rendered BELOW the
-       thought panel. This is the text OUTSIDE your \`<thought>\` block.
-
-  THE <thought> CONTRACT (MANDATORY for any non-trivial answer):
-  - Wrap your private chain-of-thought in \`<thought>…</thought>\` tags,
-    placed at the very START of your response. Put your final answer
-    AFTER the closing \`</thought>\` tag.
-  - Inside \`<thought>\`, write your step-by-step reasoning: analyse the
-    request, list the files you'll touch, note key decisions, and plan
-    the edits. Keep it concise — a few sentences or a short numbered
-    plan. This text is shown in the collapsible panel, not in the main
-    answer, so it should read like internal notes, not prose for the user.
-  - The UI parses \`<thought>\` tags streaming-safely: an unclosed
-    \`<thought>\` (still streaming) is shown live and promoted to a
-    complete thought once \`</thought>\` arrives. You may emit multiple
-    \`<thought>\` blocks interleaved with answer text if needed, but one
-    block at the start is the normal pattern.
-  - For trivial answers (greetings, single-line facts) you may omit the
-    \`<thought>\` block entirely.
-
-  RULES (MANDATORY):
-  - Your visible answer text (OUTSIDE \`<thought>\`) MUST contain ONLY
-    the final response the user reads. Do NOT narrate tool usage there
-    (e.g. "Let me read the file…", "Now I'll edit…") — that narration
-    belongs INSIDE \`<thought>\`.
-  - Tool calls render as compact cards INSIDE the thought panel,
-    interleaved with your reasoning — exactly like Copilot. Emit them
-    whenever you need to inspect or modify the workspace.
-  - Use valid markdown for the answer. Do NOT use HTML tags except the
-    allowed elements and the artifact XML when creating files.
-
-  EXAMPLE — good response shape:
-    <thought>
-    The user wants to wrap the app with TooltipProvider in layout.tsx.
-    I have layout.tsx in the attachments.
-    Plan:
-    - Use replace_string_in_file to add the import.
-    - Use replace_string_in_file to wrap {children}.
-    I can use multi_replace_string_in_file for both edits.
-    </thought>
-    [tool call] read_file(filePath="src/layout.tsx")
-    [tool result] …
-    <thought>
-    Confirmed the file has the existing layout. Now I'll add the import
-    and wrap the children with a single multi_replace call.
-    </thought>
-    [tool call] multi_replace_string_in_file(filePath="src/layout.tsx", edits=[…])
-    [tool result] …
-    I've wrapped your application with the \`TooltipProvider\` in \`src/layout.tsx\`.
-    The provider now sits around \`{children}\` so every page has access to tooltip context.
-
-  EXAMPLE — bad response (FORBIDDEN):
-    Now I'll edit it. <thought>Let me check the file…</thought>
-    (Wrong: the \`<thought>\` block must come FIRST, and the answer must
-    not narrate tool usage.)
+  Use valid markdown for your answer. Do NOT use HTML tags except the
+  allowed elements and the artifact XML when creating files.
 </response_formatting>
 
 <optimized_tool_selection>

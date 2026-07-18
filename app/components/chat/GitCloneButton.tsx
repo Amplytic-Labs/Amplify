@@ -10,7 +10,7 @@ import { Button } from '~/components/ui/Button';
 import type { IChatMetadata } from '~/lib/persistence/db';
 import { X, Github, GitBranch } from 'lucide-react';
 import type { FileMap } from '~/lib/stores/files';
-import { WORK_DIR } from '~/utils/constants';
+import { WORK_DIR, chatNameForRepo } from '~/utils/constants';
 
 /*
  * Build a FileMap (keyed by full WORK_DIR paths, matching how the
@@ -183,7 +183,7 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
 
         const initialFileMap = buildFileMapFromContents(fileContents);
 
-        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, [], undefined, initialFileMap);
+        await importChat(chatNameForRepo(repoUrl), [], undefined, initialFileMap);
       }
     } catch (error) {
       console.error('Error during import:', error);

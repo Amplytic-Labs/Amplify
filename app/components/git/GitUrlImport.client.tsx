@@ -10,7 +10,7 @@ import { detectProjectCommands } from '~/utils/projectCommands';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
 import { toast } from 'react-toastify';
 import type { FileMap } from '~/lib/stores/files';
-import { WORK_DIR } from '~/utils/constants';
+import { WORK_DIR, chatNameForRepo } from '~/utils/constants';
 
 /*
  * Build a FileMap (keyed by full WORK_DIR paths, matching how the
@@ -122,7 +122,7 @@ export function GitUrlImport() {
 
           const initialFileMap = buildFileMapFromContents(fileContents);
 
-          await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, [], { gitUrl: repoUrl }, initialFileMap);
+          await importChat(chatNameForRepo(repoUrl), [], { gitUrl: repoUrl }, initialFileMap);
         }
       } catch (error) {
         console.error('Error during import:', error);

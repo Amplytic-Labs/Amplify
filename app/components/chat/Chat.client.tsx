@@ -425,7 +425,17 @@ export const ChatImpl = memo(
      * after mount, and the two effects could race.
      */
     useEffect(() => {
-      const shouldStart = (initialMessages?.length ?? 0) > 0 || showWorkbench;
+      /*
+       * Include `chatStartedRef.current` so the user-driven start signal
+       * (set synchronously by `runAnimation()` on first message send) is
+       * never overridden back to false. Without this, the effect re-fires
+       * when `chatStartedInternal` flips true, computes shouldStart=false
+       * (because initialMessages is empty and showWorkbench is still
+       * false at that instant), and clobbers `chatStore.started` back to
+       * false — which reverts the Background to opaque right after the
+       * user sends their first message.
+       */
+      const shouldStart = chatStartedRef.current || (initialMessages?.length ?? 0) > 0 || showWorkbench;
 
       if (shouldStart !== chatStartedInternal) {
         setChatStartedInternal(shouldStart);

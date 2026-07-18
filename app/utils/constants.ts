@@ -145,3 +145,45 @@ export const STARTER_TEMPLATES: Template[] = [
     icon: 'i-amplify:solidjs',
   },
 ];
+
+/**
+ * Generate a clean, human-readable chat/project name from a git repo URL.
+ *
+ * - If the repo matches a STARTER_TEMPLATES entry (by githubRepo), returns
+ *   `Start with {Template} Template` (e.g. "Start with Expo Template").
+ * - Otherwise, prettifies the repo name: strips `.git`, replaces `-`/`_`
+ *   with spaces, and Title-Cases it (e.g. "expo-starter-template" →
+ *   "Expo Starter Template").
+ *
+ * This replaces the old ugly `Git Project:Expo-Starter-Template.git`
+ * naming that leaked the raw repo slug (with `.git` suffix) into the
+ * sidebar and project list.
+ */
+export function chatNameForRepo(repoUrl: string): string {
+  if (!repoUrl || typeof repoUrl !== 'string') {
+    return 'Imported Project';
+  }
+
+  // Normalize: strip trailing slashes + .git suffix
+  const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
+  const repoName = cleaned.split('/').slice(-1)[0] || 'Imported Project';
+
+  // Match against STARTER_TEMPLATES by githubRepo
+  const match = STARTER_TEMPLATES.find((t) => cleaned.includes(t.githubRepo));
+
+  if (match) {
+    // Strip a trailing " App" so "Expo App" → "Expo"
+    const shortName = match.name.replace(/\s+App$/i, '').trim() || match.name;
+
+    return `Start with ${shortName} Template`;
+  }
+
+  // Fall back to a prettified repo name
+  const pretty = repoName
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return pretty || 'Imported Project';
+}
