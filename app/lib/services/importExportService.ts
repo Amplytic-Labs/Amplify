@@ -2,7 +2,7 @@ import Cookies from 'js-cookie';
 import { type UIMessage } from 'ai';
 import { getAllChats, deleteChat } from '~/lib/persistence/chats';
 
-interface ExtendedMessage extends Message {
+interface ExtendedMessage extends UIMessage {
   name?: string;
   function_call?: any;
   timestamp?: number;
@@ -30,14 +30,23 @@ export class ImportExportService {
       const sanitizedChats = chats.map((chat) => ({
         id: chat.id,
         description: chat.description || '',
-        messages: chat.messages.map((msg: ExtendedMessage) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          name: msg.name,
-          function_call: msg.function_call,
-          timestamp: msg.timestamp,
-        })),
+        messages: chat.messages.map((msg: ExtendedMessage) => {
+          // AI SDK v7: extract content from parts or fallback to legacy content
+          let content: any;
+          if (Array.isArray(msg.parts)) {
+            content = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('');
+          } else {
+            content = (msg as any).content;
+          }
+          return {
+            id: msg.id,
+            role: msg.role,
+            content,
+            name: msg.name,
+            function_call: msg.function_call,
+            timestamp: msg.timestamp,
+          };
+        }),
         timestamp: chat.timestamp,
         urlId: chat.urlId || null,
         metadata: chat.metadata || null,

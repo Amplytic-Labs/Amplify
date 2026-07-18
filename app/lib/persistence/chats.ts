@@ -15,7 +15,7 @@ export interface ChatMessage {
 export interface Chat {
   id: string;
   description?: string;
-  messages: Message[];
+  messages: UIMessage[];
   timestamp: string;
   urlId?: string;
   metadata?: IChatMetadata;

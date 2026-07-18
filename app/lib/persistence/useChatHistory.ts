@@ -32,7 +32,7 @@ export interface ChatHistoryItem {
   id: string;
   urlId?: string;
   description?: string;
-  messages: Message[];
+  messages: UIMessage[];
   timestamp: string;
   metadata?: IChatMetadata;
 }
@@ -149,8 +149,8 @@ export function useChatHistory() {
 
   const [searchParams] = useSearchParams();
 
-  const [archivedMessages, setArchivedMessages] = useState<Message[]>([]);
-  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const [archivedMessages, setArchivedMessages] = useState<UIMessage[]>([]);
+  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [ready, setReady] = useState<boolean>(false);
   const [urlId, setUrlId] = useState<string | undefined>();
 
@@ -461,7 +461,7 @@ export function useChatHistory() {
               : storedMessages.messages.length;
 
             const filteredMessages = storedMessages.messages.slice(0, endingIdx);
-            const archivedMessages: Message[] = [];
+            const archivedMessages: UIMessage[] = [];
 
             setArchivedMessages(archivedMessages);
 
@@ -739,13 +739,14 @@ export function useChatHistory() {
         console.error(error);
       }
     },
-    storeMessageHistory: async (messages: Message[]) => {
+    storeMessageHistory: async (messages: UIMessage[]) => {
       if (!db || messages.length === 0) {
         return;
       }
 
       const { firstArtifact } = workbenchStore;
-      messages = messages.filter((m) => !m.annotations?.includes('no-store'));
+      // AI SDK v7: annotations may be stored as custom data, use type assertion
+      messages = messages.filter((m) => !((m as any).annotations?.includes('no-store')));
 
       let _urlId = urlId;
 
@@ -760,7 +761,8 @@ export function useChatHistory() {
       const lastMessage = messages[messages.length - 1];
 
       if (lastMessage.role === 'assistant') {
-        const annotations = lastMessage.annotations as JSONValue[];
+        // AI SDK v7: annotations accessed via type assertion
+        const annotations = (lastMessage as any).annotations as JSONValue[] | undefined;
         const filteredAnnotations = (annotations?.filter(
           (annotation: JSONValue) =>
             annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
@@ -775,7 +777,14 @@ export function useChatHistory() {
 
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'user') {
-          const c: any = messages[i].content;
+          // AI SDK v7: extract content from parts or fallback to legacy content
+          const msg = messages[i];
+          let c: any;
+          if (Array.isArray(msg.parts)) {
+            c = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('');
+          } else {
+            c = (msg as any).content;
+          }
 
           if (typeof c === 'string') {
             lastUserText = c;
@@ -900,7 +909,13 @@ export function useChatHistory() {
       const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
 
       if (firstUserMessage) {
-        const rawContent: any = firstUserMessage.content;
+        // AI SDK v7: extract content from parts or fallback to legacy content
+        let rawContent: any;
+        if (Array.isArray(firstUserMessage.parts)) {
+          rawContent = firstUserMessage.parts;
+        } else {
+          rawContent = (firstUserMessage as any).content;
+        }
         let userText: string =
           typeof rawContent === 'string'
             ? rawContent
@@ -1009,7 +1024,7 @@ export function useChatHistory() {
     },
     importChat: async (
       description: string,
-      messages: Message[],
+      messages: UIMessage[],
       metadata?: IChatMetadata,
       initialFileMap?: FileMap,
     ) => {

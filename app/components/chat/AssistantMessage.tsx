@@ -27,7 +27,7 @@ interface AssistantMessageProps {
   messageId?: string;
   onRewind?: (messageId: string) => void;
   onFork?: (messageId: string) => void;
-  append?: (message: Message) => void;
+  append?: (message: UIMessage) => void;
   /** Regenerate (retry) this assistant answer. Passed through to AnswerActions. */
   onRegenerate?: () => void;
   chatMode?: 'discuss' | 'build';

@@ -88,7 +88,7 @@ export default function McpServerListItem({ toolName, toolSchema }: McpToolProps
           {toolName}
         </h3>
 
-        <p className="text-amplify-elements-textSecondary">{toolSchema.description || 'No description available'}</p>
+        <p className="text-amplify-elements-textSecondary">{typeof toolSchema.description === 'string' ? toolSchema.description : 'No description available'}</p>
 
         {Object.keys(parameters).length > 0 && (
           <div className="mt-2.5">

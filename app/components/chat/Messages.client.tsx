@@ -14,8 +14,8 @@ interface MessagesProps {
   id?: string;
   className?: string;
   isStreaming?: boolean;
-  messages?: Message[];
-  append?: (message: Message) => void;
+  messages?: UIMessage[];
+  append?: (message: UIMessage) => void;
 
   /** Regenerate handler — only the last assistant message receives this. */
   onRegenerate?: () => void;
@@ -71,10 +71,16 @@ export const Messages = memo(
       <div id={id} className={props.className} ref={ref}>
         {messages.length > 0
           ? messages.map((message, index) => {
-              const { role, content, id: messageId, annotations, parts } = message;
+              const { role, id: messageId, parts } = message;
+              // Extract text content from parts (UIMessage v7) or fallback to content (legacy)
+              const content = Array.isArray(parts)
+                ? parts.filter((p): p is { type: 'text'; text: string } => p.type === 'text').map(p => p.text).join('')
+                : (message as any).content || '';
+              // Get annotations - may be on the message directly or in parts
+              const annotations = (message as any).annotations;
               const isUserMessage = role === 'user';
               const isFirst = index === 0;
-              const isHidden = annotations?.includes('hidden');
+              const isHidden = Array.isArray(annotations) && annotations.includes('hidden');
 
               if (isHidden) {
                 return <Fragment key={index} />;
@@ -89,11 +95,11 @@ export const Messages = memo(
                 >
                   <div className="grid grid-col-1 w-full">
                     {isUserMessage ? (
-                      <UserMessage content={content} parts={parts} />
+                      <UserMessage content={content} parts={parts as any} />
                     ) : (
                       <AssistantMessage
                         content={content}
-                        annotations={message.annotations}
+                        annotations={annotations}
                         messageId={messageId}
                         onRewind={handleRewind}
                         onFork={handleFork}
@@ -103,7 +109,7 @@ export const Messages = memo(
                         setChatMode={props.setChatMode}
                         model={props.model}
                         provider={props.provider}
-                        parts={parts}
+                        parts={parts as any}
                         addToolResult={props.addToolResult}
                         isStreaming={isStreaming && index === messages.length - 1}
                       />

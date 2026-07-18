@@ -13,6 +13,7 @@ import {
 } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
 import type { Chat } from '~/lib/persistence/chats';
+import type { UIMessage } from 'ai';
 import { classNames } from '~/utils/classNames';
 
 // Register ChartJS components
@@ -61,12 +62,22 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
       const date = new Date(chat.timestamp).toLocaleDateString();
       chatDates[date] = (chatDates[date] || 0) + 1;
 
-      chat.messages.forEach((message) => {
+      chat.messages.forEach((message: UIMessage) => {
         roleCounts[message.role] = (roleCounts[message.role] || 0) + 1;
         totalMessages++;
 
         if (message.role === 'assistant') {
-          const providerMatch = message.content.match(/provider:\s*([\w-]+)/i);
+          // Extract text content from UIMessage parts (v7) or fallback to content (legacy)
+          let content = '';
+          if (Array.isArray(message.parts)) {
+            content = message.parts
+              .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+              .map((p) => p.text)
+              .join('');
+          } else if (typeof (message as any).content === 'string') {
+            content = (message as any).content;
+          }
+          const providerMatch = content.match(/provider:\s*([\w-]+)/i);
           const provider = providerMatch ? providerMatch[1] : 'unknown';
           apiUsage[provider] = (apiUsage[provider] || 0) + 1;
         }

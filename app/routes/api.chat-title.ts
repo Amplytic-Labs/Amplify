@@ -117,7 +117,8 @@ async function chatTitleAction({ context, request }: ActionFunctionArgs) {
         Respond with ONLY the title text. No explanations, no markdown.
       `,
       prompt: cleanMessage.slice(0, 500),
-      maxTokens: 30,
+      // AI SDK v7: maxTokens → maxOutputTokens for generateText
+      maxOutputTokens: 30,
       temperature: 0.3,
     });
 

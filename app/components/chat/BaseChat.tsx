@@ -56,7 +56,7 @@ interface BaseChatProps {
   chatStarted?: boolean;
   isStreaming?: boolean;
   onStreamingChange?: (streaming: boolean) => void;
-  messages?: Message[];
+  messages?: UIMessage[];
   description?: string;
   enhancingPrompt?: boolean;
   promptEnhanced?: boolean;
@@ -72,7 +72,7 @@ interface BaseChatProps {
   enhancePrompt?: () => void;
   importChat?: (
     description: string,
-    messages: Message[],
+    messages: UIMessage[],
     metadata?: IChatMetadata,
     initialFileMap?: FileMap,
   ) => Promise<void>;
@@ -92,7 +92,7 @@ interface BaseChatProps {
   data?: JSONValue[] | undefined;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
-  append?: (message: Message) => void;
+  append?: (message: UIMessage) => void;
   /** Regenerate the last assistant answer (AI SDK reload). */
   reload?: () => void;
   designScheme?: DesignScheme;

@@ -49,15 +49,27 @@ const messageParser = new EnhancedStreamingMessageParser({
     },
   },
 });
-const extractTextContent = (message: Message) =>
-  Array.isArray(message.content)
-    ? (message.content.find((item) => item.type === 'text')?.text as string) || ''
-    : message.content;
+const extractTextContent = (message: UIMessage) => {
+  // UIMessage v7 uses parts array
+  if (Array.isArray(message.parts)) {
+    const textPart = message.parts.find((part) => part.type === 'text');
+    return (textPart && 'text' in textPart ? textPart.text : '') || '';
+  }
+  // Fallback for content (legacy)
+  const content = (message as any).content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return (content.find((item: any) => item.type === 'text')?.text as string) || '';
+  }
+  return '';
+};
 
 export function useMessageParser() {
   const [parsedMessages, setParsedMessages] = useState<{ [key: number]: string }>({});
 
-  const parseMessages = useCallback((messages: Message[], isLoading: boolean) => {
+  const parseMessages = useCallback((messages: UIMessage[], isLoading: boolean) => {
     let reset = false;
 
     if (import.meta.env.DEV && !isLoading) {

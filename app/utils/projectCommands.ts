@@ -137,7 +137,7 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
   return { type: '', setupCommand: '', followupMessage: '' };
 }
 
-export function createCommandsMessage(commands: ProjectCommands): Message | null {
+export function createCommandsMessage(commands: ProjectCommands): UIMessage | null {
   if (!commands.setupCommand && !commands.startCommand) {
     return null;
   }
@@ -157,13 +157,17 @@ export function createCommandsMessage(commands: ProjectCommands): Message | null
 
   return {
     role: 'assistant',
-    content: `
+    id: generateId(),
+    // AI SDK v7: createdAt not part of UIMessage, using type assertion
+    ...( { createdAt: new Date() } as any),
+    parts: [{
+      type: 'text' as const,
+      text: `
 ${commands.followupMessage ? `\n\n${commands.followupMessage}` : ''}
 <amplifyArtifact id="project-setup" title="Project Setup">
 ${commandString}
 </amplifyArtifact>`,
-    id: generateId(),
-    createdAt: new Date(),
+    }],
   };
 }
 

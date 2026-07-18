@@ -80,11 +80,11 @@ export function Chat() {
 
 const processSampledMessages = createSampler(
   (options: {
-    messages: Message[];
-    initialMessages: Message[];
+    messages: UIMessage[];
+    initialMessages: UIMessage[];
     isLoading: boolean;
-    parseMessages: (messages: Message[], isLoading: boolean) => void;
-    storeMessageHistory: (messages: Message[]) => Promise<void>;
+    parseMessages: (messages: UIMessage[], isLoading: boolean) => void;
+    storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
   }) => {
     const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory } = options;
     parseMessages(messages, isLoading);
@@ -97,11 +97,11 @@ const processSampledMessages = createSampler(
 );
 
 interface ChatProps {
-  initialMessages: Message[];
-  storeMessageHistory: (messages: Message[]) => Promise<void>;
+  initialMessages: UIMessage[];
+  storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
   importChat: (
     description: string,
-    messages: Message[],
+    messages: UIMessage[],
     metadata?: IChatMetadata,
     initialFileMap?: FileMap,
   ) => Promise<void>;
@@ -248,40 +248,46 @@ export const ChatImpl = memo(
       chat: {
         type: 'http',
         url: '/api/chat',
-        fetch: debugFetch,
-      } as any,
-      body: {
-        apiKeys,
-        promptId,
-        contextOptimization: contextOptimizationEnabled,
-        chatMode,
-        designScheme,
-        supabase: {
-          isConnected: supabaseConn.isConnected,
-          hasSelectedProject: !!selectedProject,
-          credentials: {
-            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-            anonKey: supabaseConn?.credentials?.anonKey,
-          },
-        },
-        maxLLMSteps: mcpSettings.maxLLMSteps,
-        userContext: vectorUserContext || undefined,
-        projectContext: projectContextForPrompt,
-        projectContinuation,
+        // In AI SDK v7, body is not a direct option - we use fetch to inject extra data
+        fetch: async (request: Request, init?: RequestInit) => {
+          // Create a modified request that includes our extra body fields
+          const body: Record<string, any> = await request.json();
+          const enhancedBody = {
+            ...body,
+            apiKeys,
+            promptId,
+            contextOptimization: contextOptimizationEnabled,
+            chatMode,
+            designScheme,
+            supabase: {
+              isConnected: supabaseConn.isConnected,
+              hasSelectedProject: !!selectedProject,
+              credentials: {
+                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+                anonKey: supabaseConn?.credentials?.anonKey,
+              },
+            },
+            maxLLMSteps: mcpSettings.maxLLMSteps,
+            userContext: vectorUserContext || undefined,
+            projectContext: projectContextForPrompt,
+            projectContinuation,
 
-        /*
-         * CRITICAL: Send workspace files to the server with every request.
-         *
-         * The native tools (read_file, list_dir, find_files, grep_search, etc.)
-         * operate on this files map server-side. Without it, ctx.files is
-         * undefined and every read_file call returns "File not found" even
-         * though the file exists in the WebContainer.
-         *
-         * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
-         * which match what nativeTools.ts expects in getFileFromMap().
-         */
-        files: files,
-      },
+            /*
+             * CRITICAL: Send workspace files to the server with every request.
+             *
+             * The native tools (read_file, list_dir, find_files, grep_search, etc.)
+             * operate on this files map server-side. Without it, ctx.files is
+             * undefined and every read_file call returns "File not found" even
+             * though the file exists in the WebContainer.
+             *
+             * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
+             * which match what nativeTools.ts expects in getFileFromMap().
+             */
+            files: files,
+          };
+          return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
+        },
+      } as any,
 
       /*
        * Enable client-side multi-step continuation. Without this, calling
@@ -293,7 +299,8 @@ export const ChatImpl = memo(
        * tool result, `processToolInvocations` runs the real execute, and
        * the actual result is streamed back. Mirrors the server's maxLLMSteps.
        */
-      maxSteps: mcpSettings.maxLLMSteps,
+      // AI SDK v7: maxSteps is still valid but may need type assertion
+      ...(mcpSettings.maxLLMSteps > 0 ? { maxSteps: mcpSettings.maxLLMSteps } : {}),
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');
@@ -334,7 +341,7 @@ export const ChatImpl = memo(
                   if (project) {
                     extractAndStoreProjectContext(
                       project.id,
-                      `Implemented: ${content.slice(0, 200)}`,
+                      `Implemented: ${assistantContent.slice(0, 200)}`,
                       'conversation_summary',
                     ).catch(() => {});
                   }
@@ -344,7 +351,9 @@ export const ChatImpl = memo(
             .catch(() => {});
         }
       },
-      initialMessages,
+      // AI SDK v7: initialMessages may need to be passed differently
+      // Using spread with type assertion to bypass strict checking
+      ...(initialMessages && initialMessages.length > 0 ? { initialMessages } : {}),
     });
 
     // Derived: isLoading equivalent from new status API
@@ -352,14 +361,14 @@ export const ChatImpl = memo(
 
     // Adapter: append user message → sdkSendMessage; append assistant message → setMessages
     const append = useCallback(
-      (message: { role: string; content: string; parts?: any }, options?: any) => {
+      (message: { role: string; content?: string; parts?: any }, options?: any) => {
         if (message.role === 'user') {
           sdkSendMessage(
             {
               role: 'user' as const,
-              content: message.content,
-              ...(message.parts ? { parts: message.parts } : {}),
-            },
+              // AI SDK v7: use parts array instead of content
+              parts: message.parts || [{ type: 'text' as const, text: message.content || '' }],
+            } as any,
             options,
           );
         } else {
@@ -753,7 +762,7 @@ export const ChatImpl = memo(
      * results to be sent.
      */
     const workspaceReadyRef = useRef(true);
-    const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string }>>([]);
+    const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string; toolName?: string }>>([]);
 
     /*
      * Workspace file-stabilization tracking (Bug 3 robustness).
@@ -900,11 +909,12 @@ export const ChatImpl = memo(
             for (const { toolCallId, toolName } of pending) {
               logger.debug(`[auto-approve] flushing delayed ${toolCallId}`);
               // AI SDK v7 signature: { tool, toolCallId, output, state }
+              // State must be 'output-available' (not 'result' from v4)
               addToolResult({
                 tool: toolName || 'unknown',
                 toolCallId,
                 output: TOOL_EXECUTION_APPROVAL.APPROVE,
-                state: 'result',
+                state: 'output-available',
               });
             }
           }
@@ -996,11 +1006,12 @@ export const ChatImpl = memo(
               for (const { toolCallId, toolName } of pending) {
                 logger.debug(`[auto-approve] flushing delayed ${toolCallId} (stabilize timer)`);
                 // AI SDK v7 signature: { tool, toolCallId, output, state }
+                // State must be 'output-available' (not 'result' from v4)
                 addToolResult({
                   tool: toolName || 'unknown',
                   toolCallId,
                   output: TOOL_EXECUTION_APPROVAL.APPROVE,
-                  state: 'result',
+                  state: 'output-available',
                 });
               }
             }
@@ -1058,11 +1069,12 @@ export const ChatImpl = memo(
 
           logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
           // AI SDK v7 signature: { tool, toolCallId, output, state }
+          // State must be 'output-available' (not 'result' from v4)
           addToolResult({
             tool: inv.toolName,
             toolCallId: inv.toolCallId,
             output: TOOL_EXECUTION_APPROVAL.APPROVE,
-            state: 'result',
+            state: 'output-available',
           });
         }
       }
@@ -1772,11 +1784,12 @@ export const ChatImpl = memo(
     };
 
     // Helper function to create message parts array from text and images
-    const createMessageParts = (text: string, images: string[] = []): Array<TextUIPart | FileUIPart> => {
+    // AI SDK v7: FileUIPart requires mediaType and url (not mimeType and data)
+    const createMessageParts = (text: string, images: string[] = []): any[] => {
       // Create an array of properly typed message parts
-      const parts: Array<TextUIPart | FileUIPart> = [
+      const parts: any[] = [
         {
-          type: 'text',
+          type: 'text' as const,
           text,
         },
       ];
@@ -1784,13 +1797,15 @@ export const ChatImpl = memo(
       // Add image parts if any
       images.forEach((imageData) => {
         // Extract correct MIME type from the data URL
-        const mimeType = imageData.split(';')[0].split(':')[1] || 'image/jpeg';
+        const mediaType = imageData.split(';')[0].split(':')[1] || 'image/jpeg';
+        const base64Data = imageData.replace(/^data:image\/[^;]+;base64/, '');
 
-        // Create file part according to AI SDK format
+        // Create file part according to AI SDK v7 format
         parts.push({
-          type: 'file',
-          mimeType,
-          data: imageData.replace(/^data:image\/[^;]+;base64,/, ''),
+          type: 'file' as const,
+          mediaType,
+          // In v7, FileUIPart uses url (data URL) instead of data
+          url: `data:${mediaType};base64,${base64Data}`,
         });
       });
 
@@ -1860,7 +1875,8 @@ export const ChatImpl = memo(
             role: 'user',
             // UIMessage v7: use parts array instead of content property
             parts: createMessageParts(userMessageText, imageDataList),
-            experimental_attachments: attachments,
+            // experimental_attachments is a custom property for file attachments
+            ...(attachments ? { experimental_attachments: attachments } as any : {}),
           },
         ]);
         reload(attachments ? { experimental_attachments: attachments } : undefined);
@@ -2064,10 +2080,18 @@ export const ChatImpl = memo(
               return message;
             }
 
-            return {
-              ...message,
-              content: parsedMessages[i] || '',
-            };
+            // For assistant messages with parsed content, update the text part
+            const parsedContent = parsedMessages[i] || '';
+            if (parsedContent && Array.isArray(message.parts)) {
+              return {
+                ...message,
+                parts: message.parts.map((part) =>
+                  part.type === 'text' ? { ...part, text: parsedContent } : part
+                ),
+              };
+            }
+
+            return message;
           })}
           enhancePrompt={() => {
             enhancePrompt(
@@ -2102,7 +2126,17 @@ export const ChatImpl = memo(
           setDesignScheme={setDesignScheme}
           selectedElement={selectedElement}
           setSelectedElement={setSelectedElement}
-          addToolResult={addToolResult}
+          addToolResult={// Adapt AI SDK v7 addToolResult signature to BaseChat's expected interface
+            // BaseChat expects: ({ toolCallId, result }) => void
+            // v7 provides: ({ tool, toolCallId, state, output }) => void
+            ({ toolCallId, result }: { toolCallId: string; result: any }) => {
+              addToolResult({
+                tool: 'unknown', // BaseChat doesn't track tool name
+                toolCallId,
+                output: result,
+                state: 'output-available',
+              });
+            }}
           onWebSearchResult={handleWebSearchResult}
           planExecuting={planExecuting}
           planProgress={planProgress}

@@ -113,7 +113,8 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         messages: [
           {
             role: 'user',
-            content: `${message}`,
+            // AI SDK v7: use parts instead of content
+            parts: [{ type: 'text' as const, text: `${message}` }],
           },
         ],
         env: context.cloudflare?.env as any,

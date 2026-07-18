@@ -148,7 +148,8 @@ export async function action({ context, request }: ActionFunctionArgs) {
       system: PLANNER_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
       temperature: 0,
-      maxTokens: PLANNER_MAX_TOKENS,
+      // AI SDK v7: maxTokens → maxOutputTokens for generateText
+      maxOutputTokens: PLANNER_MAX_TOKENS,
     });
 
     const plan = extractPlanFromResponse(result.text);

@@ -17,7 +17,7 @@ interface MarkdownProps {
   children: string;
   html?: boolean;
   limitedMarkdown?: boolean;
-  append?: (message: Message) => void;
+  append?: (message: UIMessage) => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
@@ -199,12 +199,13 @@ export const Markdown = memo(
                   } else if (type === 'message' && append) {
                     append({
                       id: `quick-action-message-${Date.now()}`,
-                      content: [
+                      // AI SDK v7: use parts instead of content
+                      parts: [
                         {
-                          type: 'text',
+                          type: 'text' as const,
                           text: `[Model: ${model}]\n\n[Provider: ${provider?.name}]\n\n${message}`,
                         },
-                      ] as any,
+                      ],
                       role: 'user',
                     });
                     console.log('Message appended:', message);
@@ -212,12 +213,13 @@ export const Markdown = memo(
                     setChatMode('build');
                     append({
                       id: `quick-action-implement-${Date.now()}`,
-                      content: [
+                      // AI SDK v7: use parts instead of content
+                      parts: [
                         {
-                          type: 'text',
+                          type: 'text' as const,
                           text: `[Model: ${model}]\n\n[Provider: ${provider?.name}]\n\n${message}`,
                         },
-                      ] as any,
+                      ],
                       role: 'user',
                     });
                   } else if (type === 'link' && typeof href === 'string') {

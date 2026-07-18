@@ -88,7 +88,7 @@ export default class LMStudioProvider extends BaseProvider {
     serverEnv?: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }) => LanguageModelV1 = (options) => {
+  }) => LanguageModel = (options) => {
     const { apiKeys, providerSettings, serverEnv, model } = options;
     const envRecord = this.convertEnvToRecord(serverEnv);
 

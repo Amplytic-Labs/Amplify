@@ -208,7 +208,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             providerSettings,
             promptId,
             contextOptimization,
-            onEnd(resp) {
+            // AI SDK v7: use onFinish instead of onEnd
+            onFinish(resp: any) {
               if (resp.usage) {
                 const u = resp.usage as any;
                 logger.debug('createSummary token usage', JSON.stringify(resp.usage));
@@ -253,7 +254,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             promptId,
             contextOptimization,
             summary,
-            onEnd(resp) {
+            // AI SDK v7: use onFinish instead of onEnd
+            onFinish(resp: any) {
               if (resp.usage) {
                 const u = resp.usage as any;
                 logger.debug('selectContext token usage', JSON.stringify(resp.usage));

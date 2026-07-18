@@ -167,7 +167,7 @@ export abstract class BaseProvider implements ProviderInfo {
     serverEnv?: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1;
+  }): any; // Using any because @ai-sdk/* providers return their own model types that vary by package version
 }
 
 type OptionalApiKey = string | undefined;

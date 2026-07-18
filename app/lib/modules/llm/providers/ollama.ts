@@ -115,7 +115,7 @@ export default class OllamaProvider extends BaseProvider {
     serverEnv?: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }) => LanguageModelV1 = (options) => {
+  }) => any = (options) => {
     const { apiKeys, providerSettings, serverEnv, model } = options;
     const envRecord = this.convertEnvToRecord(serverEnv);
 

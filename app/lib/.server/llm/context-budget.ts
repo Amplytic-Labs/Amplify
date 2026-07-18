@@ -61,8 +61,28 @@ export const SUMMARIZATION_THRESHOLD = 0.7;
  * Tool-call structured parts (type !== 'text') are skipped — only text is
  * counted, matching what create-summary actually summarizes.
  */
-function extractText(message: Message): string {
-  const content: any = message.content;
+function extractText(message: UIMessage): string {
+  // UIMessage v7 uses parts array
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .map((part) => {
+        if (part.type === 'text') {
+          return 'text' in part ? (part as { text: string }).text : '';
+        }
+
+        // Tool results / image parts contribute some tokens but much less text
+        if (part.type === 'tool-result') {
+          const toolPart = part as any;
+          return typeof toolPart.result === 'string' ? toolPart.result : JSON.stringify(toolPart.result || '');
+        }
+
+        return '';
+      })
+      .join('\n');
+  }
+
+  // Fallback for legacy content (string or array)
+  const content: any = (message as any).content;
 
   if (typeof content === 'string') {
     return content;
@@ -74,12 +94,6 @@ function extractText(message: Message): string {
         if (part.type === 'text') {
           return part.text || '';
         }
-
-        // Tool results / image parts contribute some tokens but much less text
-        if (part.type === 'tool-result') {
-          return typeof part.result === 'string' ? part.result : JSON.stringify(part.result || '');
-        }
-
         return '';
       })
       .join('\n');
@@ -95,7 +109,7 @@ function extractText(message: Message): string {
  * NOTE: this does NOT include the system prompt — that's reserved separately
  * via SYSTEM_PROMPT_RESERVE.
  */
-export function estimateConversationTokens(messages: Message[]): number {
+export function estimateConversationTokens(messages: UIMessage[]): number {
   let total = 0;
 
   for (const message of messages) {
@@ -138,7 +152,7 @@ export interface ModelContextInfo {
  * to safe defaults.
  */
 export async function getModelContextInfo(
-  messages: Message[],
+  messages: UIMessage[],
   opts?: {
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
@@ -216,7 +230,7 @@ export async function getModelContextInfo(
  * prompt). The last 3 messages are always kept verbatim.
  */
 export function shouldSummarize(
-  messages: Message[],
+  messages: UIMessage[],
   contextInfo: ModelContextInfo,
   contextOptimization: boolean,
   hasWorkspaceFiles: boolean,
