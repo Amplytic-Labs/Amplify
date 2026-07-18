@@ -16,23 +16,27 @@
  * The selection is intentionally separate from `chatId` so it survives chat
  * switches inside the same project.
  *
- * PERSISTENCE: The selection is persisted to localStorage AND derived from
- * the URL on initial load. This eliminates the "sidebar flash" that occurred
- * on full page reloads — previously `selectedProjectId` reset to `undefined`
- * on every reload, causing the sidebar to briefly show personal chats before
- * the sync effect ran and swapped to the project chats view. Now the correct
- * project is known synchronously on first render.
+ * PERSISTENCE: NONE. The selection is NOT persisted across sessions. On a
+ * fresh site visit (no project/chat in the URL), the sidebar shows personal
+ * chats with no project selected. To reopen a previously-created app, the
+ * user visits the Projects page (Projects nav → gallery) and opens the
+ * wanted project from there. The URL (/<projectId>/<chatId>) remains the
+ * only source of truth for restoring a selection on reload.
  */
 
 import { atom } from 'nanostores';
 
-const STORAGE_KEY = 'amplify:selectedProjectId';
+/**
+ * Legacy localStorage key from when the selection was persisted across
+ * sessions. Kept only to perform a one-time cleanup of stale values left
+ * behind by older builds, so existing users don't carry dead data.
+ */
+const LEGACY_STORAGE_KEY = 'amplify:selectedProjectId';
 
 /**
  * Determine the initial selected project synchronously:
  *   1. If the URL contains a projectId segment (/<projectId>/<chatId>), use it.
- *   2. Otherwise, fall back to the last-persisted value from localStorage.
- *   3. Otherwise, undefined (personal chats view).
+ *   2. Otherwise, undefined (personal chats view — no auto-restore).
  *
  * This runs once at module-load time. On the server (SSR) it returns undefined.
  */
@@ -42,8 +46,10 @@ function getInitialValue(): string | undefined {
   }
 
   /*
-   * Try to derive from the current URL first — this is the most authoritative
-   * signal because it reflects the chat the user actually navigated to.
+   * Derive from the current URL — this is the only authoritative signal,
+   * because it reflects the chat the user actually navigated to. There is
+   * intentionally NO localStorage fallback: a fresh site visit always lands
+   * on the personal-chats view unless the user opens a specific project.
    */
   try {
     const pathname = window.location.pathname;
@@ -60,32 +66,24 @@ function getInitialValue(): string | undefined {
     /* ignore — URL parsing is best-effort */
   }
 
-  /* Fall back to persisted value */
-  try {
-    return localStorage.getItem(STORAGE_KEY) || undefined;
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 export const selectedProjectId = atom<string | undefined>(getInitialValue());
 
-/**
- * Persist selection to localStorage whenever it changes, so the next page
- * load can restore it immediately (before any effect runs).
+/*
+ * One-time cleanup of the legacy persisted value. Older builds wrote
+ * `amplify:selectedProjectId` on every selection change; that value is no
+ * longer read anywhere, so we wipe it once on module load to avoid leaving
+ * dead data in the user's browser. Safe to remove entirely after a release
+ * or two.
  */
 if (typeof window !== 'undefined') {
-  selectedProjectId.listen((value) => {
-    try {
-      if (value) {
-        localStorage.setItem(STORAGE_KEY, value);
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {
-      /* ignore — localStorage may be unavailable (private mode, etc.) */
-    }
-  });
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    /* ignore — localStorage may be unavailable (private mode, etc.) */
+  }
 }
 
 export function setSelectedProject(projectId: string | undefined): void {
