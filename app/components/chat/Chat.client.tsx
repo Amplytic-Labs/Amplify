@@ -268,6 +268,19 @@ export const ChatImpl = memo(
         userContext: vectorUserContext || undefined,
         projectContext: projectContextForPrompt,
         projectContinuation,
+
+        /*
+         * CRITICAL: Send workspace files to the server with every request.
+         *
+         * The native tools (read_file, list_dir, find_files, grep_search, etc.)
+         * operate on this files map server-side. Without it, ctx.files is
+         * undefined and every read_file call returns "File not found" even
+         * though the file exists in the WebContainer.
+         *
+         * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
+         * which match what nativeTools.ts expects in getFileFromMap().
+         */
+        files: files,
       },
 
       /*
