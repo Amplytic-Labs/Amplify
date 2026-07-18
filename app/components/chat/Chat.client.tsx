@@ -1888,17 +1888,21 @@ export const ChatImpl = memo(
         const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
         const attachments = uploadedFiles.length > 0 ? await filesToAttachments(uploadedFiles) : undefined;
 
-        setMessages([
+        const attachmentOptions = attachments ? { experimental_attachments: attachments } : undefined;
+
+        // FIX: Use sendMessage instead of setMessages + reload()
+        // Previously: setMessages([userMessage]) + reload() which called regenerate()
+        // Problem: regenerate() tries to re-generate last ASSISTANT message - but there isn't one yet!
+        // Solution: Use sdkSendMessage() which properly sends user message AND streams AI response
+        sdkSendMessage(
           {
-            id: `${new Date().getTime()}`,
-            role: 'user',
-            // UIMessage v7: use parts array instead of content property
+            role: 'user' as const,
+            content: userMessageText,
             parts: createMessageParts(userMessageText, imageDataList),
-            // experimental_attachments is a custom property for file attachments
-            ...(attachments ? { experimental_attachments: attachments } as any : {}),
-          },
-        ]);
-        reload(attachments ? { experimental_attachments: attachments } : undefined);
+          } as any,
+          attachmentOptions as any,
+        );
+
         setFakeLoading(false);
         setInput('');
         Cookies.remove(PROMPT_COOKIE_KEY);
