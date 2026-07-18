@@ -243,14 +243,19 @@ export const ChatImpl = memo(
      * before sending to /api/chat endpoint.
      */
     const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // Debug: Log fetch call
+      console.log('[DEBUG Chat] customFetch called:', { input: String(input).slice(0, 100) });
+      
       // Convert input to Request if needed, then extract and enhance body
       const request = input instanceof Request ? input : new Request(String(input), init);
       let body: Record<string, any>;
       
       try {
         body = await request.json();
+        console.log('[DEBUG Chat] Request body parsed, messages count:', body.messages?.length);
       } catch (e) {
         // If body parsing fails, pass through to original request
+        console.warn('[DEBUG Chat] Failed to parse request body:', e);
         return debugFetch(request, init);
       }
       
@@ -277,12 +282,21 @@ export const ChatImpl = memo(
       };
       
       // Create new request with enhanced body, preserving original method/headers
-      return debugFetch(new Request(request.url, { 
+      const response = await debugFetch(new Request(request.url, { 
         method: request.method,
         headers: request.headers,
         body: JSON.stringify(enhancedBody),
         credentials: request.credentials,
       }), init);
+      
+      // Debug: Log response
+      console.log('[DEBUG Chat] Response received:', {
+        status: response.status,
+        ok: response.ok,
+        hasBody: !!response.body,
+      });
+      
+      return response;
     }, [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
 
     // Create transport with custom fetch for enhanced body
@@ -313,6 +327,14 @@ export const ChatImpl = memo(
         handleError(e, 'chat');
       },
       onFinish: (message) => {
+        console.log('[DEBUG Chat] onFinish called:', {
+          messageId: message?.id,
+          role: message?.role,
+          hasParts: Array.isArray(message?.parts),
+          partsCount: message?.parts?.length,
+          totalMessagesBefore: messages?.length,
+        });
+        
         logger.debug('[Chat] Finished streaming - message received:', {
           messageId: message?.id,
           role: message?.role,
@@ -479,6 +501,20 @@ export const ChatImpl = memo(
     // Debug: Log messages state changes to trace AI message flow
     useEffect(() => {
       if ((messages?.length ?? 0) > 0) {
+        console.log('[DEBUG Chat] Messages state updated:', {
+          count: messages?.length,
+          lastMessage: {
+            id: messages[messages.length - 1]?.id,
+            role: messages[messages.length - 1]?.role,
+            hasParts: Array.isArray(messages[messages.length - 1]?.parts),
+          },
+          chatStarted: {
+            ref: chatStartedRef.current,
+            state: chatStartedInternal,
+            derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+          },
+        });
+        
         logger.debug('[Chat] Messages state updated:', {
           count: messages?.length,
           lastMessage: {
