@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { Chat as AISDKChat, useChat } from '@ai-sdk/react';
+import { useChat } from '@ai-sdk/react';
 import { useAnimate } from 'framer-motion';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
@@ -280,7 +280,7 @@ export const ChatImpl = memo(
           return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
         })();
       }) as any,
-    }), [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
+    }), [/* Intentionally empty - create once */]);
 
     const {
       messages,
@@ -293,12 +293,11 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      // AI SDK v4/v7: Pass a properly constructed Chat instance with custom transport
-      // This ensures registerMessagesCallback and all other methods work correctly
-      chat: new AISDKChat({
-        transport: customTransport,
-        ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
-      }) as any,
+      // AI SDK v4/v7: Pass ChatInit options directly (NOT a Chat instance)
+      // Using 'transport' option lets useChat create the Chat instance internally,
+      // ensuring registerMessagesCallback works and messages render correctly
+      transport: customTransport,
+      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
 
       /*
        * Enable client-side multi-step continuation. Without this, calling
