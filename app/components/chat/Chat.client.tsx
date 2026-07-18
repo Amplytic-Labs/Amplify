@@ -309,7 +309,7 @@ export const ChatImpl = memo(
         logger.debug('Finished streaming');
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
-        const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+        const lastUserMsg = (messages || []).filter((m) => m.role === 'user').pop();
 
         // Helper to extract text content from UIMessage parts (v7 uses parts, not content)
         const getMessageContent = (msg: any): string => {
@@ -353,7 +353,7 @@ export const ChatImpl = memo(
       },
       // AI SDK v7: initialMessages may need to be passed differently
       // Using spread with type assertion to bypass strict checking
-      ...(initialMessages && initialMessages.length > 0 ? { initialMessages } : {}),
+      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
     });
 
     // Derived: isLoading equivalent from new status API
@@ -453,7 +453,7 @@ export const ChatImpl = memo(
        * Only process if we have messages — skip empty calls that may
        * occur during chat switches when the sampler fires with stale state.
        */
-      if (messages.length > 0) {
+      if ((messages?.length ?? 0) > 0) {
         processSampledMessages({
           messages,
           initialMessages,
@@ -477,9 +477,9 @@ export const ChatImpl = memo(
           await userProfileStore.initialize();
 
           // Get last user message for context query
-          const userMessages = messages.filter((m) => m.role === 'user');
+          const userMessages = (messages || []).filter((m) => m.role === 'user');
           // Extract content from UIMessage v7 (uses parts array)
-          const lastUserMsg = userMessages[userMessages.length - 1];
+          const lastUserMsg = userMessages[(userMessages?.length ?? 1) - 1];
           let lastMsg = '';
           if (lastUserMsg) {
             if (typeof (lastUserMsg as any).content === 'string') {
@@ -532,11 +532,11 @@ export const ChatImpl = memo(
       return () => {
         cancelled = true;
       };
-    }, [messages.length]);
+    }, [messages?.length]);
 
     // Detect execute_plan signal, enrich via the planner LLM, then show the approval dialog.
     useEffect(() => {
-      const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
+      const lastAssistantMessage = (messages || []).filter((m) => m.role === 'assistant').pop();
 
       // Extract content from UIMessage v7 (uses parts array)
       let content = '';
@@ -629,7 +629,7 @@ export const ChatImpl = memo(
     const processedMutationToolCallIdsRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
-      const lastAssistant = messages.filter((m) => m.role === 'assistant').pop();
+      const lastAssistant = (messages || []).filter((m) => m.role === 'assistant').pop();
 
       if (!lastAssistant) {
         return;
@@ -2075,7 +2075,7 @@ export const ChatImpl = memo(
           description={description}
           importChat={importChat}
           exportChat={exportChat}
-          messages={messages.map((message, i) => {
+          messages={(messages || []).map((message, i) => {
             if (message.role === 'user') {
               return message;
             }
