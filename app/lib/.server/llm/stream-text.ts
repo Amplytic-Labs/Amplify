@@ -219,9 +219,39 @@ export async function streamText(props: {
 
     // Sanitize all text parts in parts array, if present
     if (Array.isArray(message.parts)) {
-      newMessage.parts = message.parts.map((part) =>
-        part.type === 'text' ? { ...part, text: sanitizeText(part.text) } : part,
-      );
+      newMessage.parts = message.parts.map((part) => {
+        if (part.type === 'text') {
+          return { ...part, text: sanitizeText(part.text) };
+        }
+
+        /*
+         * Truncate large tool results (read_file, grep_search, etc.) to
+         * prevent token bloat from accumulating file contents in message
+         * history. On every turn ALL previous messages (including tool
+         * results) are re-sent to the LLM, so un-truncated read_file
+         * results cause exponential token growth.
+         *
+         * We replace the full result with a summary so the model knows
+         * the file was read but must re-read it if it needs the content.
+         */
+        const partAny = part as any;
+        if (partAny.type === 'tool-invocation' && partAny.toolInvocation?.state === 'result') {
+          const { toolName, result } = partAny.toolInvocation;
+
+          if (typeof result === 'string' && result.length > 3000) {
+            const truncatedResult = result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
+            return {
+              ...part,
+              toolInvocation: {
+                ...partAny.toolInvocation,
+                result: truncatedResult,
+              },
+            } as any;
+          }
+        }
+
+        return part;
+      });
     }
 
     return newMessage;

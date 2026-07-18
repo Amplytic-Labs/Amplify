@@ -20,6 +20,7 @@ export default defineConfig((config) => {
       // Allow the gateway/sandbox preview hosts (and any future tunnel) to
       // reach the dev server. Vite blocks unknown hosts by default.
       allowedHosts: true,
+      host: '0.0.0.0',
       headers: {
         'Cross-Origin-Embedder-Policy': 'credentialless',
         'Cross-Origin-Opener-Policy': 'same-origin',

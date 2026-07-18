@@ -3,7 +3,7 @@ import ignore from 'ignore';
 import type { IProviderSetting } from '~/types/model';
 import { IGNORE_PATTERNS, type FileMap } from './constants';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
-import { createFilesContext, extractCurrentContext, extractPropertiesFromMessage, simplifyBoltActions } from './utils';
+import { extractCurrentContext, extractPropertiesFromMessage, simplifyBoltActions } from './utils';
 import { createScopedLogger } from '~/utils/logger';
 import { LLMManager } from '~/lib/modules/llm/manager';
 
@@ -102,7 +102,19 @@ export async function selectContext(props: {
         currrentFiles.push(relativePath);
       }
     });
-    context = createFilesContext(contextFiles);
+    /*
+     * List only the PATHS of context files — NOT their full contents.
+     *
+     * Previously this called createFilesContext(contextFiles) which injected
+     * the full source code of context files into the selectContext LLM call.
+     * This caused massive token bloat (50k+ tokens) for the context-selection
+     * step alone. The LLM only needs to know which files exist to decide
+     * which ones to include/exclude — it does NOT need to read their contents.
+     */
+    context = Object.keys(contextFiles)
+      .filter((p) => contextFiles[p]?.type === 'file')
+      .map((p) => `- ${p.replace('/home/project/', '')}`)
+      .join('\n');
   }
 
   const summaryText = `Here is the summary of the chat till now: ${summary}`;
@@ -128,9 +140,9 @@ export async function selectContext(props: {
         ${filePaths.map((path) => `- ${path}`).join('\n')}
         ---
 
-        You have following code loaded in the context buffer that you can refer to:
+        You have following files currently loaded in the context buffer:
 
-        CURRENT CONTEXT BUFFER
+        CURRENT CONTEXT BUFFER (file paths)
         ---
         ${context}
         ---

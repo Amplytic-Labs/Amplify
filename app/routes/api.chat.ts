@@ -1,6 +1,7 @@
 import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import {
   createUIMessageStream,
+  createUIMessageStreamResponse,
   generateId,
   isStepCount,
   type UIMessage,
@@ -517,15 +518,19 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       },
     });
 
-    return new Response(uiStream.pipeThrough(new TextEncoderStream() as any), {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        Connection: 'keep-alive',
-        'Cache-Control': 'no-cache',
-        'Text-Encoding': 'chunked',
-      },
-    });
+    /*
+     * AI SDK v7: createUIMessageStream() returns a ReadableStream<UIMessageChunk>
+     * containing JavaScript objects. These MUST be serialized to SSE format
+     * ("data: {...}\n\n") before sending to the client. The old code piped
+     * the object stream directly through TextEncoderStream, which silently
+     * failed because TextEncoderStream can only encode strings, not objects.
+     *
+     * createUIMessageStreamResponse() handles the correct pipeline:
+     *   1. JsonToSseTransformStream  → objects → SSE text lines
+     *   2. TextEncoderStream         → text → bytes
+     *   3. Sets correct headers (including x-vercel-ai-ui-message-stream: v1)
+     */
+    return createUIMessageStreamResponse({ stream: uiStream });
   } catch (error: any) {
     logger.error(error);
 
