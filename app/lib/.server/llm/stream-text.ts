@@ -3,6 +3,7 @@ import {
   streamText as _streamText,
   type UIMessage,
   type UIMessageStreamWriter,
+  isToolUIPart,
 } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
@@ -20,6 +21,7 @@ import { fetchWebPage } from '~/lib/utils/web-fetch';
 import { getTemplates } from '~/utils/selectStarterTemplate';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { stripChatName } from '~/lib/chat/chatname';
+import { getToolState, getToolOutput } from '~/lib/chat/tool-parts';
 
 export type Messages = UIMessage[];
 
@@ -249,20 +251,46 @@ export async function streamText(props: {
          *
          * We replace the full result with a summary so the model knows
          * the file was read but must re-read it if it needs the content.
+         *
+         * V7 MIGRATION (Task 3b): tool parts now use the FLAT v7 shape —
+         * `type: 'tool-<name>'` / `'dynamic-tool'`, with `output` instead
+         * of nested `toolInvocation.result`. We use `isToolUIPart` from
+         * `ai` for the type check (accepts both static and dynamic), and
+         * the shared `getToolState` / `getToolOutput` helpers so legacy
+         * v4 parts (still in IndexedDB for old chats) are also truncated.
          */
         const partAny = part as any;
-        if (partAny.type === 'tool-invocation' && partAny.toolInvocation?.state === 'result') {
-          const { toolName, result } = partAny.toolInvocation;
+        if (isToolUIPart(partAny)) {
+          const partState = getToolState(partAny);
+          const result = getToolOutput(partAny);
 
-          if (typeof result === 'string' && result.length > 3000) {
-            const truncatedResult = result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
-            return {
-              ...part,
-              toolInvocation: {
-                ...partAny.toolInvocation,
-                result: truncatedResult,
-              },
-            } as any;
+          if (
+            (partState === 'output-available' || partState === 'result') &&
+            typeof result === 'string' &&
+            result.length > 3000
+          ) {
+            const truncatedResult =
+              result.slice(0, 2000) +
+              '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
+
+            // Rebuild the part with the truncated output. Keep the FLAT v7
+            // shape (`output` directly on the part) as the primary form;
+            // also mirror it onto the legacy `toolInvocation.result` for
+            // any consumer still expecting the nested v4 shape.
+            //
+            // Cast through `any` again because the `isToolUIPart` type guard
+            // narrows `partAny` to `ToolUIPart | DynamicToolUIPart`, which
+            // doesn't include the legacy `toolInvocation` field. We need to
+            // access it conditionally for backward compatibility with old
+            // persisted v4 messages.
+            const legacy: any = partAny as any;
+            const updatedPart: any = { ...partAny, output: truncatedResult };
+
+            if (legacy.toolInvocation) {
+              updatedPart.toolInvocation = { ...legacy.toolInvocation, result: truncatedResult };
+            }
+
+            return updatedPart as any;
           }
         }
 

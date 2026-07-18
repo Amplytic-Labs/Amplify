@@ -2,6 +2,7 @@ import {
   type UIMessage,
   type UIMessageStreamWriter,
   convertToModelMessages,
+  isToolUIPart,
 } from 'ai';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -746,29 +747,66 @@ export class MCPService {
     const processedParts: any[] = [];
 
     for (const part of parts) {
-      // Only process tool invocations parts (UIMessage uses tool- prefixed types)
-      const isToolInvocation = (part as any).type === 'tool-invocation' || (part as any).toolCallId;
+      /*
+       * v7 migration: tool parts now have `type: 'tool-<name>'` or
+       * `'dynamic-tool'` (flat shape) — NOT the v4 literal `'tool-invocation'`.
+       * Use the SDK's `isToolUIPart` helper to detect both static and dynamic
+       * tool parts. We also keep a `toolCallId` fallback so any semi-legacy
+       * flat parts still pass through.
+       */
+      const isToolInvocation = isToolUIPart(part as any) || !!(part as any).toolCallId;
       if (!isToolInvocation) {
         processedParts.push(part);
         continue;
       }
 
-      const toolInvocation = (part as any).toolInvocation || part;
-      const { toolName, toolCallId } = toolInvocation;
+      /*
+       * v7 parts are FLAT — `toolCallId`, `state`, `input`, `output` live
+       * directly on the part (NOT nested under `toolInvocation`). The
+       * `|| part` fallback below keeps the legacy v4 nested shape working
+       * for old persisted messages.
+       */
+      const partAny = part as any;
+      const toolInvocation = partAny.toolInvocation || partAny;
+      const toolName: string =
+        partAny.toolName ||
+        (typeof partAny.type === 'string' && partAny.type.startsWith('tool-')
+          ? partAny.type.slice('tool-'.length)
+          : toolInvocation.toolName) ||
+        '';
+      const { toolCallId } = toolInvocation;
+
+      /*
+       * v7 state values: 'input-available' (== v4 'call') and
+       * 'output-available'/'output-error' (== v4 'result').
+       *
+       * The `state !== 'result'` check below accepts both the v7 result
+       * states AND the legacy v4 'result' string (for old persisted chats).
+       */
+      const state: string =
+        partAny.state || toolInvocation.state || '';
+      const isResultState =
+        state === 'output-available' ||
+        state === 'output-error' ||
+        state === 'output-denied' ||
+        state === 'result';
 
       // return part as-is if tool does not exist, or if it's not a tool call result
-      if (!this.isValidToolName(toolName) || toolInvocation.state !== 'result') {
+      if (!this.isValidToolName(toolName) || !isResultState) {
         processedParts.push(part);
         continue;
       }
 
+      const toolOutput = partAny.output !== undefined ? partAny.output : toolInvocation.result;
+
       let result;
 
-      if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.APPROVE) {
+      if (toolOutput === TOOL_EXECUTION_APPROVAL.APPROVE) {
         const toolInstance = this._tools[toolName];
 
         if (toolInstance && typeof toolInstance.execute === 'function') {
-          logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolInvocation.args)}`);
+          const toolArgs = partAny.input !== undefined ? partAny.input : toolInvocation.args;
+          logger.debug(`calling tool "${toolName}" with args: ${JSON.stringify(toolArgs)}`);
 
           try {
             const toolContext = {
@@ -776,7 +814,7 @@ export class MCPService {
               toolCallId,
               messages: await convertToModelMessages(messages),
             };
-            result = await toolInstance.execute(toolInvocation.args, toolContext);
+            result = await toolInstance.execute(toolArgs, toolContext);
 
             /*
              * If the tool result is a file mutation signal, update the
@@ -827,7 +865,7 @@ export class MCPService {
         } else {
           result = TOOL_NO_EXECUTE_FUNCTION;
         }
-      } else if (toolInvocation.result === TOOL_EXECUTION_APPROVAL.REJECT) {
+      } else if (toolOutput === TOOL_EXECUTION_APPROVAL.REJECT) {
         result = TOOL_EXECUTION_DENIED;
       } else {
         // For any unhandled responses, return the original part.
@@ -842,14 +880,35 @@ export class MCPService {
         output: result,
       });
 
-      // Return updated toolInvocation with the actual result.
-      processedParts.push({
-        ...part,
-        toolInvocation: {
-          ...toolInvocation,
-          result,
-        },
-      });
+      /*
+       * v7 migration: build the updated part using the FLAT v7 shape.
+       * The previous code nested the result under `toolInvocation.result`;
+       * v7 expects `output` directly on the part. We spread the original
+       * part (preserving `type`, `toolCallId`, `input`, etc.) and only
+       * overwrite `output`/`state`/`errorText`.
+       */
+      const updatedPart: any = { ...partAny, output: result };
+
+      // Preserve v4 nested shape too, for any consumer still expecting it.
+      if (partAny.toolInvocation) {
+        updatedPart.toolInvocation = { ...partAny.toolInvocation, result };
+      }
+
+      /*
+       * Promote state to v7 'output-available' if it's missing or still
+       * using a v4 value ('result'). Existing v7 result states
+       * ('output-available' / 'output-error' / 'output-denied') are left
+       * untouched so we don't clobber error information.
+       */
+      if (
+        partAny.state !== 'output-available' &&
+        partAny.state !== 'output-error' &&
+        partAny.state !== 'output-denied'
+      ) {
+        updatedPart.state = 'output-available';
+      }
+
+      processedParts.push(updatedPart);
     }
 
     // Finally return the processed messages

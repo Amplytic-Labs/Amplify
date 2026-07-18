@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { useStore } from '@nanostores/react';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { Mermaid } from '~/components/chat/Mermaid';
+import { Chart } from '~/components/chat/Chart';
 import { rehypePlugins, remarkPlugins } from '~/utils/markdown';
 import { classNames } from '~/utils/classNames';
 
@@ -43,6 +44,14 @@ export const ArtifactRenderer = memo(({ filePath }: ArtifactRendererProps) => {
     return (
       <div className="h-full overflow-auto flex items-center justify-center p-6 bg-amplify-elements-background">
         <Mermaid chart={content} />
+      </div>
+    );
+  }
+
+  if (extension === 'chartjs') {
+    return (
+      <div className="h-full overflow-auto flex items-center justify-center p-6 bg-amplify-elements-background">
+        <Chart config={content} />
       </div>
     );
   }

@@ -26,6 +26,15 @@ import { planStore } from './plan-store';
 import { ExecutionStateManager } from './execution-state';
 import { CheckpointManager } from './checkpoint';
 import { createScopedLogger } from '~/utils/logger';
+import {
+  isToolPart,
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 
 const logger = createScopedLogger('ExecutionManager');
 
@@ -453,29 +462,39 @@ export class ExecutionManager {
 
 /**
  * Extracts tool invocations from a SubChat object.
- * 
- * V7 MIGRATION: In AI SDK v7, tool invocations are stored in message.parts
- * as 'tool-invocation' type parts. This helper extracts them from either
- * the parts-based format (v7) or legacy toolInvocations array (v4).
+ *
+ * V7 MIGRATION (Task 3b): In AI SDK v7, tool invocations are stored as
+ * FLAT parts in message.parts with `type: 'tool-<name>'` or `'dynamic-tool'`
+ * (NOT the v4 literal `'tool-invocation'` with nested `toolInvocation`).
+ * This helper extracts them from either the v7 parts-based format or the
+ * legacy toolInvocations array (v4) via the shared helpers in
+ * `~/lib/chat/tool-parts`.
  */
 function extractToolInvocationsFromSubChat(subChat: any): any[] {
   if (!subChat) return [];
-  
-  // V7: Check messages for parts-based tool invocations
+
+  // V7 (Task 3b): tool invocations live inline on each message part with
+  // type `tool-<name>` / `dynamic-tool` (flat shape — NOT nested under
+  // `toolInvocation`). We use the shared helpers to extract the fields.
   if (Array.isArray(subChat.messages)) {
     const fromParts: any[] = [];
     for (const msg of subChat.messages) {
       if (Array.isArray(msg.parts)) {
         for (const p of msg.parts) {
-          if (p?.type === 'tool-invocation' && p?.toolInvocation) {
-            fromParts.push(p.toolInvocation);
-          }
+          if (!isToolPart(p)) continue;
+          fromParts.push({
+            toolName: getToolNameFromPart(p),
+            toolCallId: getToolCallId(p),
+            state: getToolState(p),
+            args: getToolInput(p),
+            result: getToolOutput(p),
+          });
         }
       }
     }
     if (fromParts.length > 0) return fromParts;
   }
-  
+
   // Legacy fallback: use toolInvocations array on subChat
   return subChat.toolInvocations ?? [];
 }

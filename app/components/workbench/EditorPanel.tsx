@@ -270,7 +270,7 @@ export const EditorPanel = memo(
 
                       {/* View Toggle */}
                       {editorDocument &&
-                        ['.md', '.mermaid', '.svg'].some((ext) => editorDocument.filePath.endsWith(ext)) && (
+                        ['.md', '.mermaid', '.svg', '.chartjs'].some((ext) => editorDocument.filePath.endsWith(ext)) && (
                           <PanelHeaderButton onClick={handleViewToggle}>
                             <div className={classNames('i-ph', currentView === 'code' ? 'i-ph:eye' : 'i-ph:code')} />
                             {currentView === 'code' ? 'Render' : 'Code'}

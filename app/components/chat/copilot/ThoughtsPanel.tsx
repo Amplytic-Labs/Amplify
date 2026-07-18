@@ -6,11 +6,17 @@ import { ReasoningMarkdown } from '~/components/chat/ReasoningMarkdown';
 import type {
   TextUIPart,
   ReasoningUIPart,
-  ToolInvocationUIPart,
   SourceUIPart,
   FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
+import {
+  isToolPart,
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolOutput,
+} from '~/lib/chat/tool-parts';
 import styles from './chat-copilot.module.scss';
 
 /**
@@ -26,7 +32,7 @@ import styles from './chat-copilot.module.scss';
  */
 type ThoughtStep =
   | { kind: 'reasoning'; text: string; key: string }
-  | { kind: 'tool'; item: ToolInvocationUIPart; key: string };
+  | { kind: 'tool'; item: any; key: string };
 
 interface ThoughtsPanelProps {
   /** Text extracted from `<thought>…</thought>` tags in the answer body. */
@@ -44,7 +50,7 @@ interface ThoughtsPanelProps {
 
   /** Native reasoning + tool-invocation parts from the AI SDK. */
   parts:
-    | (TextUIPart | ReasoningUIPart | ToolInvocationUIPart | SourceUIPart | FileUIPart | StepStartUIPart)[]
+    | (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[]
     | undefined;
 
   /** True when this is the streaming message and we're still producing parts. */
@@ -101,11 +107,11 @@ export const ThoughtsPanel = memo(
 
       if (parts) {
         for (const part of parts) {
-          if (part.type === 'tool-invocation') {
+          if (isToolPart(part)) {
             out.push({
               kind: 'tool',
-              item: part as ToolInvocationUIPart,
-              key: `tool-${(part as any).toolInvocation?.toolCallId ?? counter++}`,
+              item: part,
+              key: `tool-${getToolCallId(part) ?? counter++}`,
             });
             continue;
           }
@@ -144,9 +150,14 @@ export const ThoughtsPanel = memo(
           }
 
           // Tool node — tool-type icon on the chain line.
-          const { toolInvocation } = step.item as any;
-          const { toolName, state, result } = toolInvocation || {};
-          const isError = state === 'result' && classifyResult(result) === 'error';
+          const state = getToolState(step.item);
+          const toolName = getToolNameFromPart(step.item);
+          const result = getToolOutput(step.item);
+          // v7 'output-error' is itself an error; v7 'output-available' (v4 'result')
+          // is an error only when the result string starts with a known error prefix.
+          const isError =
+            state === 'output-error' ||
+            (state === 'output-available' && classifyResult(result) === 'error');
           const toolIcon = getToolIcon(toolName);
 
           return (

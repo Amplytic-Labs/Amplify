@@ -24,6 +24,8 @@
  * end so the partial artifact never flashes in the UI.
  */
 
+import { isToolPart, getToolNameFromPart } from '~/lib/chat/tool-parts';
+
 const ARTIFACT_OPEN_TAG = '<amplifyArtifact';
 const ARTIFACT_CLOSE_TAG = '</amplifyArtifact>';
 
@@ -240,17 +242,15 @@ function summarizeArtifactBlock(block: string): string {
  * True if the given AI-SDK `parts` array contains an `inject_template` tool
  * invocation (in any state — call, result, or streaming). Used by the
  * AssistantMessage to decide whether to suppress the artifact trace tree.
+ *
+ * V7 MIGRATION (Task 3b): tool parts have `type: 'tool-<name>'` or
+ * `'dynamic-tool'` (NOT the v4 literal `'tool-invocation'`). We use the
+ * shared `isToolPart` + `getToolNameFromPart` helpers so both shapes work.
  */
-export function hasInjectTemplateCall(
-  parts: ({ type: string; toolInvocation?: { toolName?: string } } | { type: string })[] | undefined,
-): boolean {
+export function hasInjectTemplateCall(parts: any[] | undefined): boolean {
   if (!parts || !Array.isArray(parts)) {
     return false;
   }
 
-  return parts.some(
-    (p) =>
-      p.type === 'tool-invocation' &&
-      (p as { toolInvocation?: { toolName?: string } }).toolInvocation?.toolName === 'inject_template',
-  );
+  return parts.some((p) => isToolPart(p) && getToolNameFromPart(p) === 'inject_template');
 }

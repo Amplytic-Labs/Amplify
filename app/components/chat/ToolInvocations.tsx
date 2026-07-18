@@ -1,4 +1,3 @@
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { memo, useMemo, useState, useEffect, useCallback } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
@@ -14,6 +13,14 @@ import { logger } from '~/utils/logger';
 import { themeStore, type Theme } from '~/lib/stores/theme';
 import { useStore } from '@nanostores/react';
 import type { ToolCallAnnotation } from '~/types/context';
+import {
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 
 const highlighterOptions = {
   langs: ['json'],
@@ -67,7 +74,13 @@ function JsonCodeBlock({ className, code, theme }: JsonCodeBlockProps) {
 }
 
 interface ToolInvocationsProps {
-  toolInvocations: ToolInvocationUIPart[];
+  /**
+   * v7 tool parts (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` parts. The prop name is kept for backward compatibility
+   * but the element shape is shape-agnostic — fields are accessed via the
+   * shared helpers in `~/lib/chat/tool-parts`.
+   */
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 }
@@ -80,13 +93,18 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
     setShowDetails((prev) => !prev);
   };
 
+  /*
+   * v7 migration: state checks use the v7 vocabulary. `getToolState` returns
+   * the normalised v7 state (mapping v4 'call'/'result' onto
+   * 'input-available'/'output-available' if a legacy part slips through).
+   */
   const toolCalls = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'call'),
+    () => toolInvocations.filter((inv) => ToolState.isCall(getToolState(inv))),
     [toolInvocations],
   );
 
   const toolResults = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'result'),
+    () => toolInvocations.filter((inv) => ToolState.isResult(getToolState(inv))),
     [toolInvocations],
   );
 
@@ -186,7 +204,7 @@ const toolVariants = {
 };
 
 interface ToolResultsListProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   theme: Theme;
 }
@@ -196,20 +214,23 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-4">
         {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
+          const toolCallState = getToolState(tool);
 
-          if (toolCallState !== 'result') {
+          if (!ToolState.isResult(toolCallState)) {
             return null;
           }
 
-          const { toolName, toolCallId } = tool.toolInvocation;
+          const toolName = getToolNameFromPart(tool);
+          const toolCallId = getToolCallId(tool);
+          const args = getToolInput(tool);
+          const result = getToolOutput(tool);
 
           const annotation = toolCallAnnotations.find((annotation) => {
             return annotation.toolCallId === toolCallId;
           });
 
           const isErrorResult = [TOOL_NO_EXECUTE_FUNCTION, TOOL_EXECUTION_DENIED, TOOL_EXECUTION_ERROR].includes(
-            tool.toolInvocation.result,
+            result,
           );
 
           return (
@@ -248,15 +269,15 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                 <div className="text-amplify-elements-textSecondary text-xs mb-1">Parameters:</div>
                 <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
                   <div className="relative group/copy">
-                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.args)} theme={theme} />
-                    <CopyJsonButton text={JSON.stringify(tool.toolInvocation.args, null, 2)} />
+                    <JsonCodeBlock className="mb-0" code={JSON.stringify(args)} theme={theme} />
+                    <CopyJsonButton text={JSON.stringify(args, null, 2)} />
                   </div>
                 </div>
                 <div className="text-amplify-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
                 <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
                   <div className="relative group/copy">
-                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
-                    <CopyJsonButton text={typeof tool.toolInvocation.result === 'string' ? tool.toolInvocation.result : JSON.stringify(tool.toolInvocation.result, null, 2)} />
+                    <JsonCodeBlock className="mb-0" code={JSON.stringify(result)} theme={theme} />
+                    <CopyJsonButton text={typeof result === 'string' ? result : JSON.stringify(result, null, 2)} />
                   </div>
                 </div>
               </div>
@@ -269,7 +290,7 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
 });
 
 interface ToolCallsListProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   theme: Theme;
@@ -288,12 +309,12 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
   // ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const pending = toolInvocations.filter(
-      (inv) => inv.toolInvocation.state === 'call' && inv.toolInvocation.toolName !== 'execute_plan',
+      (inv) => ToolState.isCall(getToolState(inv)) && getToolNameFromPart(inv) !== 'execute_plan',
     );
 
     for (const inv of pending) {
       addToolResult({
-        toolCallId: inv.toolInvocation.toolCallId,
+        toolCallId: getToolCallId(inv),
         result: TOOL_EXECUTION_APPROVAL.APPROVE,
       });
     }
@@ -302,8 +323,8 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
   useEffect(() => {
     const expandedState: { [id: string]: boolean } = {};
     toolInvocations.forEach((inv) => {
-      if (inv.toolInvocation.state === 'call') {
-        expandedState[inv.toolInvocation.toolCallId] = true;
+      if (ToolState.isCall(getToolState(inv))) {
+        expandedState[getToolCallId(inv)] = true;
       }
     });
     setExpanded(expandedState);
@@ -356,13 +377,14 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-4">
         {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
+          const toolCallState = getToolState(tool);
 
-          if (toolCallState !== 'call') {
+          if (!ToolState.isCall(toolCallState)) {
             return null;
           }
 
-          const { toolName, toolCallId } = tool.toolInvocation;
+          const toolName = getToolNameFromPart(tool);
+          const toolCallId = getToolCallId(tool);
           const annotation = toolCallAnnotations.find((annotation) => annotation.toolCallId === toolCallId);
 
           // Only execute_plan requires explicit user approval — it opens the

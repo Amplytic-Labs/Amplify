@@ -1,21 +1,20 @@
 import { memo, Fragment, useMemo } from 'react';
 import { Markdown } from './Markdown';
-import type { JSONValue } from 'ai';
+import type { JSONValue, UIMessage } from 'ai';
 import Popover from '~/components/ui/Popover';
 import { useSmoothStream } from '~/utils/useSmoothStream';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
 import WithTooltip from '~/components/ui/Tooltip';
-import type { UIMessage } from 'ai';
 import type { ProviderInfo } from '~/types/model';
 import type {
   TextUIPart,
   ReasoningUIPart,
-  ToolInvocationUIPart,
   SourceUIPart,
   FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
+import { isToolPart } from '~/lib/chat/tool-parts';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
@@ -36,7 +35,7 @@ interface AssistantMessageProps {
   model?: string;
   provider?: ProviderInfo;
   parts:
-    | (TextUIPart | ReasoningUIPart | ToolInvocationUIPart | SourceUIPart | FileUIPart | StepStartUIPart)[]
+    | (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[]
     | undefined;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   isStreaming?: boolean;
@@ -196,13 +195,18 @@ export const AssistantMessage = memo(
     /**
      * Native reasoning + tool-invocation parts from the AI SDK. These are
      * interleaved with the `<thought>`-tag text inside the panel.
+     *
+     * v7 note: tool parts have `type: 'tool-<name>'` / `'dynamic-tool'`
+     * (NOT the v4 literal `'tool-invocation'`). We use the shared
+     * `isToolPart` helper which accepts both v7 and legacy v4 shapes so
+     * old persisted messages still render.
      */
     const reasoningAndToolParts = useMemo(() => {
       if (!parts) {
         return undefined;
       }
 
-      const filtered = parts.filter((p) => p.type === 'reasoning' || p.type === 'tool-invocation');
+      const filtered = parts.filter((p) => p.type === 'reasoning' || isToolPart(p));
 
       return filtered.length > 0 ? filtered : undefined;
     }, [parts]);
@@ -220,7 +224,7 @@ export const AssistantMessage = memo(
         return false;
       }
 
-      return parts.some((p) => p.type === 'tool-invocation');
+      return parts.some((p) => isToolPart(p));
     }, [parts]);
 
     const thinkingDone = hasThoughts && !thoughtStreaming && !hasToolCalls;

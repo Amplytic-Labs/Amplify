@@ -1,12 +1,20 @@
 import { memo } from 'react';
 import { classNames } from '~/utils/classNames';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { TOOL_EXECUTION_APPROVAL } from '~/utils/constants';
 import { getMeta } from './ToolProgress';
+import {
+  getToolNameFromPart,
+  getToolCallId,
+  getToolInput,
+} from '~/lib/chat/tool-parts';
 import styles from './chat-copilot.module.scss';
 
 interface ToolConfirmationProps {
-  part: ToolInvocationUIPart;
+  /**
+   * v7 tool part (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` part. Both shapes are accepted.
+   */
+  part: any;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 }
 
@@ -23,8 +31,9 @@ interface ToolConfirmationProps {
  * waiting for user consent.
  */
 export const ToolConfirmation = memo(({ part, addToolResult }: ToolConfirmationProps) => {
-  const { toolInvocation } = part;
-  const { toolName, args, toolCallId } = toolInvocation as any;
+  const toolName = getToolNameFromPart(part);
+  const args = getToolInput(part);
+  const toolCallId = getToolCallId(part);
   const meta = getMeta(toolName);
 
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);

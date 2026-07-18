@@ -1,7 +1,13 @@
 import { memo, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
+import {
+  getToolNameFromPart,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal, isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
 import { ToolConfirmation } from './ToolConfirmation';
 import styles from './chat-copilot.module.scss';
@@ -225,7 +231,11 @@ function renderResult(toolName: string, result: any): { summary: string[]; previ
 }
 
 interface ToolProgressProps {
-  part: ToolInvocationUIPart;
+  /**
+   * v7 tool part (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` part. Both shapes are accepted.
+   */
+  part: any;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 
   /**
@@ -257,16 +267,27 @@ interface ToolProgressProps {
  */
 export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false }: ToolProgressProps) => {
   const [showDetails, setShowDetails] = useState(false);
-  const { toolInvocation } = part;
-  const { toolName, args, state, result } = toolInvocation as any;
+
+  /*
+   * v7 migration: tool fields are FLAT on the part (`toolCallId`, `state`,
+   * `input`, `output`). The legacy v4 shape nested them under `toolInvocation`.
+   * The shared helpers handle both shapes transparently.
+   */
+  const toolName = getToolNameFromPart(part);
+  const state = getToolState(part);
+  const args = getToolInput(part);
+  const result = getToolOutput(part);
 
   const meta = getMeta(toolName);
   const summary = summarizeArgs(toolName, args);
-  const isResult = state === 'result';
-  const isPending = state === 'call';
+  const isResult = ToolState.isResult(state);
+  // Preserve v4 behaviour: only `state === 'call'` (v7 'input-available') is
+  // considered "pending" — input-streaming falls through to the past-tense
+  // label path. (v4 'partial' was not treated as pending either.)
+  const isPending = ToolState.isCall(state);
   const readOnly = isReadOnlyNativeTool(toolName);
   const resultStatus = isResult ? classifyResult(result) : 'unknown';
-  const isError = resultStatus === 'error';
+  const isError = resultStatus === 'error' || state === 'output-error';
 
   const renderedResult = useMemo(
     () => (isResult ? renderResult(toolName, result) : null),

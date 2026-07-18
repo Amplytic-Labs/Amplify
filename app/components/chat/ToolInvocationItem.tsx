@@ -1,7 +1,13 @@
 import { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
+import {
+  getToolNameFromPart,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal } from '~/lib/tools/nativeTools';
 
 /**
@@ -120,14 +126,25 @@ function renderResult(toolName: string, result: any): string {
 }
 
 interface ToolInvocationItemProps {
-  part: ToolInvocationUIPart;
+  /**
+   * v7 tool part (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` part. Both shapes are accepted.
+   */
+  part: any;
   grouped?: boolean;
 }
 
 export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemProps) => {
   const [showDetails, setShowDetails] = useState(false);
-  const { toolInvocation } = part;
-  const { toolName, args, state, result } = toolInvocation as any;
+
+  /*
+   * v7 migration: tool fields are FLAT on the part. The shared helpers
+   * handle both v7 and legacy v4 nested shapes.
+   */
+  const toolName = getToolNameFromPart(part);
+  const args = getToolInput(part);
+  const state = getToolState(part);
+  const result = getToolOutput(part);
 
   const friendlyName = TOOL_FRIENDLY_NAMES[toolName] || `Used tool ${toolName}`;
   const icon = TOOL_ICONS[toolName] || 'i-ph:wrench';
@@ -135,7 +152,7 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
 
   const toggleDetails = () => setShowDetails(!showDetails);
 
-  const isResult = state === 'result';
+  const isResult = ToolState.isResult(state);
   const isError =
     typeof result === 'string' &&
     (result.startsWith('Error:') ||
@@ -161,7 +178,7 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
       >
         <div className={classNames(icon, 'text-amplify-elements-textSecondary')} />
         <span className="text-amplify-elements-textPrimary font-medium">
-          {state === 'call' ? `${friendlyName}...` : friendlyName}
+          {ToolState.isCall(state) ? `${friendlyName}...` : friendlyName}
         </span>
         {summary && (
           <span className="text-amplify-elements-textSecondary text-xs truncate max-w-md font-mono">{summary}</span>

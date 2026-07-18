@@ -48,6 +48,13 @@ import { runVerification } from '~/lib/verification/runner';
 import type { UIMessage } from 'ai';
 import { ExecutionManager } from './execution-manager';
 import { ExecutionStateManager } from './execution-state';
+import {
+  isToolPart,
+  getToolNameFromPart,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+} from '~/lib/chat/tool-parts';
 import { CheckpointManager } from './checkpoint';
 import { ContextBuilder, type ProjectContextInfo, type WorkspaceSnapshot } from './context-builder';
 import { SkillContextBuilder, type RawSkillInput } from './skill-context';
@@ -702,26 +709,40 @@ async function extractContextFromSubChat(
 
 /**
  * Extracts tool invocations from an assistant message.
- * 
- * V7 MIGRATION: In AI SDK v7, tool invocations are inside the `parts` array
- * as 'tool-invocation' type parts, NOT on the top-level `toolInvocations` property.
- * This function checks both for backward compatibility.
+ *
+ * V7 MIGRATION (Task 3b): In AI SDK v7, tool invocations are inside the
+ * `parts` array as FLAT parts with `type: 'tool-<name>'` or `'dynamic-tool'`
+ * (NOT the v4 literal `'tool-invocation'` with a nested `toolInvocation`).
+ *
+ * The v7 part fields are flat: `toolName` (or extracted from `type`),
+ * `toolCallId`, `input` (v4 `args`), `output` (v4 `result`), and `state`
+ * (`'input-available'` / `'output-available'` / `'output-error'` / ...).
+ *
+ * We use the shared `~/lib/chat/tool-parts` helpers so both shapes work.
  */
 function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
-  // V7: tool invocations are inside parts array, not top-level
   const parts = (message as any).parts;
   if (Array.isArray(parts)) {
-    return parts
-      .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation?.state === 'result')
-      .map((p: any) => ({
-        toolName: p.toolInvocation.toolName,
-        args: p.toolInvocation.args || {},
-        result: p.toolInvocation.result,
-        success: !p.toolInvocation.result?.error,
+    const out: ToolInvocationRecord[] = [];
+    for (const p of parts) {
+      if (!isToolPart(p)) continue;
+      const state = getToolState(p);
+      // Only completed tool calls have a usable result.
+      if (state !== 'output-available' && state !== 'output-error' && state !== 'result') {
+        continue;
+      }
+      const result = getToolOutput(p);
+      out.push({
+        toolName: getToolNameFromPart(p),
+        args: getToolInput(p) || {},
+        result,
+        success: !(result as any)?.error,
         timestamp: new Date().toISOString(),
-      }));
+      });
+    }
+    return out;
   }
-  
+
   // Fallback for legacy messages that still use toolInvocations (v4 pattern)
   if (!message.toolInvocations) return [];
   return message.toolInvocations

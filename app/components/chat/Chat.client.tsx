@@ -1,7 +1,15 @@
 import { useStore } from '@nanostores/react';
 import type { UIMessage } from 'ai';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai';
 import { useChat } from '@ai-sdk/react';
+import {
+  isToolPart,
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 import { useAnimate } from 'framer-motion';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
@@ -287,12 +295,33 @@ export const ChatImpl = memo(
       transport: chatTransport,
       // Pass initial messages if available (for chat history restoration)
       ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
-      
+
+      /*
+       * CRITICAL (Task 3b): Native tools are sent to streamText WITHOUT an
+       * `execute` function (see api.chat.ts:301 `toolsWithoutExecute`). The
+       * SDK therefore cannot auto-run them and the stream for that step ends
+       * naturally after the tool-call part is emitted.
+       *
+       * The client-side auto-approve effect (below) calls `addToolResult`
+       * to populate the part's `output` field with a placeholder, but the
+       * SDK ONLY auto-sends a follow-up `/api/chat` request to actually
+       * execute the tool server-side if this predicate returns true.
+       *
+       * `lastAssistantMessageIsCompleteWithToolCalls` is the canonical
+       * helper exported from `ai@7` — it returns true when the last
+       * assistant message has tool-call parts ALL in the `output-available`
+       * / `output-error` state (i.e. every tool call has a result).
+       *
+       * Without this, the chat stream silently stops after the first tool
+       * call — no error, no log, no follow-up request, no rendered chip.
+       */
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');
       },
-      onFinish: (message) => {
+      onFinish: ({ message }) => {
         console.log('[DEBUG Chat] onFinish called:', {
           messageId: message?.id,
           role: message?.role,
@@ -306,7 +335,10 @@ export const ChatImpl = memo(
           role: message?.role,
           hasParts: Array.isArray(message?.parts),
           partsCount: message?.parts?.length,
-          contentPreview: typeof message?.content === 'string' ? message.content?.slice(0, 100) : '(not a string)',
+          contentPreview:
+            Array.isArray(message?.parts)
+              ? (message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('') || '').slice(0, 100)
+              : '(no parts)',
           totalMessages: messages?.length,
           allMessageIds: messages?.map(m => ({ id: m.id, role: m.role })),
         });
@@ -679,27 +711,37 @@ export const ChatImpl = memo(
       }
 
       /*
-       * Tool invocations can live either on `toolInvocations` (legacy) or
-       * inside `parts` (current ai-sdk shape). Check both.
+       * Tool invocations can live either on `toolInvocations` (legacy v4) or
+       * inside `parts` (AI SDK v7 flat shape: `tool-<name>` / `dynamic-tool`).
+       * We normalise both into a flat `{ toolName, toolCallId, state, result }`
+       * shape via the helpers in `~/lib/chat/tool-parts` so the rest of this
+       * effect can use one consistent access pattern.
        */
       const allInvocations: any[] = [];
 
       if (Array.isArray((lastAssistant as any).parts)) {
         for (const p of (lastAssistant as any).parts) {
-          if (p?.type === 'tool-invocation' && p?.toolInvocation) {
-            allInvocations.push(p.toolInvocation);
+          if (isToolPart(p)) {
+            allInvocations.push({
+              toolName: getToolNameFromPart(p),
+              toolCallId: getToolCallId(p),
+              state: getToolState(p),
+              result: getToolOutput(p),
+            });
           }
         }
       }
 
       // Note: toolInvocations is deprecated in AI SDK v7, but kept for backward compatibility
-      // In v7, tool invocations are in message.parts as 'tool-invocation' type parts
+      // In v7, tool invocations live inline on the part (flat). This branch only
+      // catches old persisted v4 messages.
       if (Array.isArray((lastAssistant as any).toolInvocations)) {
         allInvocations.push(...(lastAssistant as any).toolInvocations);
       }
 
       for (const inv of allInvocations) {
-        if (inv.state !== 'result') {
+        // Accept both v7 'output-available'/'output-error' and legacy v4 'result'.
+        if (!ToolState.isResult(inv.state)) {
           continue;
         }
 
@@ -884,11 +926,11 @@ export const ChatImpl = memo(
 
         for (const p of parts) {
           if (
-            p?.type === 'tool-invocation' &&
-            p?.toolInvocation?.toolName === 'inject_template' &&
-            (p.toolInvocation.state === 'call' ||
-              p.toolInvocation.state === 'partial' ||
-              p.toolInvocation.state === 'result')
+            isToolPart(p) &&
+            getToolNameFromPart(p) === 'inject_template' &&
+            (ToolState.isCall(getToolState(p)) ||
+              ToolState.isPartial(getToolState(p)) ||
+              ToolState.isResult(getToolState(p)))
           ) {
             injectTemplateInProgress = true;
             break;
@@ -1012,20 +1054,20 @@ export const ChatImpl = memo(
 
             for (const p of parts) {
               if (
-                p?.type === 'tool-invocation' &&
-                p?.toolInvocation?.toolName === 'inject_template' &&
-                (p.toolInvocation.state === 'call' ||
-                  p.toolInvocation.state === 'partial' ||
-                  p.toolInvocation.state === 'result')
+                isToolPart(p) &&
+                getToolNameFromPart(p) === 'inject_template' &&
+                (ToolState.isCall(getToolState(p)) ||
+                  ToolState.isPartial(getToolState(p)) ||
+                  ToolState.isResult(getToolState(p)))
               ) {
                 /*
                  * Only block if the result hasn't arrived yet. Once state
-                 * is 'result' the file-writing is finishing up; combined
-                 * with stabilization this is safe. Keep simple: if any
-                 * inject_template call/partial (not yet result) exists,
-                 * wait.
+                 * is `output-available` (v4 `'result'`) the file-writing is
+                 * finishing up; combined with stabilization this is safe.
+                 * Keep simple: if any inject_template call/partial (not yet
+                 * result) exists, wait.
                  */
-                if (p.toolInvocation.state !== 'result') {
+                if (!ToolState.isResult(getToolState(p))) {
                   injectInProgress = true;
                   break;
                 }
@@ -1078,13 +1120,18 @@ export const ChatImpl = memo(
         }
 
         for (const p of parts) {
-          if (!p || p.type !== 'tool-invocation' || !p.toolInvocation) {
+          if (!isToolPart(p)) {
             continue;
           }
 
-          const inv = p.toolInvocation as any;
+          const inv = {
+            toolName: getToolNameFromPart(p),
+            toolCallId: getToolCallId(p),
+            state: getToolState(p),
+          };
 
-          if (inv.state !== 'call') {
+          // v7 'input-available' (and 'input-streaming') == v4 'call'.
+          if (!ToolState.isCall(inv.state)) {
             continue;
           }
 
@@ -1241,9 +1288,15 @@ export const ChatImpl = memo(
         // Get tool execution results from recent messages (extract from parts for v7)
         const getToolInvocations = (msg: any): any[] => {
           if (!msg || !Array.isArray(msg.parts)) return [];
-          return msg.parts
-            .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation)
-            .map((p: any) => p.toolInvocation);
+          const out: any[] = [];
+          for (const p of msg.parts) {
+            if (!isToolPart(p)) continue;
+            out.push({
+              toolName: getToolNameFromPart(p),
+              result: getToolOutput(p),
+            });
+          }
+          return out;
         };
         const toolResults = messages
           .filter((m) => m.role === 'assistant')
@@ -1523,9 +1576,15 @@ export const ChatImpl = memo(
         // Get tool execution results from recent messages (extract from parts for v7)
         const getToolInvocationsForResume = (msg: any): any[] => {
           if (!msg || !Array.isArray(msg.parts)) return [];
-          return msg.parts
-            .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation)
-            .map((p: any) => p.toolInvocation);
+          const out: any[] = [];
+          for (const p of msg.parts) {
+            if (!isToolPart(p)) continue;
+            out.push({
+              toolName: getToolNameFromPart(p),
+              result: getToolOutput(p),
+            });
+          }
+          return out;
         };
         const toolResults = messages
           .filter((m) => m.role === 'assistant')

@@ -6,6 +6,7 @@ import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markd
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
+import { Chart } from './Chart';
 import { FilePill } from './copilot/FilePill';
 import type { UIMessage } from 'ai';
 import styles from './Markdown.module.scss';
@@ -154,6 +155,32 @@ export const Markdown = memo(
 
               if (isClosed) {
                 return <Mermaid chart={code} />;
+              }
+
+              return null;
+            }
+
+            if (language === 'chartjs') {
+              const code = firstChild.children[0].value;
+              let isClosed = false;
+
+              if (node?.position?.start?.offset !== undefined) {
+                isClosed = childrenRef.current.indexOf('```', node.position.start.offset + 10) !== -1;
+              } else {
+                const lastChartIndex = childrenRef.current.lastIndexOf('```chartjs');
+                isClosed = childrenRef.current.indexOf('```', lastChartIndex + 10) !== -1;
+              }
+
+              /*
+               * Only mount the Chart component once the closing fence has
+               * arrived. Chart.js mutates a <canvas> on mount and destroys
+               * it on unmount, so mounting on a partial JSON blob would
+               * throw a parse error and flash an error card. Once closed,
+               * the module-level config cache inside Chart.tsx keeps the
+               * parsed config stable across ReactMarkdown re-parses.
+               */
+              if (isClosed) {
+                return <Chart config={code} />;
               }
 
               return null;

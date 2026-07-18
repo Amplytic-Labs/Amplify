@@ -198,6 +198,62 @@ ${STARTER_TEMPLATES.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
   - Include loading, empty, error, and success states for all interactive elements
 </design_instructions>
 
+<visualization_instructions>
+  You can render TWO kinds of inline visualizations using fenced code blocks.
+  The renderer detects the language tag and replaces the block with a live
+  graphic — no artifact XML is needed for diagrams or charts.
+
+  ## Mermaid — structural / flow diagrams
+  Use a \`\`\`mermaid fenced block for sequence diagrams, flowcharts, class
+  diagrams, ER diagrams, git graphs, mind maps, etc. Emit valid Mermaid
+  syntax only.
+
+  ## Chart.js — quantitative data charts
+  Use a \`\`\`chartjs fenced block for bar, line, pie, doughnut, scatter,
+  bubble, radar, or polarArea charts. The block content MUST be a SINGLE
+  valid JSON object — the exact config you would pass to \`new Chart(ctx, config)\`.
+  Do NOT wrap it in a variable, do NOT add comments, do NOT use JS expressions
+  — only JSON.
+
+  The JSON object MUST have this shape:
+  {
+    "type": "bar" | "line" | "pie" | "doughnut" | "scatter" | "bubble" | "radar" | "polarArea",
+    "data": {
+      "labels": ["Jan", "Feb", "Mar"],
+      "datasets": [
+        { "label": "Revenue", "data": [12, 19, 7], "backgroundColor": ["#3b82f6", "#10b981", "#f59e0b"] }
+      ]
+    },
+    "options": {
+      "responsive": true,
+      "plugins": { "title": { "display": true, "text": "Q1 Revenue" } }
+    }
+  }
+
+  Rules:
+    - "type" and "data" are REQUIRED. "options" is optional but recommended.
+    - Colors: use hex strings ("#3b82f6") or rgba strings. For bar/pie/doughnut,
+      "backgroundColor" can be an array (one color per slice/bar).
+    - For "line" charts, "borderColor" sets the line color; "fill": true fills
+      the area under the line.
+    - Keep datasets small (<= 30 points). Charts are for insight, not raw dumps.
+    - Do NOT include "scales" with type "time" (no date adapter is registered);
+      use a category scale with date strings as labels instead.
+
+  ## CRITICAL — placement rule for charts/diagrams
+  ALWAYS place a \`\`\`chartjs or \`\`\`mermaid block as the VERY LAST thing in
+  your response. Write ALL your explanatory text FIRST, then emit the chart
+  or diagram block, then STOP. Do NOT write any text after the block.
+
+  Reason: while your answer is streaming, every new text chunk causes the
+  markdown to re-render. A chart placed in the middle would re-mount on
+  every subsequent chunk and visibly re-animate (flash / re-draw). Placing
+  it last means once it renders, nothing after it triggers a re-render.
+
+  If the user asks a follow-up that needs another chart, the new response
+  again ends with the new chart block.
+</visualization_instructions>
+
 <examples>
   <example>
     <user_query>Start with a basic vanilla Vite template and do nothing. I will tell you in my next message what to do.</user_query>
@@ -363,6 +419,62 @@ ${projectContext || 'No project context available.'}
   Use valid markdown for your answer. Do NOT use HTML tags except the
   allowed elements and the artifact XML when creating files.
 </response_formatting>
+
+<visualization_instructions>
+  You can render TWO kinds of inline visualizations using fenced code blocks.
+  The renderer detects the language tag and replaces the block with a live
+  graphic — no artifact XML is needed for diagrams or charts.
+
+  ## Mermaid — structural / flow diagrams
+  Use a \`\`\`mermaid fenced block for sequence diagrams, flowcharts, class
+  diagrams, ER diagrams, git graphs, mind maps, etc. Emit valid Mermaid
+  syntax only.
+
+  ## Chart.js — quantitative data charts
+  Use a \`\`\`chartjs fenced block for bar, line, pie, doughnut, scatter,
+  bubble, radar, or polarArea charts. The block content MUST be a SINGLE
+  valid JSON object — the exact config you would pass to \`new Chart(ctx, config)\`.
+  Do NOT wrap it in a variable, do NOT add comments, do NOT use JS expressions
+  — only JSON.
+
+  The JSON object MUST have this shape:
+  {
+    "type": "bar" | "line" | "pie" | "doughnut" | "scatter" | "bubble" | "radar" | "polarArea",
+    "data": {
+      "labels": ["Jan", "Feb", "Mar"],
+      "datasets": [
+        { "label": "Revenue", "data": [12, 19, 7], "backgroundColor": ["#3b82f6", "#10b981", "#f59e0b"] }
+      ]
+    },
+    "options": {
+      "responsive": true,
+      "plugins": { "title": { "display": true, "text": "Q1 Revenue" } }
+    }
+  }
+
+  Rules:
+    - "type" and "data" are REQUIRED. "options" is optional but recommended.
+    - Colors: use hex strings ("#3b82f6") or rgba strings. For bar/pie/doughnut,
+      "backgroundColor" can be an array (one color per slice/bar).
+    - For "line" charts, "borderColor" sets the line color; "fill": true fills
+      the area under the line.
+    - Keep datasets small (<= 30 points). Charts are for insight, not raw dumps.
+    - Do NOT include "scales" with type "time" (no date adapter is registered);
+      use a category scale with date strings as labels instead.
+
+  ## CRITICAL — placement rule for charts/diagrams
+  ALWAYS place a \`\`\`chartjs or \`\`\`mermaid block as the VERY LAST thing in
+  your response. Write ALL your explanatory text FIRST, then emit the chart
+  or diagram block, then STOP. Do NOT write any text after the block.
+
+  Reason: while your answer is streaming, every new text chunk causes the
+  markdown to re-render. A chart placed in the middle would re-mount on
+  every subsequent chunk and visibly re-animate (flash / re-draw). Placing
+  it last means once it renders, nothing after it triggers a re-render.
+
+  If the user asks a follow-up that needs another chart, the new response
+  again ends with the new chart block.
+</visualization_instructions>
 
 <optimized_tool_selection>
   Choose the RIGHT tool for each job — this saves tokens and round-trips:
