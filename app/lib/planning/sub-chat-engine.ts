@@ -702,10 +702,28 @@ async function extractContextFromSubChat(
 
 /**
  * Extracts tool invocations from an assistant message.
+ * 
+ * V7 MIGRATION: In AI SDK v7, tool invocations are inside the `parts` array
+ * as 'tool-invocation' type parts, NOT on the top-level `toolInvocations` property.
+ * This function checks both for backward compatibility.
  */
 function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
+  // V7: tool invocations are inside parts array, not top-level
+  const parts = (message as any).parts;
+  if (Array.isArray(parts)) {
+    return parts
+      .filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation?.state === 'result')
+      .map((p: any) => ({
+        toolName: p.toolInvocation.toolName,
+        args: p.toolInvocation.args || {},
+        result: p.toolInvocation.result,
+        success: !p.toolInvocation.result?.error,
+        timestamp: new Date().toISOString(),
+      }));
+  }
+  
+  // Fallback for legacy messages that still use toolInvocations (v4 pattern)
   if (!message.toolInvocations) return [];
-
   return message.toolInvocations
     .filter((ti: any) => ti.state === 'result')
     .map((ti: any) => ({

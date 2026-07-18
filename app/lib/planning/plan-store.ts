@@ -465,6 +465,10 @@ export class PlanStore {
 
   /**
    * Adds a tool invocation record to a sub-chat.
+   * 
+   * V7 MIGRATION: This stores invocations in the legacy toolInvocations array
+   * for backward compatibility. In v7, tool invocations are typically in message.parts,
+   * but we maintain this separate record for plan tracking/verification purposes.
    */
   addToolInvocation(planId: string, pointId: string, invocation: Omit<ToolInvocationRecord, 'timestamp'>): void {
     const plan = this.getPlan(planId);
@@ -473,6 +477,12 @@ export class PlanStore {
     const point = plan.points.find((p) => p.id === pointId);
     if (!point?.subChat) return;
 
+    // Ensure toolInvocations array exists (legacy format)
+    if (!Array.isArray(point.subChat.toolInvocations)) {
+      point.subChat.toolInvocations = [];
+    }
+
+    // Store in legacy format for plan tracking
     point.subChat.toolInvocations.push({
       ...invocation,
       timestamp: new Date().toISOString(),

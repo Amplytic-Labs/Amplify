@@ -93,7 +93,7 @@ interface BaseChatProps {
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   append?: (message: UIMessage) => void;
-  /** Regenerate the last assistant answer (AI SDK reload). */
+  /** Regenerate the last assistant answer (v7: also known as onRegenerate). */
   reload?: () => void;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;

@@ -321,7 +321,8 @@ export class ExecutionManager {
     if (!point?.executionState) return;
 
     // Take a final checkpoint before marking interrupted
-    const toolInvocations = point.subChat?.toolInvocations ?? [];
+    // V7 MIGRATION: Extract tool invocations from parts (v7) or toolInvocations (legacy)
+    const toolInvocations = extractToolInvocationsFromSubChat(point.subChat);
     const completedSteps = point.executionState.completedSteps ?? [];
 
     const checkpoint = CheckpointManager.createCheckpoint({
@@ -448,6 +449,35 @@ export class ExecutionManager {
         ),
       );
   }
+}
+
+/**
+ * Extracts tool invocations from a SubChat object.
+ * 
+ * V7 MIGRATION: In AI SDK v7, tool invocations are stored in message.parts
+ * as 'tool-invocation' type parts. This helper extracts them from either
+ * the parts-based format (v7) or legacy toolInvocations array (v4).
+ */
+function extractToolInvocationsFromSubChat(subChat: any): any[] {
+  if (!subChat) return [];
+  
+  // V7: Check messages for parts-based tool invocations
+  if (Array.isArray(subChat.messages)) {
+    const fromParts: any[] = [];
+    for (const msg of subChat.messages) {
+      if (Array.isArray(msg.parts)) {
+        for (const p of msg.parts) {
+          if (p?.type === 'tool-invocation' && p?.toolInvocation) {
+            fromParts.push(p.toolInvocation);
+          }
+        }
+      }
+    }
+    if (fromParts.length > 0) return fromParts;
+  }
+  
+  // Legacy fallback: use toolInvocations array on subChat
+  return subChat.toolInvocations ?? [];
 }
 
 export const executionManager = ExecutionManager;
