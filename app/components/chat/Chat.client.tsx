@@ -235,52 +235,61 @@ export const ChatImpl = memo(
       [],
     );
 
-    // Create custom transport with enhanced body for workspace files, API keys, etc.
-    const customTransport = useMemo(() => new DefaultChatTransport({
-      api: '/api/chat',
-      fetch: ((request: Request, init?: RequestInit) => {
-        // Create a modified request that includes our extra body fields
-        const body: Record<string, any> = request.json() as any;
-        // Use setTimeout to make it async without async/await type issues
-        return (async () => {
-          const resolvedBody = await body;
-          const enhancedBody = {
-            ...resolvedBody,
-            apiKeys,
-            promptId,
-            contextOptimization: contextOptimizationEnabled,
-            chatMode,
-            designScheme,
-            supabase: {
-              isConnected: supabaseConn.isConnected,
-              hasSelectedProject: !!selectedProject,
-              credentials: {
-                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-                anonKey: supabaseConn?.credentials?.anonKey,
-              },
-            },
-            maxLLMSteps: mcpSettings.maxLLMSteps,
-            userContext: vectorUserContext || undefined,
-            projectContext: projectContextForPrompt,
-            projectContinuation,
+    // Custom fetch wrapper that enhances request body with workspace context
+    // Must handle both Request objects and string URLs properly
+    const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // Convert input to Request if needed, then extract and enhance body
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      const body: Record<string, any> = await request.json();
+      
+      const enhancedBody = {
+        ...body,
+        apiKeys,
+        promptId,
+        contextOptimization: contextOptimizationEnabled,
+        chatMode,
+        designScheme,
+        supabase: {
+          isConnected: supabaseConn.isConnected,
+          hasSelectedProject: !!selectedProject,
+          credentials: {
+            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+            anonKey: supabaseConn?.credentials?.anonKey,
+          },
+        },
+        maxLLMSteps: mcpSettings.maxLLMSteps,
+        userContext: vectorUserContext || undefined,
+        projectContext: projectContextForPrompt,
+        projectContinuation,
 
-            /*
-             * CRITICAL: Send workspace files to the server with every request.
-             *
-             * The native tools (read_file, list_dir, find_files, grep_search, etc.)
-             * operate on this files map server-side. Without it, ctx.files is
-             * undefined and every read_file call returns "File not found" even
-             * though the file exists in the WebContainer.
-             *
-             * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
-             * which match what nativeTools.ts expects in getFileFromMap().
-             */
-            files: files,
-          };
-          return debugFetch(new Request(request, { body: JSON.stringify(enhancedBody) }), init);
-        })();
-      }) as any,
-    }), [/* Intentionally empty - create once */]);
+        /*
+         * CRITICAL: Send workspace files to the server with every request.
+         *
+         * The native tools (read_file, list_dir, find_files, grep_search, etc.)
+         * operate on this files map server-side. Without it, ctx.files is
+         * undefined and every read_file call returns "File not found" even
+         * though the file exists in the WebContainer.
+         *
+         * The files map uses WORK_DIR-prefixed keys (e.g. /home/project/src/App.tsx)
+         * which match what nativeTools.ts expects in getFileFromMap().
+         */
+        files: files,
+      };
+      
+      // Create new request with enhanced body, preserving original method/headers
+      return debugFetch(new Request(request.url, { 
+        method: request.method,
+        headers: request.headers,
+        body: JSON.stringify(enhancedBody),
+        credentials: request.credentials,
+      }), init);
+    }, [apiKeys, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, files]);
+
+    // Create transport with custom fetch - memoized to avoid unnecessary recreations
+    const chatTransport = useMemo(() => new DefaultChatTransport({
+      api: '/api/chat',
+      fetch: customFetch,
+    }), [customFetch]);
 
     const {
       messages,
@@ -293,10 +302,9 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      // AI SDK v4/v7: Pass ChatInit options directly (NOT a Chat instance)
-      // Using 'transport' option lets useChat create the Chat instance internally,
-      // ensuring registerMessagesCallback works and messages render correctly
-      transport: customTransport,
+      // AI SDK v4/v7: Use transport with custom fetch for enhanced body
+      // The customFetch handles workspace files, API keys, and other context
+      transport: chatTransport,
       ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { initialMessages } : {}),
 
       /*
