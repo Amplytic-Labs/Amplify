@@ -89,7 +89,7 @@ const processSampledMessages = createSampler(
     const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory } = options;
     parseMessages(messages, isLoading);
 
-    if (messages.length > initialMessages.length) {
+    if ((messages?.length ?? 0) > (initialMessages?.length ?? 0)) {
       storeMessageHistory(messages).catch((error) => toast.error(error.message));
     }
   },
@@ -137,8 +137,8 @@ export const ChatImpl = memo(
      * the internal flag OR showWorkbench is true, so the Workbench
      * never sees a stale false during the effect-to-render cycle.
      */
-    const [chatStartedInternal, setChatStartedInternal] = useState(initialMessages.length > 0 || showWorkbench);
-    const chatStarted = chatStartedInternal || showWorkbench || initialMessages.length > 0;
+    const [chatStartedInternal, setChatStartedInternal] = useState((initialMessages?.length ?? 0) > 0 || showWorkbench);
+    const chatStarted = chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -425,14 +425,14 @@ export const ChatImpl = memo(
      * after mount, and the two effects could race.
      */
     useEffect(() => {
-      const shouldStart = initialMessages.length > 0 || showWorkbench;
+      const shouldStart = (initialMessages?.length ?? 0) > 0 || showWorkbench;
 
       if (shouldStart !== chatStartedInternal) {
         setChatStartedInternal(shouldStart);
       }
 
       chatStore.setKey('started', shouldStart);
-    }, [initialMessages.length, showWorkbench, chatStartedInternal]);
+    }, [initialMessages?.length, showWorkbench, chatStartedInternal]);
 
     /*
      * Abort streaming and workbench actions when ChatImpl unmounts
