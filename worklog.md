@@ -1,3 +1,4 @@
+
 ---
 Task ID: bugfix-4bugs
 Agent: general-purpose
@@ -95,6 +96,7 @@ Stage Summary:
       navigation. If the SPA navigation is preferred, `window.location.href`
       should be swapped back to `navigate(...)`.
 - No commits made. No branches created. Ready for the user to verify and commit.
+
 
 ---
 Task ID: explore-code-context-leak
@@ -344,6 +346,7 @@ That is the single change with the highest leverage for this bug.
 
 No files were modified during this research other than appending this
 section to worklog.md.
+
 
 ---
 Task ID: explore-terminal-reset
@@ -770,6 +773,7 @@ process / cancelling its `streamA → terminal.write` pipe.
 No files were modified during this research other than appending this
 section to worklog.md.
 
+
 ---
 Task ID: explore-project-version
 Agent: explore
@@ -1051,6 +1055,7 @@ solves the UUID-as-message problem.  Both are 5-15 line changes.
 
 No files were modified during this research other than appending
 this section to worklog.md.
+
 
 
 ---
@@ -1476,6 +1481,7 @@ including turn 2 (3 messages), exactly as the user's log shows.
 No files were modified during this research other than appending
 this section to worklog.md.
 
+
 ---
 Task ID: bugfix-round2
 Agent: general-purpose (main session)
@@ -1507,6 +1513,7 @@ Stage Summary:
 - All 6 bugs addressed at the root cause level.
 - Pre-existing tsc errors (CloudProvidersTab SiAmazon, markdown.ts UnistNode) are NOT from this change.
 - Known sandbox limitation: dev server dies on browser connection; user should verify in Preview Panel.
+
 
 ---
 Task ID: explore-context-summary
@@ -1917,6 +1924,7 @@ SUMMARY
 No files were modified during this research other than appending this
 section to worklog.md.
 
+
 ---
 Task ID: context-budget-fix
 Agent: general-purpose (main session)
@@ -1946,6 +1954,7 @@ Stage Summary:
 - npx tsc --noEmit: 0 errors in modified files.
 - Dev server: HTTP 200 confirmed via curl. Browser verification blocked by sandbox memory issue (Vite OOM on browser connect).
 - Context budget indicator gives users real-time visibility into why summarization triggers.
+
 
 ---
 Task ID: round-3-transparency
@@ -2060,6 +2069,7 @@ Unresolved / risks / next-phase recommendations:
      (d) Empty-chat landing screen polish (better example prompts, feature
          highlights) — the current empty state is sparse.
 
+
 ---
 Task ID: gemma4-context-fix
 Agent: main session
@@ -2115,6 +2125,7 @@ Stage Summary:
   - The merged-list improvement (fix #3) future-proofs against any other
     stale static entries across all providers — the API is now the source
     of truth when available.
+
 
 ---
 Task ID: verify-prev-fixes
@@ -2332,6 +2343,7 @@ Stage Summary:
   No files were modified during this verification other than appending
   this section to worklog.md.
 
+
 ---
 Task ID: round-4-six-fixes
 Agent: main session
@@ -2374,6 +2386,7 @@ Stage Summary:
 - Dev server (remix vite:dev on :3000): HTTP 200, 1.57MB homepage, no compile errors in dev.log.
 - Previously-implemented fixes (18e74a3, 244702b, 8487f4d): verified PASS by read-only subagent.
 - Browser-based visual QA: the recurring sandbox OOM-on-browser-connect issue (documented in prior rounds) prevents visual verification; relied on tsc + curl smoke-test + code reading instead. The detached/backgrounded start command change carries runtime risk (jsh `&` backgrounding) that could not be visually verified — recommend browser QA once the sandbox memory issue is resolved.
+
 
 ---
 Task ID: round-5-replay-suppression
@@ -2439,6 +2452,7 @@ Stage Summary:
 - Both fixes are surgical, commented, and do not regress any existing behavior.
 - Ready to push to origin/rebrand/amplify using the user-provided PAT.
 
+
 ---
 Task ID: round-6-silent-init-isolation-routing
 Agent: main session
@@ -2489,6 +2503,7 @@ Stage Summary:
 - Vite HMR: all changes picked up cleanly, no compile errors.
 - Pushed to origin/rebrand/amplify. PAT not stored in .git/config.
 
+
 ---
 Task ID: 8
 Agent: main (continuation)
@@ -2515,6 +2530,7 @@ Stage Summary:
 - Bun projects auto-setup now correctly runs `npm install` + `npm run <script>` instead of failing on `bun`.
 - Yarn berry projects (with .yarnrc.yml) fall back to npm; yarn v1 projects keep using yarn.
 - Commit 9a2450f made locally on rebrand/amplify. Push pending — no PAT available in this session (previous session's PAT was not persisted). User will need to push or supply PAT.
+
 
 ---
 Task ID: 9-b
@@ -2629,205 +2645,6 @@ Stage Summary:
 - Recommended fix: Option A — swap the two `attach*` callbacks in TerminalTabs.tsx (lines 252 and 309) so the visible tab hosts `initTerminal` and the hidden terminal hosts `amplifyTerminal`, then update the Reset button (line 209) and doc-comments. ~5 lines of behavioral change, preserves isolation and silence.
 - Broken pieces flagged: rerunProjectSetup shows empty terminal; Reset button resets wrong shell; invalid `width: '80x24'` CSS on hidden terminal; no UI to view init terminal; misleading "Amplify Terminal" label.
 
----
-Task ID: 9-a
-Agent: general-purpose (research only)
-Task: Investigate the template-click redirect bug — user clicks a starter template, expects to land on a chat URL like `/<projectId>/<chatId>`, but instead the main tab appears to be loading/hung while the URL bar shows the root directory `/`, and terminal commands appear absent in the UI yet are running. RESEARCH ONLY — no code changes.
-
-Work Log:
-- Read worklog.md round-6 (line 2443), round-7 (line 2392, referenced as "round 7" inside the round-6 entry — actually the round-6 entry IS the "7 fixes" round), task 8 (line 2493, package-manager detection), and task 9-b (line 2520, terminal "absent yet running" investigation) for context.
-- Read all relevant source files end-to-end: app/components/chat/StarterTemplates.tsx, app/components/sidebar/TemplatesModal.tsx, app/utils/selectStarterTemplate.ts, app/components/git/GitUrlImport.client.tsx, app/components/chat/GitCloneButton.tsx, app/components/chat/Chat.client.tsx (workspaceReadyRef + inject_template gate, lines 560-909), app/components/chat/BaseChat.tsx, app/lib/persistence/useChatHistory.ts (importChat + load effect, lines 293-445 and 810-931), app/lib/persistence/db.ts (createChatFromMessages, setMessages), app/lib/persistence/project-store/index.ts (linkChatToProject, saveProjectData), app/lib/persistence/project-auto-run.ts (runProjectAutoSetup), app/lib/stores/workbench.ts (clearWorkspace, initTerminal), app/components/workbench/terminal/TerminalTabs.tsx (hidden init terminal), app/root.tsx, app/routes/_index.tsx, app/routes/git.tsx, app/routes/$projectId.tsx, app/routes/$projectId.$chatId.tsx, app/routes/chat.$id.tsx, app/components/ui/LoadingOverlay.tsx.
-
-Findings:
-
-(a) Exact code path from "user clicks template" → "files get injected" → "navigation happens" (or doesn't):
-
-  STEP 1 — Template click renders a plain `<a href>` (NOT Remix `<Link>` / `navigate()`):
-   - app/components/chat/StarterTemplates.tsx:9-21 — `FrameworkLink` returns `<a href={`/git?url=https://github.com/${template.githubRepo}.git`}>`. Plain browser navigation; no client-side `navigate()`.
-   - app/components/sidebar/TemplatesModal.tsx:60-73 — same `<a href={`/git?url=https://github.com/${item.githubRepo}.git`}>` for each template entry.
-   - Both render to the SAME `/git?url=...` route. There is no `useNavigate()` call here. The only `useNavigate()` in TemplatesModal (line 8) is used by `handleCreateBlank` (line 14-17), not by template clicks.
-
-  STEP 2 — Browser full-page-navigates to `/git?url=...`:
-   - app/routes/git.tsx:15-17 — loader is a no-op: `return json({ url: args.params.url })`. NOTE: `args.params.url` is always undefined because `url` is a SEARCH param, not a route param — this is a pre-existing minor bug, but it's unused downstream so it doesn't matter.
-   - app/routes/git.tsx:25-31 — `<ClientOnly fallback={<div>Loading...</div>}>` then `<GitImportLayout />`. So the user sees "Loading..." until hydration, then the import layout.
-   - app/components/git/GitUrlImport.client.tsx:78-176 — `GitUrlImport` mounts. Initial `loading=true` (line 84). The `useEffect` at line 145 waits for `historyReady && gitReady && !imported`, then calls `importRepo(url)`.
-
-  STEP 3 — `importRepo` clones the repo and calls `importChat` with an EMPTY messages array:
-   - GitUrlImport.client.tsx:86-143 — `importRepo`:
-     * line 95: `const { data } = await gitClone(repoUrl);` (network call to /api/git-proxy/...)
-     * line 125: `const initialFileMap = buildFileMapFromContents(fileContents);`
-     * line 127-132: `await importChat(`Git Project:${repoName}`, [], { gitUrl: repoUrl }, initialFileMap);`
-       — messages = [] (silent file loading per round-6 fix 2)
-       — metadata = `{ gitUrl: repoUrl }` (NO `projectId` field)
-       — initialFileMap = the cloned files
-   - app/components/chat/GitCloneButton.tsx:186 — same flow: `importChat(`Git Project:...`, [], undefined, initialFileMap);` (metadata = undefined, also no projectId).
-
-  STEP 4 — `importChat` creates the chat, the project, persists files to IndexedDB, then forces a full-page reload to `/<projectId>/<chatId>`:
-   - app/lib/persistence/useChatHistory.ts:810-931 — `importChat`:
-     * line 821: `const newId = await createChatFromMessages(db, description, messages, metadata);`
-       — IMPORTANT: db.ts:316 `createChatFromMessages` returns the **urlId** (not the actual chat id). So `newId` is the urlId.
-       — The chat is saved to IndexedDB with `metadata = { gitUrl: repoUrl }` (NO projectId field).
-     * line 823-835: derives `projectId`. Since `metadata?.projectId` is falsy AND description starts with `'Git Project:'`:
-       - line 829-832: `const project = projectStore.createProject({ name: projectName, hasWorkspace: true });`
-       - line 834: `projectStore.linkChatToProject(newId, projectId);`
-         — NOTE: `linkChatToProject` (project-store/index.ts:309-326) only updates `_data.chatToProject[chatId] = projectId` and `saveProjectData(this._data)` — which writes to **localStorage** (project-store/index.ts:186-197), NOT to the chat's metadata in IndexedDB. The chat record in IndexedDB remains `metadata = { gitUrl }`.
-       - **THE BUG: `importChat` never calls `updateChatMetadata(db, newId, { ...metadata, projectId })` to persist the projectId on the chat record.**
-     * line 837-916: if `projectId`, sets `workbenchStore.loadedProjectId.set(projectId)` + `showWorkbench.set(true)` (line 840-841); calls `createProjectCommit(db, projectId, 'Project files imported', initialFileMap, newId)` (line 867) to persist the cloned files; calls `detectProjectCommands(fileList)` (line 903) + `projectStore.setProjectCommands(projectId, detected, true)` (line 906) to persist setup/start commands.
-     * line 918-922: `window.location.href = /${projectId}/${newId};` — **FULL PAGE RELOAD** (not client-side navigate). `newId` here is the **urlId**, so the URL becomes `/<projectId>/<urlId>`.
-
-  STEP 5 — Browser reloads at `/<projectId>/<urlId>`:
-   - app/routes/$projectId.$chatId.tsx:4-6 — loader returns `{ id: args.params.chatId, projectId: args.params.projectId }`. Both are strings.
-   - The route component is `export default IndexRoute` (re-exports `_index.tsx`), so the same `<MainLayout />` renders.
-   - app/routes/_index.tsx:37 — `<ClientOnly fallback={<div>Loading...</div>}>` shows "Loading..." until hydration. After hydration, `<MainLayout />` renders `<Chat />`.
-   - app/components/chat/Chat.client.tsx:49-79 — `<Chat />` calls `useChatHistory()`. `ready` gates `<ChatImpl>` (line 67). Returns `<></>` while `ready=false`.
-
-  STEP 6 — `useChatHistory` effect runs at `/<projectId>/<urlId>`:
-   - useChatHistory.ts:121 — `const { id: mixedId, projectId: urlProjectId } = useLoaderData();`
-     — `mixedId = urlId` (string), `urlProjectId = projectId` (string).
-   - useChatHistory.ts:306-307 — `if (mixedId || urlProjectId) { setReady(false); setInitialMessages([]); ... }`
-   - useChatHistory.ts:327-379 — IMMEDIATE project load (async IIFE) because `urlProjectId` is truthy:
-     * line 344: `await workbenchStore.clearWorkspace();` (kills both terminals, clears WebContainer FS, sets `loadedProjectId = '<none>'`, `projectAutoStarted = false`).
-     * line 346: `const projectFiles = await getProjectFiles(db, project.id);` (reads from IndexedDB — the files persisted by `createProjectCommit` in step 4).
-     * line 354: `await restoreFileMap(projectFiles.files);` (writes files to WebContainer FS).
-     * line 355: `workbenchStore.files.set(projectFiles.files);` (updates React state).
-     * line 361-362: `workbenchStore.loadedProjectId.set(project.id); workbenchStore.showWorkbench.set(true);`
-     * line 371: `runProjectAutoSetup(project).catch(...);` — fire-and-forget auto-setup on the HIDDEN init terminal (see Finding (d)).
-   - useChatHistory.ts:381-441 — in parallel, `Promise.all([getMessages(db, finalChatIdToLoad), getSnapshot(db, finalChatIdToLoad)])`:
-     * `getMessages(db, urlId)` (db.ts:140-142) → `getMessagesById` (fails — id≠urlId) → `getMessagesByUrlId` (succeeds via the urlId index).
-     * Returns `{ id: <actualChatId>, urlId, description: 'Git Project:...', messages: [], metadata: { gitUrl: repoUrl }, timestamp }`.
-     * `.then(async ([storedMessages, snapshot]) => { ... })`:
-       - line 383: `if (storedMessages && storedMessages.messages.length > 0)` — **FALSE** (messages array is empty by design — silent file loading).
-       - line 425: `else if (storedMessages && storedMessages.metadata?.projectId)` — **FALSE** because `importChat` never persisted `projectId` on the chat record (see Finding (b)).
-       - line 431-433: `else { navigate('/', { replace: true }); }` — **FALLS THROUGH TO THIS BRANCH**. Client-side navigate to `/`.
-       - line 435: `setReady(true);` runs after navigate.
-
-  STEP 7 — URL becomes `/`. `<Chat />` re-mounts with `mixedId=undefined`, `urlProjectId=undefined`. The `else { setReady(true); }` branch (line 442-444) runs. `<ChatImpl key={chatKey ?? 'home'} />` mounts with `chatKey=undefined → 'home'`.
-   - `<ChatImpl>` renders with `initialMessages=[]`, `showWorkbench=true` (leftover from step 6's `workbenchStore.showWorkbench.set(true)` — nanostores persist across client-side navigation), so `chatStarted=true` (Chat.client.tsx:140-141).
-   - The workbench panel renders on the right (files restored in step 6).
-   - The chat input area renders on the left, empty (no messages).
-   - `chatId` atom was NEVER set (only `setChatId` is called in the `if (messages.length > 0)` and `else if (metadata?.projectId)` branches — never in the `else` branch). So `chatId.get() === undefined` — see Finding (f).
-
-(b) Why the URL stays at `/` — is `navigate()` never called? Is it called but failing? Is it waiting on something that never resolves?
-
-  `navigate('/', { replace: true })` IS called — explicitly, at useChatHistory.ts:432. It is NOT failing and NOT waiting. It is the EXPLICIT fallback in the `else` branch when:
-   (1) `storedMessages.messages.length === 0` (empty chat — by design, silent file loading), AND
-   (2) `storedMessages.metadata?.projectId` is falsy.
-
-  Condition (2) is the bug. `importChat` (useChatHistory.ts:810-931) creates a project and links it via `projectStore.linkChatToProject(newId, projectId)` (line 834), but this writes ONLY to the project-store's localStorage-backed `chatToProject` map (project-store/index.ts:320). It does NOT update the chat's `metadata` in IndexedDB. So when the page reloads and `getMessages(db, urlId)` returns the chat, `storedMessages.metadata` is still `{ gitUrl: repoUrl }` — no `projectId`.
-
-  The condition at line 425 should ALSO check `urlProjectId` (the project ID from the URL — clearly a project chat) OR `projectStore.getProjectByChat(storedMessages.id)` (the localStorage-backed lookup). Currently it only checks `storedMessages.metadata?.projectId`, which is never set by `importChat`.
-
-  Note: the `if (storedMessages.messages.length > 0)` branch (line 383) DOES use `projectStore.getProjectByChat(storedMessages.id)` as a fallback (line 395-399). But the `else if (storedMessages.metadata?.projectId)` branch (line 425) does NOT. This is an inconsistency — the empty-chat case is stricter than the non-empty-chat case, and the empty-chat case is exactly what `importChat` produces.
-
-(c) Why the tab appears loading — is there an unresolved promise, a stuck Suspense boundary, a never-resolving workspaceReadyRef?
-
-  THREE concurrent "loading" states the user sees during the flow:
-
-  1. **`/git?url=...` phase (LoadingOverlay):** GitUrlImport.client.tsx:171 renders `{loading && <LoadingOverlay message="Please wait while we clone the repository..." />}`. `loading` starts `true` (line 84) and is only set `false` in the error paths (lines 137, 160). On the happy path, `loading` is NEVER set to false — but it doesn't matter because `importChat` ends with `window.location.href = ...` which triggers a full page reload, unmounting the `<GitUrlImport>` component. So the overlay is visible for the entire duration of: gitClone + importChat's IndexedDB work + createProjectCommit + detectProjectCommands.
-
-  2. **`/<projectId>/<urlId>` phase (ClientOnly "Loading..." + Chat empty):** After `window.location.href` reload, the new HTML loads. Before hydration: `_index.tsx:37` `<ClientOnly fallback={<div>Loading...</div>}>` shows "Loading...". After hydration but before `useChatHistory`'s effect resolves: `ready=false` → `<Chat />` returns `<></>` (Chat.client.tsx:67) → the chat area is empty. The sidebar+header render (from `<MainLayout />`), but the main content is blank. This blank state, combined with the browser tab's loading spinner (still active during the fetch/parse/hydrate), reads as "loading" to the user.
-
-  3. **After `navigate('/', { replace: true })`:** The URL changes to `/` client-side. The `<Chat />` re-mounts. `useChatHistory`'s effect runs with `mixedId=undefined, urlProjectId=undefined` → `else { setReady(true); }` (line 442-444) → `ready=true` immediately. `<ChatImpl>` mounts with `chatKey='home'`. `showWorkbench=true` (leftover nanostore), `initialMessages=[]`, `chatStarted=true`. The workbench renders on the right; an empty chat input renders on the left. The page IS interactive at this point — but it's an empty chat with the project's workspace, with NO chat URL, NO chat ID, and NO visible terminal output. To a user expecting to "land on a chat", this looks like the page never finished loading.
-
-  **The workspaceReadyRef gate (Chat.client.tsx:661, 758, 793) is NOT the cause of the hang.** It only gates auto-approval of read-only native tools (line 953) and file-mutation tool calls (line 598). It does NOT gate rendering, navigation, or message sending. The stabilization timer (lines 826-909) also does not gate rendering. So the "Preserved" workspaceReadyRef waiting method (referenced in worklog.md:2484) is innocent here.
-
-(d) Why terminal commands appear absent but run — is the auto-setup running on a hidden terminal? Is the terminal panel not shown until navigation completes?
-
-  YES — this is the EXACT same bug investigated in detail in task 9-b (worklog.md:2520-2630). Summary:
-   - `runProjectAutoSetup` (project-auto-run.ts:41-111) runs `npm install` (line 84) and `npm run dev` detached (line 103-105) on `workbenchStore.initTerminal` — the HIDDEN off-screen AmplifyShell.
-   - TerminalTabs.tsx:305-313 renders the init terminal inside `<div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '80x24', opacity: 0, pointerEvents: 'none' }} aria-hidden="true">` — completely invisible.
-   - The VISIBLE "Amplify Terminal" tab (TerminalTabs.tsx:252, label at line 156) is attached to `workbenchStore.amplifyTerminal` — the AI's terminal, which is empty on a freshly-loaded project chat (no AI shell/start actions have fired).
-   - So `npm install` + `npm run dev` ARE running (on the hidden init terminal), but their output is invisible. The user sees an empty terminal panel.
-   - Additionally, the auto-setup is fire-and-forget from useChatHistory.ts:371 — `runProjectAutoSetup(project).catch((e) => console.warn(...))`. There's no UI affordance to surface "auto-setup is running" to the user.
-   - And since the URL is now `/` (after the bug in Finding (b)), the user has no chat context — making the running terminal output even more disconnected from anything visible.
-
-  This is the SAME root cause as task 9-b. The terminal "absent yet running" symptom is NOT new — it's the existing round-6 architecture (separate hidden init terminal) compounding the redirect bug.
-
-(e) Concrete fix recommendations:
-
-  ── Fix #1 (PRIMARY — fixes the redirect bug, ~5 lines in useChatHistory.ts) ──
-   In `importChat` (useChatHistory.ts:810-931), after determining `projectId` (line 823-835), persist it on the chat's metadata BEFORE the `window.location.href` reload. Two implementation options:
-
-   Option 1a — call `updateChatMetadata`:
-   ```ts
-   // after line 834 (projectStore.linkChatToProject)
-   if (projectId) {
-     const updatedMetadata = { ...metadata, projectId };
-     await updateChatMetadata(db, newId, updatedMetadata);
-     chatMetadata.set(updatedMetadata);
-   }
-   ```
-   `updateChatMetadata` already exists in db.ts:333-345. This is the cleanest fix.
-
-   Option 1b — derive projectId BEFORE calling createChatFromMessages, then pass `{ ...metadata, projectId }` as the metadata arg:
-   ```ts
-   let projectId: string | undefined = metadata?.projectId;
-   if (!projectId && description.startsWith('Git Project:')) {
-     const projectName = description.replace('Git Project:', '').trim();
-     const project = projectStore.createProject({ name: projectName, hasWorkspace: true });
-     projectId = project.id;
-     // linkChatToProject after the chat exists
-   }
-   const newId = await createChatFromMessages(db, description, messages, projectId ? { ...metadata, projectId } : metadata);
-   if (projectId && !metadata?.projectId) {
-     projectStore.linkChatToProject(newId, projectId);
-   }
-   ```
-   This avoids a second IndexedDB write but reorders the logic.
-
-   Recommendation: Option 1a is the smaller, safer diff.
-
-  ── Fix #2 (DEFENSE-IN-DEPTH — also fix the `else if` condition, ~1 line) ──
-   useChatHistory.ts:425 — broaden the condition so the URL's `urlProjectId` and/or `projectStore.getProjectByChat` are also accepted:
-   ```ts
-   } else if (storedMessages && (storedMessages.metadata?.projectId || urlProjectId || projectStore.getProjectByChat(storedMessages.id))) {
-   ```
-   This ensures that even if some other code path creates an empty project-linked chat without setting metadata.projectId, the user still lands on the chat URL instead of being bounced to `/`.
-
-  ── Fix #3 (UX — make the loading state visible/short, ~3 lines in GitUrlImport.client.tsx) ──
-   - Set `setLoading(false)` in the success path too (after `importChat` resolves, just before `window.location.href`), so the overlay doesn't briefly flash if the reload is delayed. Currently `setLoading(false)` is only in the catch (line 137) and the .catch wrapper (line 160).
-   - Consider replacing `window.location.href` (full reload) with a Remix `navigate()` (client-side) — but this is a larger change because `useChatHistory`'s effect depends on `useLoaderData()` changing, which only happens on a route change. Actually `navigate(`/${projectId}/${newId}`)` would work since `/$projectId.$chatId.tsx` is the same route module — the loader would re-run and `useLoaderData` would update. This would eliminate the "Loading..." hydration phase entirely. (Caveat: the WebContainer instance survives client-side nav, but `clearWorkspace` is called at the start of the load effect anyway, so this should be safe.)
-
-  ── Fix #4 (UX — make the running terminal command visible, see task 9-b) ──
-   Adopt task 9-b's Option A: swap `attachAmplifyTerminal` ↔ `attachInitTerminal` in TerminalTabs.tsx (lines 252 and 309), update the Reset button (line 209) to call `initTerminal.resetTerminal()`, update doc-comments. ~5 lines. This makes the auto-setup output visible in the default terminal tab.
-
-  ── Fix #5 (ROBUSTNESS — set `chatId` in the `else` branch too, ~1 line) ──
-   useChatHistory.ts:431-433 — the `else { navigate('/', { replace: true }); }` branch never sets `chatId`, `chatMetadata`, `description`. If for any reason this branch IS hit (e.g. a corrupted chat record), the user is left in a state where typed messages silently fail to persist (see Finding (f)). Consider also calling `workbenchStore.resetForNewChat()` here to clean up the leftover `showWorkbench=true` state, so the user lands on a TRULY fresh home screen instead of a half-broken "started chat with empty messages".
-
-(f) Code that looks broken or half-finished in this flow:
-
-  1. **`importChat` does not persist `projectId` on the chat record** (useChatHistory.ts:823-835). The bug. `projectStore.linkChatToProject` writes to localStorage; `importChat` never calls `updateChatMetadata` to mirror this on the IndexedDB chat record. This breaks the `else if (storedMessages.metadata?.projectId)` branch in the load effect (line 425) → falls through to `else { navigate('/', { replace: true }); }` → URL becomes `/`.
-
-  2. **The `else if` condition at useChatHistory.ts:425 is inconsistent with the `if` branch at line 395-399.** The `if` branch uses `projectStore.getProjectByChat(storedMessages.id) ?? storedMessages.metadata?.projectId` to find the linked project. The `else if` branch ONLY checks `storedMessages.metadata?.projectId`. This asymmetry is what makes the empty-chat case (which `importChat` produces) fragile.
-
-  3. **The `else { navigate('/', { replace: true }); }` branch (line 431-433) leaves stale state behind.** It does NOT call `workbenchStore.resetForNewChat()` or `clearWorkspace()`. So `showWorkbench=true`, `loadedProjectId=<projectId>`, and the restored files all persist into the `/` route. The user lands on `/` with a half-loaded project workspace but no chat context. (`chatId` atom is also left undefined — see #4.)
-
-  4. **`chatId` atom is never set in the `else` branch** (useChatHistory.ts:431-433). `chatId.set(storedMessages.id)` is called at line 423 (messages>0 branch) and line 429 (metadata.projectId branch), but NOT in the else branch. So after the bug triggers, `chatId.get() === undefined`. Downstream: `takeSnapshot` (line 216-220) early-returns when `chatId.get()` is falsy; `storeMessageHistory` (line 542-590) calls `takeSnapshot` — so any message the user types after the bug is NOT persisted. The user's typed messages silently vanish.
-
-  5. **`GitUrlImport.client.tsx` `loading` state is never cleared on the success path** (line 84 starts `true`; only cleared in error paths at lines 137, 160). Not strictly a bug because `window.location.href` unmounts the component, but it's brittle — if the reload is delayed (e.g. by a browser permission prompt or a slow network), the overlay stays up with no progress indicator. Also `loading` is not used to gate `importRepo` itself, just the overlay.
-
-  6. **`git.tsx` loader returns the wrong value** (line 16: `return json({ url: args.params.url })`). `args.params.url` is always `undefined` because `url` is a SEARCH param (`?url=...`), not a route param. The returned `{ url: undefined }` is unused by `GitUrlImport` (which reads `searchParams.get('url')` directly via `useSearchParams()` at line 79). Cosmetic / dead-code bug, but worth cleaning up.
-
-  7. **`createChatFromMessages` returns the urlId, not the chat id** (db.ts:316: `return newUrlId;`). This is by design (the comment says "Return the urlId instead of id for navigation") but it makes downstream code confusing: `importChat`'s local variable `newId` is actually the urlId, and `window.location.href = /${projectId}/${newId}` puts the urlId in the URL. Then `useChatHistory` reads it back as `mixedId` and `getMessages(db, mixedId)` does `getMessagesById` (fails) → `getMessagesByUrlId` (succeeds). The two-step lookup works but is fragile — a future change to `getMessages` that drops the urlId fallback would break the entire template-import flow.
-
-  8. **The `resetForNewChat` method (workbench.ts:328-365) is NOT called anywhere in the template-import flow.** It was added in round-4 fix 3 (worklog.md:2357-2359) for the "New Chat" sidebar button. The template-import flow goes through `importChat` → `window.location.href` → reload → `useChatHistory` load effect → `clearWorkspace` (NOT `resetForNewChat`). `clearWorkspace` clears files but does NOT set `showWorkbench=false`. So if the load effect's `else` branch fires, `showWorkbench=true` persists. The user sees a "started" UI on `/` with no chat — confusing.
-
-  9. **`projectStore.linkChatToProject(newId, projectId)` (useChatHistory.ts:834) uses `newId` (the urlId), not the actual chat id.** Looking at project-store/index.ts:309-326, `linkChatToProject` stores `_data.chatToProject[chatId] = projectId`. So the localStorage map is keyed by the urlId, not the actual chat id. Then in useChatHistory.ts:396, `projectStore.getProjectByChat(storedMessages.id)` uses the ACTUAL chat id (from `storedMessages.id`). These don't match! So even the `if (storedMessages.messages.length > 0)` branch's `getProjectByChat` fallback would fail for an imported-then-reloaded chat. (This is a LATENT bug — currently masked because imported chats start with `messages.length === 0`, so they hit the `else if` / `else` branches instead of the `if` branch. But the moment the user types a message and reloads, `messages.length > 0`, the `if` branch runs, `getProjectByChat(storedMessages.id)` returns undefined because the localStorage map is keyed by urlId, and the chat is misclassified as a personal chat. This may be the source of future "project chat loses its project association after first message" bugs.)
-
-Stage Summary:
-- RESEARCH ONLY — no files modified except this worklog entry.
-- ROOT CAUSE of "URL bar shows root directory": `importChat` (useChatHistory.ts:810-931) creates a project via `projectStore.createProject` + `linkChatToProject` (which writes to localStorage), but NEVER mirrors the `projectId` onto the chat's `metadata` in IndexedDB. After the `window.location.href = /<projectId>/<urlId>` reload, `useChatHistory`'s load effect (line 381-441) calls `getMessages(db, urlId)` which returns the chat with `metadata = { gitUrl }` (no projectId). The `else if (storedMessages.metadata?.projectId)` branch (line 425) is FALSE → falls through to `else { navigate('/', { replace: true }); }` (line 432) → URL becomes `/`.
-- ROOT CAUSE of "main tab seems loading": (1) on `/git?url=...` the `<LoadingOverlay>` is shown while `gitClone` + IndexedDB writes run; (2) after the reload at `/<projectId>/<urlId>`, `_index.tsx` shows the `<ClientOnly fallback={<div>Loading...</div>}>` "Loading..." until hydration, then `<Chat />` returns `<></>` while `useChatHistory.ready=false`; (3) after `navigate('/')`, the page IS interactive but presents an empty chat with no chat URL/ID — reads as "stuck loading" to the user. The workspaceReadyRef gate is NOT involved.
-- ROOT CAUSE of "terminal commands absent yet running": the same bug investigated in task 9-b — `runProjectAutoSetup` runs `npm install` + `npm run dev` on the HIDDEN off-screen `initTerminal` (TerminalTabs.tsx:305-313), while the visible "Amplify Terminal" tab is attached to the AI's `amplifyTerminal` (empty on fresh project load). Compounded by the redirect bug — the user lands on `/` with no chat context, so the running terminal output is doubly disconnected.
-- BROKEN / HALF-FINISHED pieces flagged: (1) importChat missing `updateChatMetadata` call; (2) `else if` condition at line 425 inconsistent with `if` branch at line 395-399; (3) `else` branch leaves stale `showWorkbench=true` + `loadedProjectId` state; (4) `chatId` atom never set in `else` branch → typed messages silently fail to persist; (5) `loading` state never cleared on success path in GitUrlImport; (6) `git.tsx` loader returns wrong value (unused); (7) `createChatFromMessages` returns urlId not chat id (fragile); (8) `resetForNewChat` not called in template-import flow; (9) **LATENT BUG**: `linkChatToProject(newId, projectId)` keys the localStorage map by urlId, but `getProjectByChat(storedMessages.id)` looks up by actual chat id — these don't match, so once the user sends a message and reloads, the project association is lost.
-- RECOMMENDED FIX PRIORITY:
-   1. (P0, ~5 lines) Fix #1 — `importChat` calls `updateChatMetadata(db, newId, { ...metadata, projectId })` after `linkChatToProject`. This eliminates the redirect-to-`/` bug.
-   2. (P1, ~1 line) Fix #2 — broaden the `else if` condition at line 425 to also accept `urlProjectId || projectStore.getProjectByChat(storedMessages.id)`. Defense-in-depth.
-   3. (P1, ~1 line) Fix #5 — in the `else` branch, also call `workbenchStore.resetForNewChat()` and clear `chatId` so future failed loads land on a clean home screen instead of a broken hybrid state.
-   4. (P2, ~5 lines) Fix #4 — adopt task 9-b's Option A (swap init/amplify terminal attachments in TerminalTabs.tsx) so the auto-setup output is visible.
-   5. (P2, ~3 lines) Fix #3 — clear `loading` on the success path in GitUrlImport; consider switching `window.location.href` to Remix `navigate()` to skip the hydration "Loading..." phase.
-   6. (P3, ~1 line) Fix #9 (latent) — change `linkChatToProject(newId, projectId)` to use the actual chat id (require `createChatFromMessages` to return both, OR change it to return the actual id and update the navigation URL to use the urlId separately). This prevents future "project association lost after first message" bugs.
-
 
 ---
 Task ID: 10
@@ -2868,6 +2685,7 @@ Stage Summary:
 - Template/git click now correctly navigates to `/<projectId>/<chatId>` and loads the project chat (no more redirect to `/`).
 - Project auto-setup (npm install + start) is now VISIBLE on the "Amplify Terminal" tab. AI commands run on the separate "AI Terminal" tab. Both are visible, both are isolated.
 - Pushing to origin/rebrand/amplify.
+
 
 ---
 Task ID: 11-b
@@ -3033,668 +2851,6 @@ Findings:
 
 Bottom line: ONE-LINE ROOT CAUSE — `ProjectSidebar.tsx` line 70 reads `useParams().id`, which is `undefined` on the `/<projectId>/<chatId>` route (where the param is named `chatId`). Fix is to also read `params.chatId` (Option A) or to switch to `useLoaderData().id` (Option B). Normal chats at `/chat/<id>` already highlight correctly; project chats never do.
 
----
-Task ID: 12
-Agent: main (continuation)
-Task: Fix two new bugs reported by user: (1) in new chat the workspace does not load; (2) cannot see in the sidebar which chat is active.
-
-Work Log:
-- Dispatched subagent 11-b for sidebar investigation (completed) and 11-a for workspace investigation (timed out — analyzed manually).
-
-Bug 1 — Workspace does not load in new chat:
-- ROOT CAUSE: The IIFE at useChatHistory.ts ~line 342 loads project files (clearWorkspace → getProjectFiles → restoreFileMap → files.set → showWorkbench.set(true) → runProjectAutoSetup). It is fire-and-forget — runs in parallel with Promise.all([getMessages, getSnapshot]). If the IIFE fails (e.g. WebContainer slow to boot on full page reload, clearWorkspace/restoreFileMap throws), the catch block swallows the error and files are NEVER loaded.
-- The else-if branch (empty messages, round-10 change) sets showWorkbench=true but does NOT load files — relies entirely on the IIFE. So hasFiles stays false → "Loading workspace…" forever.
-- The if branch (project chats WITH messages) had TWO problems: (a) never called showWorkbench.set(true) — relied on IIFE; (b) restoreSnapshot writes to WebContainer FS but does NOT update workbenchStore.files, so hasFiles stayed false even after successful restoreSnapshot if IIFE failed.
-- FIX: added file-loading safety nets to ALL branches in the .then() callback:
-  * if/linkedProject+snapshot: set showWorkbench(true) + populate file store from snapshot.files if IIFE failed
-  * if/linkedProject+no-snapshot: set showWorkbench(true) + load from getProjectFiles as fallback
-  * if/!linkedProject+projectInitiated: set showWorkbench(true) + populate file store from snapshot
-  * else-if (empty messages): load from getProjectFiles if file store still empty (round-10 already had showWorkbench.set)
-  Each safety net checks if workbenchStore.files is empty before loading → idempotent, no double-load.
-
-Bug 2 — Sidebar doesn't show active chat:
-- ROOT CAUSE (confirmed by subagent 11-b): ProjectSidebar.tsx line 70 used `const { id: urlId } = useParams()`. Remix route param names come from the route filename: chat.$id.tsx → { id }; $projectId.$chatId.tsx → { projectId, chatId } — NO `id`. So useParams().id was undefined on project-chat routes → active-chat comparison (urlId === item.urlId) always false → no project chat highlighted.
-- FIX: `const params = useParams(); const urlId = params.id ?? params.chatId;` — falls back to chatId for project-chat routes. Applied to both ProjectSidebar.tsx and HistoryItem.tsx (same bug).
-
-Verification:
-- npx tsc --noEmit: 1 error total (pre-existing in app/lib/.server/llm/utils.ts). Zero errors in modified files.
-- npx eslint --fix: all auto-fixable resolved. Remaining errors are pre-existing (validSnapshot unused, navigate unused in ProjectSidebar, consistent-return).
-- Dev server OOMs when browser hits it (recurring Vite memory issue) — could not do browser-based verification. Verified via tsc + code analysis.
-
-Stage Summary:
-- 3 files changed: app/lib/persistence/useChatHistory.ts (+91), app/components/sidebar/ProjectSidebar.tsx (+44/-24), app/components/sidebar/HistoryItem.tsx (+2/-1).
-- Commit 5e7afb1 on rebrand/amplify. Pushed to origin/rebrand/amplify.
-
----
-Task ID: 13-b
-Agent: Explore (research only)
-Task: Investigate why a full page reload of a project chat URL (e.g. `/<projectId>/<chatId>`) injects the START command (`npm run dev`) but SKIPS the INSTALL command (`npm install`). Trace the route-loader → terminal-command path exactly, identify the root cause, and report the precise fix.
-
-Work Log:
-- Read worklog.md tail (rounds 6–12, lines 2466–3067) for context on the project auto-setup architecture (round-6 split into amplifyTerminal + initTerminal; round-7 markActionAsReplayed; round-10 made init terminal VISIBLE as "Amplify Terminal" tab at index 0 and AI terminal at index 1; round-12 added file-loading safety nets).
-- Read in full: app/lib/persistence/project-auto-run.ts (165 lines), app/lib/persistence/useChatHistory.ts load effect (lines 290–570), app/lib/stores/workbench.ts clearWorkspace + projectAutoStarted + get initTerminal/amplifyTerminal (lines 75–360), app/utils/projectCommands.ts (228 lines, detectProjectCommands), app/lib/stores/terminal.ts (104 lines), app/utils/shell.ts (684 lines, AmplifyShell.executeCommand + #executeSingleCommand + detached mode), app/components/workbench/terminal/TerminalTabs.tsx (382 lines).
-- Cross-referenced app/lib/persistence/project-store/index.ts (loadProjectData/saveProjectData/updateProject at lines 167–197 + 399–429) to confirm `isSetupComplete` is persisted in localStorage and never reset by `clearWorkspace`.
-- Verified all 3 call-sites of `runProjectAutoSetup`: useChatHistory.ts:381 (project-chat reload IIFE), useChatHistory.ts:774 (promoteChatToProject path), ProjectSidebar.tsx:323 (project click when already in the project).
-
-Findings:
-
-(1) FULL control flow of `runProjectAutoSetup(project)` — app/lib/persistence/project-auto-run.ts:41–111:
-
-```ts
-41 export async function runProjectAutoSetup(project: Project): Promise<void> {
-42   if (!project) {
-43     return;                                  // GUARD 1: no project
-44   }
-45
-46   // Session-level guard: prevents double-running within the same load cycle.
-50   if (workbenchStore.projectAutoStarted.get()) {
-51     return;                                  // GUARD 2: already ran this session
-52   }
-53
-54   workbenchStore.projectAutoStarted.set(true);   // set BEFORE any await
-55
-56   // No commands detected? Nothing to do.
-57   if (!project.setupCommand && !project.startCommand) {
-58     return;                                  // GUARD 3: no commands
-59   }
-60
-61   const shell = workbenchStore.initTerminal;  // ← INIT terminal (visible "Amplify Terminal" tab, index 0)
-62
-65   try {
-66     await shell.ready();                      // await jsh OSC 'interactive'
-67   } catch {
-68     console.warn('[auto-run] Init shell not ready — deferring auto-setup.');
-69     workbenchStore.projectAutoStarted.set(false);
-70     return;                                  // GUARD 4: shell not ready
-71   }
-72
-73   const sessionId = `auto-${project.id}-${Date.now()}`;
-74
-75   try {
-76     /*
-77      * Step 1 — setup (npm install). Wait for completion before starting
-78      * the dev server.
-79      */
-80     if (project.setupCommand && !project.isSetupComplete) {   // ← GUARD 5 (THE BUG): skip install if isSetupComplete
-81       console.log(`[auto-run] Running setup: ${project.setupCommand}`);
-82
-83       const result = await shell.executeCommand(sessionId, project.setupCommand);   // ← INSTALL EXECUTION POINT
-84
-85       if (result && result.exitCode === 0) {
-86         projectStore.updateProject(project.id, { isSetupComplete: true });   // ← PERSIST isSetupComplete=true in localStorage
-87         console.log('[auto-run] Setup complete');
-88       } else if (result) {
-89         console.warn('[auto-run] Setup exited with non-zero code:', result.exitCode);
-90       }
-91     }
-92
-93     /*
-94      * Step 2 — start command (npm run dev). Runs DETACHED (backgrounded).
-95      */
-96     if (project.startCommand) {              // ← NOTE: NO isSetupComplete check here
-97       console.log(`[auto-run] Starting: ${project.startCommand}`);
-98
-99       shell
-100        .executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })   // ← START EXECUTION POINT (line 103-105 in original; here shifted by comment formatting)
-101        .catch((e) => console.warn('[auto-run] Start command error:', e));
-102     }
-103  } catch (e) {
-104     console.error('[auto-run] Failed:', e);
-105     workbenchStore.projectAutoStarted.set(false);
-106  }
-107 }
-```
-
-Actual line numbers (as they appear in the file):
-- GUARD 1 (no project): line 42
-- GUARD 2 (projectAutoStarted): line 50
-- `projectAutoStarted.set(true)`: line 54
-- GUARD 3 (no commands): line 57
-- shell = initTerminal: line 63
-- GUARD 4 (shell not ready): line 67-70
-- GUARD 5 (THE BUG — `!project.isSetupComplete`): line 81
-- `npm install` EXECUTION POINT: line 84 — `await shell.executeCommand(sessionId, project.setupCommand)`
-- `isSetupComplete = true` persisted: line 87
-- start command guard (only `if (project.startCommand)`): line 100
-- `npm run dev` EXECUTION POINT: lines 103-105 — `shell.executeCommand(${sessionId}-start, project.startCommand, undefined, { detached: true })`
-
-(2) The load effect in useChatHistory.ts — app/lib/persistence/useChatHistory.ts:296-570:
-
-```ts
-296  useEffect(() => {
-309    if (mixedId || urlProjectId) {
-310      setReady(false);
-311      setInitialMessages([]);
-...
-334      if (urlProjectId) {
-335        console.log('[ChatHistory] urlProjectId detected:', urlProjectId);
-336
-337        const project = projectStore.getProject(urlProjectId);   // ← LIVE project object from localStorage-backed _data.projects
-338
-339        if (project) {
-342          (async () => {
-343            try {
-354              await workbenchStore.clearWorkspace();   // ← kills processes + rm -rf WebContainer FS (incl. node_modules) + projectAutoStarted.set(false). Does NOT touch project.isSetupComplete.
-355
-356              const projectFiles = await getProjectFiles(db, project.id);   // IndexedDB lookup of committed files (NOT node_modules)
-...
-364              await restoreFileMap(projectFiles.files);   // writes committed files to WebContainer FS
-365              workbenchStore.files.set(projectFiles.files);
-...
-371              workbenchStore.loadedProjectId.set(project.id);
-372              workbenchStore.showWorkbench.set(true);
-...
-381              runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));   // ← FIRE-AND-FORGET auto-setup; `project` still has isSetupComplete=true
-382            } catch (e) {
-383              console.error('[ChatHistory] Immediate project load failed:', e);
-384            }
-385          })();
-386        }
-387      }
-388
-389      Promise.all([getMessages(db, finalChatIdToLoad!), getSnapshot(db, finalChatIdToLoad!)])
-390        .then(async ([storedMessages, snapshot]) => {
-391          if (storedMessages && storedMessages.messages.length > 0) {
-...            // (separate branch — does NOT call runProjectAutoSetup; relies on the IIFE above)
-556          } else {
-557            navigate('/', { replace: true });
-558          }
-559
-560          setReady(true);
-561        })
-...
-569    } else {
-568      setReady(true);
-569    }
-570  }, [mixedId, urlProjectId, db, navigate, searchParams, restoreFileMap, restoreSnapshot]);
-```
-
-There is NO `projectAutoStarted` gate at the call site — useChatHistory.ts:381 calls `runProjectAutoSetup(project)` unconditionally after `clearWorkspace()`. The only `projectAutoStarted` check is INSIDE `runProjectAutoSetup` itself (line 50), and `clearWorkspace()` already reset it to `false` (workbench.ts:319). So the call ALWAYS enters the function body on reload.
-
-(3) clearWorkspace — app/lib/stores/workbench.ts:264-320:
-
-```ts
-264  async clearWorkspace() {
-270    try { this.initTerminal.killRunningProcesses(); } catch {}     // Ctrl+C on init terminal
-277    try { this.amplifyTerminal.killRunningProcesses(); } catch {}  // Ctrl+C on AI terminal
-286    try {
-287      const container = await webcontainer;
-288      const entries = await container.fs.readdir(container.workdir);
-290      for (const entry of entries) {
-291        try {
-292          await container.fs.rm(`${container.workdir}/${entry}`, { recursive: true });   // ← DELETES node_modules
-293        } catch {}
-294      }
-297    } catch (e) { console.warn(...); }
-304    this.artifacts.set({});
-...
-312    this.#filesStore.files.set({});
-313    this.#filesStore.resetFileModifications();
-318    this.loadedProjectId.set('<none>');
-319    this.projectAutoStarted.set(false);   // ← resets in-memory flag
-320  }                                   // ← does NOT reset project.isSetupComplete in localStorage
-```
-
-(4) project-store persistence — app/lib/persistence/project-store/index.ts:
-- `loadProjectData()` (line 167): reads `localStorage.getItem('amplify_projects')` and JSON.parses it. Called ONCE in the `ProjectStore` constructor (line 204). On a full page reload, this is the ONLY source of project state — the in-memory `_data` is freshly populated from localStorage.
-- `updateProject(projectId, { isSetupComplete: true })` (line 399-429): mutates the live project object in `_data.projects` AND calls `saveProjectData(this._data)` (line 427) which writes the whole structure back to localStorage (line 186-197). So `isSetupComplete: true` survives page reloads indefinitely.
-- `getProject(projectId)` (line 372): returns the LIVE object reference from `_data.projects` — so `project.isSetupComplete` is whatever was last persisted.
-- NOTHING in `clearWorkspace` or the load effect calls `updateProject(id, { isSetupComplete: false })`.
-
-(5) detectProjectCommands — app/utils/projectCommands.ts:32-138:
-- Detects package manager from `package.json#packageManager` field, falls back to lockfile presence (round-8 logic).
-- Emits `setupCommand` = `'npm install'` / `'pnpm install'` / `'yarn install'` (line 100, 107) — a plain install command, no env exports, no npx calls.
-- Emits `startCommand` = `'npm run dev'` (or `start` / `preview` — first match in that priority order, line 104-105, 113).
-- Returns `{ type: 'Node.js', setupCommand, startCommand, followupMessage: '' }`.
-- These are persisted on the project via `projectStore.setProjectCommands(...)` (called from useChatHistory importChat path at line ~1066, and from promoteChatToProject). After persistence, `runProjectAutoSetup` reads them off the live project object.
-
-(6) AmplifyShell.executeCommand + detached mode — app/utils/shell.ts:357-559:
-- `executeCommand(sessionId, command, abort?, options?)` (line 357): splits on `&&`, dispatches to `#executeSingleCommand` for each sub-command, awaiting each in turn. With a single command, calls `#executeSingleCommand` directly (line 397).
-- `#executeSingleCommand` (line 481):
-  * Non-detached path (used for `npm install`): if `executionState.active`, abort + send Ctrl+C + wait for prompt. Then `terminal.input(cmd + '\n')` (line 529). Sets `executionState.active = true`, awaits `getCurrentExecutionResult()` which calls `waitTillOscCode('exit')` (line 562). Returns `{ output, exitCode }`.
-  * Detached path (used for `npm run dev`, line 511-541): if `executionState.active`, AWAITS `state.executionPrms` (waits for the in-flight install to finish — this is the install→start sequencing mechanism). Then `terminal.input(\`${command.trim()} &\n\`)` (line 526, 529) — backgrounds the command. Then `await new Promise(resolve => setTimeout(resolve, 300))` (line 538) to let the shell accept the background job and return the prompt. Returns `undefined` immediately — does NOT track in `executionState`, does NOT wait for exit (dev server never exits).
-- `killRunningProcesses()` (line 337): sends `\x03` (Ctrl+C) to `terminal.input` and resets `executionState` to `{ sessionId: '', active: false }`. Used by `clearWorkspace`.
-
-(7) ROOT CAUSE — hypothesis evaluation:
-
-Hypothesis (a) — `projectAutoStarted` set true before install runs (previous render): REFUTED. `clearWorkspace()` (workbench.ts:319) explicitly sets `projectAutoStarted.set(false)` IMMEDIATELY before `runProjectAutoSetup` is called (useChatHistory.ts:381). On a fresh reload, the atom also defaults to `false` (workbench.ts:84) — even without clearWorkspace, it would be false. So GUARD 2 (line 50) does NOT skip.
-
-Hypothesis (b) — `clearWorkspace` deletes node_modules but stale check skips install: CONFIRMED. `clearWorkspace` does `container.fs.rm(${workdir}/${entry}, { recursive: true })` for EVERY entry (workbench.ts:290-296), which removes `node_modules` along with everything else. The "stale check" is the `!project.isSetupComplete` guard at project-auto-run.ts:81. `isSetupComplete` is persisted in localStorage (project-store/index.ts:414, 426-427) and is NEVER reset by `clearWorkspace` (which only resets the in-memory `projectAutoStarted` flag). So on reload: `node_modules` is gone (FS cleared), but `isSetupComplete === true` (localStorage) → install is skipped → start runs without deps → fails.
-
-Hypothesis (c) — install and start gated by SEPARATE flags: CONFIRMED (this is the structural form of (b)). Install is gated by BOTH `projectAutoStarted` (line 50) AND `isSetupComplete` (line 81). Start is gated ONLY by `projectAutoStarted` (line 50) + `project.startCommand` truthiness (line 100). On reload, `projectAutoStarted` is reset to false → both install and start would proceed — but `isSetupComplete` (the SECOND gate, install-only) is `true` → install is skipped while start proceeds. The bug is the asymmetry: install has a stale-state check that start doesn't have, and the stale state (`isSetupComplete`) is not reset when the FS is wiped.
-
-Hypothesis (d) — early-return when `workbenchStore.files` is non-empty: REFUTED. There is NO such check in `runProjectAutoSetup`. The only checks are the 5 GUARDs listed above. (Files are restored BEFORE the call at useChatHistory.ts:364-365, but `runProjectAutoSetup` never inspects `workbenchStore.files`.)
-
-Hypothesis (e) — `detached: true` on start makes install fire-and-forget / race: REFUTED. Install is AWAITED (line 84, non-detached). Start is detached (line 103-105). The detached path in `#executeSingleCommand` (shell.ts:511-524) EXPLICITLY awaits any in-flight `state.executionPrms` before launching the detached command — so start cannot fire before install resolves. The bug is that install is SKIPPED entirely (GUARD 5), not that it's raced.
-
-Hypothesis (f) — something else: N/A. (b) + (c) together ARE the root cause.
-
-(8) State of `projectAutoStarted` and `isSetupComplete` at each point on a fresh reload of `/<projectId>/<chatId>`:
-
-| Step | File:Line | `projectAutoStarted` | `project.isSetupComplete` | `node_modules` in WebContainer FS |
-|------|-----------|----------------------|---------------------------|------------------------------------|
-| 1. Page reload, ProjectStore ctor reads localStorage | project-store/index.ts:204 | false (default) | true (persisted) | n/a (FS not yet booted) |
-| 2. useChatHistory effect runs, IIFE starts | useChatHistory.ts:342 | false | true | n/a |
-| 3. clearWorkspace() — kill processes | workbench.ts:271, 277 | false | true | n/a |
-| 4. clearWorkspace() — rm -rf FS entries | workbench.ts:290-296 | false | true | DELETED |
-| 5. clearWorkspace() — projectAutoStarted.set(false) | workbench.ts:319 | false (was already false) | true | (still absent) |
-| 6. restoreFileMap(projectFiles) | useChatHistory.ts:364 | false | true | (only source files restored — no node_modules) |
-| 7. runProjectAutoSetup(project) called | useChatHistory.ts:381 | false | true | (still absent) |
-| 8. GUARD 2 check (projectAutoStarted.get()) | project-auto-run.ts:50 | false → passes | true | (still absent) |
-| 9. projectAutoStarted.set(true) | project-auto-run.ts:54 | TRUE | true | (still absent) |
-| 10. GUARD 5 check (!project.isSetupComplete) | project-auto-run.ts:81 | true | TRUE → `!true` = false → SKIP | (still absent) |
-| 11. npm install line | project-auto-run.ts:84 | true | true | SKIPPED — never executes |
-| 12. npm run dev line | project-auto-run.ts:103-105 | true | true | runs detached → fails (no node_modules) |
-
-(9) `rerunProjectSetup` (manual re-run path) — app/lib/persistence/project-auto-run.ts:117-155:
-
-```ts
-117 export async function rerunProjectSetup(project: Project): Promise<void> {
-122   const shell = workbenchStore.initTerminal;
-124   try { await shell.ready(); } catch { toast.error(...); return; }
-131   workbenchStore.toggleTerminal(true);
-133   const sessionId = `rerun-${project.id}-${Date.now()}`;
-135   try {
-136     if (project.setupCommand) {                 // ← NO !project.isSetupComplete CHECK
-137       toast.info(`Re-running setup for "${project.name}"…`, ...);
-138       const result = await shell.executeCommand(sessionId, project.setupCommand);   // ← ALWAYS runs install
-139       if (result && result.exitCode === 0) {
-140         projectStore.updateProject(project.id, { isSetupComplete: true });
-142       }
-143     }
-146     if (project.startCommand) {                 // ← always runs start
-147       shell.executeCommand(`${sessionId}-start`, project.startCommand, undefined, { detached: true })
-148         .catch(...);
-149     }
-150   } catch (e) { ... }
-151 }
-```
-
-`rerunProjectSetup` does NOT have the `!project.isSetupComplete` guard. It ALWAYS runs `npm install` (line 138) then `npm run dev` (line 147-148). So the manual re-run path CORRECTLY sequences install→start. The bug is ONLY in the auto-run path (`runProjectAutoSetup` line 81).
-
-(10) TerminalTabs.tsx — round-11 state CONFIRMED:
-- Index 0 = "Amplify Terminal" (label at TerminalTabs.tsx:202, fixed, no close) → `onTerminalReady={(terminal) => workbenchStore.attachInitTerminal(terminal)}` (line 318). Hosts the `initTerminal` AmplifyShell — where `runProjectAutoSetup` runs `npm install` + `npm run dev`. Visible by default.
-- Index 1 = "AI Terminal" (label at line 219, fixed, no close) → `onTerminalReady={(terminal) => workbenchStore.attachAmplifyTerminal(terminal)}` (line 342). Hosts the `amplifyTerminal` AmplifyShell — where the AI's `shell` + `start` actions run. Visible.
-- Index 2+ = user-added terminals (`attachTerminal` → `newShellProcess`), max MAX_TERMINALS=3.
-- The hidden off-screen `<div style={{ position: 'absolute', left: '-9999px' ... }}>` div from round-6/9-b is GONE — round-10 removed it (worklog.md:2857). Both fixed terminals are visible.
-- Reset button (line 254-290): index 0 → `workbenchStore.initTerminal.resetTerminal()` (line 270), index 1 → `workbenchStore.amplifyTerminal.resetTerminal()` (line 276), index ≥ 2 → detach+reattach.
-- Auto-setup runs on the VISIBLE index-0 "Amplify Terminal" tab. The user CAN see `npm run dev` fire — but `npm install` never appears because it's skipped before reaching the terminal.
-
-Stage Summary:
-- ROOT CAUSE (single line): `app/lib/persistence/project-auto-run.ts:81` — `if (project.setupCommand && !project.isSetupComplete)` skips `npm install` when `project.isSetupComplete === true`. `isSetupComplete` is persisted in localStorage (project-store/index.ts:414, 426-427) after the first successful install and is NEVER reset by `clearWorkspace` (which only resets the in-memory `projectAutoStarted` flag at workbench.ts:319). On a full page reload, `clearWorkspace` deletes `node_modules` from the WebContainer FS (workbench.ts:290-296, `container.fs.rm(..., { recursive: true })` for every entry in the workdir), but `isSetupComplete` stays `true` from localStorage → GUARD 5 at line 81 evaluates `!true === false` → install is skipped → start command (line 100-105, which has NO `isSetupComplete` check) fires `npm run dev` detached without `node_modules` → dev server fails.
-- The bug is an ASYMMETRY between the install and start guards: install is gated by both `projectAutoStarted` (reset on reload) AND `isSetupComplete` (persisted, NOT reset on reload); start is gated only by `projectAutoStarted` + `project.startCommand` truthiness. So on reload the first gate opens (projectAutoStarted=false→true) but the second gate (isSetupComplete=true) stays closed for install only — start walks through.
-- Hypothesis (a) REFUTED — `projectAutoStarted` is reset by clearWorkspace. Hypothesis (b) CONFIRMED. Hypothesis (c) CONFIRMED (structural form of (b)). Hypothesis (d) REFUTED — no files-non-empty check exists. Hypothesis (e) REFUTED — install is awaited; start is detached but the detached path explicitly awaits in-flight tracked commands (shell.ts:517-523), so no race.
-- `rerunProjectSetup` (manual re-run, line 117-155) does NOT have the bug — it lacks the `!project.isSetupComplete` guard at line 136 and always runs install→start in the correct order. The bug is auto-run-only.
-- Exact execution points: `npm install` at project-auto-run.ts:84 (`await shell.executeCommand(sessionId, project.setupCommand)`); `npm run dev` at project-auto-run.ts:103-105 (`shell.executeCommand(${sessionId}-start, project.startCommand, undefined, { detached: true })`). All 5 guards between function entry and the install point: line 42 (no project), line 50 (projectAutoStarted), line 57 (no commands), line 67-70 (shell not ready), line 81 (!isSetupComplete — THE BUG). Between function entry and the start point: the same first four guards, then line 100 (startCommand truthy) — NO isSetupComplete check.
-- Terminal architecture (round-11) CONFIRMED: index 0 "Amplify Terminal" (visible) = initTerminal (project auto-setup); index 1 "AI Terminal" (visible) = amplifyTerminal (AI commands); hidden off-screen div removed in round-10. The user CAN see the start command fire on the visible Amplify Terminal tab — the bug is that install never reaches the terminal because it's short-circuited at line 81 before `executeCommand` is called.
-- PRECISE FIX NEEDED (one of the following — pick ONE):
-  * Option A (smallest, 1-line, recommended): delete `&& !project.isSetupComplete` from project-auto-run.ts:81 so auto-run ALWAYS runs install when `setupCommand` is present. Since `clearWorkspace` wipes `node_modules` on every reload, install MUST run on every auto-setup — the `isSetupComplete` optimization is invalid for the auto-run path. The line becomes: `if (project.setupCommand) {`. The `isSetupComplete` flag is still updated at line 87 (for any future code that wants to read it) but no longer gates execution. `rerunProjectSetup` (line 136) already does exactly this — Option A just makes the auto-run path consistent with the manual path.
-  * Option B (1-line addition in clearWorkspace, more semantically correct): reset `isSetupComplete` when the FS is wiped. In workbench.ts clearWorkspace(), BEFORE setting `loadedProjectId.set('<none>')` at line 318, add: `const prevId = this.loadedProjectId.get(); if (prevId && prevId !== '<none>') { projectStore.updateProject(prevId, { isSetupComplete: false }); }`. Requires importing `projectStore` into workbench.ts (currently not imported). This preserves the optimization (avoid re-install within a session where the FS is intact) while fixing the staleness. The existing line 81 guard then works correctly: after clearWorkspace, `isSetupComplete === false` → install runs → on success it's set back to true.
-  * Option C (1-line at the call site): in useChatHistory.ts IIFE, after `clearWorkspace()` (line 354) and before `runProjectAutoSetup(project)` (line 381), add: `projectStore.updateProject(project.id, { isSetupComplete: false });`. Effectively the same as Option B but at the call site instead of inside clearWorkspace. Slightly less DRY (the same fix would be needed at the other 2 call-sites: useChatHistory.ts:774 promoteChatToProject path, ProjectSidebar.tsx:323 project-click path) — but those paths don't necessarily call clearWorkspace, so Option A or B is preferred.
-  * RECOMMENDATION: Option A. It's the smallest, matches the existing `rerunProjectSetup` behavior (which has no `isSetupComplete` guard and works correctly), and the `isSetupComplete` flag becomes a pure observability hint (still set on success, never read as a gate). If preserving the "don't re-install within a session" optimization matters, Option B is the next-best choice. Option C is the most invasive and should be avoided.
-- NO files modified (research only). The fix is to be applied in a follow-up task.
-
----
-Task ID: 13-a
-Agent: Explore (research only)
-Task: Produce an EXHAUSTIVE list of every client-side navigation call-site under /home/z/Open_Claude/app/ — classify each as SPA nav (BAD per user's "every URL change must be a full document reload" rule) vs full reload (GOOD). Identify the useChatHistory load-effect dependency array and confirm whether it re-runs on SPA navigate(). NO code changes.
-
-Work Log:
-- Read worklog.md tail (rounds 6–12, lines 2466–3066) for prior context: round-7 added the dual-shell architecture (initTerminal vs amplifyTerminal); round-9-a/b traced the template-click redirect bug + terminal "absent yet running" bug; rounds 10–12 added clearWorkspace, silent file-loading, isSetupComplete gating, etc. Also grepped worklog for `navigate(` / `Link to` mentions (8 hits across rounds 3, 5, 9-a).
-- Searched the whole app/ tree for every navigation primitive:
-  * `useNavigate` (7 source-file hits, 1 in flow-verifier.ts which is unrelated)
-  * `navigate\s*\(` (16 call-site hits, 2 in flow-verifier.ts + comments — irrelevant)
-  * `<Link` and `to=` (Remix Link component)
-  * `window.location` (any usage — 23 hits, most are reload()/href reads in @settings)
-  * `history.push` / `history.replace` (1 hit: useChatHistory.ts:293 `window.history.replaceState` — silent URL rewrite)
-  * `redirect(` (0 hits in app code; api.git-proxy.$.ts uses fetch's `redirect: 'follow'` which is unrelated)
-  * `useSubmit` / `useFetcher` / `<Form` (0 hits)
-  * `NavLink` / `useHref` / `RouterProvider` (0 hits in app code)
-  * `<a href=...>` with internal paths (plain browser anchor = FULL reload)
-- Read every relevant file end-to-end or in the relevant regions: ProjectSidebar.tsx (1571 lines, all nav regions), Menu.client.tsx (591 lines, deleteItem + deleteSelectedItems + Start-new-chat anchor + HistoryItem usage), TemplatesModal.tsx (100 lines, full), GitUrlImport.client.tsx (176 lines, full), Messages.client.tsx (129 lines, full — rewind + fork), useChatHistory.ts (1116 lines — load effect 296–570, navigateChat helper 289–294, storeMessageHistory 667–916 with two navigateChat calls, duplicateCurrentChat 921–934, importChat 935–1091 with two window.location.href calls), HistoryItem.tsx (174 lines, plain anchor), StarterTemplates.tsx (38 lines, plain anchor), ProjectsGallery.tsx (267 lines — onSelectProject routes through sidebar's handleSelectProject → navigate()), ProjectTile.tsx, _index.tsx, $projectId.tsx, $projectId.$chatId.tsx, chat.$id.tsx, git.tsx.
-- Confirmed the load-effect dependency array and traced whether the effect re-runs on SPA navigate().
-
-Stage Summary:
-
-================================================================
-A) SIDEBAR / CHAT LIST NAVIGATION (clicking a chat, new chat, delete, duplicate)
-================================================================
-
-A1. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:352` — `navigate(\`/${project.id}/${newUrlId}\`)`
-   - Context: inside `handleSelectProject` (line 285–358). Triggered when the user clicks a project tile in the Projects gallery (ProjectsGallery.tsx → _index.tsx:109 `handleSelectProjectFromGallery` dispatches `amplify:select-project-from-gallery` window event → ProjectSidebar listener calls `handleSelectProject`). Also reachable from the legacy inline project list. Creates an empty project chat, links it, then SPA-navigates to `/<projectId>/<urlId>`.
-   - Target: `/${project.id}/${newUrlId}` (project-scoped chat URL).
-   - User-facing trigger: click a project in the Projects gallery.
-   - Method: Remix `useNavigate()` SPA nav — BAD. Needs `window.location.href = \`/${project.id}/${newUrlId}\``.
-
-A2. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:413` — `navigate(\`/${project.id}/${newUrlId}\`)`
-   - Context: inside `handleNewChatInProject` (line 366–421). Resets workbench (`resetForNewChat`), creates a new empty chat linked to the currently-selected project, then SPA-navigates.
-   - Target: `/${project.id}/${newUrlId}`.
-   - User-facing trigger: click "New chat in project" button (SelectedProjectChatsList onNewChat, ProjectSidebar.tsx:1217).
-   - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A3. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:512` — `navigate('/')`
-   - Context: inside `deleteItem` (line 486–522). After deleting the chat from IndexedDB, if the deleted chat was the currently-open one, SPA-navigate to home.
-   - Target: `/`.
-   - User-facing trigger: confirm chat deletion in the sidebar's delete dialog when the deleted chat is currently open.
-   - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A4. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:559` — `navigate('/')`
-   - Context: inside `handleDeleteProject` (line 533–565). After deleting a project (and all its chats) from the store, if the currently-open chat belonged to that project, SPA-navigate home.
-   - Target: `/`.
-   - User-facing trigger: confirm project deletion in ProjectManagementDialogs when the currently-open chat belongs to the project.
-   - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A5. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:672` — `navigate('/')`
-   - Context: inside `handleNewChat` (line 631–675). The guarded "New Chat" handler: clears selected project, resets workbench, sets chatStore.started=false, then SPA-navigates to home.
-   - Target: `/`.
-   - User-facing trigger: click "New Chat" button (ProjectSidebar.tsx:716 `<Link to="/" onClick={handleNewChat}>`), click the "Amplify" brand logo (ProjectSidebar.tsx:687 `<Link to="/" onClick={handleNewChat}>`), click "Blank Chat" in the New Chat dropdown (ProjectSidebar.tsx:753 `<Link to="/" onClick={handleNewChat}>`). All three `<Link to="/">` instances route through this same handler — see A6/A7/A8 below.
-   - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A6. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:687–700` — `<Link to="/" onClick={(e) => handleNewChat(e)}>` (Amplify brand logo)
-   - Target: `/`.
-   - User-facing trigger: click the "Amplify" brand logo at the top of the sidebar.
-   - Method: Remix `<Link to>` SPA nav — BAD. (The `onClick` calls `handleNewChat` which itself calls `navigate('/')` — both the Link's default action AND the onClick's navigate() are SPA. The `e.preventDefault()` inside handleNewChat (line 669) suppresses the Link's SPA navigation, so effectively only the `navigate('/')` at line 672 fires — but it's still SPA.)
-
-A7. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:716–737` — `<Link to="/" onClick={(e) => handleNewChat(e)}>` (New Chat button)
-   - Target: `/`.
-   - User-facing trigger: click the prominent "New Chat" button below the brand logo.
-   - Method: Remix `<Link to>` SPA nav — BAD. (Same `e.preventDefault()` suppression as A6; effective navigation is the `navigate('/')` at line 672.)
-
-A8. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:753–778` — `<Link to="/" onClick={(e) => handleNewChat(e)}>` (Blank Chat dropdown item)
-   - Target: `/`.
-   - User-facing trigger: open the New Chat dropdown (chevron button) → click "Blank Chat".
-   - Method: Remix `<Link to>` SPA nav — BAD. (Same suppression; effective nav is the `navigate('/')` at line 672.)
-
-A9. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:1476` — `<Link to={href}>` (SidebarHistoryItem)
-   - Context: inside the `SidebarHistoryItem` component (line 1405–1567). The `href` is computed at line 1413: `item.metadata?.projectId ? \`/${item.metadata.projectId}/${item.urlId}\` : \`/chat/${item.urlId}\``. This is the actual click handler for switching between chats in the sidebar (both personal chats in the binned list AND project chats in the SelectedProjectChatsList — both render `<SidebarHistoryItem>`).
-   - Target: `/chat/{urlId}` (personal chat) or `/{projectId}/{urlId}` (project chat).
-   - User-facing trigger: click ANY chat entry in the sidebar's Recent Chats list (personal chats binned by date) OR in the SelectedProjectChatsList. This is THE primary "click a chat in the sidebar" call-site that the user is complaining about.
-   - Method: Remix `<Link to>` SPA nav — BAD. No `e.preventDefault()` — the Link's default SPA navigation fires. This is the highest-priority fix.
-
-A10. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:981` — `navigate('/')`
-    - Context: inside the `onBackToAllChats` prop passed to SelectedProjectChatsList (line 973–982). Clears selected project and SPA-navigates home.
-    - Target: `/`.
-    - User-facing trigger: click the "All chats" back-arrow button at the top of the SelectedProjectChatsList.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A11. **[SPA — BAD]** `app/components/sidebar/ProjectSidebar.tsx:792` — `window.location.assign('/git')` ⚠️ NOTE: this is GOOD (full reload), listed here for completeness.
-    - Context: onClick of the "Import from Github" button inside the New Chat dropdown (line 779–810). Comment explicitly notes that a full-page navigation is used because the dropdown's AnimatePresence exit can race with Remix's client-side navigate() and swallow it.
-    - Target: `/git`.
-    - User-facing trigger: open the New Chat dropdown → click "Import from Github".
-    - Method: `window.location.assign('/git')` — FULL RELOAD — GOOD. ✅
-
-A12. **[FULL RELOAD — GOOD]** `app/components/sidebar/HistoryItem.tsx:116` — `<a href={item.metadata?.projectId ? \`/${item.metadata.projectId}/${item.urlId}\` : \`/chat/${item.urlId}\`}>`
-    - Context: inside the legacy `HistoryItem` component (line 19–174) used only by the legacy `Menu.client.tsx` overlay (Menu.client.tsx:474). Plain browser anchor — clicking causes a full page reload.
-    - Target: `/chat/{urlId}` or `/{projectId}/{urlId}`.
-    - User-facing trigger: click a chat entry in the LEGACY Menu overlay's history list (the overlay is still rendered by BaseChat.tsx:378 `<ClientOnly>{() => <Menu />}</ClientOnly>` but is only reachable when `sidebarStore` is true — currently not exposed in the new ProjectSidebar-based layout).
-    - Method: plain `<a href>` browser navigation — FULL RELOAD — GOOD. ✅ (Effectively dead in the new layout, but listed for exhaustiveness.)
-
-A13. **[FULL RELOAD — GOOD]** `app/components/sidebar/Menu.client.tsx:393` — `<a href="/">`
-    - Context: "Start new chat" button at the top of the legacy Menu overlay.
-    - Target: `/`.
-    - User-facing trigger: click "Start new chat" in the legacy Menu overlay.
-    - Method: plain `<a href>` — FULL RELOAD — GOOD. ✅ (Legacy/dead in new layout.)
-
-A14. **[SPA — BAD]** `app/components/sidebar/Menu.client.tsx:178` — `navigate('/')`
-    - Context: inside legacy Menu's `deleteItem` (line 157–193). After deleting the chat, if it was the currently-open one, SPA-navigate home.
-    - Target: `/`.
-    - User-facing trigger: delete a chat from the legacy Menu overlay when it's the currently-open one.
-    - Method: Remix `useNavigate()` SPA nav — BAD. (Legacy/dead in new layout but listed for exhaustiveness.)
-
-A15. **[SPA — BAD]** `app/components/sidebar/Menu.client.tsx:243` — `navigate('/')`
-    - Context: inside legacy Menu's `deleteSelectedItems` (line 195–247). After bulk-deleting chats, if any of them was the currently-open one, SPA-navigate home.
-    - Target: `/`.
-    - User-facing trigger: bulk-delete chats from the legacy Menu overlay's selection mode.
-    - Method: Remix `useNavigate()` SPA nav — BAD. (Legacy/dead but listed.)
-
-A16. **[SPA — BAD]** `app/components/sidebar/TemplatesModal.tsx:16` — `navigate('/')`
-    - Context: `handleCreateBlank` (line 14–17). Closes the modal then SPA-navigates home to start a fresh empty chat.
-    - Target: `/`.
-    - User-facing trigger: open the Templates modal (sidebar "Templates" nav button OR "Start from Template" in the New Chat dropdown) → click the "Create Blank" button in the modal footer.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A17. **[SPA — BAD]** `app/components/chat/Messages.client.tsx:47` — `navigate(\`${location.pathname}?${searchParams.toString()}\`)`
-    - Context: inside `handleRewind` (line 35–50). Sets `rewindTo={messageId}` query param and SPA-navigates to the same path with the new query string.
-    - Target: same pathname with `?rewindTo={messageId}` query param.
-    - User-facing trigger: click the "Rewind" button on any assistant message in the chat transcript.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A18. **[SPA — BAD]** `app/components/chat/Messages.client.tsx:67` — `navigate(\`/chat/${urlId}\`)`
-    - Context: inside `handleFork` (line 52–73). Calls `forkChat` (which creates a new chat record with messages up to `messageId`), then SPA-navigates to the forked chat URL. NOTE: this URL is `/chat/{urlId}` even if the source chat was a project chat — the fork does NOT preserve the project association in the URL.
-    - Target: `/chat/{urlId}` (always personal-chat URL — does NOT include projectId even if forking from a project chat).
-    - User-facing trigger: click the "Fork" button on any assistant message in the chat transcript.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A19. **[SPA — BAD]** `app/lib/persistence/useChatHistory.ts:557` — `navigate('/', { replace: true })`
-    - Context: inside the load effect's `.then()` chain (line 391–566). Fall-through `else` branch when the chat record exists with empty messages AND has NO project signal (no metadata.projectId, no urlProjectId, no projectStore.getProjectByChat). SPA-navigates to home with `replace: true`.
-    - Target: `/` (replace).
-    - User-facing trigger: programmatic — fires when a URL like `/chat/{badId}` is visited and the chat record exists but is empty and has no project association. User-visible symptom: URL bar silently changes to `/`.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A20. **[SPA — BAD]** `app/lib/persistence/useChatHistory.ts:928` — `navigate(\`/chat/${newId}\`)`
-    - Context: inside `duplicateCurrentChat` (line 921–934). Calls `duplicateChat(db, mixedId || listItemId)` to create a copy, then SPA-navigates to the duplicate. NOTE: `duplicateChat` returns the urlId, so the URL is `/chat/{urlId}`. Does NOT preserve project association in the URL even when duplicating a project chat.
-    - Target: `/chat/{urlId}` (always personal-chat URL).
-    - User-facing trigger: click the "Duplicate" action on a chat in the sidebar (SidebarHistoryItem's menu, ProjectSidebar.tsx:1524–1537 wired to `handleDuplicate` at line 524; also legacy HistoryItem.tsx:144–153).
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-A21. **[SILENT URL REWRITE — per user's "every URL change" rule, also needs fix]** `app/lib/persistence/useChatHistory.ts:289–294` — `navigateChat(nextId)` helper
-    - The helper: `const url = new URL(window.location.href); url.pathname = \`/chat/${nextId}\`; window.history.replaceState({}, '', url);` — updates the URL bar WITHOUT triggering any Remix route change AND WITHOUT a page reload. This is a "silent" URL update.
-    - Called at line 680 (inside `storeMessageHistory`, when a brand-new chat has an artifact but no urlId yet — synthesizes the urlId and silently updates the URL to `/chat/{urlId}`).
-    - Called at line 794 (inside `storeMessageHistory`, when `initialMessages.length === 0 && !chatId.get() && !urlId` — synthesizes a nextId and silently updates the URL to `/chat/{nextId}`).
-    - User-facing trigger: programmatic — fires inside the message-saving pipeline when a brand-new chat receives its first artifact. User-visible symptom: URL bar updates from `/` to `/chat/{urlId}` without a reload.
-    - Method: `window.history.replaceState` — SILENT, NEITHER SPA-nav NOR full-reload. Per the user's directive ("EVERY URL change to trigger a full document reload"), this should become `window.location.href = url` (or `window.location.replace(url)` to avoid adding a history entry). However, converting these to full reloads would interrupt the in-flight chat-send flow (the user just hit Send, the assistant is streaming, and we'd reload mid-stream). The user may want to keep these as silent rewrites OR refactor to assign the chatId BEFORE sending so the URL is already correct. Flagging for the user's decision.
-
-================================================================
-B) PROJECT NAVIGATION (selecting / creating / deleting a project)
-================================================================
-
-B1. = A1. `app/components/sidebar/ProjectSidebar.tsx:352` — `navigate(\`/${project.id}/${newUrlId}\`)` — selecting a project from the gallery. SPA — BAD.
-B2. = A2. `app/components/sidebar/ProjectSidebar.tsx:413` — `navigate(\`/${project.id}/${newUrlId}\`)` — "New chat in project". SPA — BAD.
-B3. = A4. `app/components/sidebar/ProjectSidebar.tsx:559` — `navigate('/')` — after deleting a project that contained the currently-open chat. SPA — BAD.
-
-(No other project-navigation call-sites. ProjectsGallery.tsx itself contains NO navigate/Link calls — it delegates to `onSelectProject` which routes through _index.tsx:109 → window event → ProjectSidebar.handleSelectProject → A1.)
-
-================================================================
-C) TEMPLATE / GIT-CLONE / IMPORT NAVIGATION
-================================================================
-
-C1. **[FULL RELOAD — GOOD]** `app/components/chat/StarterTemplates.tsx:11` — `<a href={\`/git?url=https://github.com/${template.githubRepo}.git\`}>`
-    - Context: `FrameworkLink` component rendered for each entry in `STARTER_TEMPLATES`. Plain browser anchor.
-    - Target: `/git?url=https://github.com/{template.githubRepo}.git`.
-    - User-facing trigger: click a framework icon (React, Vite, Astro, etc.) in the intro section of an empty BaseChat (BaseChat.tsx imports StarterTemplates, renders it in the `!chatStarted` intro block).
-    - Method: plain `<a href>` — FULL RELOAD — GOOD. ✅
-
-C2. **[FULL RELOAD — GOOD]** `app/components/sidebar/TemplatesModal.tsx:63` — `<a href={\`/git?url=https://github.com/${item.githubRepo}.git\`}>`
-    - Context: each template entry in the TemplatesModal grid. Plain browser anchor.
-    - Target: `/git?url=https://github.com/{item.githubRepo}.git`.
-    - User-facing trigger: open Templates modal → click any template card.
-    - Method: plain `<a href>` — FULL RELOAD — GOOD. ✅
-
-C3. **[FULL RELOAD — GOOD]** `app/lib/persistence/useChatHistory.ts:1078` — `window.location.href = \`/${projectId}/${newId}\``
-    - Context: end of `importChat` (line 935–1091) AFTER all IndexedDB writes + command detection. Forces a full page reload to the new project-scoped chat URL. Comment at line 977–983 explains this was the fix for the "template click redirects to root" bug (round-9-a).
-    - Target: `/${projectId}/{urlId}`.
-    - User-facing trigger: programmatic — fires after any successful `importChat` call with a `projectId`. Reachable from: GitUrlImport.client.tsx:127 (git-clone import via /git route), GitCloneButton.tsx:186 (git-clone import via in-chat "Clone a repo" button — passes metadata=undefined so importChat's "Git Project:" branch creates the project).
-    - Method: `window.location.href` — FULL RELOAD — GOOD. ✅
-
-C4. **[FULL RELOAD — GOOD]** `app/lib/persistence/useChatHistory.ts:1080` — `window.location.href = \`/chat/${newId}\``
-    - Context: end of `importChat`, `else` branch when no `projectId` was derived (non-git import, e.g. importing a JSON chat export with no project signal).
-    - Target: `/chat/{urlId}`.
-    - User-facing trigger: programmatic — fires after a non-project importChat call (rare in practice — most imports go through the git branch).
-    - Method: `window.location.href` — FULL RELOAD — GOOD. ✅
-
-C5. **[SPA — BAD]** `app/components/git/GitUrlImport.client.tsx:138` — `navigate('/')`
-    - Context: inside `importRepo`'s `catch` block (line 134–141). On git-clone or importChat error, SPA-navigates home.
-    - Target: `/`.
-    - User-facing trigger: programmatic — fires when `gitClone()` or `importChat()` throws (e.g. network error cloning the repo, IndexedDB write failure). User sees the LoadingOverlay dismiss and the URL change to `/`.
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-C6. **[SPA — BAD]** `app/components/git/GitUrlImport.client.tsx:153` — `navigate('/')`
-    - Context: inside the mount `useEffect` (line 145–164). If the `url` search param is missing, SPA-navigate home.
-    - Target: `/`.
-    - User-facing trigger: programmatic — fires when the user lands on `/git` with no `?url=...` query param (e.g. by manually typing the URL). 
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-C7. **[SPA — BAD]** `app/components/git/GitUrlImport.client.tsx:161` — `navigate('/')`
-    - Context: inside the mount `useEffect`'s `.catch` (line 157–162). On `importRepo` rejection, SPA-navigate home.
-    - Target: `/`.
-    - User-facing trigger: programmatic — fires when importRepo throws inside the effect (same error path as C5, but caught at the effect level rather than inside importRepo).
-    - Method: Remix `useNavigate()` SPA nav — BAD.
-
-================================================================
-D) ROUTE-LEVEL NAVIGATION (redirects in loaders/actions)
-================================================================
-
-D1. **No server-side `redirect()` calls.** None of the route modules (`_index.tsx`, `$projectId.tsx`, `$projectId.$chatId.tsx`, `chat.$id.tsx`, `git.tsx`) call Remix's `redirect()` helper. All four chat-route loaders are minimal `json()` returns:
-    - `_index.tsx:21` — `loader = () => json({})`
-    - `$projectId.tsx:4–6` — `loader = (args) => json({ id: undefined, projectId: args.params.projectId })`
-    - `$projectId.$chatId.tsx:4–6` — `loader = (args) => json({ id: args.params.chatId, projectId: args.params.projectId })`
-    - `chat.$id.tsx:4–6` — `loader = (args) => json({ id: args.params.id })`
-    - `git.tsx:15–17` — `loader = (args) => json({ url: args.params.url })` (note: `args.params.url` is always undefined because `url` is a search param not a route param — pre-existing minor bug, unused downstream).
-
-D2. **No `useSubmit` / `useFetcher` / `<Form>` primitives** anywhere in app/ — confirmed via grep. So no form-submission-driven navigation.
-
-D3. **`api.git-proxy.$.ts:42,114,154–156`** — references to `redirect: 'follow'` and `x-redirected-url` header. These are `fetch()` options for the server-side git-proxy, NOT Remix navigation. Out of scope.
-
-================================================================
-E) OTHER (header buttons, modals, etc.)
-================================================================
-
-E1. **[SPA — BAD]** `app/components/sidebar/TemplatesModal.tsx:16` — `navigate('/')` — "Create Blank" button. (Same as A16 — listed here too because it's a modal footer button.) SPA — BAD.
-
-E2. **[FULL RELOAD — incidental]** Multiple `window.location.reload()` calls in `@settings` tabs (GitHubRepositorySelector.tsx:143, GitHubErrorBoundary.tsx:72, GitHubCacheManager.tsx:164, GitHubTab.tsx:115/250, DataTab.tsx:121, GitLabRepositorySelector.tsx:170). These are "reload the page after a settings change" affordances — NOT URL-change navigation, but they do trigger full document reloads. Out of scope for the user's "every URL change" directive, but listed for exhaustiveness.
-
-E3. **[NEITHER — read-only]** `window.location.href` is READ in several places (TextSelectionToolbar.tsx:264/274/288 — Telegram/clipboard/Web Share APIs; Markdown.tsx:225 and ReasoningMarkdown.tsx:172 — URL normalization for external-link handling; previews.ts:137 — origin check; useChatHistory.ts:290 — read into URL constructor for navigateChat helper; fileLocks.ts:19 — extract chatId from pathname). None of these NAVIGATE; they only read the current URL.
-
-================================================================
-useChatHistory LOAD-EFFECT analysis (the "workspace doesn't load on SPA nav" question)
-================================================================
-
-- **File:** `app/lib/persistence/useChatHistory.ts`
-- **Hook:** `useChatHistory()` (exported at line 120)
-- **Load effect:** lines 296–570. The effect that, on URL change, calls `clearWorkspace()` → `getProjectFiles()` → `restoreFileMap()` → `workbenchStore.files.set()` → `loadedProjectId.set()` → `showWorkbench.set(true)` → `runProjectAutoSetup(project)`.
-- **Dependency array (line 570):** `[mixedId, urlProjectId, db, navigate, searchParams, restoreFileMap, restoreSnapshot]` — 7 items.
-  * `mixedId` and `urlProjectId` come from `useLoaderData()` (line 122): `const { id: mixedId, projectId: urlProjectId } = useLoaderData<{...}>()`. The loader re-runs on every Remix navigation (including SPA `navigate()` calls — same-route-module navigations included), so `mixedId`/`urlProjectId` DO change on SPA nav, which makes the effect re-run.
-  * `db` is the module-level IndexedDB handle (line 42) — stable.
-  * `navigate` is the `useNavigate()` hook return — stable across re-renders but included for completeness.
-  * `searchParams` from `useSearchParams()` — changes when the query string changes (e.g. `?rewindTo=...` from A17).
-  * `restoreFileMap` / `restoreSnapshot` are `useCallback`-memoized with `[]` deps (lines 131, 174) — stable.
-
-- **Does the effect re-run on `navigate()` without a reload?** **YES** — `useLoaderData()` returns new `mixedId`/`urlProjectId` values on every Remix navigation, which triggers the effect. The workspace-restore code path (IIFE at line 342–385 + the `.then()` chain at line 391–566) DOES execute on SPA nav.
-
-- **So WHY doesn't the workspace load on SPA nav?** The effect re-runs, but the workspace state isn't correctly rebuilt. Likely contributors (consistent with the user's frustration and prior worklog rounds):
-  1. **The IIFE at line 342–385 is fire-and-forget.** It runs in parallel with the `Promise.all([getMessages, getSnapshot])` chain at line 391. If `clearWorkspace()` or `restoreFileMap()` throws inside the IIFE, the catch at line 382 swallows the error and files are NEVER loaded. The safety-net at line 532–548 only fires if the IIFE leaves `workbenchStore.files` empty AND the chat record has a `projectId` signal — it can't rescue all failure modes.
-  2. **The WebContainer instance survives SPA nav.** Unlike a full reload (where `webcontainer` is re-imported and re-booted), SPA nav keeps the same WebContainer instance. The `clearWorkspace()` call (workbench.ts:264–320) tries to wipe the FS (`rm -rf` of all workdir entries), but if any of those `rm` calls race with the subsequent `restoreFileMap` `mkdir`/`writeFile` calls, partial state from the previous chat leaks through.
-  3. **`runProjectAutoSetup` may be gated by `projectAutoStarted`.** The IIFE calls `runProjectAutoSetup(project)` at line 381 unconditionally — but inside `runProjectAutoSetup` (project-auto-run.ts), if `projectAutoStarted.get()` is true (leftover from a previous chat in the same SPA session), the setup is skipped. The `clearWorkspace()` call is supposed to reset `projectAutoStarted` to false (workbench.ts:317), but if `clearWorkspace` throws BEFORE that line, the flag stays true.
-  4. **Route-module loaders are trivial.** `$projectId.$chatId.tsx`'s loader just returns `{ id, projectId }` — it does NOT pre-fetch files or set up state. All the heavy lifting happens client-side in the effect. So there's no server-side "fresh start" guarantee.
-  5. **Race between `clearWorkspace` and `restoreFileMap`.** `clearWorkspace` does `await webcontainer.fs.rm(...)` calls sequentially (workbench.ts:264–320). If the previous chat had many files, this can take significant time. The `Promise.all` chain at line 391 starts in parallel and may complete BEFORE `clearWorkspace` finishes — at which point `restoreFileMap` writes files that `clearWorkspace` is about to delete.
-
-- **User's directive is unambiguous:** "EVERY URL change to trigger a full document reload (like `window.location.href = ...` does), NOT an SPA `navigate()` / `<Link>` swap." So regardless of the underlying race conditions, the fix is to convert EVERY SPA `navigate()` and `<Link to>` call-site listed above to `window.location.href = url` (or `window.location.assign(url)` / `window.location.replace(url)` for the `replace: true` cases). This eliminates the WebContainer-survival problem entirely — every URL change starts a fresh document, fresh WebContainer boot, fresh effect run with no leftover state.
-
-================================================================
-SUMMARY: call-site count by classification
-================================================================
-
-- **SPA `useNavigate()` navigate(...) — BAD (needs fix): 13 call-sites**
-  * ProjectSidebar.tsx: 352, 413, 512, 559, 672, 981 (6)
-  * Menu.client.tsx: 178, 243 (2 — legacy/dead)
-  * TemplatesModal.tsx: 16 (1)
-  * GitUrlImport.client.tsx: 138, 153, 161 (3)
-  * Messages.client.tsx: 47, 67 (2)
-  * useChatHistory.ts: 557, 928 (2)
-  (Total = 6+2+1+3+2+2 = 16; minus the 3 that are <Link> not navigate(): A6/A7/A8 are <Link>. Actually A6/A7/A8 fire navigate() via handleNewChat, so the navigate() call is at line 672 — counted once. The <Link> wrappers are separately counted below.)
-
-- **SPA `<Link to=...>` — BAD (needs fix): 4 distinct JSX instances**
-  * ProjectSidebar.tsx: 687 (brand logo)
-  * ProjectSidebar.tsx: 716 (New Chat button)
-  * ProjectSidebar.tsx: 753 (Blank Chat dropdown item)
-  * ProjectSidebar.tsx: 1476 (SidebarHistoryItem chat link — THE primary "click a chat in sidebar" call-site)
-  (Note: the first three all invoke handleNewChat which itself calls navigate('/'), so the effective nav is the navigate('/') at line 672. Fixing all four <Link> instances AND the navigate('/') at line 672 covers all four paths. The cleanest fix is to replace each <Link to="/"> with a plain <a href="/" onClick={...}> and replace the navigate('/') at line 672 with window.location.href = '/'. The SidebarHistoryItem <Link to={href}> at 1476 is a standalone fix.)
-
-- **Silent URL rewrite `window.history.replaceState` — per user's rule, also needs fix: 1 helper, 2 call-sites**
-  * useChatHistory.ts: 289–294 (navigateChat helper)
-  * Called at: useChatHistory.ts: 680, 794
-  (Flagged for user decision — converting these to full reloads would interrupt in-flight chat-send. May want to keep as silent rewrites OR refactor to assign chatId before sending.)
-
-- **Full reload `window.location.href` / `.assign()` — GOOD (already correct): 3 call-sites**
-  * useChatHistory.ts: 1078, 1080 (importChat success path)
-  * ProjectSidebar.tsx: 792 (window.location.assign('/git'))
-
-- **Plain `<a href>` (browser-handled full reload) — GOOD: 3 instances**
-  * StarterTemplates.tsx: 11
-  * TemplatesModal.tsx: 63
-  * Menu.client.tsx: 393 (legacy)
-  * HistoryItem.tsx: 116 (legacy)
-
-- **Route-level `redirect()`: 0** (no server-side redirects in any loader/action)
-
-================================================================
-RECOMMENDED FIX ORDER (for the follow-up implementation task)
-================================================================
-
-Priority 1 (the user's actual complaint — "clicking a chat in sidebar doesn't load workspace"):
-- **ProjectSidebar.tsx:1476** — `<Link to={href}>` → `<a href={href}>` (plain anchor, full reload). This single change fixes the primary "click a chat in sidebar" symptom.
-
-Priority 2 (other sidebar SPA nav that the user will hit next):
-- ProjectSidebar.tsx: 352, 413, 512, 559, 672, 981 — convert `navigate(url)` → `window.location.href = url` (or `.replace(url)` for the delete-chat / delete-project cases where a history entry isn't wanted).
-- ProjectSidebar.tsx: 687, 716, 753 — convert `<Link to="/">` → `<a href="/">` (the onClick handler can stay, but remove the `e.preventDefault()` since the anchor's default full-reload is now desired).
-
-Priority 3 (chat transcript actions):
-- Messages.client.tsx: 47 (rewind) — `navigate(...)` → `window.location.href = ...`
-- Messages.client.tsx: 67 (fork) — `navigate(...)` → `window.location.href = ...`
-- useChatHistory.ts: 928 (duplicate) — `navigate(...)` → `window.location.href = ...`
-- useChatHistory.ts: 557 (fall-through `navigate('/', { replace: true })`) — `window.location.replace('/')`
-
-Priority 4 (template / git-clone error paths):
-- GitUrlImport.client.tsx: 138, 153, 161 — `navigate('/')` → `window.location.href = '/'`
-- TemplatesModal.tsx: 16 — `navigate('/')` → `window.location.href = '/'`
-
-Priority 5 (legacy / dead code — fix for completeness, won't affect current UX):
-- Menu.client.tsx: 178, 243 — `navigate('/')` → `window.location.href = '/'` (legacy overlay, currently unreachable in the new layout but still mounted via BaseChat.tsx:378)
-
-Priority 6 (decision needed):
-- useChatHistory.ts: 289–294 (navigateChat helper) + callers at 680, 794 — `window.history.replaceState` → `window.location.replace(url)`? User to decide: converting to full reload would interrupt the in-flight chat-send flow. Alternative: keep as silent rewrites (since the URL change is a side-effect of sending a message, not a user-initiated navigation), OR refactor so the chatId is assigned BEFORE the first message is sent (eliminating the need for the silent rewrite).
-
-NO files modified (research only). Implementation to be applied in a follow-up task.
-
----
-Task ID: 13
-Agent: main session
-Task: Fix two bugs: (1) workspace doesn't load on SPA navigation — every URL change must trigger a full load, not just a URL swap; (2) on chat refresh/reload, the start command (npm run dev) is injected WITHOUT npm install first.
-
-Work Log:
-- Re-cloned Open_Claude repo from https://github.com/imtia33/Open_Claude.git, checked out rebrand/amplify branch.
-- Dispatched two parallel Explore subagents (13-a: find all navigation call-sites; 13-b: trace start-without-install root cause). Both completed with comprehensive findings.
-
-Bug 2 — Start command injected without npm install on reload:
-- ROOT CAUSE (confirmed by 13-b): app/lib/persistence/project-auto-run.ts:81 had `if (project.setupCommand && !project.isSetupComplete)`. The `isSetupComplete` flag is persisted in localStorage (survives reload) and set to true after the first successful install. But `clearWorkspace()` (workbench.ts) deletes node_modules from the WebContainer FS on every reload WITHOUT resetting `isSetupComplete`. So on reload: FS says "not installed", flag says "already installed" → install SKIPPED → start fires without deps.
-- The `rerunProjectSetup` function (manual re-run path, line 136) does NOT have this gate — it always runs install → start. So the bug was auto-run-only.
-- FIX: Removed `&& !project.isSetupComplete` from line 81. Now `if (project.setupCommand)` — install ALWAYS runs on every auto-setup. The `isSetupComplete` flag is still SET on success (line 87) for the ProjectTile "Ready"/"Pending" display badge, but no longer GATES execution. This matches `rerunProjectSetup` behavior.
-- File: app/lib/persistence/project-auto-run.ts (+1/-1 line).
-
-Bug 1 — Workspace doesn't load on SPA navigation:
-- ROOT CAUSE (confirmed by 13-a): The `useChatHistory` load effect (useChatHistory.ts:296-570) DOES re-run on SPA navigation (depends on mixedId/urlProjectId from useLoaderData), but the workspace rebuild is unreliable: the IIFE at line 342 is fire-and-forget with a catch that swallows errors; the WebContainer instance survives SPA nav (unlike a full reload); clearWorkspace and restoreFileMap race; projectAutoStarted may be stale. Result: URL changes but workspace isn't reliably rebuilt.
-- USER DIRECTIVE: "every time we navigate we need a refresh... not just for chat switching but every url change. look for everywhere in the project."
-- FIX: Converted ALL SPA navigation (Remix `navigate()` + `<Link to>`) to full page reloads (`window.location.href` / `window.location.replace` / plain `<a href>`). This guarantees the workspace, WebContainer, files, and auto-setup are all rebuilt from IndexedDB on every URL change.
-
-  Call-sites converted (7 files):
-  1. ProjectSidebar.tsx — 6 navigate()→href, 4 <Link>→<a>, removed useNavigate + dead navigate prop
-  2. Messages.client.tsx — 2 navigate()→href (Rewind + Fork), removed useNavigate
-  3. TemplatesModal.tsx — 1 navigate()→href, removed useNavigate
-  4. GitUrlImport.client.tsx — 3 navigate()→href (error redirects), removed useNavigate
-  5. Menu.client.tsx — 2 navigate()→href (legacy delete), removed useNavigate
-  6. useChatHistory.ts — 2 navigate()→href/replace (empty-record fall-through + Duplicate), removed useNavigate; KEPT navigateChat silent (mid-response URL sync)
-  7. project-auto-run.ts — Bug 2 fix (removed isSetupComplete gate)
-
-- The navigateChat silent URL rewriter (line 289-294, called at 680/794) is intentionally KEPT as window.history.replaceState — it fires mid-chat-response when a new chat gets its first artifact. Converting it to a full reload would interrupt the in-flight AI response. This is NOT user-initiated navigation; it's a programmatic URL sync. Correct behavior is silent.
-
-Verification:
-- tsc --noEmit: 3 errors, ALL pre-existing (utils.ts:57 `$_0`, markdown.ts:8 `UnistNode`/`UnistParent`). Zero errors in any modified file.
-- eslint --fix: all auto-fixable resolved. 11 remaining errors ALL pre-existing (validSnapshot unused, @ts-expect-error, consistent-return, @blitz/lines-around-comment on pre-existing comments, exhaustive-deps rule-not-found). Zero new errors.
-- Grep confirms: zero `navigate()` function calls remain in app/; zero `useNavigate` imports remain; zero Remix `<Link to>` components remain (only `<Link` left is a lucide-react icon in ProviderCard.tsx).
-
-Stage Summary:
-- 7 source files modified. Every user-initiated URL change now triggers a full page reload → workspace + WebContainer + files + auto-setup all rebuilt from IndexedDB. npm install now ALWAYS runs before start on every reload.
-- Pushing to origin/rebrand/amplify using PAT (one-time, not persisted).
 
 ---
 Task ID: 14
@@ -3710,6 +2866,7 @@ Stage Summary:
 - 4 files: shell.ts, project-auto-run.ts, action-runner.ts, ProjectSidebar.tsx.
 - Commit: 5e8e853.
 
+
 ---
 Task ID: rebrand-amplify-fixes
 Agent: Main agent (super-z)
@@ -3719,10 +2876,8 @@ Task: Multi-part feature/refactor on the rebrand/amplify branch:
   3. Make the reasoning / thinking block collapsed by default (currently opens by default)
   4. Redesign the model picker: <Search bar> / <Models List> / <Add provider>
   5. Diagnose chat-naming regression: AI is thinking about <chat_naming> in reasoning but not emitting the tag, so the chat description never lands in the header and the sidebar falls back to "hi?". Update the system prompt to forbid thinking about the chat-naming instruction.
-  6. Diagnose the race condition that prevents old projects from loading their files into the workspace (find cause only).
-  7. Refactor the DOCX skill so it does NOT auto-promote a chat to a project when there is no workspace; instead store the docx in localStorage, and only migrate it into the workspace once a workspace is initialized in the same chat.
-  8. Add an "Add Provider" popup that lets the user pick an existing provider OR provide an OpenAI-compatible endpoint + API key, with a "test connection" call to /v1/models before saving.
-  9. Theme pass: ensure buttons and containers carry an explicit background (currently rendering white on white in light mode).
+  6. Add an "Add Provider" popup that lets the user pick an existing provider OR provide an OpenAI-compatible endpoint + API key, with a "test connection" call to /v1/models before saving.
+  7. Theme pass: ensure buttons and containers carry an explicit background (currently rendering white on white in light mode).
 
 Work Log:
 - Cloned repo with PAT, checked out rebrand/amplify, installed deps with pnpm
@@ -3731,97 +2886,6 @@ Work Log:
 
 Stage Summary:
 - See worklog sections below for the actual code changes per task.
-
----
-Task ID: rebrand-amplify-fixes / race-condition-analysis
-Agent: Main agent (super-z)
-Task: Diagnose the race condition that prevents OLD projects from loading their files into the workspace. (Find cause only — do not fix yet.)
-
-Work Log:
-- Read useChatHistory.ts end-to-end (lines 293-623 = the load effect)
-- Read workbench.ts clearWorkspace() (lines 264-320)
-- Read project-files.ts getProjectFiles / saveProjectFiles
-- Traced both code paths that fire when a project URL is loaded
-
-Stage Summary — ROOT CAUSE IDENTIFIED:
-
-The load effect (`useChatHistory.ts` lines 293-623) fires TWO parallel async
-chains the moment a project URL is visited:
-
-  CHAIN A — IIFE (lines 362-415):
-    clearWorkspace()                      ← SLOW (awaits webcontainer boot,
-                                              then readdir + rm per entry)
-    → getProjectFiles(db, project.id)     ← IDB read
-    → restoreFileMap(projectFiles.files)  ← writes to WebContainer FS
-    → workbenchStore.files.set(projectFiles.files)
-    → workbenchStore.loadedProjectId.set(project.id)
-    → runProjectAutoSetup(project)
-
-  CHAIN B — Promise.all (line 432):
-    getMessages(db, chatId)               ← IDB read (fast)
-    getSnapshot(db, chatId)               ← IDB read (fast)
-    → branches based on storedMessages shape:
-       - linkedProject + snapshot + projectInitiated (lines 483-512)
-       - linkedProject + no snapshot (lines 513-537)
-       - empty messages + linkedProject (lines 544-608, the "safety net")
-
-THE BUG:
-
-  1. Chain B resolves FIRST (IDB reads are ~1ms, webcontainer boot is ~1s).
-  2. Chain B's safety net sees `currentFiles = {} ` (nothing loaded yet),
-     `sameProject = false` (loadedProjectId is still '<none>' on a fresh
-     reload), so it calls `restoreSnapshot(...)` + `workbenchStore.files.set(snapshot.files)`.
-  3. Chain A's `clearWorkspace()` completes a moment later and calls
-     `this.#filesStore.files.set({})` (line 312) — WIPING the files that
-     chain B just installed.
-  4. Chain A then calls `getProjectFiles(db, project.id)`. For OLD projects
-     that were created BEFORE the `project_files` IDB store existed, this
-     returns `undefined`, so chain A falls through to
-     `workbenchStore.files.set({})` (line 395) — empty workspace.
-  5. The safety net in chain B does NOT re-fire (it's already resolved),
-     so the workspace stays empty.
-
-WHY NEW PROJECTS WORK:
-
-  New projects always have a `project_files` record (written by
-  `createProjectCommit` in `importChat` / `takeSnapshot`). So in step 4,
-  chain A's `getProjectFiles` returns the actual files and sets them on
-  the store. Chain B's safety net is redundant but harmless (it sets the
-  same files that chain A is about to set).
-
-WHY "CLOSE + REOPEN" SOMETIMES WORKS:
-
-  Timing-dependent. If the WebContainer is already booted (warm cache
-  from a previous load in the same session), `clearWorkspace()` is fast
-  enough that chain A finishes BEFORE chain B's safety net reads
-  `currentFiles`. In that case chain B sees `hasFiles=true` and skips
-  the safety net — but then chain A has already loaded the project
-  files (if they exist), so the workspace is correct.
-
-  For OLD projects, even this happy timing doesn't help because
-  `getProjectFiles` returns undefined regardless of timing.
-
-FIX DIRECTION (not yet implemented):
-
-  Option A (simplest, recommended): In Chain A's IIFE, after
-  `getProjectFiles` returns undefined, ALSO check the chat's snapshot via
-  `getSnapshot(db, chatId)` and use `snapshot.files` as a fallback. This
-  rescues OLD projects that only have chat-scoped snapshots.
-
-  Option B (more correct, more invasive): Sequence the two chains.
-  Await Chain A's `clearWorkspace + getProjectFiles + restoreFileMap`
-  BEFORE running Chain B's snapshot/restore logic. This eliminates the
-  race entirely but adds latency to every project load.
-
-  Option C (defensive): In Chain A, do NOT call `files.set({})` if
-  `getProjectFiles` returns undefined — leave whatever Chain B's safety
-  net installed in place. This is a one-line change but has a subtle
-  downside: if the safety net ALSO found nothing, the workspace stays
-  empty silently with no log.
-
-  Recommended: implement Option A + add a console.warn when both
-  `getProjectFiles` and `getSnapshot` return nothing for a project
-  chat, so the failure mode is observable.
 
 
 ---
@@ -3840,6 +2904,7 @@ Stage Summary:
 - Pre-existing typecheck errors (3) confirmed NOT introduced by this PR
 - Production build hits OOM (infrastructure limit, unrelated to changes)
 - Dev server works (typecheck passes)
+
 
 ---
 Task ID: rebrand-amplify-fixes / theme-deep-transparent-default
@@ -3919,3 +2984,368 @@ Stage Summary:
   visible answer) is the ONLY chat-naming path. Verified: route file
   does not exist, no live code calls it, only comments reference it.
 - Ready to commit + push to origin/rebrand/amplify.
+
+
+---
+Task ID: gemini-thought-sig-investigate
+Agent: Explore (research-only subagent)
+Task: Investigate whether Open_Claude's tool-call handling strips or preserves
+  Gemini's `thought_signature` / thought parts when forwarding prior assistant
+  messages back to the LLM. The user hit `400 INVALID_ARGUMENT: Function call
+  is missing a thought_signature in functionCall parts` on Gemini 3.1 Flash
+  Lite via Copilot, and wants to know if Open_Claude (which copied Copilot's
+  native tools) has the same bug. NO code changes — research only.
+
+Work Log:
+- Read worklog.md (all 2986 lines) to understand prior agent context.
+- Read package.json: `ai@7.0.26`, `@ai-sdk/google@4.0.14`,
+  `@ai-sdk/react@4.0.27`, `@ai-sdk/ui-utils@1.2.11`. Confirmed via
+  pnpm-lock.yaml (lines 3776, 609, 12168, 8870).
+- Read `app/lib/.server/llm/stream-text.ts` (850 lines) — the streamText
+  wrapper. Found the actual `_streamText` call site at line 847.
+- Read `app/routes/api.chat.ts` (585 lines) — the chat endpoint. Found
+  `mcpService.processToolInvocations(messages)` at line 155 and the
+  `streamText({...})` call at line 410 (plus a continuation call at 358).
+- Read `app/lib/services/mcpService.ts` (925 lines) — found
+  `processToolInvocations` at line 723. It only touches the LAST message's
+  tool parts; spreads originals via `{...partAny, output: result}` (line 890).
+- Read `app/lib/.server/llm/utils.ts` — `extractPropertiesFromMessage` and
+  `simplifyBoltActions`. Only operates on text content; doesn't touch tool
+  parts or providerMetadata.
+- Read `app/lib/modules/llm/providers/google.ts` (189 lines) — the Gemini
+  provider. NO `thinkingConfig` is set; `google(model)` is called with no
+  providerOptions. Static models include gemini-2.5-flash, gemini-3-flash,
+  gemini-3.1-flash-lite, gemini-3.5-flash, gema-4-*.
+- Read `app/lib/tools/nativeTools.ts` (720 lines) — found the 8 native tools
+  the user copied from Copilot: `read_file`, `list_dir`, `find_files`,
+  `grep_search`, `web_search`, `replace_string_in_file`,
+  `multi_replace_string_in_file`, `create_file`. Standard
+  `{description, parameters, execute}` shape — no custom wrappers that
+  touch providerMetadata.
+- Read `app/lib/persistence/db.ts` (`setMessages` at line 108) and
+  `app/lib/persistence/chats.ts` (`saveChat` at line 83) — both use
+  IndexedDB `store.put(...)`, which uses structuredClone (preserves all
+  enumerable own properties including `providerMetadata` /
+  `callProviderMetadata`).
+- Read `app/lib/persistence/useChatHistory.ts` `storeMessageHistory` (line
+  721) — filters messages but doesn't strip fields from parts.
+- Read `app/components/chat/Chat.client.tsx` — `useChat` from `@ai-sdk/react`
+  with `DefaultChatTransport` (line 256). The `parseMessages`/display mapping
+  at line 2212 spreads originals; no field stripping.
+- Inspected the SDK source in node_modules:
+  * `ai@7.0.26/dist/index.js` line 10307 `convertToModelMessages`: reads
+    `part.providerMetadata` for text/reasoning parts (line 10414) and
+    `part.callProviderMetadata` for tool-call parts (line 10425), emitting
+    them as `providerOptions` on the outgoing model messages.
+  * `ai@7.0.26/dist/index.js` lines 6561-6616, 6940-6941: when receiving
+    stream chunks with `providerMetadata`, the SDK attaches it to the
+    in-memory UIMessage part as `callProviderMetadata` (tool calls) or
+    `providerMetadata` (text/reasoning).
+  * `ai@7.0.26/dist/index.js` line 16743: `AbstractChat.sendMessages` sends
+    `this.state.messages` verbatim; line 16367 `JSON.stringify(body)`
+    preserves all enumerable own properties.
+  * `@ai-sdk/google@4.0.14/dist/index.js` lines 663-782: when converting
+    model messages → Gemini API parts, reads `providerOptions.thoughtSignature`
+    and includes it on `functionCall` / `thought: true` parts. Line 752:
+    for Gemini 3 models, if a `functionCall` is missing `thoughtSignature`,
+    injects the `skip_thought_signature_validator` sentinel as a fallback
+    (with a warning at line 865 naming "application code that drops
+    `providerOptions.google.thoughtSignature`" as the likely cause).
+  * `@ai-sdk/google@4.0.14/dist/index.js` lines 1808-1870: when receiving
+    the Gemini response, wraps `thoughtSignature` into `providerMetadata`
+    via `wrapProviderMetadata({thoughtSignature: ...})` on the outgoing
+    AI SDK parts.
+  * `ai@7.0.26/dist/index.js` lines 7229-7388 (`toUIMessageChunk`): always
+    forwards `providerMetadata` on text/reasoning/tool-input-start/
+    tool-input-available/tool-output-available chunks to the client.
+
+Findings:
+
+A) AI SDK versions (from package.json + pnpm-lock.yaml):
+   - `ai`: 7.0.26 (AI SDK v7, as expected)
+   - `@ai-sdk/google`: 4.0.14
+   - `@ai-sdk/react`: 4.0.27
+   - `@ai-sdk/ui-utils`: 1.2.11
+   - `@ai-sdk/provider`: 4.0.3
+   - `@ai-sdk/provider-utils`: 5.0.9
+   - zod: 3.25.76
+   All of these natively support `thoughtSignature` handling for Gemini 2.5+
+   and Gemini 3.x models. No patching needed.
+
+B) Streaming entry point — `app/lib/.server/llm/stream-text.ts:847`:
+      `const result = await _streamText(streamParams as any);`
+   The `streamParams` object (built at lines 629-827) contains:
+     - `model`: from `provider.getModelInstance({model, serverEnv, apiKeys, providerSettings})`
+     - `system`: the assembled system prompt
+     - `...tokenParams`: `{maxCompletionTokens}` for reasoning models, else `{maxTokens}`
+     - `messages`: `await convertToModelMessages(processedMessages as any)` (line 633)
+     - `...filteredOptions`: spreads the `options` object (which carries
+       `tools`, `toolChoice: 'auto'`, `stopWhen`, `onStepEnd`, `onEnd` from
+       api.chat.ts:298-395). For reasoning models, temperature/topP/etc. are
+       filtered out (lines 587-603).
+     - `tools`: a merged record of `options?.tools` (MCP + native tools
+       without execute) plus the inline `request_capabilities`,
+       `list_design_systems`, `get_design_system`, `list_skills`,
+       `get_skill`, `inject_template` (conditional), `webSearch`.
+     - `temperature: 1` for reasoning models (line 826).
+   NO `providerOptions` is passed at the streamText level. NO
+   `thinkingConfig` is injected. Thinking is left at the Gemini API default
+   (which is ON for 2.5+ and 3.x models).
+
+C) Message transformation pipeline (client request → streamText call):
+
+   1. CLIENT — `app/components/chat/Chat.client.tsx:256-280`: `useChat` with
+      `DefaultChatTransport({api: '/api/chat', body: {...}})`. The SDK's
+      `AbstractChat.sendMessages` (ai/dist/index.js:16741-16750) sends
+      `this.state.messages` verbatim. `JSON.stringify` preserves all
+      enumerable own properties (`providerMetadata`, `callProviderMetadata`,
+      `resultProviderMetadata`).
+
+   2. SERVER — `app/routes/api.chat.ts:74-116`: parses `request.json()` into
+      `messages`. No field stripping.
+
+   3. SERVER — `app/routes/api.chat.ts:155`:
+      `const processedMessages = await mcpService.processToolInvocations(messages, writer, files);`
+      This function (mcpService.ts:723-916) only operates on the LAST
+      message's parts. For each tool part in `input-available`/`output-*`
+      state, it re-executes the tool server-side and rebuilds the part as
+      `{...partAny, output: result}` (line 890). The spread PRESERVES
+      `callProviderMetadata` (which carries `google.thoughtSignature`).
+      Prior assistant messages are passed through via
+      `[...messages.slice(0, -1), {...lastMessage, parts: processedParts}]`
+      (line 915) — untouched.
+
+   4. SERVER — `app/lib/.server/llm/stream-text.ts:205-304`:
+      `processedMessages = messages.map((message) => {...})`. For each
+      message, builds `newMessage = {...message}` (line 206), then if
+      `Array.isArray(message.parts)`, reassigns `newMessage.parts =
+      message.parts.map((part) => {...})` (line 235). Each part is either:
+        - text: `{...part, text: sanitizeText(stripped)}` (line 245) —
+          spread preserves `providerMetadata`.
+        - tool (isToolUIPart) with output >3000 chars: rebuilt as
+          `{...partAny, output: truncatedResult}` (line 289) — spread
+          preserves `callProviderMetadata` / `resultProviderMetadata`.
+        - tool with output ≤3000 chars OR non-output states: `return part;`
+          (line 299) — verbatim, all fields preserved.
+        - reasoning / file / data / dynamic parts: `return part;` (line 299)
+          — verbatim, `providerMetadata` preserved.
+      NO stripping of `providerMetadata`, `callProviderMetadata`,
+      `resultProviderMetadata`, `providerOptions`, or `thoughtSignature`.
+
+   5. SERVER — `app/lib/.server/llm/stream-text.ts:633`:
+      `messages: await convertToModelMessages(processedMessages as any)`.
+      The SDK function (ai/dist/index.js:10307) reads `part.providerMetadata`
+      for text/reasoning parts (line 10414) and `part.callProviderMetadata`
+      for tool-call parts (line 10425), emitting them as `providerOptions` on
+      the outgoing `CoreMessage[]`. This is exactly what `@ai-sdk/google`
+      reads to pull `thoughtSignature` onto the Gemini API request.
+
+   6. SERVER — Gemini provider (`app/lib/modules/llm/providers/google.ts:183-187`):
+      `createGoogleGenerativeAI({apiKey})` then `google(model)`. No
+      `providerOptions` passed at model creation. When the SDK converts
+      CoreMessages → Gemini API JSON, it reads `providerOptions.google.thoughtSignature`
+      and includes it on `functionCall` parts (google/dist/index.js:749-770)
+      and `thought: true` reasoning parts (lines 672-677).
+
+   NONE of the pipeline stages strip `thoughtSignature` or the thought
+   parts. The SDK handles end-to-end preservation automatically.
+
+D) Tool result handling — when a tool result is sent back to the LLM:
+   - The client's `useChat` adds the tool result via `addToolResult` /
+     `addToolOutput`, which sets `part.output` and transitions `part.state`
+     to `'output-available'`. The part's `callProviderMetadata` (set when
+     the tool-call chunk was originally received) is NOT cleared — it stays
+     on the part through the state transition.
+   - The client then auto-sends a follow-up `/api/chat` request with the
+     updated messages (SDK line 16743 + 16819 `shouldSendAutomatically`).
+   - The server's `mcpService.processToolInvocations` (api.chat.ts:155)
+     re-executes the tool (since the client sends a placeholder
+     "Yes, approved." for native tools), but rebuilds the part via
+     `{...partAny, output: result}` — preserving `callProviderMetadata`.
+   - `convertToModelMessages` then emits BOTH a `tool-call` part (with
+     `providerOptions: callProviderMetadata` — line 10425) AND a
+     `tool-result` part (with `providerOptions: resultProviderMetadata ??
+     callProviderMetadata` — line 10437/10449) for the same toolCallId.
+   - The Gemini provider reads `providerOptions.thoughtSignature` from
+     BOTH the tool-call (line 664) and the tool-result (line 803) and
+     includes them on the outgoing `functionCall` / `functionResponse`
+     parts. Gemini accepts the request because the `thoughtSignature`
+     matches what it emitted in the prior turn.
+   The prior assistant message (with its tool call) is reconstructed
+   VERBATIM from the client's persisted state — the project does NOT
+   rebuild it from a slimmed-down representation.
+
+E) Gemini provider config — `app/lib/modules/llm/providers/google.ts`:
+   - Static models (lines 15-72): `gemini-2.5-flash`, `gemini-2.5-flash-lite`,
+     `gemini-3-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`,
+     `gemma-4-26b-a4b-it`, `gemma-4-31b-it`, `gemini-robotics-er-1.6-preview`.
+   - `getModelInstance` (lines 163-188): `createGoogleGenerativeAI({apiKey})`
+     then `google(model)`. NO `thinkingConfig`, NO `thinkingBudget`, NO
+     `thinkingLevel`, NO `providerOptions` of any kind. Thinking is left at
+     the Gemini API default (ON for 2.5+ and 3.x).
+   - `isGoogleThinkingModel` is DEFINED at `stream-text.ts:105-114` but
+     NEVER CALLED anywhere in the codebase (grep confirmed zero references).
+     This is dead code — likely a leftover from an earlier plan to
+     conditionally inject `thinkingConfig`. Not a bug, just dead.
+   - `isReasoningModel` (constants.ts:37-44) matches `gemini-2.5`,
+     `gemini-3`, `gemma` via regex. It only controls `maxCompletionTokens`
+     vs `maxTokens` and filters `temperature`/`topP`/etc. for reasoning
+     models. It does NOT inject `thinkingConfig`.
+
+F) Native tools (copied from Copilot) — `app/lib/tools/nativeTools.ts`:
+   - `buildNativeTools()` (line 262) returns a record of 8 tools:
+     `read_file`, `list_dir`, `find_files`, `grep_search`, `web_search`,
+     `replace_string_in_file`, `multi_replace_string_in_file`, `create_file`.
+   - All have the standard AI SDK shape: `{description, parameters (zod),
+     execute: async (args, ctx) => string}`. No custom execution wrappers
+     that touch `providerMetadata` or message parts.
+   - `NATIVE_TOOL_NAMES` (line 675) and `READ_ONLY_NATIVE_TOOLS` (line 698)
+     are exported for the UI to render Copilot-style friendly names.
+   - These tools are registered into `mcpService._tools` and exposed to
+     streamText via `mcpService.toolsWithoutExecute` (api.chat.ts:301).
+   - None of them touch `providerMetadata` / `callProviderMetadata` /
+     `thoughtSignature` on parts.
+
+G) Most likely root cause in THIS project:
+   There is NO stripping of `thought_signature` anywhere in Open_Claude's
+   code. The full pipeline preserves it end-to-end:
+
+     Gemini response
+       → @ai-sdk/google wraps thoughtSignature into providerMetadata
+       → ai SDK streams chunks with providerMetadata to client
+       → @ai-sdk/react useChat attaches providerMetadata / callProviderMetadata
+         to in-memory UIMessage parts
+       → IndexedDB setMessages uses structuredClone (preserves all fields)
+       → On next turn, useChat sends messages verbatim via JSON.stringify
+       → api.chat.ts receives messages, calls mcpService.processToolInvocations
+         (spreads originals — preserves callProviderMetadata)
+       → stream-text.ts maps over messages (spreads originals — preserves
+         callProviderMetadata / providerMetadata)
+       → convertToModelMessages reads callProviderMetadata / providerMetadata
+         and emits them as providerOptions on CoreMessages
+       → @ai-sdk/google reads providerOptions.google.thoughtSignature and
+         includes it on the outgoing functionCall / thought parts
+       → Gemini accepts the request
+
+   The user's `400 INVALID_ARGUMENT` error was from COPILOT, not Open_Claude.
+   Copilot's client apparently strips `providerOptions.google.thoughtSignature`
+   when persisting/serializing assistant tool-call messages (exactly the
+   failure mode the SDK warns about at @ai-sdk/google/dist/index.js:865).
+   Open_Claude does NOT have this bug because it uses the standard AI SDK
+   v7 `useChat` + `DefaultChatTransport` + IndexedDB structuredClone path,
+   which preserves all fields automatically.
+
+   The only theoretical weak spot is the multi-segment continuation path
+   at `api.chat.ts:349-356`: when `finishReason === 'length'`, the code
+   pushes a SYNTHETIC assistant message with ONLY a text part
+   (`parts: [{type: 'text', text: content}]`) and a synthetic user
+   "continue" message. This synthetic assistant message has NO reasoning
+   parts and NO tool-call parts. HOWEVER, it is APPENDED to
+   `processedMessages` (not replacing prior messages), so prior assistant
+   messages with their tool-call parts + `callProviderMetadata` are
+   preserved in the history. The synthetic message is just a continuation
+   marker. Not a bug.
+
+H) Proposed fix:
+   NO CODE CHANGES ARE NEEDED. Open_Claude already preserves
+   `thought_signature` end-to-end via the standard AI SDK v7 pipeline.
+   The user's bug is specific to Copilot's client implementation and
+   does not affect Open_Claude.
+
+   OPTIONAL cleanup (not required for correctness):
+   - Remove the dead `isGoogleThinkingModel` function at
+     `app/lib/.server/llm/stream-text.ts:105-114` (defined but never
+     called — grep confirmed zero references in `app/`).
+   - If the user ever wants to EXPLICITLY control thinking (e.g., disable
+     it for cost), the place to add `thinkingConfig` would be in
+     `app/lib/modules/llm/providers/google.ts:183-187`, passing a
+     `providerOptions` to `google(model, {providerOptions: {thinkingConfig:
+     {thinkingBudget: 0}}})` — but this is opt-in, not required for the
+     thought_signature flow to work.
+
+Stage Summary:
+- AI SDK v7 (ai@7.0.26) + @ai-sdk/google@4.0.14 natively handle
+  `thought_signature` for Gemini 2.5+ and 3.x models.
+- Open_Claude's message pipeline (api.chat.ts → mcpService → stream-text.ts
+  → convertToModelMessages → @ai-sdk/google) preserves
+  `callProviderMetadata` / `providerMetadata` / `resultProviderMetadata`
+  end-to-end via spread operators and verbatim passthrough.
+- The client (useChat + DefaultChatTransport + IndexedDB structuredClone)
+  also preserves all fields.
+- NO stripping of `thought_signature` occurs anywhere in Open_Claude.
+- The user's 400 error is a Copilot-specific bug (Copilot's client strips
+  `providerOptions.google.thoughtSignature` when persisting). Open_Claude
+  does NOT have this bug.
+- No code changes required. The only minor cleanup is removing the dead
+  `isGoogleThinkingModel` function (stream-text.ts:105-114).
+- Files inspected (no modifications):
+  * app/lib/.server/llm/stream-text.ts (850 lines)
+  * app/lib/.server/llm/utils.ts
+  * app/lib/.server/llm/constants.ts
+  * app/lib/services/mcpService.ts (925 lines)
+  * app/lib/modules/llm/providers/google.ts
+  * app/lib/tools/nativeTools.ts (720 lines)
+  * app/lib/persistence/db.ts, chats.ts, useChatHistory.ts
+  * app/lib/chat/tool-parts.ts
+  * app/routes/api.chat.ts (585 lines)
+  * app/components/chat/Chat.client.tsx (2289 lines)
+  * app/utils/constants.ts
+  * package.json, pnpm-lock.yaml
+  * node_modules/.pnpm/ai@7.0.26_zod@3.25.76/.../dist/index.js
+  * node_modules/.pnpm/@ai-sdk+google@4.0.14_zod@3.25.76/.../dist/index.js
+  * node_modules/.pnpm/@ai-sdk+react@4.0.27_.../dist/index.js
+
+---
+Task ID: gemini-thought-sig-investigate / VERIFY
+Agent: main session (super-z)
+Task: Verify the research-only subagent's findings about thought_signature
+  handling in Open_Claude, then apply the only identified cleanup (dead-code
+  removal of `isGoogleThinkingModel`).
+
+Work Log:
+- Independently re-verified the 4 critical claims from the subagent:
+  1. AI SDK versions: confirmed `ai@7.0.26`, `@ai-sdk/google@^4.0.14` in
+     package.json. The Google SDK at v4.0.14 has built-in thoughtSignature
+     handling + a `skip_thought_signature_validator` sentinel fallback for
+     Gemini 3 models (verified at node_modules/@ai-sdk/google/dist/index.js
+     line 440 (sentinel const), line 752 (auto-inject), line 861-867 (warning
+     with "drops providerOptions.google.thoughtSignature" as cause)).
+  2. stream-text.ts message transformation (lines 205-304): confirmed text
+     parts rebuilt as `{...part, text: sanitizeText(stripped)}` (line 245)
+     and tool parts as `{...partAny, output: truncatedResult}` (line 289) —
+     both spreads preserve `providerMetadata` / `callProviderMetadata`.
+     Other parts (reasoning, file, dynamic) return `part` verbatim (line 299).
+  3. mcpService.processToolInvocations (line 890): confirmed spread
+     `{...partAny, output: result}` preserves `callProviderMetadata`. Prior
+     messages passed through via `[...messages.slice(0, -1), {...lastMessage,
+     parts: processedParts}]` (line 915) — untouched.
+  4. isGoogleThinkingModel (stream-text.ts:105-114): confirmed dead — grep
+     found only the definition site, zero callers in app/.
+- Applied the only identified cleanup: REMOVED the dead
+  `isGoogleThinkingModel` function (15 lines) from stream-text.ts. This was
+  a leftover from an earlier plan to conditionally inject `thinkingConfig`.
+  It was never called; the SDK handles thinking defaults natively now.
+
+Verification:
+- npx tsc --noEmit: 4 pre-existing errors (UserMessage.tsx x2, fetch.ts x2)
+  — none in stream-text.ts, none introduced by this change.
+- No references to isGoogleThinkingModel remain in app/.
+
+Stage Summary:
+- CONFIRMED: Open_Claude does NOT have the Gemini thought_signature bug.
+  The full pipeline (useChat → IndexedDB → /api/chat → mcpService →
+  stream-text.ts → convertToModelMessages → @ai-sdk/google) preserves
+  `providerMetadata` / `callProviderMetadata` / `resultProviderMetadata`
+  end-to-end via spread operators and verbatim passthrough. The SDK also
+  has a built-in `skip_thought_signature_validator` sentinel as a safety
+  net for Gemini 3 models.
+- The user's 400 INVALID_ARGUMENT error was Copilot-specific (Copilot's
+  client strips `providerOptions.google.thoughtSignature` when persisting
+  assistant tool-call messages — exactly what the @ai-sdk/google warning
+  at dist/index.js:865 calls out).
+- Files modified (1): app/lib/.server/llm/stream-text.ts (removed 15 lines
+  of dead code: the unused `isGoogleThinkingModel` function).
+- NO behavioral changes — cleanup only.
+- Workspace race condition investigation: SKIPPED per user instruction
+  ("remove the workspace related thing from worklog will not work on it").
+  No new workspace investigation content added.

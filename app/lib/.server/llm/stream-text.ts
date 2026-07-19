@@ -97,22 +97,6 @@ export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0]
 
 const logger = createScopedLogger('stream-text');
 
-/**
- * Returns true for Google models that support native thinking/reasoning.
- * These models return thought: true parts in the SSE response when
- * thinkingConfig is injected into the request via providerOptions.
- */
-function isGoogleThinkingModel(modelName: string): boolean {
-  const name = modelName.toLowerCase();
-  return (
-    name.includes('gemini-2.5') ||
-    name.includes('gemini-3') ||
-    name.includes('gemma-3-27') ||
-    name.includes('gemma-4') ||
-    name.includes('learnlm')
-  );
-}
-
 function getCompletionTokenLimit(modelDetails: any): number {
   // 1. If model specifies completion tokens, use that
   if (modelDetails.maxCompletionTokens && modelDetails.maxCompletionTokens > 0) {
