@@ -3840,3 +3840,82 @@ Stage Summary:
 - Pre-existing typecheck errors (3) confirmed NOT introduced by this PR
 - Production build hits OOM (infrastructure limit, unrelated to changes)
 - Dev server works (typecheck passes)
+
+---
+Task ID: rebrand-amplify-fixes / theme-deep-transparent-default
+Agent: Main agent (super-z)
+Task: Deepen the theme fix. The previous round DEFINED --amplify-elements-focus
+  (the orange accent) but did not address the deeper issue: containers / buttons
+  without an explicit bg-* class were rendering with a solid slab of the page
+  background (white in light mode, near-black in dark mode) because
+  --amplify-elements-background resolved to var(--background). User's rule:
+  any container / button that does NOT have an explicit bg should render
+  TRANSPARENT (inherit the parent's paint) instead of getting a default
+  solid color applied.
+
+Work Log:
+- Inspected variables.scss — confirmed --amplify-elements-background was
+  bound to var(--background) in both light and dark theme blocks. This is
+  the token that bg-amplify-elements-background (used by Button default
+  variant, Input, Badge, Progress, ArtifactRenderer, and several settings
+  tabs) resolves to.
+- Inspected uno.config.ts — confirmed the DEFAULT sub-key under
+  amplify.elements.background was var(--amplify-elements-background), so
+  the unresolved-variant problem flowed through UnoCSS too.
+- Inspected Button.tsx default variant — uses bg-amplify-elements-background.
+  With the old binding this painted the page background; the hover state
+  used bg-amplify-elements-background-depth-2 (var(--card)), so the button
+  went from "white slab" to "card slab" on hover — looked heavy and made
+  default buttons appear as solid white rectangles (the user's complaint).
+- Inspected Input.tsx, Badge.tsx, Progress.tsx, ArtifactRenderer.tsx — all
+  use bg-amplify-elements-background and inherit the same white-slab issue.
+- Inspected ChatBox.tsx — already uses explicit theme tokens via inline
+  arbitrary values (bg-[var(--card)], bg-[var(--muted)], bg-[oklch(...)]),
+  so it is unaffected by the token binding change.
+- Inspected APIKeyPopup.tsx "Save Key" button — already uses
+  bg-amplify-elements-focus (the orange accent defined last round), so it
+  is correct. The Cancel button is bg-transparent (already correct).
+- CHANGE 1 — variables.scss (light theme block):
+    --amplify-elements-background: var(--background)  ->  transparent
+  Replaced the comment with a DESIGN RULE block explaining: any container
+  that does not carry an explicit bg-* class (or uses
+  bg-amplify-elements-background as its bg) renders TRANSPARENT and
+  inherits its parent's paint. Containers that need a solid theme-aware
+  surface MUST opt in via bg-amplify-elements-background-depth-1/2/3/4
+  or another explicit bg-* class.
+- CHANGE 2 — variables.scss (dark theme block): same change, same rule,
+  comment cross-references the light-theme block.
+- CHANGE 3 — uno.config.ts: updated the comment block above
+  amplify.elements.background.DEFAULT to document the new transparent
+  default and the opt-in rule for solid surfaces.
+- CHANGE 4 — APIKeyPopup.tsx: updated a stale comment that referenced the
+  removed /api/chat-title endpoint. Now correctly explains that the
+  apiKeys cookie is needed by /api/chat (stream-text) on the first turn,
+  and that without it the one-shot <chatname> tag would never be emitted
+  (so the chat would stay unnamed). No behaviour change — comment only.
+
+Verification:
+- npx tsc --noEmit: 4 errors, ALL pre-existing (UserMessage.tsx x2,
+  fetch.ts x1, plus a multi-line Agent type mismatch in fetch.ts). Zero
+  errors in variables.scss, uno.config.ts, or APIKeyPopup.tsx.
+- No production-code references to /api/chat-title remain — only comment
+  references explaining what was removed. The route file itself does NOT
+  exist in app/routes/ (verified via ls).
+
+Stage Summary:
+- Files modified (3): app/styles/variables.scss, uno.config.ts,
+  app/components/chat/APIKeyPopup.tsx (comment-only).
+- --amplify-elements-background now binds to transparent in both themes.
+- The Button default variant, Input, Badge, Progress, ArtifactRenderer,
+  and all settings-tab containers that previously painted a solid white
+  slab now render transparently — inheriting their parent's paint.
+- Containers that actually need a solid surface already use
+  bg-amplify-elements-background-depth-1/2/3/4 (which are still bound
+  to var(--background) / var(--card) / var(--muted) / var(--popover)) or
+  an explicit bg-* class — those are unaffected.
+- The chat-naming old method (separate /api/chat-title LLM call) was
+  fully removed in commit 3cee980. The new token-efficient method
+  (<chatname>...</chatname> tag emitted as the first token of the first
+  visible answer) is the ONLY chat-naming path. Verified: route file
+  does not exist, no live code calls it, only comments reference it.
+- Ready to commit + push to origin/rebrand/amplify.

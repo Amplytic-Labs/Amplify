@@ -317,11 +317,20 @@ export default defineConfig({
           background: {
             /*
              * DEFAULT resolves `bg-amplify-elements-background` (used by the
-             * Button `default` variant and several containers) to the
-             * theme-aware base background. Without this, the class mapped to
-             * an object with only `depth.*` sub-keys and produced NO
-             * background — leaving containers transparent so they fell back
-             * to the plain white body color.
+             * Button `default` variant and several containers) to
+             * `transparent`. Per the project-wide design rule, any
+             * container / button that does NOT carry an explicit `bg-*`
+             * class must render TRANSPARENT — it inherits whatever its
+             * parent paints. This eliminates the "white-on-white" default
+             * that previously made plain Buttons / Cards / Inputs look
+             * like flat slabs of the page background.
+             *
+             * Containers that need a solid theme-aware surface MUST opt in
+             * explicitly via `bg-amplify-elements-background-depth-1/2/3/4`
+             * or another explicit `bg-*` class.
+             *
+             * See `app/styles/variables.scss` for the source-of-truth token
+             * definition and the full rationale.
              */
             DEFAULT: 'var(--amplify-elements-background)',
             depth: {

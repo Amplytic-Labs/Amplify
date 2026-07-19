@@ -98,11 +98,25 @@
   --amplify-elements-borderColorActive: var(--ring);
 
   /*
-   * Base element background — used by `bg-amplify-elements-background`
-   * (Button default variant + generic containers). Theme-aware so containers
-   * without an explicit bg- class no longer fall back to plain white.
+   * Base element background — the "no explicit bg" default.
+   *
+   * DESIGN RULE (applies project-wide):
+   *   Any container / button that does NOT carry an explicit `bg-*` class
+   *   (or that uses `bg-amplify-elements-background` as its bg) renders
+   *   TRANSPARENT — it inherits whatever its parent paints. This is the
+   *   opposite of the previous behaviour, where this token resolved to
+   *   `var(--background)` (pure white in light mode, near-black in dark
+   *   mode) and made every "default" Button, Card, Input, Badge, etc.
+   *   paint a solid slab of the page background — producing the
+   *   "white-on-white" look the user reported for Save Key / primary
+   *   buttons and various containers.
+   *
+   *   Containers that genuinely need a solid theme-aware surface MUST
+   *   opt in explicitly via one of the depth tokens below
+   *   (`bg-amplify-elements-background-depth-1/2/3/4`) or another
+   *   explicit `bg-*` class.
    */
-  --amplify-elements-background: var(--background);
+  --amplify-elements-background: transparent;
 
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);
@@ -265,11 +279,20 @@
   --amplify-elements-borderColorActive: var(--ring);
 
   /*
-   * Base element background — used by `bg-amplify-elements-background`
-   * (Button default variant + generic containers). Theme-aware so containers
-   * without an explicit bg- class no longer fall back to plain white.
+   * Base element background — the "no explicit bg" default.
+   *
+   * DESIGN RULE (applies project-wide):
+   *   Any container / button that does NOT carry an explicit `bg-*` class
+   *   (or that uses `bg-amplify-elements-background` as its bg) renders
+   *   TRANSPARENT — it inherits whatever its parent paints. See the
+   *   light-theme comment above for the full rationale.
+   *
+   *   Containers that genuinely need a solid theme-aware surface MUST
+   *   opt in explicitly via one of the depth tokens below
+   *   (`bg-amplify-elements-background-depth-1/2/3/4`) or another
+   *   explicit `bg-*` class.
    */
-  --amplify-elements-background: var(--background);
+  --amplify-elements-background: transparent;
 
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);

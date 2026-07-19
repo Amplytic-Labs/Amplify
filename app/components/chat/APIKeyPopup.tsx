@@ -39,9 +39,10 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
 
       /*
        * ALSO write the apiKeys cookie so server-side endpoints (which can only
-       * read cookies, not localStorage) can access the key. Without this, the
-       * chat-title endpoint fails with "Missing API key for Z.ai provider" and
-       * falls back to using the raw <amplifyArtifact> tag as the chat title.
+       * read cookies, not localStorage) can access the key. Without this,
+       * /api/chat (stream-text) fails with "Missing API key for Z.ai provider"
+       * on the very first turn — which would also block the one-shot
+       * <chatname> naming tag from being emitted, leaving the chat unnamed.
        */
       Cookies.set('apiKeys', JSON.stringify(newKeys), { expires: 365, sameSite: 'lax' });
 
