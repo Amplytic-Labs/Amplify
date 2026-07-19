@@ -7,19 +7,15 @@ import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
 import WithTooltip from '~/components/ui/Tooltip';
 import type { ProviderInfo } from '~/types/model';
-import type {
-  TextUIPart,
-  ReasoningUIPart,
-  SourceUIPart,
-  FileUIPart,
-  StepStartUIPart,
-} from '@ai-sdk/ui-utils';
+import type { TextUIPart, ReasoningUIPart, SourceUIPart, FileUIPart, StepStartUIPart } from '@ai-sdk/ui-utils';
 import { isToolPart } from '~/lib/chat/tool-parts';
 import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
 import { extractDocxArtifact } from '~/lib/chat/docx-artifact';
 import { setDocxArtifact } from '~/lib/stores/docx-artifact';
+import { setPendingDocx } from '~/lib/stores/pending-docx-artifacts';
+import { chatId as chatIdAtom } from '~/lib/persistence/useChatHistory';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 
@@ -36,9 +32,7 @@ interface AssistantMessageProps {
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
   provider?: ProviderInfo;
-  parts:
-    | (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[]
-    | undefined;
+  parts: (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[] | undefined;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   isStreaming?: boolean;
 }
@@ -128,10 +122,11 @@ export const AssistantMessage = memo(
      * the thought text feeds the collapsible panel. Re-runs every tick
      * during streaming — cheap (a single indexOf scan).
      */
-    const { thoughtText, answerText: rawAnswerText, hasThoughts } = useMemo(
-      () => parseThoughts(visibleContent),
-      [visibleContent],
-    );
+    const {
+      thoughtText,
+      answerText: rawAnswerText,
+      hasThoughts,
+    } = useMemo(() => parseThoughts(visibleContent), [visibleContent]);
     const thoughtStreaming = useMemo(() => isThoughtStreaming(visibleContent), [visibleContent]);
 
     /*
@@ -179,21 +174,61 @@ export const AssistantMessage = memo(
      * Streaming-safe: an unclosed `<docxartifact>` still yields its (partial)
      * inner markdown so the live preview updates as content arrives.
      */
-    const { visibleText: docxStrippedText, docxMarkdown, streaming: docxStreaming, theme: docxTheme } = useMemo(
-      () => extractDocxArtifact(answerText),
-      [answerText],
-    );
+    const {
+      visibleText: docxStrippedText,
+      docxMarkdown,
+      streaming: docxStreaming,
+      theme: docxTheme,
+    } = useMemo(() => extractDocxArtifact(answerText), [answerText]);
 
     /*
      * Push the extracted document into the store + surface the Document panel
      * in the workbench. Latest-wins: a newer message's document replaces an
      * older one. Only acts when there's actually markdown to show.
+     *
+     * WORKSPACE-AWARE BEHAVIOUR:
+     *   - If a workspace IS initialized for this chat (loadedProjectId is set
+     *     to a real project id, not '<none>'), the docx lives alongside the
+     *     project files: we open the workbench and switch to the Document
+     *     view so the user sees the docx preview immediately.
+     *   - If NO workspace is initialized, we DO NOT open the workbench —
+     *     opening it would make the chat look like a project chat and trip
+     *     workspace_guardrails. Instead, we stash the docx in the
+     *     pendingDocxStore (chatId-keyed, persisted to localStorage) so it
+     *     can be migrated into the workspace once one is initialized.
+     *     The user can still download the docx via the answer actions /
+     *     chat-level affordance — the docx artifact store is still set so
+     *     a DocxPreviewPanel can be rendered on demand.
      */
     useEffect(() => {
-      if (docxMarkdown) {
-        setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming, docxTheme);
+      if (!docxMarkdown) {
+        return;
+      }
+
+      // Always set the docxArtifactStore so a DocxPreviewPanel that's
+      // explicitly mounted (by the user clicking a "View document" button
+      // or by the workspace being opened later) has content to show.
+      setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming, docxTheme);
+
+      const loadedProjectId = workbenchStore.loadedProjectId.get();
+      const workspaceInitialized = !!loadedProjectId && loadedProjectId !== '<none>';
+
+      if (workspaceInitialized) {
+        // Workspace exists — surface the document panel immediately.
         workbenchStore.showWorkbench.set(true);
         workbenchStore.currentView.set('document');
+      } else {
+        // No workspace yet — park the docx in localStorage so it can be
+        // migrated when a workspace is initialized in this same chat.
+        const currentChatId = chatIdAtom.get();
+
+        if (currentChatId) {
+          setPendingDocx(currentChatId, {
+            markdown: docxMarkdown,
+            messageId: messageId || 'unknown',
+            theme: docxTheme,
+          });
+        }
       }
     }, [docxMarkdown, messageId, docxStreaming, docxTheme]);
 

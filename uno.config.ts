@@ -265,7 +265,10 @@ const COLOR_PRIMITIVES = {
 };
 
 export default defineConfig({
-  safelist: [...Object.keys(customIconCollection[collectionName] || {}).map((x) => `i-amplify:${x}`), ...vscodeIconClasses],
+  safelist: [
+    ...Object.keys(customIconCollection[collectionName] || {}).map((x) => `i-amplify:${x}`),
+    ...vscodeIconClasses,
+  ],
   shortcuts: {
     'amplify-ease-cubic-bezier': 'ease-[cubic-bezier(0.4,0,0.2,1)]',
     'transition-theme': 'transition-[background-color,border-color,color] duration-150 amplify-ease-cubic-bezier',
@@ -409,6 +412,18 @@ export default defineConfig({
             buttonBackground: 'var(--amplify-elements-terminals-buttonBackground)',
           },
           dividerColor: 'var(--amplify-elements-dividerColor)',
+          /*
+           * Focus / accent token — registers `bg-amplify-elements-focus`,
+           * `text-amplify-elements-focus`, `ring-amplify-elements-focus`
+           * with UnoCSS so the classes actually generate CSS. Previously
+           * these classes were used in APIKeyPopup / ModelSelector / etc.
+           * but the token wasn't registered here OR in variables.scss,
+           * so the classes silently produced no styles and buttons
+           * rendered with no background.
+           */
+          focus: 'var(--amplify-elements-focus)',
+          focusHover: 'var(--amplify-elements-focus-hover)',
+          focusForeground: 'var(--amplify-elements-focus-foreground)',
           loader: {
             background: 'var(--amplify-elements-loader-background)',
             progress: 'var(--amplify-elements-loader-progress)',

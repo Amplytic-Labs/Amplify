@@ -96,7 +96,7 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
               'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
               isSaving || !tempKey
                 ? 'bg-amplify-elements-borderColor text-amplify-elements-textTertiary cursor-not-allowed'
-                : 'bg-amplify-elements-focus text-white hover:bg-amplify-elements-focus/90',
+                : 'bg-amplify-elements-focus text-amplify-elements-focus-foreground hover:bg-amplify-elements-focus-hover',
             )}
           >
             {isSaving ? 'Saving...' : 'Save Key'}

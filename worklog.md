@@ -3709,3 +3709,117 @@ Work Log:
 Stage Summary:
 - 4 files: shell.ts, project-auto-run.ts, action-runner.ts, ProjectSidebar.tsx.
 - Commit: 5e8e853.
+
+---
+Task ID: rebrand-amplify-fixes
+Agent: Main agent (super-z)
+Task: Multi-part feature/refactor on the rebrand/amplify branch:
+  1. Clone repo + checkout rebrand/amplify + pnpm install + save PAT in env
+  2. Strip "(context)" suffix from dynamic model labels in the model-picker trigger; cap trigger max-width at half of the full name width of an example label like "Gemma 4 31B IT (262k context)"
+  3. Make the reasoning / thinking block collapsed by default (currently opens by default)
+  4. Redesign the model picker: <Search bar> / <Models List> / <Add provider>
+  5. Diagnose chat-naming regression: AI is thinking about <chat_naming> in reasoning but not emitting the tag, so the chat description never lands in the header and the sidebar falls back to "hi?". Update the system prompt to forbid thinking about the chat-naming instruction.
+  6. Diagnose the race condition that prevents old projects from loading their files into the workspace (find cause only).
+  7. Refactor the DOCX skill so it does NOT auto-promote a chat to a project when there is no workspace; instead store the docx in localStorage, and only migrate it into the workspace once a workspace is initialized in the same chat.
+  8. Add an "Add Provider" popup that lets the user pick an existing provider OR provide an OpenAI-compatible endpoint + API key, with a "test connection" call to /v1/models before saving.
+  9. Theme pass: ensure buttons and containers carry an explicit background (currently rendering white on white in light mode).
+
+Work Log:
+- Cloned repo with PAT, checked out rebrand/amplify, installed deps with pnpm
+- Saved GITHUB_PAT in .env.local, configured ~/.git-credentials for push
+- Mapped the relevant files: ModelSelector.tsx (unused in ChatBox — ChatBox has its own inline dropdown), ChatBox.tsx (the actual model picker used in the prompt), ThinkingBox.tsx (reasoning block), chatname.ts, stream-text.ts, useChatHistory.ts, workbench.ts, docx-artifact.ts, DocxPreviewPanel.tsx, variables.scss
+
+Stage Summary:
+- See worklog sections below for the actual code changes per task.
+
+---
+Task ID: rebrand-amplify-fixes / race-condition-analysis
+Agent: Main agent (super-z)
+Task: Diagnose the race condition that prevents OLD projects from loading their files into the workspace. (Find cause only — do not fix yet.)
+
+Work Log:
+- Read useChatHistory.ts end-to-end (lines 293-623 = the load effect)
+- Read workbench.ts clearWorkspace() (lines 264-320)
+- Read project-files.ts getProjectFiles / saveProjectFiles
+- Traced both code paths that fire when a project URL is loaded
+
+Stage Summary — ROOT CAUSE IDENTIFIED:
+
+The load effect (`useChatHistory.ts` lines 293-623) fires TWO parallel async
+chains the moment a project URL is visited:
+
+  CHAIN A — IIFE (lines 362-415):
+    clearWorkspace()                      ← SLOW (awaits webcontainer boot,
+                                              then readdir + rm per entry)
+    → getProjectFiles(db, project.id)     ← IDB read
+    → restoreFileMap(projectFiles.files)  ← writes to WebContainer FS
+    → workbenchStore.files.set(projectFiles.files)
+    → workbenchStore.loadedProjectId.set(project.id)
+    → runProjectAutoSetup(project)
+
+  CHAIN B — Promise.all (line 432):
+    getMessages(db, chatId)               ← IDB read (fast)
+    getSnapshot(db, chatId)               ← IDB read (fast)
+    → branches based on storedMessages shape:
+       - linkedProject + snapshot + projectInitiated (lines 483-512)
+       - linkedProject + no snapshot (lines 513-537)
+       - empty messages + linkedProject (lines 544-608, the "safety net")
+
+THE BUG:
+
+  1. Chain B resolves FIRST (IDB reads are ~1ms, webcontainer boot is ~1s).
+  2. Chain B's safety net sees `currentFiles = {} ` (nothing loaded yet),
+     `sameProject = false` (loadedProjectId is still '<none>' on a fresh
+     reload), so it calls `restoreSnapshot(...)` + `workbenchStore.files.set(snapshot.files)`.
+  3. Chain A's `clearWorkspace()` completes a moment later and calls
+     `this.#filesStore.files.set({})` (line 312) — WIPING the files that
+     chain B just installed.
+  4. Chain A then calls `getProjectFiles(db, project.id)`. For OLD projects
+     that were created BEFORE the `project_files` IDB store existed, this
+     returns `undefined`, so chain A falls through to
+     `workbenchStore.files.set({})` (line 395) — empty workspace.
+  5. The safety net in chain B does NOT re-fire (it's already resolved),
+     so the workspace stays empty.
+
+WHY NEW PROJECTS WORK:
+
+  New projects always have a `project_files` record (written by
+  `createProjectCommit` in `importChat` / `takeSnapshot`). So in step 4,
+  chain A's `getProjectFiles` returns the actual files and sets them on
+  the store. Chain B's safety net is redundant but harmless (it sets the
+  same files that chain A is about to set).
+
+WHY "CLOSE + REOPEN" SOMETIMES WORKS:
+
+  Timing-dependent. If the WebContainer is already booted (warm cache
+  from a previous load in the same session), `clearWorkspace()` is fast
+  enough that chain A finishes BEFORE chain B's safety net reads
+  `currentFiles`. In that case chain B sees `hasFiles=true` and skips
+  the safety net — but then chain A has already loaded the project
+  files (if they exist), so the workspace is correct.
+
+  For OLD projects, even this happy timing doesn't help because
+  `getProjectFiles` returns undefined regardless of timing.
+
+FIX DIRECTION (not yet implemented):
+
+  Option A (simplest, recommended): In Chain A's IIFE, after
+  `getProjectFiles` returns undefined, ALSO check the chat's snapshot via
+  `getSnapshot(db, chatId)` and use `snapshot.files` as a fallback. This
+  rescues OLD projects that only have chat-scoped snapshots.
+
+  Option B (more correct, more invasive): Sequence the two chains.
+  Await Chain A's `clearWorkspace + getProjectFiles + restoreFileMap`
+  BEFORE running Chain B's snapshot/restore logic. This eliminates the
+  race entirely but adds latency to every project load.
+
+  Option C (defensive): In Chain A, do NOT call `files.set({})` if
+  `getProjectFiles` returns undefined — leave whatever Chain B's safety
+  net installed in place. This is a one-line change but has a subtle
+  downside: if the safety net ALSO found nothing, the workspace stays
+  empty silently with no log.
+
+  Recommended: implement Option A + add a console.warn when both
+  `getProjectFiles` and `getSnapshot` return nothing for a project
+  chat, so the failure mode is observable.
+

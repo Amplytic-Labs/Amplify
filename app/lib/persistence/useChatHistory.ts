@@ -229,8 +229,9 @@ export function useChatHistory() {
           });
 
           try {
-            const { detectProjectMemory, mergeDetectedMemory } =
-              await import('~/lib/persistence/project-memory-detect');
+            const { detectProjectMemory, mergeDetectedMemory } = await import(
+              '~/lib/persistence/project-memory-detect'
+            );
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);
@@ -724,7 +725,7 @@ export function useChatHistory() {
 
       const { firstArtifact } = workbenchStore;
       // AI SDK v7: annotations may be stored as custom data, use type assertion
-      messages = messages.filter((m) => !((m as any).annotations?.includes('no-store')));
+      messages = messages.filter((m) => !(m as any).annotations?.includes('no-store'));
 
       let _urlId = urlId;
 
@@ -759,7 +760,10 @@ export function useChatHistory() {
           const msg = messages[i];
           let c: any;
           if (Array.isArray(msg.parts)) {
-            c = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('');
+            c = msg.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('');
           } else {
             c = (msg as any).content;
           }
@@ -837,6 +841,38 @@ export function useChatHistory() {
                   console.warn('[ChatHistory] Auto setup failed on promote:', e),
                 );
               }
+
+              /*
+               * ── Migrate pending DOCX artifacts ───────────────────────────
+               *
+               * If the AI generated a `<docxartifact>` document BEFORE the
+               * workspace was initialized (i.e. before this promotion
+               * happened), the document was parked in the pendingDocxStore
+               * (localStorage) by AssistantMessage. Now that a workspace
+               * exists for this chat, migrate the document: re-publish it
+               * into the live docxArtifactStore so the DocxPreviewPanel
+               * picks it up, and switch the workbench to the Document view
+               * so the user sees their previously-generated docx living
+               * alongside the new project files.
+               *
+               * takePendingDocx both reads AND removes the entry, so this
+               * is a one-shot migration — subsequent docx generations go
+               * straight to the workspace via the normal path.
+               */
+              try {
+                const { takePendingDocx } = await import('~/lib/stores/pending-docx-artifacts');
+                const { setDocxArtifact } = await import('~/lib/stores/docx-artifact');
+                const pending = takePendingDocx(currentId);
+
+                if (pending) {
+                  setDocxArtifact(pending.markdown, pending.messageId, false, pending.theme);
+                  workbenchStore.showWorkbench.set(true);
+                  workbenchStore.currentView.set('document');
+                  console.log('[ChatHistory] Migrated pending docx into workspace for chat', currentId);
+                }
+              } catch (e) {
+                console.warn('[ChatHistory] Failed to migrate pending docx:', e);
+              }
             }
 
             const currentMetadata = chatMetadata.get() || {};
@@ -904,11 +940,53 @@ export function useChatHistory() {
        * whole second LLM call) has been removed.
        */
       if (firstAssistantMessage) {
-        const assistantText = Array.isArray(firstAssistantMessage.parts)
-          ? firstAssistantMessage.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+        /*
+         * Build the assistant's text representation for chatname extraction.
+         *
+         * PRIMARY source: the message's `text` parts (the visible answer).
+         * The system prompt explicitly asks the AI to emit <chatname> as
+         * the FIRST token of its VISIBLE answer, so the text channel is
+         * where the tag SHOULD live.
+         *
+         * FALLBACK: scan `reasoning` parts too. Some models (especially
+         * reasoning models that ignore system-prompt directives) emit the
+         * <chatname> tag INSIDE their reasoning / <thought> trace instead
+         * of in the visible text. Without this fallback, the chat would
+         * fall through to the provisional-title path and never pick up the
+         * AI's intended chat name — which is exactly the "header shows
+         * nothing, sidebar shows the user's first message" regression we
+         * are fixing.
+         *
+         * The fallback looks at reasoning.textDelta / reasoning.text /
+         * reasoning.details[].text, joins them in order, and runs the
+         * same extractChatName on the combined string. If the text-channel
+         * extraction already produced a name, the fallback is skipped.
+         */
+        const textPartsText = Array.isArray(firstAssistantMessage.parts)
+          ? firstAssistantMessage.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('')
           : (firstAssistantMessage as any).content || '';
 
-        const chatName = extractChatName(assistantText);
+        let chatName = extractChatName(textPartsText);
+
+        if (!chatName && Array.isArray(firstAssistantMessage.parts)) {
+          const reasoningText = firstAssistantMessage.parts
+            .filter((p: any) => p.type === 'reasoning')
+            .map((p: any) => {
+              if (p.details && Array.isArray(p.details)) {
+                return p.details.map((d: any) => d?.text || '').join('');
+              }
+
+              return p.textDelta || p.text || '';
+            })
+            .join('\n');
+
+          if (reasoningText) {
+            chatName = extractChatName(reasoningText);
+          }
+        }
 
         if (chatName) {
           const currentDesc = description.get() || '';

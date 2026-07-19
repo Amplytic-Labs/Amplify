@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Paperclip, Send, ChevronDown, Sparkles, X, FileText, Check } from 'lucide-react';
+import { Paperclip, Send, ChevronDown, Sparkles, X, FileText, Check, Plus } from 'lucide-react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { classNames } from '~/utils/classNames';
 import { PROVIDER_LIST } from '~/utils/constants';
@@ -23,6 +23,40 @@ import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
+import { AddProviderPopup } from './AddProviderPopup';
+import { customProvidersStore, type CustomProvider } from '~/lib/stores/custom-providers';
+import { useStore } from '@nanostores/react';
+
+/**
+ * Strip a trailing parenthesised context suffix from a model label.
+ *
+ * Dynamic model lists from providers like OpenRouter / HuggingFace often
+ * come back as `"Gemma 4 31B IT (262k context)"` or `"Qwen 2.5 72B (free)"`.
+ * The parenthesised part is metadata that clutters the model-picker
+ * trigger. We strip it from the TRIGGER only — the full label (with the
+ * context) is still shown in the dropdown list so the user can compare.
+ *
+ * Only the LAST parenthesised group is stripped, so labels like
+ * `"Foo (provider) (262k context)"` become `"Foo (provider)"`.
+ */
+function stripContextSuffix(label: string | undefined): string {
+  if (!label) {
+    return '';
+  }
+
+  return label.replace(/\s*\([^()]*\)\s*$/, '').trim();
+}
+
+/**
+ * Half the rendered width of the example label
+ * `"Gemma 4 31B IT (262k context)"` — used as the trigger's max-width.
+ *
+ * The example is 30 characters wide. We express the cap in `ch` units so
+ * it scales with the active font: 30 / 2 = 15ch, plus 1ch of slack so the
+ * chevron + padding don't squeeze the text. The trigger's `truncate`
+ * class adds the ellipsis when the cleaned label exceeds this width.
+ */
+const TRIGGER_MAX_WIDTH_CH = 16;
 
 // NOTE: InjectThemeStyles component removed — it was re-rendering a
 // <style dangerouslySetInnerHTML> on every keystroke, forcing the browser
@@ -82,9 +116,14 @@ interface ChatBoxProps {
 export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isApiKeyPopupOpen, setIsApiKeyPopupOpen] = useState(false);
+  const [isAddProviderOpen, setIsAddProviderOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const dropdownContainerRef = React.useRef<HTMLDivElement>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Custom OpenAI-compatible providers added by the user via the
+  // "Add Provider" popup. Surfaced in the dropdown as a "Custom" group.
+  const customProviders = useStore(customProvidersStore);
 
   const isKeyMissing = useMemo(() => {
     if (!props.provider?.name || LOCAL_PROVIDERS.includes(props.provider.name)) {
@@ -322,12 +361,22 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   whileHover={{ scale: 1.02, opacity: 0.8 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--muted)] text-xs font-medium text-[var(--card-foreground)] transition-all cursor-pointer max-w-[200px] sm:max-w-[240px]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--muted)] text-xs font-medium text-[var(--card-foreground)] transition-all cursor-pointer"
+                  style={{ maxWidth: `${TRIGGER_MAX_WIDTH_CH}ch` }}
                   title={activeModel?.label || activeModel?.name || props.model || 'Select model'}
                 >
                   <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)] flex-shrink-0" />
+                  {/*
+                   * Trigger label = the model's label with the trailing
+                   * `(context)` suffix stripped (see stripContextSuffix).
+                   * The truncate class kicks in when the cleaned label is
+                   * longer than TRIGGER_MAX_WIDTH_CH — the user still sees
+                   * the full label inside the dropdown list.
+                   */}
                   <span className="truncate">
-                    {activeModel?.label?.split(' - ')[0] || activeModel?.name || props.model || 'Select model'}
+                    {stripContextSuffix(
+                      activeModel?.label?.split(' - ')[0] || activeModel?.name || props.model || 'Select model',
+                    )}
                   </span>
                   <motion.div
                     animate={{ rotate: isModelDropdownOpen ? 180 : 0 }}
@@ -429,6 +478,23 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           ))
                         )}
                       </div>
+
+                      {/* Add Provider footer — opens the AddProviderPopup.
+                          The popup lets the user either pick an existing
+                          built-in provider or add a custom OpenAI-compatible
+                          endpoint with a test-connection step. */}
+                      <div className="border-t border-[var(--border)] p-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsAddProviderOpen(true);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add provider
+                        </button>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -514,6 +580,27 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         </div>
         <div className="absolute bottom-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-[oklch(0.6171_0.1375_39.0427)]/10 to-transparent blur-[1px]"></div>
       </div>
+
+      {/* Add Provider popup — rendered at the root so it isn't clipped by
+          the model-picker dropdown's overflow. Fixed-position modal. */}
+      <AddProviderPopup
+        open={isAddProviderOpen}
+        onClose={() => setIsAddProviderOpen(false)}
+        existingProviders={props.providerList || []}
+        onSelectExisting={(provider) => {
+          props.setProvider?.(provider);
+
+          // Also pick the provider's first model so the chat is immediately
+          // usable without a second dropdown trip.
+          const firstModel = (props.modelList || []).find((m) => m.provider === provider.name);
+
+          if (firstModel) {
+            props.setModel?.(firstModel.name);
+          }
+
+          setIsModelDropdownOpen(false);
+        }}
+      />
     </div>
   );
 };

@@ -26,14 +26,17 @@ interface ThinkingBoxProps {
  * panel is active. When expanded, a curved connector line joins the header
  * to the first item — exactly like VS Code Copilot.
  *
- * Behaviour matches Copilot:
- *   - While streaming: open by default, label reads "Thinking…" with shimmer.
- *   - When streaming ends: label reads "Thought for Ns", panel auto-collapses
- *     after ~1.2s.
- *   - User can always re-expand/collapse by clicking the header.
+ * Behaviour:
+ *   - Collapsed by default (the user explicitly opts in to see reasoning by
+ *     clicking the header). This was changed from "open while streaming"
+ *     because users reported the reasoning block dominating the chat.
+ *   - While streaming: label reads "Thinking…" with shimmer (even when
+ *     collapsed) so the user knows work is happening.
+ *   - When streaming ends: label reads "Thought for Ns".
+ *   - User can always expand/collapse by clicking the header.
  */
 export const ThinkingBox = memo(({ isActive, duration, thoughtStreaming, children }: ThinkingBoxProps) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const startTimeRef = useRef<number | null>(null);
   const hasEverStreamedRef = useRef(false);
   const hasAutoCollapsedRef = useRef(false);
@@ -53,15 +56,17 @@ export const ThinkingBox = memo(({ isActive, duration, thoughtStreaming, childre
     }
   }, [isActive]);
 
-  // Auto-collapse ~1.2s after streaming finishes (Copilot behaviour).
+  // Auto-collapse is now a no-op because the box starts collapsed and the
+  // user is in full control. Kept as a hook so the existing effect deps
+  // don't change unexpectedly — could be removed in a follow-up cleanup.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     if (hasEverStreamedRef.current && !isActive && isOpen && !hasAutoCollapsedRef.current) {
-      timer = setTimeout(() => {
-        setIsOpen(false);
-        hasAutoCollapsedRef.current = true;
-      }, 1200);
+      // Box is collapsed by default now; if the user manually expanded it
+      // while streaming, leave it expanded after streaming ends — don't
+      // snap it shut on them. They chose to see the reasoning.
+      hasAutoCollapsedRef.current = true;
     }
 
     return () => {

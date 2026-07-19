@@ -215,7 +215,10 @@ export async function streamText(props: {
       }
     } else if (message.role == 'assistant') {
       const textContent = Array.isArray(message.parts)
-        ? message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+        ? message.parts
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text)
+            .join('')
         : (message as any).content || '';
       /*
        * Strip any `<chatname>…</chatname>` tag the model emitted on a
@@ -270,8 +273,7 @@ export async function streamText(props: {
             result.length > 3000
           ) {
             const truncatedResult =
-              result.slice(0, 2000) +
-              '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
+              result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
 
             // Rebuild the part with the truncated output. Keep the FLAT v7
             // shape (`output` directly on the part) as the primary form;
@@ -536,6 +538,29 @@ export async function streamText(props: {
   - Do NOT mention the tag or the title to the user in your answer text.
   - Do NOT output this tag again in any future message — only this first
     response.
+
+  CRITICAL — DO NOT reason, think, or deliberate about this naming
+  instruction inside your thinking / reasoning / <thought> channel.
+  The <chatname> tag must appear as the very FIRST token of your VISIBLE
+  answer — never inside a reasoning block, never as a thought, never
+  after a deliberation step. Reasoning about the naming instruction has
+  been observed to (a) delay the tag until after a long thought block,
+  causing the chat sidebar to fall back to the user's first message as
+  the title, and (b) leak fragments like "I should output
+  <chatname>New Conversation</chatname>" into the visible thinking
+  trace, which is broken and confusing.
+
+  Correct shape:
+      <chatname>Build React Dashboard</chatname>
+      <thought>...</thought>
+      Sure — let's scaffold...
+
+  Wrong shape (DO NOT DO THIS):
+      <thought>The user said hi. According to <chat_naming> I should
+      output <chatname>New Conversation</chatname>. Let me reply
+      politely.</thought>
+      <chatname>New Conversation</chatname>
+      Hi there!
 </chat_naming>
     `;
   }
