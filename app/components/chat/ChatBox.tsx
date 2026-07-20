@@ -152,11 +152,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         input[type="range"].chatbox-range::-webkit-slider-thumb {
           -webkit-appearance: none; appearance: none;
           width: 14px; height: 14px; border-radius: 50%;
-          background: #818cf8; cursor: pointer; border: 2px solid #ffffff;
+          background: var(--un-color-accent-500, #9C7DFF); cursor: pointer;
+          border: 2px solid var(--background);
           transition: transform 0.1s ease, background-color 0.1s ease;
         }
         input[type="range"].chatbox-range::-webkit-slider-thumb:hover {
-          transform: scale(1.2); background: #a5b4fc;
+          transform: scale(1.2); background: var(--un-color-accent-400, #B69EFF);
         }
         input[type="range"].chatbox-range { -webkit-appearance: none; appearance: none; }
       `;
@@ -335,7 +336,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
       {props.selectedElement && (
         <div className="flex mx-1.5 gap-2 items-center justify-between rounded-lg rounded-b-none border border-b-none border-amplify-elements-borderColor text-amplify-elements-textPrimary flex py-1 px-2.5 font-medium text-xs">
           <div className="flex gap-2 items-center lowercase">
-            <code className="bg-accent-500 rounded-4px px-1.5 py-1 mr-0.5 text-white">
+            <code className="bg-accent-500 rounded-4px px-1.5 py-1 mr-0.5 text-accent-foreground">
               {props?.selectedElement?.tagName}
             </code>
             selected for inspection
@@ -360,7 +361,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="overflow-hidden"
             >
-              <div className="flex flex-wrap gap-2.5 p-3.5 border border-b-0 border-zinc-800/80 bg-[#1c1c1e] rounded-t-[20px]">
+              <div className="flex flex-wrap gap-2.5 p-3.5 border border-b-0 border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 rounded-t-[20px]">
                 {props.uploadedFiles.map((file, index) => (
                   <motion.div
                     key={index}
@@ -369,20 +370,20 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.85, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                    className="group relative flex items-center gap-2 p-1.5 bg-zinc-900/80 border border-zinc-800/80 rounded-xl text-xs shadow-sm pr-7 transition-all hover:border-zinc-700"
+                    className="group relative flex items-center gap-2 p-1.5 bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor rounded-xl text-xs shadow-sm pr-7 transition-all hover:border-amplify-elements-borderColorActive"
                   >
                     {file.type.startsWith('image/') ? (
-                      <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-zinc-800">
+                      <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-amplify-elements-background-depth-3">
                         <img src={props.imageDataList[index]} alt="preview" className="w-full h-full object-cover" />
                       </div>
                     ) : (
-                      <div className="p-2 bg-zinc-800 text-zinc-200 rounded-lg">
+                      <div className="p-2 bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary rounded-lg">
                         <FileText className="w-4 h-4" />
                       </div>
                     )}
                     <div className="truncate">
-                      <p className="font-medium text-zinc-100 truncate max-w-[120px]">{file.name}</p>
-                      <p className="text-[10px] text-zinc-500">{(file.size / 1024).toFixed(1)} KB</p>
+                      <p className="font-medium text-amplify-elements-textPrimary truncate max-w-[120px]">{file.name}</p>
+                      <p className="text-[10px] text-amplify-elements-textSecondary">{(file.size / 1024).toFixed(1)} KB</p>
                     </div>
                     <motion.button
                       whileHover={{ scale: 1.15 }}
@@ -391,7 +392,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         props.setUploadedFiles?.(props.uploadedFiles.filter((_, i) => i !== index));
                         props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
                       }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-amplify-elements-textSecondary hover:text-destructive hover:bg-destructive/10 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </motion.button>
@@ -412,7 +413,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, scale: 0.95, y: 8, filter: 'blur(2px)' }}
                 transition={{ type: 'spring', bounce: 0.1, duration: 0.3 }}
-                className={`pointer-events-auto flex bg-[#1c1c1e] border border-zinc-800/80 rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden h-[380px] transition-all duration-300 ${
+                className={`pointer-events-auto flex bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] overflow-hidden h-[380px] transition-all duration-300 ${
                   isCompact ? 'w-[280px]' : 'w-[540px]'
                 }`}
               >
@@ -424,25 +425,25 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     animate={{ x: 0, opacity: 1 }}
                     exit={isCompact ? { x: -50, opacity: 0 } : undefined}
                     transition={{ duration: 0.2 }}
-                    className="w-full flex-grow flex flex-col justify-between h-full bg-black/10 relative"
+                    className="w-full flex-grow flex flex-col justify-between h-full bg-amplify-elements-background-depth-1 relative"
                     style={{ minWidth: isCompact ? '280px' : '260px', maxWidth: isCompact ? '280px' : '260px' }}
                   >
                     {/* Search + Add Provider */}
-                    <div className="p-3 border-b border-zinc-800/60 flex items-center gap-1.5 relative">
+                    <div className="p-3 border-b border-amplify-elements-borderColor flex items-center gap-1.5 relative">
                       <div className="relative flex-grow">
-                        <Icon icon="lucide:search" className="absolute left-2.5 top-2.5 text-zinc-500 text-xs" />
+                        <Icon icon="lucide:search" className="absolute left-2.5 top-2.5 text-amplify-elements-textSecondary text-xs" />
                         <input
                           type="text"
                           placeholder="Search models..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full bg-[#2c2c2e]/60 text-white text-xs pl-8 pr-7 py-1.5 h-8 rounded-lg outline-none border border-transparent focus:border-zinc-700 transition"
+                          className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs pl-8 pr-7 py-1.5 h-8 rounded-lg outline-none border border-transparent focus:border-amplify-elements-borderColorActive transition placeholder:text-amplify-elements-textSecondary"
                           autoFocus
                         />
                         {searchQuery && (
                           <button
                             onClick={() => setSearchQuery('')}
-                            className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300"
+                            className="absolute right-2 top-2 bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
                           >
                             <Icon icon="lucide:x" className="text-xs" />
                           </button>
@@ -454,7 +455,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           setIsOpen(false);
                           setIsProviderPickerOpen(true);
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all flex-shrink-0 bg-[#2c2c2e]/60 text-zinc-200 border-transparent hover:bg-zinc-800/80"
+                        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all flex-shrink-0 bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary border-transparent hover:bg-amplify-elements-item-backgroundActive"
                         title="Manage providers"
                       >
                         <Icon icon="lucide:plus" className="text-sm font-semibold" />
@@ -464,25 +465,25 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     {/* Scrollable model list grouped by provider */}
                     <div className="flex-grow overflow-y-auto p-2 space-y-3 no-scrollbar">
                       {props.isModelLoading === 'all' ? (
-                        <div className="flex flex-col items-center justify-center py-8 text-zinc-600">
+                        <div className="flex flex-col items-center justify-center py-8 text-amplify-elements-textTertiary">
                           <Icon icon="lucide:loader-circle" className="text-lg mb-1 animate-spin" />
                           <span className="text-[10px]">Loading models...</span>
                         </div>
                       ) : filteredProviders.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-8 text-center text-zinc-600">
+                        <div className="flex flex-col items-center justify-center py-8 text-center text-amplify-elements-textTertiary">
                           <Icon icon="lucide:alert-circle" className="text-lg mb-1" />
                           <span className="text-[10px]">No matching models</span>
                         </div>
                       ) : (
                         filteredProviders.map(({ provider: prov, models }) => (
                           <div key={prov.name} className="space-y-1">
-                            <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider px-2 flex items-center gap-1.5 py-0.5">
+                            <div className="text-[9px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider px-2 flex items-center gap-1.5 py-0.5">
                               <Icon icon={providerIcon(prov.name)} className="text-xs" />
                               <span>{prov.name}</span>
                             </div>
                             <div className="space-y-0.5">
                               {models.length === 0 && (
-                                <div className="px-2.5 py-1.5 text-[10px] text-zinc-600 italic">
+                                <div className="px-2.5 py-1.5 text-[10px] text-amplify-elements-textTertiary italic">
                                   No models loaded
                                 </div>
                               )}
@@ -492,7 +493,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                   <div
                                     key={model.name}
                                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors group ${
-                                      isSelected ? 'bg-zinc-800' : 'hover:bg-zinc-800/40'
+                                      isSelected ? 'bg-amplify-elements-item-backgroundActive' : 'hover:bg-amplify-elements-item-backgroundActive'
                                     }`}
                                   >
                                     <button
@@ -501,25 +502,25 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                         props.setModel?.(model.name);
                                         setIsOpen(false);
                                       }}
-                                      className="flex-grow flex items-center gap-2 text-left min-w-0"
+                                      className="flex-grow flex items-center gap-2 text-left min-w-0 bg-transparent"
                                     >
                                       <div
                                         className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                          isSelected ? 'bg-indigo-400' : 'bg-transparent group-hover:bg-zinc-600'
+                                          isSelected ? 'bg-accent-500' : 'bg-transparent group-hover:bg-amplify-elements-textTertiary'
                                         }`}
                                       />
                                       <div className="min-w-0">
-                                        <div className="text-xs font-semibold text-zinc-200 truncate leading-snug">
+                                        <div className="text-xs font-semibold text-amplify-elements-textPrimary truncate leading-snug">
                                           {stripContextSuffix(model.label) || model.name}
                                         </div>
-                                        <div className="text-[9px] text-zinc-500 flex gap-1.5 items-center leading-normal">
+                                        <div className="text-[9px] text-amplify-elements-textSecondary flex gap-1.5 items-center leading-normal">
                                           <span className="truncate">
                                             {(model.maxTokenAllowed || 0).toLocaleString()} context
                                           </span>
                                           {isModelReasoning(prov.name, model) && (
                                             <>
                                               <span>·</span>
-                                              <span className="text-indigo-400 font-semibold flex items-center gap-0.5">
+                                              <span className="text-accent-500 font-semibold flex items-center gap-0.5">
                                                 Reasoning
                                               </span>
                                             </>
@@ -535,7 +536,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                         props.setModel?.(model.name);
                                         if (isCompact) setMobileActiveTab('config');
                                       }}
-                                      className="p-1 rounded-md hover:bg-zinc-700/80 text-zinc-400 hover:text-indigo-400 transition ml-1 flex-shrink-0"
+                                      className="p-1 rounded-md bg-transparent hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-accent-500 transition ml-1 flex-shrink-0"
                                       title="Configure parameters"
                                     >
                                       <Icon icon="ci:slider-03" className="text-sm" />
@@ -559,16 +560,16 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     animate={{ x: 0, opacity: 1 }}
                     exit={isCompact ? { x: 50, opacity: 0 } : undefined}
                     transition={{ duration: 0.2 }}
-                    className="w-full p-4 flex flex-col justify-between h-full bg-[#1c1c1e]"
+                    className="w-full p-4 flex flex-col justify-between h-full bg-amplify-elements-background-depth-2"
                     style={{ minWidth: isCompact ? '280px' : '280px', maxWidth: isCompact ? '280px' : '280px' }}
                   >
                     {/* Back nav for compact mode */}
                     <div className="space-y-1 flex-shrink-0">
                       {isCompact && (
-                        <button
-                          onClick={() => setMobileActiveTab('list')}
-                          className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider mb-2"
-                        >
+                          <button
+                            onClick={() => setMobileActiveTab('list')}
+                            className="flex items-center gap-1 text-[10px] text-accent-500 hover:text-accent-400 font-bold uppercase tracking-wider mb-2"
+                          >
                           <Icon icon="lucide:arrow-left" className="text-xs" />
                           <span>Back to Models</span>
                         </button>
@@ -580,27 +581,27 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {/* 1. EFFORT-BASED REASONING (OpenAI o1, Grok 4) */}
                       {thinkingControlState === 'effort-only' && (
                         <div className="space-y-4">
-                          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block font-bold">
+                          <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
                             Reasoning Effort
                           </span>
-                          <div className="bg-black/40 border border-zinc-800 p-0.5 rounded-lg flex items-stretch justify-between h-[34px] relative">
+                          <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[34px] relative">
                             {(['low', 'medium', 'high'] as const).map((effort) => (
                               <button
                                 key={effort}
                                 onClick={() => setThinkingOverride(effort)}
                                 className={`flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all ${
                                   thinkingOverride === effort
-                                    ? 'bg-zinc-800 text-white shadow-sm'
-                                    : 'text-zinc-400 hover:text-zinc-200'
+                                    ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
+                                    : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary'
                                 }`}
                               >
                                 {effort}
                               </button>
                             ))}
                           </div>
-                          <div className="bg-black/10 p-2.5 rounded-xl border border-zinc-800/60 text-[10px] flex gap-2">
-                            <Icon icon="lucide:info" className="text-indigo-400 text-sm flex-shrink-0 mt-0.5" />
-                            <div className="text-zinc-400 leading-normal">
+                          <div className="bg-amplify-elements-background-depth-1 p-2.5 rounded-xl border border-amplify-elements-borderColor text-[10px] flex gap-2">
+                            <Icon icon="lucide:info" className="text-accent-500 text-sm flex-shrink-0 mt-0.5" />
+                            <div className="text-amplify-elements-textSecondary leading-normal">
                               Reasoning effort is required for this model. Higher effort = more thorough thinking but
                               slower responses.
                             </div>
@@ -611,18 +612,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {/* 2. BUDGET TOKEN SLIDERS (Gemini, Claude) */}
                       {thinkingControlState === 'toggle+budget' && (
                         <div className="space-y-3.5">
-                          <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
-                            <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">
+                          <div className="flex items-center justify-between border-b border-amplify-elements-borderColor pb-2">
+                            <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
                               Enable Thinking
                             </span>
                             <button
                               onClick={() => setThinkingEnabled(!thinkingEnabled)}
                               className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-                                thinkingEnabled ? 'bg-indigo-600' : 'bg-zinc-800'
+                                thinkingEnabled ? 'bg-accent-500' : 'bg-amplify-elements-background-depth-3'
                               }`}
                             >
                               <div
-                                className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                                className={`w-4 h-4 rounded-full bg-accent-foreground transition-transform ${
                                   thinkingEnabled ? 'translate-x-4' : 'translate-x-0'
                                 }`}
                               />
@@ -632,27 +633,27 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           {thinkingEnabled ? (
                             <div className="space-y-3">
                               <div className="flex justify-between items-center text-[10px]">
-                                <span className="text-zinc-400">Thinking Budget:</span>
-                                <span className="font-mono text-indigo-400 font-bold">
+                                <span className="text-amplify-elements-textSecondary">Thinking Budget:</span>
+                                <span className="font-mono text-accent-500 font-bold">
                                   {budgetTokens.toLocaleString()} tokens
                                 </span>
                               </div>
                               <input
                                 type="range"
-                                className="chatbox-range w-full bg-zinc-800 h-1 rounded-lg cursor-pointer"
+                                className="chatbox-range w-full bg-amplify-elements-background-depth-3 h-1 rounded-lg cursor-pointer"
                                 min={1024}
                                 max={32768}
                                 step={1024}
                                 value={budgetTokens}
                                 onChange={(e) => setBudgetTokens(Number(e.target.value))}
                               />
-                              <div className="flex justify-between text-[8px] text-zinc-500 font-mono">
+                              <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
                                 <span>1,024</span>
                                 <span>32,768 max</span>
                               </div>
                             </div>
                           ) : (
-                            <div className="bg-black/10 p-2 text-zinc-500 text-[10px] border border-dashed border-zinc-800/80 rounded-lg text-center">
+                            <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
                               Thinking disabled. Falling back to simple response path.
                             </div>
                           )}
@@ -661,10 +662,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
                       {/* 3. ALWAYS-ON LOCKED REASONING (DeepSeek Reasoner) */}
                       {thinkingControlState === 'on-and-locked' && (
-                        <div className="space-y-3 text-center py-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl">
-                          <Icon icon="lucide:shield-alert" className="text-xl text-indigo-400" />
-                          <span className="text-xs font-bold text-zinc-200 block">Thinking Enforced</span>
-                          <p className="text-[10px] text-zinc-400 px-4 leading-normal">
+                        <div className="space-y-3 text-center py-3 bg-accent-500/5 border border-accent-500/10 rounded-xl">
+                          <Icon icon="lucide:shield-alert" className="text-xl text-accent-500" />
+                          <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
+                          <p className="text-[10px] text-amplify-elements-textSecondary px-4 leading-normal">
                             This model enforces internal thought pathways. No budget token caps can be configured on
                             this endpoint.
                           </p>
@@ -673,10 +674,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
                       {/* 4. NON-REASONING CHANNELS (GPT-4o, Claude 3.5 Sonnet) */}
                       {thinkingControlState === 'off-and-locked' && (
-                        <div className="py-6 flex flex-col items-center justify-center text-center bg-black/10 border border-dashed border-zinc-800 rounded-xl">
-                          <Icon icon="lucide:alert-circle" className="text-zinc-500 text-xl mb-1" />
-                          <span className="text-zinc-400 text-xs font-semibold">Standard Pipeline</span>
-                          <p className="text-zinc-600 text-[10px] px-4 mt-0.5 leading-normal">
+                        <div className="py-6 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
+                          <Icon icon="lucide:alert-circle" className="text-amplify-elements-textSecondary text-xl mb-1" />
+                          <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
+                          <p className="text-amplify-elements-textTertiary text-[10px] px-4 mt-0.5 leading-normal">
                             This model accepts standard parameters and does not route inquiries through reasoning token
                             engines.
                           </p>
@@ -685,23 +686,23 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
                       {/* 5. DYNAMIC OUTPUT TOKEN CONFIGURATION */}
                       {activeModel?.maxCompletionTokens && (
-                        <div className="space-y-2 pt-2 border-t border-zinc-800/60">
+                        <div className="space-y-2 pt-2 border-t border-amplify-elements-borderColor">
                           <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-zinc-400">Max Output Cap:</span>
-                            <span className="font-mono text-zinc-300">
+                            <span className="text-amplify-elements-textSecondary">Max Output Cap:</span>
+                            <span className="font-mono text-amplify-elements-textPrimary">
                               {maxOutputTokens.toLocaleString()} tokens
                             </span>
                           </div>
                           <input
                             type="range"
-                            className="chatbox-range w-full bg-zinc-800 h-1 rounded-lg cursor-pointer"
+                            className="chatbox-range w-full bg-amplify-elements-background-depth-3 h-1 rounded-lg cursor-pointer"
                             min={1024}
                             max={activeModel.maxCompletionTokens}
                             step={1024}
                             value={maxOutputTokens}
                             onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
                           />
-                          <div className="flex justify-between text-[8px] text-zinc-500 font-mono">
+                          <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
                             <span>1,024</span>
                             <span>{activeModel.maxCompletionTokens.toLocaleString()} max</span>
                           </div>
@@ -718,7 +719,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         {/* Unified, borderless chat input bar */}
         <div
           ref={chatInputContainerRef}
-          className="w-full bg-[#1c1c1e] border border-zinc-800/80 rounded-2xl shadow-xl p-3 flex flex-col gap-2 transition-all duration-200"
+          className="w-full bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-xl p-3 flex flex-col gap-2 transition-all duration-200"
         >
           {/* Textarea */}
           <textarea
@@ -739,7 +740,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
             }}
             onPaste={props.handlePaste}
             style={{ minHeight: props.TEXTAREA_MIN_HEIGHT, maxHeight: props.TEXTAREA_MAX_HEIGHT }}
-            className="w-full bg-transparent text-sm text-white placeholder-zinc-500 outline-none border-none py-1 resize-none overflow-y-auto no-scrollbar"
+            className="w-full bg-transparent text-sm text-amplify-elements-textPrimary placeholder:text-amplify-elements-textSecondary outline-none border-none py-1 resize-none overflow-y-auto no-scrollbar"
           />
 
           {/* Bottom action row */}
@@ -749,7 +750,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               {/* File attachment */}
               <button
                 onClick={() => props.handleFileUpload()}
-                className="w-8 h-8 rounded-lg bg-[#2c2c2e]/60 hover:bg-zinc-800/80 text-zinc-400 hover:text-white transition-colors flex items-center justify-center outline-none"
+                className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors flex items-center justify-center outline-none"
                 title="Attach files"
               >
                 <Icon icon="lucide:plus" className="text-base font-semibold" />
@@ -758,7 +759,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               {/* Model picker trigger */}
               <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 h-8 px-2.5 bg-[#2c2c2e]/60 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg shadow-sm transition-all active:scale-[0.98] outline-none select-none text-zinc-100"
+                className="flex items-center gap-2 h-8 px-2.5 bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive border border-amplify-elements-borderColor rounded-lg shadow-sm transition-all active:scale-[0.98] outline-none select-none text-amplify-elements-textPrimary"
               >
                 <Icon
                   icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
@@ -766,12 +767,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 />
                 {!isTriggerCompact && (
                   <>
-                    <span className="text-xs font-semibold tracking-tight text-zinc-200 truncate max-w-[160px]">
+                    <span className="text-xs font-semibold tracking-tight text-amplify-elements-textPrimary truncate max-w-[160px]">
                       {stripContextSuffix(activeModel?.label) || activeModel?.name || props.model || 'Select model'}
                     </span>
                     <Icon
                       icon="lucide:chevron-down"
-                      className={`text-zinc-500 text-[10px] ml-0.5 transition-transform duration-200 ${
+                      className={`text-amplify-elements-textSecondary text-[10px] ml-0.5 transition-transform duration-200 ${
                         isOpen ? 'rotate-180' : ''
                       }`}
                     />
@@ -788,8 +789,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     className={classNames(
                       'transition-all',
                       isKeyMissing
-                        ? 'p-1.5 h-7 w-7 text-rose-400 hover:text-rose-300 bg-rose-500/10 rounded-md'
-                        : 'p-1.5 h-7 w-7 text-zinc-400 hover:text-zinc-100 bg-[#2c2c2e]/60 rounded-md',
+                        ? 'p-1.5 h-7 w-7 text-destructive hover:text-destructive bg-destructive/10 rounded-md'
+                        : 'p-1.5 h-7 w-7 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-amplify-elements-background-depth-3 rounded-md',
                     )}
                   >
                     <div className="i-ph:key text-sm" />
@@ -816,7 +817,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               <button
                 onClick={handleSend}
                 disabled={!props.input.trim() || props.isStreaming || isKeyMissing}
-                className="flex justify-center items-center w-8 h-8 rounded-full transition-colors duration-200 cursor-pointer disabled:cursor-not-allowed overflow-hidden bg-white/10 hover:bg-white/15 text-white disabled:opacity-50"
+                className="flex justify-center items-center w-8 h-8 rounded-full transition-colors duration-200 cursor-pointer disabled:cursor-not-allowed overflow-hidden bg-accent-500 hover:bg-accent-400 text-accent-foreground disabled:opacity-50"
                 title="Send Prompt (Enter)"
               >
                 {props.isStreaming ? (
@@ -836,7 +837,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         </div>
 
         {/* Subtle accent line under the input */}
-        <div className="absolute bottom-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/10 to-transparent blur-[1px]" />
+        <div className="absolute bottom-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-accent-500/10 to-transparent blur-[1px]" />
       </div>
 
       {/* Provider picker modal — lists ALL providers with enable/disable */}

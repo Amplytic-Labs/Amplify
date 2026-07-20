@@ -246,22 +246,22 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
         transition={{ type: 'spring', bounce: 0.1, duration: 0.3 }}
-        className="relative w-full max-w-md bg-[#1c1c1e] border border-zinc-800/80 rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col"
+        className="relative w-full max-w-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col"
         style={{ maxHeight: '85vh' }}
       >
         {/* Header */}
-        <div className="p-4 border-b border-zinc-800/60 flex items-center justify-between flex-shrink-0">
+        <div className="p-4 border-b border-amplify-elements-borderColor flex items-center justify-between flex-shrink-0">
           <div>
-            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">
+            <span className="text-[10px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider block">
               {addMode ? 'Add Custom Provider' : 'Active Core Providers'}
             </span>
-            <span className="text-white text-sm font-semibold">
+            <span className="text-amplify-elements-textPrimary text-sm font-semibold">
               {addMode ? 'OpenAI-compatible endpoint' : 'Manage providers'}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition p-1 rounded-md hover:bg-zinc-800/60"
+            className="bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition p-1 rounded-md hover:bg-amplify-elements-item-backgroundActive"
           >
             <X className="w-4 h-4" />
           </button>
@@ -270,21 +270,21 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
         {!addMode ? (
           <>
             {/* Search bar */}
-            <div className="p-3 border-b border-zinc-800/60 flex-shrink-0">
+            <div className="p-3 border-b border-amplify-elements-borderColor flex-shrink-0">
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 text-zinc-500" size={14} />
+                <Search className="absolute left-2.5 top-2.5 text-amplify-elements-textSecondary" size={14} />
                 <input
                   type="text"
                   placeholder="Search providers..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#2c2c2e]/60 text-white text-xs pl-8 pr-7 py-1.5 h-8 rounded-lg outline-none border border-transparent focus:border-zinc-700 transition"
+                  className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs pl-8 pr-7 py-1.5 h-8 rounded-lg outline-none border border-transparent focus:border-amplify-elements-borderColorActive transition placeholder:text-amplify-elements-textSecondary"
                   autoFocus
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300"
+                    className="absolute right-2 top-2 bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
                   >
                     <X size={12} />
                   </button>
@@ -295,7 +295,7 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
             {/* Provider list */}
             <div className="flex-grow overflow-y-auto p-3 space-y-2 no-scrollbar">
               {filteredProviders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center text-zinc-600">
+                <div className="flex flex-col items-center justify-center py-8 text-center text-amplify-elements-textTertiary">
                   <AlertCircle className="mb-1" size={18} />
                   <span className="text-[10px]">No matching providers</span>
                 </div>
@@ -311,28 +311,28 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                       key={p.name}
                       className={`p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
                         isActive
-                          ? 'border-indigo-500/40 bg-indigo-500/5'
-                          : 'border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-900/80'
+                          ? 'border-accent-500/40 bg-accent-500/5'
+                          : 'border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive'
                       }`}
                       onClick={() => handleActivate(p)}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center flex-shrink-0">
-                          <Icon icon={providerIcon(p.name)} className="text-base text-zinc-200" />
+                        <div className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
+                          <Icon icon={providerIcon(p.name)} className="text-base text-amplify-elements-textPrimary" />
                         </div>
                         <div className="min-w-0">
-                          <span className="text-[11px] font-bold text-zinc-200 block leading-tight truncate">
+                          <span className="text-[11px] font-bold text-amplify-elements-textPrimary block leading-tight truncate">
                             {p.name}
                           </span>
-                          <span className="text-[9px] text-zinc-500 flex items-center gap-1.5">
+                          <span className="text-[9px] text-amplify-elements-textSecondary flex items-center gap-1.5">
                             {isLocal ? (
-                              <span className="text-amber-400">local</span>
+                              <span className="text-amplify-elements-icon-success">local</span>
                             ) : keyed ? (
-                              <span className="text-green-400 flex items-center gap-0.5">
+                              <span className="text-amplify-elements-icon-success flex items-center gap-0.5">
                                 <CheckCircle2 size={9} /> key set
                               </span>
                             ) : (
-                              <span className="text-rose-400 flex items-center gap-0.5">
+                              <span className="text-destructive flex items-center gap-0.5">
                                 <AlertCircle size={9} /> no key
                               </span>
                             )}
@@ -353,7 +353,7 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-zinc-500 hover:text-indigo-400 transition"
+                            className="bg-transparent text-amplify-elements-textSecondary hover:text-accent-500 transition"
                             title={p.labelForGetApiKey || 'Get API key'}
                           >
                             <ExternalLink size={12} />
@@ -367,12 +367,12 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                             handleToggle(p);
                           }}
                           className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-                            enabled ? 'bg-indigo-600' : 'bg-zinc-800'
+                            enabled ? 'bg-accent-500' : 'bg-amplify-elements-background-depth-3'
                           }`}
                           title={enabled ? 'Disable' : 'Enable'}
                         >
                           <div
-                            className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                            className={`w-4 h-4 rounded-full bg-accent-foreground transition-transform ${
                               enabled ? 'translate-x-4' : 'translate-x-0'
                             }`}
                           />
@@ -385,24 +385,24 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
 
               {/* Custom providers section */}
               {customProviders.length > 0 && (
-                <div className="pt-2 mt-2 border-t border-zinc-800/60">
-                  <div className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider px-1 mb-2">
+                <div className="pt-2 mt-2 border-t border-amplify-elements-borderColor">
+                  <div className="text-[9px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider px-1 mb-2">
                     Custom Providers
                   </div>
                   {customProviders.map((cp) => (
                     <div
                       key={cp.id}
-                      className="p-2.5 rounded-xl border border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-900/80 transition flex items-center justify-between mb-2"
+                      className="p-2.5 rounded-xl border border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive transition flex items-center justify-between mb-2"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center">
-                          <Icon icon="lucide:plug" className="text-base text-zinc-200" />
+                        <div className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center">
+                          <Icon icon="lucide:plug" className="text-base text-amplify-elements-textPrimary" />
                         </div>
                         <div className="min-w-0">
-                          <span className="text-[11px] font-bold text-zinc-200 block leading-tight truncate">
+                          <span className="text-[11px] font-bold text-amplify-elements-textPrimary block leading-tight truncate">
                             {cp.name}
                           </span>
-                          <span className="text-[9px] text-zinc-500 truncate block">{cp.baseUrl}</span>
+                          <span className="text-[9px] text-amplify-elements-textSecondary truncate block">{cp.baseUrl}</span>
                         </div>
                       </div>
                     </div>
@@ -412,10 +412,10 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
             </div>
 
             {/* Footer — Add Provider */}
-            <div className="border-t border-zinc-800/60 p-2 flex-shrink-0">
+            <div className="border-t border-amplify-elements-borderColor p-2 flex-shrink-0">
               <button
                 onClick={() => setAddMode(true)}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-[#2c2c2e]/60 text-zinc-200 hover:bg-zinc-800/80 hover:text-white transition"
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary hover:bg-amplify-elements-item-backgroundActive transition"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add custom provider
@@ -426,7 +426,7 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
           /* Add Custom Provider form */
           <div className="p-4 space-y-3 overflow-y-auto no-scrollbar flex-grow">
             <div>
-              <label className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold block mb-1">
+              <label className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold block mb-1">
                 Display name
               </label>
               <input
@@ -434,12 +434,12 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder="My OpenRouter"
-                className="w-full bg-[#2c2c2e]/60 text-white text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-zinc-700 transition"
+                className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-amplify-elements-borderColorActive transition placeholder:text-amplify-elements-textSecondary"
                 autoFocus
               />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold block mb-1">
+              <label className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold block mb-1">
                 Base URL
               </label>
               <input
@@ -447,11 +447,11 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                 value={customBaseUrl}
                 onChange={(e) => setCustomBaseUrl(e.target.value)}
                 placeholder="https://openrouter.ai/api/v1"
-                className="w-full bg-[#2c2c2e]/60 text-white text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-zinc-700 transition font-mono"
+                className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-amplify-elements-borderColorActive transition font-mono placeholder:text-amplify-elements-textSecondary"
               />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold block mb-1">
+              <label className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold block mb-1">
                 API key
               </label>
               <input
@@ -459,18 +459,18 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
                 value={customApiKey}
                 onChange={(e) => setCustomApiKey(e.target.value)}
                 placeholder="sk-..."
-                className="w-full bg-[#2c2c2e]/60 text-white text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-zinc-700 transition font-mono"
+                className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs px-3 py-2 h-9 rounded-lg outline-none border border-transparent focus:border-amplify-elements-borderColorActive transition font-mono placeholder:text-amplify-elements-textSecondary"
               />
             </div>
 
             {customTest.kind === 'error' && (
-              <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 text-[10px] text-rose-300 flex items-start gap-2">
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-2 text-[10px] text-destructive flex items-start gap-2">
                 <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
                 <span>{customTest.message}</span>
               </div>
             )}
             {customTest.kind === 'success' && (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-[10px] text-emerald-300 flex items-center gap-2">
+              <div className="bg-amplify-elements-icon-success/10 border border-amplify-elements-icon-success/20 rounded-lg p-2 text-[10px] text-amplify-elements-icon-success flex items-center gap-2">
                 <CheckCircle2 size={12} />
                 <span>Provider added successfully</span>
               </div>
@@ -479,14 +479,14 @@ export const ProviderPicker: React.FC<ProviderPickerProps> = ({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setAddMode(false)}
-                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 transition"
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary hover:bg-amplify-elements-item-backgroundActive transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddCustom}
                 disabled={customTest.kind === 'testing'}
-                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-accent-500 text-accent-foreground hover:bg-accent-400 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
               >
                 {customTest.kind === 'testing' ? (
                   <>
@@ -561,24 +561,24 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
     >
       <motion.div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-sm bg-[#1c1c1e] border border-zinc-800/80 rounded-2xl shadow-2xl p-5"
+        className="relative w-full max-w-sm bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-2xl p-5"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Icon icon={providerIcon(provider.name)} className="text-base text-zinc-200" />
-            <span className="text-sm font-bold text-zinc-100">{provider.name} API Key</span>
+            <Icon icon={providerIcon(provider.name)} className="text-base text-amplify-elements-textPrimary" />
+            <span className="text-sm font-bold text-amplify-elements-textPrimary">{provider.name} API Key</span>
           </div>
           <button
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition p-1 rounded-md hover:bg-zinc-800/60"
+            className="bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition p-1 rounded-md hover:bg-amplify-elements-item-backgroundActive"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <p className="text-[10px] text-zinc-400 mb-3 leading-relaxed">
-          Enabling <span className="text-zinc-200 font-semibold">{provider.name}</span> requires a valid API key.
+        <p className="text-[10px] text-amplify-elements-textSecondary mb-3 leading-relaxed">
+          Enabling <span className="text-amplify-elements-textPrimary font-semibold">{provider.name}</span> requires a valid API key.
           We'll verify the key against the provider's models endpoint before saving it locally.
         </p>
 
@@ -593,11 +593,11 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
             }}
             placeholder="sk-..."
             autoFocus
-            className="w-full bg-[#2c2c2e]/60 text-white text-xs px-3 py-2.5 h-9 rounded-lg outline-none border border-transparent focus:border-indigo-500 transition font-mono pr-9"
+            className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs px-3 py-2.5 h-9 rounded-lg outline-none border border-transparent focus:border-accent-500 transition font-mono pr-9 placeholder:text-amplify-elements-textSecondary"
           />
           <button
             onClick={() => setShowKey(!showKey)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
             title={showKey ? 'Hide' : 'Show'}
           >
             {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -606,19 +606,19 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
 
         {/* Status feedback */}
         {status.kind === 'testing' && (
-          <div className="mt-2.5 text-[10px] text-indigo-300 flex items-center gap-1.5">
+          <div className="mt-2.5 text-[10px] text-accent-500 flex items-center gap-1.5">
             <Loader2 size={11} className="animate-spin" />
             Validating key against {provider.name}...
           </div>
         )}
         {status.kind === 'success' && (
-          <div className="mt-2.5 text-[10px] text-emerald-300 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2">
+          <div className="mt-2.5 text-[10px] text-amplify-elements-icon-success flex items-center gap-1.5 bg-amplify-elements-icon-success/10 border border-amplify-elements-icon-success/20 rounded-lg p-2">
             <CheckCircle2 size={11} />
             Key verified and saved to local storage.
           </div>
         )}
         {status.kind === 'error' && (
-          <div className="mt-2.5 text-[10px] text-rose-300 flex items-start gap-1.5 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2">
+          <div className="mt-2.5 text-[10px] text-destructive flex items-start gap-1.5 bg-destructive/10 border border-destructive/20 rounded-lg p-2">
             <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
             <span>{status.message}</span>
           </div>
@@ -628,14 +628,14 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
         <div className="flex gap-2 mt-4">
           <button
             onClick={onClose}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 transition"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary hover:bg-amplify-elements-item-backgroundActive transition"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={status.kind === 'testing' || status.kind === 'success' || !tempKey.trim()}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-accent-500 text-accent-foreground hover:bg-accent-400 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
           >
             {status.kind === 'testing' ? (
               <>
@@ -655,12 +655,12 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
 
         {/* Get key link */}
         {provider.getApiKeyLink && (
-          <div className="mt-3 pt-3 border-t border-zinc-800/60">
+          <div className="mt-3 pt-3 border-t border-amplify-elements-borderColor">
             <a
               href={provider.getApiKeyLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[10px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1"
+              className="bg-transparent text-[10px] text-accent-500 hover:text-accent-400 transition flex items-center gap-1"
             >
               <span>{provider.labelForGetApiKey || 'Get your API key here'}</span>
               <ExternalLink size={10} />
