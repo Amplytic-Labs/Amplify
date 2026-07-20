@@ -78,6 +78,7 @@
     "@heroicons/react": "^2.2.0",
     "@iconify-json/svg-spinners": "^1.2.1",
     "@iconify-json/vscode-icons": "^1.2.62",
+    "@iconify/react": "^6.0.2",
     "@lezer/highlight": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nanostores/react": "^0.7.3",

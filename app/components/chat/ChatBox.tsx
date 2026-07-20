@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Paperclip, X, FileText } from 'lucide-react';
+import { Icon as IconifyIcon } from '@iconify/react';
+import { Paperclip, X, FileText, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { classNames } from '~/utils/classNames';
 import { APIKeyPopup } from './APIKeyPopup';
-import { LOCAL_PROVIDERS, providersStore } from '~/lib/stores/settings';
+import { LOCAL_PROVIDERS, providersStore, updateProviderSettings } from '~/lib/stores/settings';
 import FilePreview from './FilePreview';
 import { ScreenshotStateManager } from './ScreenshotStateManager';
 import { IconButton } from '~/components/ui/IconButton';
@@ -19,10 +20,10 @@ import { McpTools } from './MCPTools';
 import { WebSearch } from './WebSearch.client';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
-import { ProviderPicker } from './ProviderPicker';
 import { customProvidersStore } from '~/lib/stores/custom-providers';
 import { useStore } from '@nanostores/react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
+import Cookies from 'js-cookie';
 
 /**
  * Strip a trailing parenthesised context suffix from a model label.
@@ -81,13 +82,14 @@ interface ChatBoxProps {
 }
 
 /**
- * ChatBox — the chat input bar with integrated model picker, provider picker,
- * and parameter configure panel.
+ * ChatBox — the chat input bar with integrated model picker, provider picker
+ * overlay, and parameter configure panel.
  *
  * The visual design faithfully matches the curated model_environment_console
- * prototype: a borderless dark input bar, a dual-column popup above it
- * (model list + parameter panel), a compact-mode tab switch on narrow
- * viewports, an integrated provider picker, and a rotated send button with
+ * prototype: a borderless input bar, a dual-column popup above it (model
+ * list + parameter panel), a compact-mode tab switch on narrow viewports,
+ * an inline provider overlay (NOT a separate modal) that lists every
+ * provider with an enable/disable toggle, and a rotated send button with
  * a slide-out animation on send.
  *
  * The actual chat area / message list / header are NOT part of this
@@ -95,7 +97,7 @@ interface ChatBoxProps {
  */
 export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
+  const [isProviderOverlayOpen, setIsProviderOverlayOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileActiveTab, setMobileActiveTab] = useState<'list' | 'config'>('list');
 
@@ -108,28 +110,23 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   // API key popup state (for the small inline "key" button next to the trigger)
   const [isApiKeyPopupOpen, setIsApiKeyPopupOpen] = useState(false);
 
+  // Provider currently being keyed (inside the overlay) — when set, an inline
+  // API-key entry popup is shown on top of the overlay.
+  const [keyEntryFor, setKeyEntryFor] = useState<ProviderInfo | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chatInputContainerRef = useRef<HTMLDivElement>(null);
   const sendIconRef = useRef<HTMLDivElement>(null);
-  const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLElement | null>(null);
 
   const [workspaceWidth, setWorkspaceWidth] = useState(600);
   const [chatInputWidth, setChatInputWidth] = useState(500);
 
-  const customProviders = useStore(customProvidersStore);
   const providerSettings = useStore(providersStore);
 
-  // Inject Iconify + slider styles once (mirrors the curated design)
+  // Inject scoped slider + animation styles once
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    if (!document.getElementById('iconify-script')) {
-      const s = document.createElement('script');
-      s.id = 'iconify-script';
-      s.src = 'https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js';
-      s.async = true;
-      document.head.appendChild(s);
-    }
 
     if (!document.getElementById('chatbox-ui-styles')) {
       const style = document.createElement('style');
@@ -152,12 +149,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         input[type="range"].chatbox-range::-webkit-slider-thumb {
           -webkit-appearance: none; appearance: none;
           width: 14px; height: 14px; border-radius: 50%;
-          background: var(--un-color-accent-500, #9C7DFF); cursor: pointer;
-          border: 2px solid var(--background);
+          background: var(--accent-500, #9C7DFF); cursor: pointer;
+          border: 2px solid var(--background, #ffffff);
           transition: transform 0.1s ease, background-color 0.1s ease;
         }
         input[type="range"].chatbox-range::-webkit-slider-thumb:hover {
-          transform: scale(1.2); background: var(--un-color-accent-400, #B69EFF);
+          transform: scale(1.2); background: var(--accent-400, #B69EFF);
         }
         input[type="range"].chatbox-range { -webkit-appearance: none; appearance: none; }
       `;
@@ -166,8 +163,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   }, []);
 
   // Observe workspace + chat input widths to drive compact-mode logic.
-  // We climb up the DOM to find the nearest ancestor that has a non-trivial
-  // width — this gives us the "workspace" container width.
   useEffect(() => {
     if (!chatInputContainerRef.current) return;
 
@@ -236,12 +231,14 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     const handleClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setIsProviderOverlayOpen(false);
         setMobileActiveTab('list');
       }
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsOpen(false);
+        setIsProviderOverlayOpen(false);
         setMobileActiveTab('list');
       }
     };
@@ -253,21 +250,26 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     };
   }, [isOpen]);
 
-  // Filtered + grouped models (only enabled providers)
+  // Is a given provider enabled? (local providers default to enabled)
+  const isEnabled = (name: string): boolean => {
+    return providerSettings[name]?.settings?.enabled ?? !LOCAL_PROVIDERS.includes(name);
+  };
+
+  // Does this provider have an API key set?
+  const hasKey = (name: string): boolean => {
+    if (LOCAL_PROVIDERS.includes(name)) return true;
+    return !!props.apiKeys[name];
+  };
+
+  // Filtered + grouped models (only ENABLED providers)
   const filteredProviders = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
 
-    // Map of provider name -> enabled state (from the settings store).
-    const enabledMap: Record<string, boolean> = {};
-    Object.keys(providerSettings).forEach((name) => {
-      enabledMap[name] = providerSettings[name]?.settings?.enabled ?? !LOCAL_PROVIDERS.includes(name);
-    });
-
-    // Group models by provider, filtering to enabled providers only.
+    // Group models by provider, filtering to ENABLED providers only.
     const groups: Record<string, ModelInfo[]> = {};
     props.modelList.forEach((m) => {
       // Skip models from disabled providers.
-      if (enabledMap[m.provider] === false) return;
+      if (isEnabled(m.provider) === false) return;
 
       // Search filter — match on label, name, or provider name.
       if (q) {
@@ -279,17 +281,16 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
       groups[m.provider].push(m);
     });
 
-    // Also include empty-but-enabled providers so the user can see them
-    // (e.g. local providers with no models loaded yet).
+    // Also include empty-but-enabled providers so the user can see them.
     props.providerList.forEach((p) => {
-      if (enabledMap[p.name] === false) return;
+      if (isEnabled(p.name) === false) return;
       if (!groups[p.name]) groups[p.name] = [];
     });
 
     // Convert to an array of { provider, models } pairs, preserving
     // providerList order.
     return props.providerList
-      .filter((p) => groups[p.name] !== undefined)
+      .filter((p) => groups[p.name] !== undefined && (q === '' || groups[p.name].length > 0 || p.name.toLowerCase().includes(q)))
       .map((p) => ({
         provider: p,
         models: groups[p.name],
@@ -329,6 +330,65 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     }
 
     props.handleSendMessage?.({} as any);
+  };
+
+  // Toggle a provider on/off (called from the overlay's toggle).
+  // Does NOT remove the provider from the list — just flips its enabled state.
+  // When enabling a non-local provider with no key, opens the inline key popup.
+  const handleProviderToggle = (p: ProviderInfo) => {
+    const currentlyEnabled = isEnabled(p.name);
+    const nextEnabled = !currentlyEnabled;
+
+    updateProviderSettings(p.name, { enabled: nextEnabled } as any);
+
+    if (nextEnabled && !LOCAL_PROVIDERS.includes(p.name) && !hasKey(p.name)) {
+      // Need a key — open the inline key entry popup on top of the overlay.
+      setKeyEntryFor(p);
+    } else if (nextEnabled && (LOCAL_PROVIDERS.includes(p.name) || hasKey(p.name))) {
+      // Just became enabled and has a key (or is local) — pick it as active.
+      props.setProvider?.(p);
+    }
+  };
+
+  // Save an API key for the keyEntryFor provider.
+  // Validates via /api/test-provider before persisting.
+  const handleSaveKey = async (key: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!keyEntryFor) return { ok: false, error: 'No provider selected' };
+    if (!key.trim()) return { ok: false, error: 'API key is required' };
+
+    const baseUrl = guessProviderBaseUrl(keyEntryFor.name);
+
+    try {
+      const res = await fetch('/api/test-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl, apiKey: key }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; sample?: string[] };
+
+      if (!data.ok) {
+        return { ok: false, error: data.error || 'Validation failed' };
+      }
+
+      // Persist to localStorage + cookies (mirrors APIKeyPopup behaviour).
+      const storedApiKeys = localStorage.getItem('apiKeys');
+      const currentKeys: Record<string, string> = storedApiKeys ? JSON.parse(storedApiKeys) : {};
+      const newKeys = { ...currentKeys, [keyEntryFor.name]: key };
+      localStorage.setItem('apiKeys', JSON.stringify(newKeys));
+      Cookies.set('apiKeys', JSON.stringify(newKeys), { expires: 365, sameSite: 'lax' });
+
+      // Notify parent so it can refresh model lists.
+      props.onApiKeysChange(keyEntryFor.name, key);
+
+      // Activate this provider now that it has a key.
+      props.setProvider?.(keyEntryFor);
+
+      // Close the popup.
+      setKeyEntryFor(null);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Network error during validation' };
+    }
   };
 
   return (
@@ -392,7 +452,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         props.setUploadedFiles?.(props.uploadedFiles.filter((_, i) => i !== index));
                         props.setImageDataList?.(props.imageDataList.filter((_, i) => i !== index));
                       }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-amplify-elements-textSecondary hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-amplify-elements-textSecondary hover:text-destructive hover:bg-destructive/10 cursor-pointer bg-transparent"
                     >
                       <X className="w-3.5 h-3.5" />
                     </motion.button>
@@ -431,7 +491,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     {/* Search + Add Provider */}
                     <div className="p-3 border-b border-amplify-elements-borderColor flex items-center gap-1.5 relative">
                       <div className="relative flex-grow">
-                        <Icon icon="lucide:search" className="absolute left-2.5 top-2.5 text-amplify-elements-textSecondary text-xs" />
+                        <IconifyIcon
+                          icon="lucide:search"
+                          className="absolute left-2.5 top-2.5 text-amplify-elements-textSecondary"
+                          width="12"
+                          height="12"
+                        />
                         <input
                           type="text"
                           placeholder="Search models..."
@@ -445,20 +510,21 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                             onClick={() => setSearchQuery('')}
                             className="absolute right-2 top-2 bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
                           >
-                            <Icon icon="lucide:x" className="text-xs" />
+                            <IconifyIcon icon="lucide:x" width="12" height="12" />
                           </button>
                         )}
                       </div>
 
                       <button
-                        onClick={() => {
-                          setIsOpen(false);
-                          setIsProviderPickerOpen(true);
-                        }}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all flex-shrink-0 bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary border-transparent hover:bg-amplify-elements-item-backgroundActive"
+                        onClick={() => setIsProviderOverlayOpen(!isProviderOverlayOpen)}
+                        className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-all flex-shrink-0 ${
+                          isProviderOverlayOpen
+                            ? 'bg-accent-500/20 text-accent-500 border-accent-500/40'
+                            : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary border-transparent hover:bg-amplify-elements-item-backgroundActive'
+                        }`}
                         title="Manage providers"
                       >
-                        <Icon icon="lucide:plus" className="text-sm font-semibold" />
+                        <IconifyIcon icon="lucide:plus" width="14" height="14" />
                       </button>
                     </div>
 
@@ -466,19 +532,19 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     <div className="flex-grow overflow-y-auto p-2 space-y-3 no-scrollbar">
                       {props.isModelLoading === 'all' ? (
                         <div className="flex flex-col items-center justify-center py-8 text-amplify-elements-textTertiary">
-                          <Icon icon="lucide:loader-circle" className="text-lg mb-1 animate-spin" />
+                          <IconifyIcon icon="lucide:loader-circle" className="text-lg mb-1 animate-spin" />
                           <span className="text-[10px]">Loading models...</span>
                         </div>
                       ) : filteredProviders.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8 text-center text-amplify-elements-textTertiary">
-                          <Icon icon="lucide:alert-circle" className="text-lg mb-1" />
+                          <IconifyIcon icon="lucide:alert-circle" className="text-lg mb-1" />
                           <span className="text-[10px]">No matching models</span>
                         </div>
                       ) : (
                         filteredProviders.map(({ provider: prov, models }) => (
                           <div key={prov.name} className="space-y-1">
                             <div className="text-[9px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider px-2 flex items-center gap-1.5 py-0.5">
-                              <Icon icon={providerIcon(prov.name)} className="text-xs" />
+                              <IconifyIcon icon={providerIcon(prov.name)} width="12" height="12" />
                               <span>{prov.name}</span>
                             </div>
                             <div className="space-y-0.5">
@@ -539,7 +605,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                       className="p-1 rounded-md bg-transparent hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-accent-500 transition ml-1 flex-shrink-0"
                                       title="Configure parameters"
                                     >
-                                      <Icon icon="ci:slider-03" className="text-sm" />
+                                      <IconifyIcon icon="ci:slider-03" width="14" height="14" />
                                     </button>
                                   </div>
                                 );
@@ -549,6 +615,127 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         ))
                       )}
                     </div>
+
+                    {/* PROVIDER OVERLAY — Overlays the list under search/plus header.
+                        Lists EVERY provider with an enable/disable toggle. The toggle
+                        does NOT remove the provider — it just flips its enabled state
+                        so the user can re-enable it later. */}
+                    <AnimatePresence>
+                      {isProviderOverlayOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="absolute top-[53px] inset-x-0 bottom-0 bg-amplify-elements-background-depth-2 z-20 flex flex-col p-3 border-t border-amplify-elements-borderColor"
+                        >
+                          <div className="flex items-center justify-between mb-3 border-b border-amplify-elements-borderColor pb-2">
+                            <span className="text-[10px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider">
+                              All Providers
+                            </span>
+                            <button
+                              onClick={() => setIsProviderOverlayOpen(false)}
+                              className="bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition p-1 rounded-md hover:bg-amplify-elements-item-backgroundActive"
+                            >
+                              <IconifyIcon icon="lucide:x" width="12" height="12" />
+                            </button>
+                          </div>
+
+                          <div className="flex-grow overflow-y-auto space-y-2 no-scrollbar">
+                            {props.providerList.map((prov) => {
+                              const enabled = isEnabled(prov.name);
+                              const keyed = hasKey(prov.name);
+                              const isActive = props.provider?.name === prov.name;
+                              const isLocal = LOCAL_PROVIDERS.includes(prov.name);
+
+                              return (
+                                <div
+                                  key={prov.name}
+                                  className={`p-2.5 rounded-xl border transition flex items-center justify-between ${
+                                    isActive
+                                      ? 'border-accent-500/40 bg-accent-500/5'
+                                      : 'border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-7 h-7 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
+                                      <IconifyIcon
+                                        icon={providerIcon(prov.name)}
+                                        className="text-base text-amplify-elements-textPrimary"
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className="text-[11px] font-bold text-amplify-elements-textPrimary block leading-tight truncate">
+                                        {prov.name}
+                                      </span>
+                                      <span className="text-[9px] text-amplify-elements-textSecondary flex items-center gap-1">
+                                        {isLocal ? (
+                                          <span className="text-amplify-elements-icon-success">local</span>
+                                        ) : keyed ? (
+                                          <span className="text-amplify-elements-icon-success flex items-center gap-0.5">
+                                            <CheckCircle2 size={9} /> key set
+                                          </span>
+                                        ) : enabled ? (
+                                          <span className="text-destructive flex items-center gap-0.5">
+                                            <AlertCircle size={9} /> no key
+                                          </span>
+                                        ) : (
+                                          <span>disabled</span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* Get-key link for non-local unkeyed providers */}
+                                    {prov.getApiKeyLink && !keyed && !isLocal && (
+                                      <a
+                                        href={prov.getApiKeyLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="bg-transparent text-amplify-elements-textSecondary hover:text-accent-500 transition p-1"
+                                        title={prov.labelForGetApiKey || 'Get API key'}
+                                      >
+                                        <ExternalLink size={12} />
+                                      </a>
+                                    )}
+
+                                    {/* Enable/disable toggle.
+                                        When enabling a non-local provider without a key,
+                                        the inline key popup opens automatically. */}
+                                    <button
+                                      onClick={() => handleProviderToggle(prov)}
+                                      className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
+                                        enabled ? 'bg-accent-500' : 'bg-amplify-elements-background-depth-3'
+                                      }`}
+                                      title={enabled ? 'Disable' : 'Enable'}
+                                    >
+                                      <div
+                                        className={`w-4 h-4 rounded-full bg-accent-foreground transition-transform ${
+                                          enabled ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Inline API key popup (overlay on top of the overlay) */}
+                          <AnimatePresence>
+                            {keyEntryFor && (
+                              <ApiKeyInlinePopup
+                                provider={keyEntryFor}
+                                onClose={() => setKeyEntryFor(null)}
+                                onSave={handleSaveKey}
+                              />
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 )}
 
@@ -566,11 +753,11 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     {/* Back nav for compact mode */}
                     <div className="space-y-1 flex-shrink-0">
                       {isCompact && (
-                          <button
-                            onClick={() => setMobileActiveTab('list')}
-                            className="flex items-center gap-1 text-[10px] text-accent-500 hover:text-accent-400 font-bold uppercase tracking-wider mb-2"
-                          >
-                          <Icon icon="lucide:arrow-left" className="text-xs" />
+                        <button
+                          onClick={() => setMobileActiveTab('list')}
+                          className="flex items-center gap-1 text-[10px] text-accent-500 hover:text-accent-400 font-bold uppercase tracking-wider mb-2"
+                        >
+                          <IconifyIcon icon="lucide:arrow-left" width="12" height="12" />
                           <span>Back to Models</span>
                         </button>
                       )}
@@ -600,7 +787,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                             ))}
                           </div>
                           <div className="bg-amplify-elements-background-depth-1 p-2.5 rounded-xl border border-amplify-elements-borderColor text-[10px] flex gap-2">
-                            <Icon icon="lucide:info" className="text-accent-500 text-sm flex-shrink-0 mt-0.5" />
+                            <IconifyIcon icon="lucide:info" className="text-accent-500 flex-shrink-0 mt-0.5" width="14" height="14" />
                             <div className="text-amplify-elements-textSecondary leading-normal">
                               Reasoning effort is required for this model. Higher effort = more thorough thinking but
                               slower responses.
@@ -663,7 +850,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {/* 3. ALWAYS-ON LOCKED REASONING (DeepSeek Reasoner) */}
                       {thinkingControlState === 'on-and-locked' && (
                         <div className="space-y-3 text-center py-3 bg-accent-500/5 border border-accent-500/10 rounded-xl">
-                          <Icon icon="lucide:shield-alert" className="text-xl text-accent-500" />
+                          <IconifyIcon icon="lucide:shield-alert" className="text-xl text-accent-500" />
                           <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
                           <p className="text-[10px] text-amplify-elements-textSecondary px-4 leading-normal">
                             This model enforces internal thought pathways. No budget token caps can be configured on
@@ -675,7 +862,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {/* 4. NON-REASONING CHANNELS (GPT-4o, Claude 3.5 Sonnet) */}
                       {thinkingControlState === 'off-and-locked' && (
                         <div className="py-6 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
-                          <Icon icon="lucide:alert-circle" className="text-amplify-elements-textSecondary text-xl mb-1" />
+                          <IconifyIcon icon="lucide:alert-circle" className="text-amplify-elements-textSecondary text-xl mb-1" />
                           <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
                           <p className="text-amplify-elements-textTertiary text-[10px] px-4 mt-0.5 leading-normal">
                             This model accepts standard parameters and does not route inquiries through reasoning token
@@ -753,7 +940,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors flex items-center justify-center outline-none"
                 title="Attach files"
               >
-                <Icon icon="lucide:plus" className="text-base font-semibold" />
+                <IconifyIcon icon="lucide:plus" width="16" height="16" />
               </button>
 
               {/* Model picker trigger */}
@@ -761,7 +948,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 h-8 px-2.5 bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive border border-amplify-elements-borderColor rounded-lg shadow-sm transition-all active:scale-[0.98] outline-none select-none text-amplify-elements-textPrimary"
               >
-                <Icon
+                <IconifyIcon
                   icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
                   className="text-base flex-shrink-0"
                 />
@@ -770,7 +957,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     <span className="text-xs font-semibold tracking-tight text-amplify-elements-textPrimary truncate max-w-[160px]">
                       {stripContextSuffix(activeModel?.label) || activeModel?.name || props.model || 'Select model'}
                     </span>
-                    <Icon
+                    <IconifyIcon
                       icon="lucide:chevron-down"
                       className={`text-amplify-elements-textSecondary text-[10px] ml-0.5 transition-transform duration-200 ${
                         isOpen ? 'rotate-180' : ''
@@ -821,14 +1008,14 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 title="Send Prompt (Enter)"
               >
                 {props.isStreaming ? (
-                  <Icon icon="lucide:loader-circle" className="text-lg animate-spin" />
+                  <IconifyIcon icon="lucide:loader-circle" className="text-lg animate-spin" />
                 ) : (
                   <div
                     ref={sendIconRef}
                     className="flex items-center justify-center"
                     style={{ transform: 'rotate(-90deg)' }}
                   >
-                    <Icon icon="iconoir:send-solid" className="text-lg" style={{ fontSize: '18px' }} />
+                    <IconifyIcon icon="iconoir:send-solid" className="text-lg" style={{ fontSize: '18px' }} />
                   </div>
                 )}
               </button>
@@ -839,33 +1026,169 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         {/* Subtle accent line under the input */}
         <div className="absolute bottom-0 left-10 right-10 h-[1px] bg-gradient-to-r from-transparent via-accent-500/10 to-transparent blur-[1px]" />
       </div>
-
-      {/* Provider picker modal — lists ALL providers with enable/disable */}
-      <ProviderPicker
-        open={isProviderPickerOpen}
-        onClose={() => setIsProviderPickerOpen(false)}
-        providerList={props.providerList}
-        provider={props.provider}
-        setProvider={props.setProvider}
-        apiKeys={props.apiKeys}
-        onApiKeySaved={(name, key) => props.onApiKeysChange(name, key)}
-      />
     </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/* Inline API key popup (used inside the provider overlay)                    */
+/* -------------------------------------------------------------------------- */
+
+interface ApiKeyInlinePopupProps {
+  provider: ProviderInfo;
+  onClose: () => void;
+  onSave: (key: string) => Promise<{ ok: boolean; error?: string }>;
+}
+
+const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose, onSave }) => {
+  const [tempKey, setTempKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [status, setStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'testing' }
+    | { kind: 'success' }
+    | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
+
+  const handleSave = async () => {
+    if (!tempKey.trim()) {
+      setStatus({ kind: 'error', message: 'API key is required' });
+      return;
+    }
+    setStatus({ kind: 'testing' });
+    const result = await onSave(tempKey.trim());
+    if (result.ok) {
+      setStatus({ kind: 'success' });
+    } else {
+      setStatus({ kind: 'error', message: result.error || 'Validation failed' });
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ type: 'spring', bounce: 0.1, duration: 0.25 }}
+      className="absolute inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-sm bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-2xl p-5"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <IconifyIcon icon={providerIcon(provider.name)} className="text-base text-amplify-elements-textPrimary" />
+            <span className="text-sm font-bold text-amplify-elements-textPrimary">{provider.name} API Key</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition p-1 rounded-md hover:bg-amplify-elements-item-backgroundActive"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <p className="text-[10px] text-amplify-elements-textSecondary mb-3 leading-relaxed">
+          Enabling <span className="text-amplify-elements-textPrimary font-semibold">{provider.name}</span> requires a valid API key.
+          We'll verify the key against the provider's models endpoint before saving it locally.
+        </p>
+
+        {/* Key input */}
+        <div className="relative">
+          <input
+            type={showKey ? 'text' : 'password'}
+            value={tempKey}
+            onChange={(e) => {
+              setTempKey(e.target.value);
+              if (status.kind !== 'idle') setStatus({ kind: 'idle' });
+            }}
+            placeholder="sk-..."
+            autoFocus
+            className="w-full bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary text-xs px-3 py-2.5 h-9 rounded-lg outline-none border border-transparent focus:border-accent-500 transition font-mono pr-9 placeholder:text-amplify-elements-textSecondary"
+          />
+          <button
+            onClick={() => setShowKey(!showKey)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary"
+            title={showKey ? 'Hide' : 'Show'}
+          >
+            {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+        </div>
+
+        {/* Status feedback */}
+        {status.kind === 'testing' && (
+          <div className="mt-2.5 text-[10px] text-accent-500 flex items-center gap-1.5">
+            <Loader2 size={11} className="animate-spin" />
+            Validating key against {provider.name}...
+          </div>
+        )}
+        {status.kind === 'success' && (
+          <div className="mt-2.5 text-[10px] text-amplify-elements-icon-success flex items-center gap-1.5 bg-amplify-elements-icon-success/10 border border-amplify-elements-icon-success/20 rounded-lg p-2">
+            <CheckCircle2 size={11} />
+            Key verified and saved to local storage.
+          </div>
+        )}
+        {status.kind === 'error' && (
+          <div className="mt-2.5 text-[10px] text-destructive flex items-start gap-1.5 bg-destructive/10 border border-destructive/20 rounded-lg p-2">
+            <AlertCircle size={11} className="flex-shrink-0 mt-0.5" />
+            <span>{status.message}</span>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary hover:bg-amplify-elements-item-backgroundActive transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={status.kind === 'testing' || status.kind === 'success' || !tempKey.trim()}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-accent-500 text-accent-foreground hover:bg-accent-400 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+          >
+            {status.kind === 'testing' ? (
+              <>
+                <Loader2 size={11} className="animate-spin" />
+                Validating...
+              </>
+            ) : status.kind === 'success' ? (
+              <>
+                <CheckCircle2 size={11} />
+                Saved
+              </>
+            ) : (
+              'Validate & Save'
+            )}
+          </button>
+        </div>
+
+        {/* Get key link */}
+        {provider.getApiKeyLink && (
+          <div className="mt-3 pt-3 border-t border-amplify-elements-borderColor">
+            <a
+              href={provider.getApiKeyLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-transparent text-[10px] text-accent-500 hover:text-accent-400 transition flex items-center gap-1"
+            >
+              <span>{provider.labelForGetApiKey || 'Get your API key here'}</span>
+              <ExternalLink size={10} />
+            </a>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 };
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
-
-const Icon: React.FC<{ icon: string; className?: string; style?: React.CSSProperties }> = ({
-  icon,
-  className = '',
-  style,
-}) => {
-  // @ts-expect-error — custom element
-  return <iconify-icon icon={icon} class={`inline-block align-middle ${className}`} style={style} />;
-};
 
 /**
  * Map provider name -> Iconify icon. Mirrors the curated design's icon set
@@ -956,4 +1279,32 @@ function getThinkingControlState(
 function isModelReasoning(providerName: string, model: ModelInfo): boolean {
   const state = getThinkingControlState(providerName, model);
   return state !== 'off-and-locked';
+}
+
+/**
+ * Guess the base URL for a built-in provider so we can validate the API key
+ * client-side via /api/test-provider.
+ */
+function guessProviderBaseUrl(name: string): string {
+  const map: Record<string, string> = {
+    OpenAI: 'https://api.openai.com/v1',
+    Anthropic: 'https://api.anthropic.com/v1',
+    Google: 'https://generativelanguage.googleapis.com/v1beta',
+    DeepSeek: 'https://api.deepseek.com/v1',
+    xAI: 'https://api.x.ai/v1',
+    Cohere: 'https://api.cohere.ai/v1',
+    Mistral: 'https://api.mistral.ai/v1',
+    Groq: 'https://api.groq.com/openai/v1',
+    Together: 'https://api.together.xyz/v1',
+    OpenRouter: 'https://openrouter.ai/api/v1',
+    Hyperbolic: 'https://api.hyperbolic.xyz/v1',
+    Perplexity: 'https://api.perplexity.ai',
+    HuggingFace: 'https://api-inference.huggingface.co',
+    Moonshot: 'https://api.moonshot.cn/v1',
+    Fireworks: 'https://api.fireworks.ai/inference/v1',
+    Cerebras: 'https://api.cerebras.ai/v1',
+    GitHub: 'https://models.inference.ai.azure.com',
+    'Z.AI': 'https://api.z.ai/api/paas/v4',
+  };
+  return map[name] || 'https://api.example.com/v1';
 }
