@@ -24,6 +24,7 @@ import { customProvidersStore } from '~/lib/stores/custom-providers';
 import { useStore } from '@nanostores/react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import Cookies from 'js-cookie';
+import { PROVIDER_LIST } from '~/utils/constants';
 
 /**
  * Strip a trailing parenthesised context suffix from a model label.
@@ -146,17 +147,53 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         .chatbox-slide-out { animation: chatbox-slide-up-out 0.3s forwards !important; }
         .chatbox-slide-in  { animation: chatbox-slide-up-in  0.3s forwards !important; }
 
+        /* Range slider with filled indicator on the left side of the thumb.
+           Uses --chatbox-range-pct (0-100) set inline by the component to
+           drive a hard colour stop at the thumb position. */
+        input[type="range"].chatbox-range {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 6px;
+          border-radius: 9999px;
+          outline: none;
+          background: linear-gradient(
+            to right,
+            var(--chatbox-range-fill, var(--accent-500, #FF2056)) 0%,
+            var(--chatbox-range-fill, var(--accent-500, #FF2056)) var(--chatbox-range-pct, 0%),
+            var(--chatbox-range-track, color-mix(in srgb, var(--amplify-elements-textTertiary, #888), transparent 70%)) var(--chatbox-range-pct, 0%),
+            var(--chatbox-range-track, color-mix(in srgb, var(--amplify-elements-textTertiary, #888), transparent 70%)) 100%
+          );
+        }
         input[type="range"].chatbox-range::-webkit-slider-thumb {
-          -webkit-appearance: none; appearance: none;
-          width: 14px; height: 14px; border-radius: 50%;
-          background: var(--accent-500, #9C7DFF); cursor: pointer;
+          -webkit-appearance: none;
+          appearance: none;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: var(--accent-500, #FF2056);
+          cursor: pointer;
           border: 2px solid var(--background, #ffffff);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-500, #FF2056), transparent 60%);
           transition: transform 0.1s ease, background-color 0.1s ease;
         }
         input[type="range"].chatbox-range::-webkit-slider-thumb:hover {
-          transform: scale(1.2); background: var(--accent-400, #B69EFF);
+          transform: scale(1.2);
+          background: var(--accent-400, #FF5A7E);
         }
-        input[type="range"].chatbox-range { -webkit-appearance: none; appearance: none; }
+        input[type="range"].chatbox-range::-moz-range-thumb {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: var(--accent-500, #FF2056);
+          cursor: pointer;
+          border: 2px solid var(--background, #ffffff);
+        }
+        input[type="range"].chatbox-range::-moz-range-progress {
+          background-color: var(--accent-500, #FF2056);
+          height: 6px;
+          border-radius: 9999px;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -261,7 +298,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     return !!props.apiKeys[name];
   };
 
-  // Filtered + grouped models (only ENABLED providers)
+  // Full list of every provider the project supports — used for the provider
+  // overlay (which lists ALL providers so users can toggle each on/off).
+  // We deliberately don't rely on `props.providerList` here because the
+  // parent (BaseChat ← useSettings) filters that list to ENABLED providers
+  // only, which would mean disabled providers disappear from the overlay
+  // and the user could never re-enable them.
+  const allProviders: ProviderInfo[] = useMemo(() => PROVIDER_LIST as ProviderInfo[], []);
+
+  // Filtered + grouped models — models from ENABLED providers only.
+  // Disabling a provider hides its models from the model list (PANEL 1),
+  // but the provider itself stays visible in the provider overlay so the
+  // user can re-enable it.
   const filteredProviders = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
 
@@ -282,20 +330,27 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     });
 
     // Also include empty-but-enabled providers so the user can see them.
-    props.providerList.forEach((p) => {
+    allProviders.forEach((p) => {
       if (isEnabled(p.name) === false) return;
       if (!groups[p.name]) groups[p.name] = [];
     });
 
     // Convert to an array of { provider, models } pairs, preserving
-    // providerList order.
-    return props.providerList
-      .filter((p) => groups[p.name] !== undefined && (q === '' || groups[p.name].length > 0 || p.name.toLowerCase().includes(q)))
+    // allProviders order. When searching, only include providers that
+    // either match the query directly or have at least one matching model.
+    return allProviders
+      .filter((p) => {
+        if (isEnabled(p.name) === false) return false;
+        if (!q) return true;
+        const nameMatches = p.name.toLowerCase().includes(q);
+        const hasMatchingModels = (groups[p.name]?.length ?? 0) > 0;
+        return nameMatches || hasMatchingModels;
+      })
       .map((p) => ({
         provider: p,
-        models: groups[p.name],
+        models: groups[p.name] ?? [],
       }));
-  }, [props.modelList, props.providerList, providerSettings, searchQuery]);
+  }, [props.modelList, allProviders, providerSettings, searchQuery]);
 
   const isKeyMissing = useMemo(() => {
     if (!props.provider?.name || LOCAL_PROVIDERS.includes(props.provider.name)) return false;
@@ -642,7 +697,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           </div>
 
                           <div className="flex-grow overflow-y-auto space-y-2 no-scrollbar">
-                            {props.providerList.map((prov) => {
+                            {allProviders.map((prov) => {
                               const enabled = isEnabled(prov.name);
                               const keyed = hasKey(prov.name);
                               const isActive = props.provider?.name === prov.name;
@@ -827,12 +882,15 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                               </div>
                               <input
                                 type="range"
-                                className="chatbox-range w-full bg-amplify-elements-background-depth-3 h-1 rounded-lg cursor-pointer"
+                                className="chatbox-range w-full cursor-pointer"
                                 min={1024}
                                 max={32768}
                                 step={1024}
                                 value={budgetTokens}
                                 onChange={(e) => setBudgetTokens(Number(e.target.value))}
+                                style={{
+                                  ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / (32768 - 1024)) * 100}%`,
+                                }}
                               />
                               <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
                                 <span>1,024</span>
@@ -882,12 +940,15 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           </div>
                           <input
                             type="range"
-                            className="chatbox-range w-full bg-amplify-elements-background-depth-3 h-1 rounded-lg cursor-pointer"
+                            className="chatbox-range w-full cursor-pointer"
                             min={1024}
                             max={activeModel.maxCompletionTokens}
                             step={1024}
                             value={maxOutputTokens}
                             onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
+                            style={{
+                              ['--chatbox-range-pct' as any]: `${((maxOutputTokens - 1024) / Math.max(1, activeModel.maxCompletionTokens - 1024)) * 100}%`,
+                            }}
                           />
                           <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
                             <span>1,024</span>
@@ -1004,18 +1065,22 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               <button
                 onClick={handleSend}
                 disabled={!props.input.trim() || props.isStreaming || isKeyMissing}
-                className="flex justify-center items-center w-8 h-8 rounded-full transition-colors duration-200 cursor-pointer disabled:cursor-not-allowed overflow-hidden bg-accent-500 hover:bg-accent-400 text-accent-foreground disabled:opacity-50"
+                className={`flex justify-center items-center w-10 h-10 rounded-full transition-all duration-200 cursor-pointer disabled:cursor-not-allowed overflow-hidden bg-transparent ${
+                  (!props.input.trim() || props.isStreaming || isKeyMissing)
+                    ? 'text-amplify-elements-textTertiary hover:bg-transparent'
+                    : 'text-accent-500 hover:bg-accent-500/10 hover:text-accent-600'
+                }`}
                 title="Send Prompt (Enter)"
               >
                 {props.isStreaming ? (
-                  <IconifyIcon icon="lucide:loader-circle" className="text-lg animate-spin" />
+                  <IconifyIcon icon="lucide:loader-circle" width="22" height="22" className="animate-spin" />
                 ) : (
                   <div
                     ref={sendIconRef}
                     className="flex items-center justify-center"
                     style={{ transform: 'rotate(-90deg)' }}
                   >
-                    <IconifyIcon icon="iconoir:send-solid" className="text-lg" style={{ fontSize: '18px' }} />
+                    <IconifyIcon icon="iconoir:send-solid" style={{ fontSize: '22px' }} />
                   </div>
                 )}
               </button>
