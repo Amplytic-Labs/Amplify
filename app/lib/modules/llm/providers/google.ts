@@ -104,12 +104,21 @@ export default class GoogleProvider extends BaseProvider {
       throw new Error('Invalid response format from Google API');
     }
 
-    // Filter out models with very low token limits and experimental/unstable models
+    /*
+     * Filter out non-chat models.
+     * Google's /v1beta/models response gives each model a
+     * `supportedGenerationMethods` array. Chat models include "generateContent";
+     * embedding-only models only include "embedContent" (e.g. text-embedding-004,
+     * gemini-embedding-001). Filtering on "generateContent" reliably removes
+     * embeddings, TTS, and countTokens-only entries — which the previous
+     * `outputTokenLimit > 8000` heuristic failed to do.
+     */
     const data = res.models.filter((model: any) => {
-      const hasGoodTokenLimit = (model.outputTokenLimit || 0) > 8000;
+      const methods: string[] = Array.isArray(model.supportedGenerationMethods) ? model.supportedGenerationMethods : [];
+      const isChatModel = methods.includes('generateContent');
       const isStable = !model.name.includes('exp') || model.name.includes('flash-exp');
 
-      return hasGoodTokenLimit && isStable;
+      return isChatModel && isStable;
     });
 
     return data.map((m: any) => {

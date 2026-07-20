@@ -4,11 +4,10 @@ import { Icon as IconifyIcon } from '@iconify/react';
 import { Paperclip, X, FileText, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { classNames } from '~/utils/classNames';
-import { APIKeyPopup } from './APIKeyPopup';
 import { LOCAL_PROVIDERS, providersStore, updateProviderSettings } from '~/lib/stores/settings';
 import FilePreview from './FilePreview';
 import { ScreenshotStateManager } from './ScreenshotStateManager';
-import { IconButton } from '~/components/ui/IconButton';
+import { Switch } from '~/components/ui/Switch';
 import { SupabaseConnection } from './SupabaseConnection';
 import { ExpoQrModal } from '~/components/workbench/ExpoQrModal';
 import styles from './BaseChat.module.scss';
@@ -35,7 +34,10 @@ import { PROVIDER_LIST } from '~/utils/constants';
  * the full label is still shown in the dropdown list.
  */
 function stripContextSuffix(label: string | undefined): string {
-  if (!label) return '';
+  if (!label) {
+    return '';
+  }
+
   return label.replace(/\s*\([^()]*\)\s*$/, '').trim();
 }
 
@@ -108,11 +110,20 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [budgetTokens, setBudgetTokens] = useState(4096);
   const [maxOutputTokens, setMaxOutputTokens] = useState(4096);
 
-  // API key popup state (for the small inline "key" button next to the trigger)
-  const [isApiKeyPopupOpen, setIsApiKeyPopupOpen] = useState(false);
+  /*
+   * Settings popup state (the new slider button beside the model picker
+   * trigger). Combines the old standalone API-key button + the model parameter
+   * config (formerly PANEL 2 of the model picker) into one accessible popup.
+   */
+  const [isSettingsPopupOpen, setIsSettingsPopupOpen] = useState(false);
+  const [settingsTempKey, setSettingsTempKey] = useState('');
+  const [showSettingsKey, setShowSettingsKey] = useState(false);
+  const [isSavingSettingsKey, setIsSavingSettingsKey] = useState(false);
 
-  // Provider currently being keyed (inside the overlay) — when set, an inline
-  // API-key entry popup is shown on top of the overlay.
+  /*
+   * Provider currently being keyed (inside the overlay) — when set, an inline
+   * API-key entry popup is shown on top of the overlay.
+   */
   const [keyEntryFor, setKeyEntryFor] = useState<ProviderInfo | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,7 +138,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   // Inject scoped slider + animation styles once
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      return;
+    }
 
     if (!document.getElementById('chatbox-ui-styles')) {
       const style = document.createElement('style');
@@ -201,28 +214,40 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   // Observe workspace + chat input widths to drive compact-mode logic.
   useEffect(() => {
-    if (!chatInputContainerRef.current) return;
+    if (!chatInputContainerRef.current) {
+      return;
+    }
 
     // Walk up to find a sizable ancestor (the chat panel).
     let node: HTMLElement | null = chatInputContainerRef.current;
     let wsParent: HTMLElement | null = null;
+
     for (let i = 0; i < 6 && node; i++) {
       node = node.parentElement;
+
       if (node && node.clientWidth > 100) {
         wsParent = node;
         break;
       }
     }
-    if (!wsParent) wsParent = chatInputContainerRef.current;
+
+    if (!wsParent) {
+      wsParent = chatInputContainerRef.current;
+    }
+
     (workspaceRef as React.MutableRefObject<HTMLElement | null>).current = wsParent;
 
     const wsObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) setWorkspaceWidth(entry.contentRect.width);
+      for (const entry of entries) {
+        setWorkspaceWidth(entry.contentRect.width);
+      }
     });
     wsObserver.observe(wsParent);
 
     const inputObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) setChatInputWidth(entry.contentRect.width);
+      for (const entry of entries) {
+        setChatInputWidth(entry.contentRect.width);
+      }
     });
     inputObserver.observe(chatInputContainerRef.current);
 
@@ -244,7 +269,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   // Reset config when model changes (mirror curated design's behaviour)
   useEffect(() => {
-    if (!activeModel || !activeProvider) return;
+    if (!activeModel || !activeProvider) {
+      return;
+    }
+
     const ctrl = getThinkingControlState(activeProvider.name, activeModel);
 
     if (ctrl === 'toggle+budget') {
@@ -262,14 +290,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     }
   }, [activeModel, activeProvider]);
 
-  // Close popup on outside click / Escape
+  // Close popups on outside click / Escape
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen && !isSettingsPopupOpen) {
+      return;
+    }
+
     const handleClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setIsProviderOverlayOpen(false);
         setMobileActiveTab('list');
+        setIsSettingsPopupOpen(false);
       }
     };
     const handleKey = (e: KeyboardEvent) => {
@@ -277,15 +309,17 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
         setIsOpen(false);
         setIsProviderOverlayOpen(false);
         setMobileActiveTab('list');
+        setIsSettingsPopupOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
+
     return () => {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [isOpen]);
+  }, [isOpen, isSettingsPopupOpen]);
 
   // Is a given provider enabled? (local providers default to enabled)
   const isEnabled = (name: string): boolean => {
@@ -294,22 +328,29 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   // Does this provider have an API key set?
   const hasKey = (name: string): boolean => {
-    if (LOCAL_PROVIDERS.includes(name)) return true;
+    if (LOCAL_PROVIDERS.includes(name)) {
+      return true;
+    }
+
     return !!props.apiKeys[name];
   };
 
-  // Full list of every provider the project supports — used for the provider
-  // overlay (which lists ALL providers so users can toggle each on/off).
-  // We deliberately don't rely on `props.providerList` here because the
-  // parent (BaseChat ← useSettings) filters that list to ENABLED providers
-  // only, which would mean disabled providers disappear from the overlay
-  // and the user could never re-enable them.
+  /*
+   * Full list of every provider the project supports — used for the provider
+   * overlay (which lists ALL providers so users can toggle each on/off).
+   * We deliberately don't rely on `props.providerList` here because the
+   * parent (BaseChat ← useSettings) filters that list to ENABLED providers
+   * only, which would mean disabled providers disappear from the overlay
+   * and the user could never re-enable them.
+   */
   const allProviders: ProviderInfo[] = useMemo(() => PROVIDER_LIST as ProviderInfo[], []);
 
-  // Filtered + grouped models — models from ENABLED providers only.
-  // Disabling a provider hides its models from the model list (PANEL 1),
-  // but the provider itself stays visible in the provider overlay so the
-  // user can re-enable it.
+  /*
+   * Filtered + grouped models — models from ENABLED providers only.
+   * Disabling a provider hides its models from the model list (PANEL 1),
+   * but the provider itself stays visible in the provider overlay so the
+   * user can re-enable it.
+   */
   const filteredProviders = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
 
@@ -317,33 +358,55 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     const groups: Record<string, ModelInfo[]> = {};
     props.modelList.forEach((m) => {
       // Skip models from disabled providers.
-      if (isEnabled(m.provider) === false) return;
+      if (isEnabled(m.provider) === false) {
+        return;
+      }
 
       // Search filter — match on label, name, or provider name.
       if (q) {
         const haystack = `${m.label} ${m.name} ${m.provider}`.toLowerCase();
-        if (!haystack.includes(q)) return;
+
+        if (!haystack.includes(q)) {
+          return;
+        }
       }
 
-      if (!groups[m.provider]) groups[m.provider] = [];
+      if (!groups[m.provider]) {
+        groups[m.provider] = [];
+      }
+
       groups[m.provider].push(m);
     });
 
     // Also include empty-but-enabled providers so the user can see them.
     allProviders.forEach((p) => {
-      if (isEnabled(p.name) === false) return;
-      if (!groups[p.name]) groups[p.name] = [];
+      if (isEnabled(p.name) === false) {
+        return;
+      }
+
+      if (!groups[p.name]) {
+        groups[p.name] = [];
+      }
     });
 
-    // Convert to an array of { provider, models } pairs, preserving
-    // allProviders order. When searching, only include providers that
-    // either match the query directly or have at least one matching model.
+    /*
+     * Convert to an array of { provider, models } pairs, preserving
+     * allProviders order. When searching, only include providers that
+     * either match the query directly or have at least one matching model.
+     */
     return allProviders
       .filter((p) => {
-        if (isEnabled(p.name) === false) return false;
-        if (!q) return true;
+        if (isEnabled(p.name) === false) {
+          return false;
+        }
+
+        if (!q) {
+          return true;
+        }
+
         const nameMatches = p.name.toLowerCase().includes(q);
         const hasMatchingModels = (groups[p.name]?.length ?? 0) > 0;
+
         return nameMatches || hasMatchingModels;
       })
       .map((p) => ({
@@ -353,7 +416,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   }, [props.modelList, allProviders, providerSettings, searchQuery]);
 
   const isKeyMissing = useMemo(() => {
-    if (!props.provider?.name || LOCAL_PROVIDERS.includes(props.provider.name)) return false;
+    if (!props.provider?.name || LOCAL_PROVIDERS.includes(props.provider.name)) {
+      return false;
+    }
+
     return !props.apiKeys[props.provider.name];
   }, [props.provider, props.apiKeys]);
 
@@ -362,14 +428,69 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     [props.provider],
   );
 
-  const thinkingControlState = useMemo<'toggle+budget' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked'>(() => {
-    if (!activeModel || !activeProvider) return 'off-and-locked';
+  // Show the attachment button only for multimodal (image-capable) models.
+  const showAttachmentButton = useMemo(() => {
+    return isMultimodalModel(activeProvider?.name, activeModel);
+  }, [activeProvider, activeModel]);
+
+  /*
+   * Sync the temporary API-key field whenever the settings popup opens or the
+   * active provider changes, so it always reflects the currently stored key.
+   */
+  useEffect(() => {
+    if (isSettingsPopupOpen && props.provider?.name) {
+      setSettingsTempKey(props.apiKeys[props.provider.name] || '');
+      setShowSettingsKey(false);
+    }
+  }, [isSettingsPopupOpen, props.provider, props.apiKeys]);
+
+  /*
+   * Save the API key entered in the settings popup. Persists to localStorage
+   * AND the apiKeys cookie (server endpoints read the cookie, not localStorage).
+   */
+  const handleSaveSettingsKey = async () => {
+    if (!props.provider?.name) {
+      return;
+    }
+
+    const key = settingsTempKey.trim();
+
+    if (!key) {
+      return;
+    }
+
+    setIsSavingSettingsKey(true);
+
+    try {
+      props.onApiKeysChange(props.provider.name, key);
+
+      const stored = localStorage.getItem('apiKeys');
+      const current: Record<string, string> = stored ? JSON.parse(stored) : {};
+      const updated = { ...current, [props.provider.name]: key };
+      localStorage.setItem('apiKeys', JSON.stringify(updated));
+      Cookies.set('apiKeys', JSON.stringify(updated), { expires: 365, sameSite: 'lax' });
+    } catch (e) {
+      console.error('Failed to save API key from settings popup:', e);
+    } finally {
+      setIsSavingSettingsKey(false);
+    }
+  };
+
+  const thinkingControlState = useMemo<
+    'toggle+budget' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked'
+  >(() => {
+    if (!activeModel || !activeProvider) {
+      return 'off-and-locked';
+    }
+
     return getThinkingControlState(activeProvider.name, activeModel);
   }, [activeModel, activeProvider]);
 
   // Handle send: trigger the slide-out animation, then send.
   const handleSend = () => {
-    if (!props.input.trim() || props.isStreaming || isKeyMissing) return;
+    if (!props.input.trim() || props.isStreaming || isKeyMissing) {
+      return;
+    }
 
     if (sendIconRef.current) {
       sendIconRef.current.classList.add('chatbox-slide-out');
@@ -378,8 +499,11 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           sendIconRef.current.classList.remove('chatbox-slide-out');
           sendIconRef.current.classList.add('chatbox-slide-in');
         }
+
         setTimeout(() => {
-          if (sendIconRef.current) sendIconRef.current.classList.remove('chatbox-slide-in');
+          if (sendIconRef.current) {
+            sendIconRef.current.classList.remove('chatbox-slide-in');
+          }
         }, 300);
       }, 300);
     }
@@ -387,9 +511,11 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     props.handleSendMessage?.({} as any);
   };
 
-  // Toggle a provider on/off (called from the overlay's toggle).
-  // Does NOT remove the provider from the list — just flips its enabled state.
-  // When enabling a non-local provider with no key, opens the inline key popup.
+  /*
+   * Toggle a provider on/off (called from the overlay's toggle).
+   * Does NOT remove the provider from the list — just flips its enabled state.
+   * When enabling a non-local provider with no key, opens the inline key popup.
+   */
   const handleProviderToggle = (p: ProviderInfo) => {
     const currentlyEnabled = isEnabled(p.name);
     const nextEnabled = !currentlyEnabled;
@@ -405,11 +531,18 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     }
   };
 
-  // Save an API key for the keyEntryFor provider.
-  // Validates via /api/test-provider before persisting.
+  /*
+   * Save an API key for the keyEntryFor provider.
+   * Validates via /api/test-provider before persisting.
+   */
   const handleSaveKey = async (key: string): Promise<{ ok: boolean; error?: string }> => {
-    if (!keyEntryFor) return { ok: false, error: 'No provider selected' };
-    if (!key.trim()) return { ok: false, error: 'API key is required' };
+    if (!keyEntryFor) {
+      return { ok: false, error: 'No provider selected' };
+    }
+
+    if (!key.trim()) {
+      return { ok: false, error: 'API key is required' };
+    }
 
     const baseUrl = guessProviderBaseUrl(keyEntryFor.name);
 
@@ -440,6 +573,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
       // Close the popup.
       setKeyEntryFor(null);
+
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Network error during validation' };
@@ -497,8 +631,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       </div>
                     )}
                     <div className="truncate">
-                      <p className="font-medium text-amplify-elements-textPrimary truncate max-w-[120px]">{file.name}</p>
-                      <p className="text-[10px] text-amplify-elements-textSecondary">{(file.size / 1024).toFixed(1)} KB</p>
+                      <p className="font-medium text-amplify-elements-textPrimary truncate max-w-[120px]">
+                        {file.name}
+                      </p>
+                      <p className="text-[10px] text-amplify-elements-textSecondary">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
                     </div>
                     <motion.button
                       whileHover={{ scale: 1.15 }}
@@ -529,7 +667,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 exit={{ opacity: 0, scale: 0.95, y: 8, filter: 'blur(2px)' }}
                 transition={{ type: 'spring', bounce: 0.1, duration: 0.3 }}
                 className={`pointer-events-auto flex bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] overflow-hidden h-[380px] transition-all duration-300 ${
-                  isCompact ? 'w-[280px]' : 'w-[540px]'
+                  isCompact ? 'w-[280px]' : 'w-[320px]'
                 }`}
               >
                 {/* PANEL 1: Model list */}
@@ -541,7 +679,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     exit={isCompact ? { x: -50, opacity: 0 } : undefined}
                     transition={{ duration: 0.2 }}
                     className="w-full flex-grow flex flex-col justify-between h-full bg-amplify-elements-background-depth-1 relative"
-                    style={{ minWidth: isCompact ? '280px' : '260px', maxWidth: isCompact ? '280px' : '260px' }}
+                    style={{ minWidth: isCompact ? '280px' : '320px', maxWidth: isCompact ? '280px' : '320px' }}
                   >
                     {/* Search + Add Provider */}
                     <div className="p-3 border-b border-amplify-elements-borderColor flex items-center gap-1.5 relative">
@@ -599,7 +737,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         filteredProviders.map(({ provider: prov, models }) => (
                           <div key={prov.name} className="space-y-1">
                             <div className="text-[9px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider px-2 flex items-center gap-1.5 py-0.5">
-                              <IconifyIcon icon={providerIcon(prov.name)} width="12" height="12" />
+                              <IconifyIcon icon={providerIcon(prov.name)} width="15" height="15" />
                               <span>{prov.name}</span>
                             </div>
                             <div className="space-y-0.5">
@@ -614,7 +752,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                   <div
                                     key={model.name}
                                     className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors group ${
-                                      isSelected ? 'bg-amplify-elements-item-backgroundActive' : 'hover:bg-amplify-elements-item-backgroundActive'
+                                      isSelected
+                                        ? 'bg-amplify-elements-item-backgroundActive'
+                                        : 'hover:bg-amplify-elements-item-backgroundActive'
                                     }`}
                                   >
                                     <button
@@ -627,7 +767,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                     >
                                       <div
                                         className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                          isSelected ? 'bg-accent-500' : 'bg-transparent group-hover:bg-amplify-elements-textTertiary'
+                                          isSelected
+                                            ? 'bg-accent-500'
+                                            : 'bg-transparent group-hover:bg-amplify-elements-textTertiary'
                                         }`}
                                       />
                                       <div className="min-w-0">
@@ -648,19 +790,6 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                           )}
                                         </div>
                                       </div>
-                                    </button>
-
-                                    {/* Configure parameters trigger — opens PANEL 2 */}
-                                    <button
-                                      onClick={() => {
-                                        props.setProvider?.(prov);
-                                        props.setModel?.(model.name);
-                                        if (isCompact) setMobileActiveTab('config');
-                                      }}
-                                      className="p-1 rounded-md bg-transparent hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-accent-500 transition ml-1 flex-shrink-0"
-                                      title="Configure parameters"
-                                    >
-                                      <IconifyIcon icon="ci:slider-03" width="14" height="14" />
                                     </button>
                                   </div>
                                 );
@@ -713,10 +842,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                   }`}
                                 >
                                   <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-7 h-7 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
+                                    <div className="w-10 h-10 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
                                       <IconifyIcon
                                         icon={providerIcon(prov.name)}
-                                        className="text-base text-amplify-elements-textPrimary"
+                                        className="text-xl text-amplify-elements-textPrimary"
                                       />
                                     </div>
                                     <div className="min-w-0">
@@ -759,19 +888,16 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                     {/* Enable/disable toggle.
                                         When enabling a non-local provider without a key,
                                         the inline key popup opens automatically. */}
-                                    <button
-                                      onClick={() => handleProviderToggle(prov)}
-                                      className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-                                        enabled ? 'bg-accent-500' : 'bg-amplify-elements-background-depth-3'
-                                      }`}
-                                      title={enabled ? 'Disable' : 'Enable'}
-                                    >
-                                      <div
-                                        className={`w-4 h-4 rounded-full bg-accent-foreground transition-transform ${
-                                          enabled ? 'translate-x-4' : 'translate-x-0'
-                                        }`}
+                                    <div title={enabled ? 'Disable' : 'Enable'}>
+                                      <Switch
+                                        checked={enabled}
+                                        onCheckedChange={(v) => {
+                                          if (v !== enabled) {
+                                            handleProviderToggle(prov);
+                                          }
+                                        }}
                                       />
-                                    </button>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -794,8 +920,11 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   </motion.div>
                 )}
 
-                {/* PANEL 2: Parameters */}
-                {(!isCompact || mobileActiveTab === 'config') && (
+                {/* PANEL 2: Parameters — moved to the settings popup beside the
+                    model picker trigger. The condition below is now always false
+                    (mobileActiveTab is never 'config' since the per-model slider
+                    trigger was removed), so this panel no longer renders. */}
+                {isCompact && mobileActiveTab === 'config' && (
                   <motion.div
                     key="panel-config"
                     initial={isCompact ? { x: 50, opacity: 0 } : undefined}
@@ -842,7 +971,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                             ))}
                           </div>
                           <div className="bg-amplify-elements-background-depth-1 p-2.5 rounded-xl border border-amplify-elements-borderColor text-[10px] flex gap-2">
-                            <IconifyIcon icon="lucide:info" className="text-accent-500 flex-shrink-0 mt-0.5" width="14" height="14" />
+                            <IconifyIcon
+                              icon="lucide:info"
+                              className="text-accent-500 flex-shrink-0 mt-0.5"
+                              width="14"
+                              height="14"
+                            />
                             <div className="text-amplify-elements-textSecondary leading-normal">
                               Reasoning effort is required for this model. Higher effort = more thorough thinking but
                               slower responses.
@@ -909,7 +1043,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {thinkingControlState === 'on-and-locked' && (
                         <div className="space-y-3 text-center py-3 bg-accent-500/5 border border-accent-500/10 rounded-xl">
                           <IconifyIcon icon="lucide:shield-alert" className="text-xl text-accent-500" />
-                          <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
+                          <span className="text-xs font-bold text-amplify-elements-textPrimary block">
+                            Thinking Enforced
+                          </span>
                           <p className="text-[10px] text-amplify-elements-textSecondary px-4 leading-normal">
                             This model enforces internal thought pathways. No budget token caps can be configured on
                             this endpoint.
@@ -920,8 +1056,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {/* 4. NON-REASONING CHANNELS (GPT-4o, Claude 3.5 Sonnet) */}
                       {thinkingControlState === 'off-and-locked' && (
                         <div className="py-6 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
-                          <IconifyIcon icon="lucide:alert-circle" className="text-amplify-elements-textSecondary text-xl mb-1" />
-                          <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
+                          <IconifyIcon
+                            icon="lucide:alert-circle"
+                            className="text-amplify-elements-textSecondary text-xl mb-1"
+                          />
+                          <span className="text-amplify-elements-textSecondary text-xs font-semibold">
+                            Standard Pipeline
+                          </span>
                           <p className="text-amplify-elements-textTertiary text-[10px] px-4 mt-0.5 leading-normal">
                             This model accepts standard parameters and does not route inquiries through reasoning token
                             engines.
@@ -964,6 +1105,235 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           </AnimatePresence>
         </div>
 
+        {/* Settings popup — opened by the slider button beside the model picker.
+            Combines the API-key entry (formerly the standalone key button) and
+            the model parameter config (formerly PANEL 2 of the model picker). */}
+        <AnimatePresence>
+          {isSettingsPopupOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8, filter: 'blur(2px)' }}
+              animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, scale: 0.96, y: 8, filter: 'blur(2px)' }}
+              transition={{ type: 'spring', bounce: 0.1, duration: 0.25 }}
+              className="absolute bottom-full mb-3 left-0 z-40 w-[340px] max-w-[calc(100vw-2rem)] bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] p-4 max-h-[78vh] overflow-y-auto no-scrollbar"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
+                    <IconifyIcon
+                      icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
+                      className="text-lg text-amplify-elements-textPrimary"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amplify-elements-textPrimary truncate">
+                      {activeProvider?.name || 'Provider'} Settings
+                    </div>
+                    <div className="text-[9px] text-amplify-elements-textSecondary truncate">
+                      {stripContextSuffix(activeModel?.label) || activeModel?.name || 'No model selected'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsSettingsPopupOpen(false)}
+                  className="bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition p-1 rounded-md hover:bg-amplify-elements-item-backgroundActive flex-shrink-0"
+                  title="Close"
+                >
+                  <IconifyIcon icon="lucide:x" width="14" height="14" />
+                </button>
+              </div>
+
+              {/* API Key section — only for non-local providers */}
+              {showKeyButton && (
+                <div className="mb-3 pb-3 border-b border-amplify-elements-borderColor">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary">
+                      API Key
+                    </span>
+                    {isKeyMissing ? (
+                      <span className="text-[9px] text-destructive flex items-center gap-0.5">
+                        <AlertCircle size={10} /> required
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-emerald-500 flex items-center gap-0.5">
+                        <CheckCircle2 size={10} /> set
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showSettingsKey ? 'text' : 'password'}
+                      value={settingsTempKey}
+                      onChange={(e) => setSettingsTempKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full pr-9 pl-3 py-2 text-xs rounded-md border border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-accent-500/40 transition-all"
+                    />
+                    <button
+                      onClick={() => setShowSettingsKey(!showSettingsKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-transparent"
+                      title={showSettingsKey ? 'Hide' : 'Show'}
+                    >
+                      {showSettingsKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={handleSaveSettingsKey}
+                      disabled={!settingsTempKey.trim() || isSavingSettingsKey}
+                      className={classNames(
+                        'px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all',
+                        !settingsTempKey.trim() || isSavingSettingsKey
+                          ? 'bg-amplify-elements-borderColor text-amplify-elements-textTertiary cursor-not-allowed'
+                          : 'bg-accent-500 text-white hover:bg-accent-600',
+                      )}
+                    >
+                      {isSavingSettingsKey ? 'Saving...' : 'Save Key'}
+                    </button>
+                    {activeProvider?.getApiKeyLink && (
+                      <a
+                        href={activeProvider.getApiKeyLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-amplify-elements-textSecondary hover:text-accent-500 transition-colors flex items-center gap-1"
+                      >
+                        Get key <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Model Configuration section — moved here from the model picker's PANEL 2 */}
+              <div className="space-y-3">
+                <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary block">
+                  Model Configuration
+                </span>
+
+                {/* 1. EFFORT-BASED REASONING (OpenAI o-series, Grok 3/4) */}
+                {thinkingControlState === 'effort-only' && (
+                  <div className="space-y-2.5">
+                    <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
+                      Reasoning Effort
+                    </span>
+                    <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
+                      {(['low', 'medium', 'high'] as const).map((effort) => (
+                        <button
+                          key={effort}
+                          onClick={() => setThinkingOverride(effort)}
+                          className={classNames(
+                            'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
+                            thinkingOverride === effort
+                              ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
+                              : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
+                          )}
+                        >
+                          {effort}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. BUDGET TOKEN TOGGLE + SLIDER (Gemini 2.5+, Claude 3.7/4) */}
+                {thinkingControlState === 'toggle+budget' && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
+                        Enable Thinking
+                      </span>
+                      <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+                    </div>
+                    {thinkingEnabled ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-amplify-elements-textSecondary">Thinking Budget:</span>
+                          <span className="font-mono text-accent-500 font-bold">
+                            {budgetTokens.toLocaleString()} tokens
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          className="chatbox-range w-full cursor-pointer"
+                          min={1024}
+                          max={32768}
+                          step={1024}
+                          value={budgetTokens}
+                          onChange={(e) => setBudgetTokens(Number(e.target.value))}
+                          style={{
+                            ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / (32768 - 1024)) * 100}%`,
+                          }}
+                        />
+                        <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
+                          <span>1,024</span>
+                          <span>32,768 max</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
+                        Thinking disabled. Falling back to simple response path.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. ALWAYS-ON LOCKED REASONING (DeepSeek Reasoner) */}
+                {thinkingControlState === 'on-and-locked' && (
+                  <div className="space-y-2 text-center py-2 bg-accent-500/5 border border-accent-500/10 rounded-xl">
+                    <IconifyIcon icon="lucide:shield-alert" className="text-lg text-accent-500" />
+                    <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
+                    <p className="text-[10px] text-amplify-elements-textSecondary px-3 leading-normal">
+                      This model enforces internal thought pathways. No budget token caps can be configured.
+                    </p>
+                  </div>
+                )}
+
+                {/* 4. NON-REASONING CHANNELS */}
+                {thinkingControlState === 'off-and-locked' && (
+                  <div className="py-4 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
+                    <IconifyIcon
+                      icon="lucide:alert-circle"
+                      className="text-amplify-elements-textSecondary text-lg mb-1"
+                    />
+                    <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
+                    <p className="text-amplify-elements-textTertiary text-[10px] px-3 mt-0.5 leading-normal">
+                      This model accepts standard parameters and does not route through reasoning token engines.
+                    </p>
+                  </div>
+                )}
+
+                {/* 5. DYNAMIC OUTPUT TOKEN CAP */}
+                {activeModel?.maxCompletionTokens && (
+                  <div className="space-y-2 pt-2 border-t border-amplify-elements-borderColor">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-amplify-elements-textSecondary">Max Output Cap:</span>
+                      <span className="font-mono text-amplify-elements-textPrimary">
+                        {maxOutputTokens.toLocaleString()} tokens
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      className="chatbox-range w-full cursor-pointer"
+                      min={1024}
+                      max={activeModel.maxCompletionTokens}
+                      step={1024}
+                      value={maxOutputTokens}
+                      onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
+                      style={{
+                        ['--chatbox-range-pct' as any]: `${((maxOutputTokens - 1024) / Math.max(1, activeModel.maxCompletionTokens - 1024)) * 100}%`,
+                      }}
+                    />
+                    <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
+                      <span>1,024</span>
+                      <span>{activeModel.maxCompletionTokens.toLocaleString()} max</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Unified, borderless chat input bar */}
         <div
           ref={chatInputContainerRef}
@@ -972,17 +1342,24 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           {/* Textarea */}
           <textarea
             ref={props.textareaRef}
-            placeholder={props.chatMode === 'build' ? 'How can Amplify help you today?' : 'What would you like to discuss?'}
+            placeholder={
+              props.chatMode === 'build' ? 'How can Amplify help you today?' : 'What would you like to discuss?'
+            }
             value={props.input}
             onChange={props.handleInputChange}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
+
                 if (props.isStreaming) {
                   props.handleStop?.();
                   return;
                 }
-                if (e.nativeEvent.isComposing) return;
+
+                if (e.nativeEvent.isComposing) {
+                  return;
+                }
+
                 handleSend();
               }
             }}
@@ -995,14 +1372,16 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           <div className="flex items-center justify-between pt-1">
             {/* Left side: attach + model picker trigger + (optional) key button */}
             <div className="flex items-center gap-2">
-              {/* File attachment */}
-              <button
-                onClick={() => props.handleFileUpload()}
-                className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors flex items-center justify-center outline-none"
-                title="Attach files"
-              >
-                <IconifyIcon icon="lucide:plus" width="16" height="16" />
-              </button>
+              {/* File attachment — only shown for multimodal (image-capable) models */}
+              {showAttachmentButton && (
+                <button
+                  onClick={() => props.handleFileUpload()}
+                  className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary transition-colors flex items-center justify-center outline-none"
+                  title="Attach files"
+                >
+                  <IconifyIcon icon="lucide:plus" width="16" height="16" />
+                </button>
+              )}
 
               {/* Model picker trigger */}
               <button
@@ -1011,7 +1390,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               >
                 <IconifyIcon
                   icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
-                  className="text-base flex-shrink-0"
+                  className="text-lg flex-shrink-0"
                 />
                 {!isTriggerCompact && (
                   <>
@@ -1028,33 +1407,29 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 )}
               </button>
 
-              {/* API key button (when key missing) */}
-              {showKeyButton && (
-                <div className="relative">
-                  <IconButton
-                    onClick={() => setIsApiKeyPopupOpen(true)}
-                    title="API Key"
-                    className={classNames(
-                      'transition-all',
-                      isKeyMissing
-                        ? 'p-1.5 h-7 w-7 text-destructive hover:text-destructive bg-destructive/10 rounded-md'
-                        : 'p-1.5 h-7 w-7 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-amplify-elements-background-depth-3 rounded-md',
-                    )}
-                  >
-                    <div className="i-ph:key text-sm" />
-                  </IconButton>
-                  <AnimatePresence>
-                    {isApiKeyPopupOpen && (
-                      <APIKeyPopup
-                        provider={props.provider}
-                        apiKey={props.apiKeys[props.provider.name] || ''}
-                        setApiKey={(key) => props.onApiKeysChange(props.provider.name, key)}
-                        onClose={() => setIsApiKeyPopupOpen(false)}
-                      />
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
+              {/* Settings button — opens the provider/model settings popup
+                  (API key + model configuration). Replaces the old standalone
+                  API-key button; the key input now lives inside this popup. */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    setIsProviderOverlayOpen(false);
+                    setIsSettingsPopupOpen(!isSettingsPopupOpen);
+                  }}
+                  className={classNames(
+                    'flex items-center justify-center h-8 w-8 rounded-lg border transition-all active:scale-[0.98] outline-none',
+                    isSettingsPopupOpen
+                      ? 'bg-accent-500/15 text-accent-500 border-accent-500/40'
+                      : isKeyMissing && showKeyButton
+                        ? 'bg-destructive/10 text-destructive border-transparent hover:bg-destructive/20'
+                        : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary border-transparent hover:bg-amplify-elements-item-backgroundActive hover:text-amplify-elements-textPrimary',
+                  )}
+                  title="Provider & model settings"
+                >
+                  <IconifyIcon icon="lucide:sliders-horizontal" width="16" height="16" />
+                </button>
+              </div>
             </div>
 
             {/* Right side: context indicator + send button */}
@@ -1066,7 +1441,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 onClick={handleSend}
                 disabled={!props.input.trim() || props.isStreaming || isKeyMissing}
                 className={`flex justify-center items-center w-10 h-10 rounded-full transition-all duration-200 cursor-pointer disabled:cursor-not-allowed overflow-hidden bg-transparent ${
-                  (!props.input.trim() || props.isStreaming || isKeyMissing)
+                  !props.input.trim() || props.isStreaming || isKeyMissing
                     ? 'text-amplify-elements-textTertiary hover:bg-transparent'
                     : 'text-accent-500 hover:bg-accent-500/10 hover:text-accent-600'
                 }`}
@@ -1109,10 +1484,7 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
   const [tempKey, setTempKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<
-    | { kind: 'idle' }
-    | { kind: 'testing' }
-    | { kind: 'success' }
-    | { kind: 'error'; message: string }
+    { kind: 'idle' } | { kind: 'testing' } | { kind: 'success' } | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
   const handleSave = async () => {
@@ -1120,8 +1492,11 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
       setStatus({ kind: 'error', message: 'API key is required' });
       return;
     }
+
     setStatus({ kind: 'testing' });
+
     const result = await onSave(tempKey.trim());
+
     if (result.ok) {
       setStatus({ kind: 'success' });
     } else {
@@ -1157,8 +1532,8 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
         </div>
 
         <p className="text-[10px] text-amplify-elements-textSecondary mb-3 leading-relaxed">
-          Enabling <span className="text-amplify-elements-textPrimary font-semibold">{provider.name}</span> requires a valid API key.
-          We'll verify the key against the provider's models endpoint before saving it locally.
+          Enabling <span className="text-amplify-elements-textPrimary font-semibold">{provider.name}</span> requires a
+          valid API key. We'll verify the key against the provider's models endpoint before saving it locally.
         </p>
 
         {/* Key input */}
@@ -1168,7 +1543,10 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
             value={tempKey}
             onChange={(e) => {
               setTempKey(e.target.value);
-              if (status.kind !== 'idle') setStatus({ kind: 'idle' });
+
+              if (status.kind !== 'idle') {
+                setStatus({ kind: 'idle' });
+              }
             }}
             placeholder="sk-..."
             autoFocus
@@ -1282,7 +1660,7 @@ function providerIcon(name: string): string {
     Ollama: 'simple-icons:ollama',
     LMStudio: 'simple-icons:lmms',
     OpenAILike: 'lucide:plug',
-    'Z.AI': 'simple-icons:zincsearch',
+    'Z.ai': 'simple-icons:zhipuai',
   };
   return map[name] || 'lucide:cpu';
 }
@@ -1344,6 +1722,84 @@ function getThinkingControlState(
 function isModelReasoning(providerName: string, model: ModelInfo): boolean {
   const state = getThinkingControlState(providerName, model);
   return state !== 'off-and-locked';
+}
+
+/**
+ * Determine whether a (provider, model) pair supports image/multimodal input.
+ * Used to decide whether to show the attachment button. Heuristic based on the
+ * research in RESEARCH-1: providers whose flagship chat models accept images,
+ * with a few text-only refinements.
+ */
+function isMultimodalModel(providerName: string | undefined, model: ModelInfo | undefined | null): boolean {
+  if (!providerName || !model) {
+    return false;
+  }
+
+  const name = (model.name || '').toLowerCase();
+
+  // Known text-only providers (per RESEARCH-1).
+  const textOnlyProviders = ['DeepSeek', 'Cerebras', 'Perplexity', 'Cohere'];
+
+  if (textOnlyProviders.includes(providerName)) {
+    return false;
+  }
+
+  // Z.ai — only the glm-4v family accepts images.
+  if (providerName === 'Z.ai') {
+    return /glm-4v/.test(name);
+  }
+
+  // Local / custom OpenAI-compatible providers — assume multimodal (user's own model).
+  if (['Ollama', 'LMStudio', 'OpenAILike'].includes(providerName)) {
+    return true;
+  }
+
+  // Providers whose chat models are generally multimodal.
+  const multimodalProviders = [
+    'Anthropic',
+    'OpenAI',
+    'Google',
+    'Mistral',
+    'xAI',
+    'Moonshot',
+    'Hyperbolic',
+    'HuggingFace',
+    'OpenRouter',
+    'AmazonBedrock',
+    'GitHub',
+  ];
+
+  if (multimodalProviders.includes(providerName)) {
+    // Refined exclusions within multimodal providers.
+    if (providerName === 'OpenAI' && /(gpt-3\.5|instruct|whisper|tts|dall-e|embedding|moderation)/.test(name)) {
+      return false;
+    }
+
+    if (providerName === 'xAI' && !/(grok-2-vision|grok-3|grok-4|grok-beta)/.test(name)) {
+      return false;
+    }
+
+    if (providerName === 'Mistral' && /(embed|ocr)/.test(name)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // Providers with specific vision model variants.
+  if (providerName === 'Groq' && /vision/.test(name)) {
+    return true;
+  }
+
+  if (providerName === 'Together' && /vision/.test(name)) {
+    return true;
+  }
+
+  if (providerName === 'Fireworks' && /vision/.test(name)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
