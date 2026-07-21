@@ -996,7 +996,65 @@ export function useChatHistory() {
            * empty or a default/placeholder. This avoids clobbering a name
            * the user manually set, or a name set by an artifact title
            * (firstArtifact.title) for AI-injected templates.
+           *
+           * IMPORTANT — provisional-title detection:
+           *   The `else if` branch below sets a PROVISIONAL title (the
+           *   user's first message, truncated to 60 chars) so the sidebar
+           *   isn't empty while the AI's first response is streaming.
+           *   That provisional title is NOT one of the static placeholders
+           *   in the list above, so without special handling the AI's
+           *   `<chatname>` tag would be rejected ("shouldApply = false")
+           *   and the chat would stay named after the user's first
+           *   message forever — exactly the "chat naming is naming the
+           *   chat as my first message" bug we are fixing.
+           *
+           *   We detect a provisional title by comparing the current
+           *   description against the truncated first user message
+           *   (with and without the trailing ellipsis). A match means
+           *   the description is a provisional title that the AI's
+           *   `<chatname>` tag is allowed to replace.
            */
+          const firstUserMessage = messages.find((m) => m.role === 'user');
+          let provisionalTitleCandidates: string[] = [];
+
+          if (firstUserMessage) {
+            let rawContent: any;
+
+            if (Array.isArray(firstUserMessage.parts)) {
+              rawContent = firstUserMessage.parts;
+            } else {
+              rawContent = (firstUserMessage as any).content;
+            }
+
+            let userText: string =
+              typeof rawContent === 'string'
+                ? rawContent
+                : Array.isArray(rawContent)
+                  ? rawContent
+                      .filter((p: any) => p.type === 'text')
+                      .map((p: any) => p.text)
+                      .join(' ')
+                  : '';
+
+            userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
+
+            if (userText) {
+              const truncated = userText.slice(0, 60).trim();
+              const withEllipsis = truncated + (userText.length > 60 ? '…' : '');
+
+              // The provisional-title path produces both forms; check both.
+              if (truncated) {
+                provisionalTitleCandidates.push(truncated);
+              }
+
+              if (withEllipsis && withEllipsis !== truncated) {
+                provisionalTitleCandidates.push(withEllipsis);
+              }
+            }
+          }
+
+          const isProvisionalTitle = provisionalTitleCandidates.includes(currentDesc);
+
           const isRenameableDesc =
             !currentDesc ||
             currentDesc === 'Create initial files' ||
@@ -1005,7 +1063,8 @@ export function useChatHistory() {
             currentDesc === 'New Conversation' ||
             currentDesc === 'Imported Project' ||
             /^Start with .+ Template$/.test(currentDesc) ||
-            /^Git Project:/i.test(currentDesc);
+            /^Git Project:/i.test(currentDesc) ||
+            isProvisionalTitle;
 
           const firstArtifactTitle = firstArtifact?.title;
           const descIsArtifactTitle = firstArtifactTitle && currentDesc === firstArtifactTitle;

@@ -1,22 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Icon as IconifyIcon } from '@iconify/react';
-import { Paperclip, X, FileText, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
-import { ClientOnly } from 'remix-utils/client-only';
+import { X, FileText, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { classNames } from '~/utils/classNames';
 import { LOCAL_PROVIDERS, providersStore, updateProviderSettings } from '~/lib/stores/settings';
-import FilePreview from './FilePreview';
-import { ScreenshotStateManager } from './ScreenshotStateManager';
 import { Switch } from '~/components/ui/Switch';
-import { SupabaseConnection } from './SupabaseConnection';
-import { ExpoQrModal } from '~/components/workbench/ExpoQrModal';
 import styles from './BaseChat.module.scss';
 import type { ProviderInfo } from '~/types/model';
-import { ColorSchemeDialog } from '~/components/ui/ColorSchemeDialog';
-import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
-import { McpTools } from './MCPTools';
-import { WebSearch } from './WebSearch.client';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
 import { customProvidersStore } from '~/lib/stores/custom-providers';
@@ -57,13 +48,7 @@ interface ChatBoxProps {
   TEXTAREA_MAX_HEIGHT: number;
   isStreaming: boolean;
   handleSendMessage: (event: React.UIEvent, messageInput?: string) => void;
-  isListening: boolean;
-  startListening: () => void;
-  stopListening: () => void;
   chatStarted: boolean;
-  exportChat?: () => void;
-  qrModalOpen: boolean;
-  setQrModalOpen: (open: boolean) => void;
   handleFileUpload: () => void;
   setProvider?: ((provider: ProviderInfo) => void) | undefined;
   model?: string | undefined;
@@ -72,13 +57,6 @@ interface ChatBoxProps {
   setImageDataList?: ((dataList: string[]) => void) | undefined;
   handleInputChange?: ((event: React.ChangeEvent<HTMLTextAreaElement>) => void) | undefined;
   handleStop?: (() => void) | undefined;
-  enhancingPrompt?: boolean | undefined;
-  enhancePrompt?: () => void;
-  onWebSearchResult?: (result: string) => void;
-  chatMode?: 'discuss' | 'build';
-  setChatMode?: (mode: 'discuss' | 'build') => void;
-  designScheme?: DesignScheme;
-  setDesignScheme?: (scheme: DesignScheme) => void;
   selectedElement?: ElementInfo | null;
   setSelectedElement?: ((element: ElementInfo | null) => void) | undefined;
   messages?: any[];
@@ -737,7 +715,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         filteredProviders.map(({ provider: prov, models }) => (
                           <div key={prov.name} className="space-y-1">
                             <div className="text-[9px] text-amplify-elements-textSecondary font-bold uppercase tracking-wider px-2 flex items-center gap-1.5 py-0.5">
-                              <IconifyIcon icon={providerIcon(prov.name)} width="15" height="15" />
+                              <ProviderIcon name={prov.name} className="text-[15px]" />
                               <span>{prov.name}</span>
                             </div>
                             <div className="space-y-0.5">
@@ -843,8 +821,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                 >
                                   <div className="flex items-center gap-2.5 min-w-0">
                                     <div className="w-10 h-10 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
-                                      <IconifyIcon
-                                        icon={providerIcon(prov.name)}
+                                      <ProviderIcon
+                                        name={prov.name}
                                         className="text-xl text-amplify-elements-textPrimary"
                                       />
                                     </div>
@@ -1121,8 +1099,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
-                    <IconifyIcon
-                      icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
+                    <ProviderIcon
+                      name={activeProvider ? activeProvider.name : 'Default'}
                       className="text-lg text-amplify-elements-textPrimary"
                     />
                   </div>
@@ -1342,9 +1320,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
           {/* Textarea */}
           <textarea
             ref={props.textareaRef}
-            placeholder={
-              props.chatMode === 'build' ? 'How can Amplify help you today?' : 'What would you like to discuss?'
-            }
+            placeholder="How can Amplify help you today?"
             value={props.input}
             onChange={props.handleInputChange}
             onKeyDown={(e) => {
@@ -1388,8 +1364,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 h-8 px-2.5 bg-amplify-elements-background-depth-3 hover:bg-amplify-elements-item-backgroundActive border border-amplify-elements-borderColor rounded-lg shadow-sm transition-all active:scale-[0.98] outline-none select-none text-amplify-elements-textPrimary"
               >
-                <IconifyIcon
-                  icon={activeProvider ? providerIcon(activeProvider.name) : 'lucide:cpu'}
+                <ProviderIcon
+                  name={activeProvider ? activeProvider.name : 'Default'}
                   className="text-lg flex-shrink-0"
                 />
                 {!isTriggerCompact && (
@@ -1520,7 +1496,7 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <IconifyIcon icon={providerIcon(provider.name)} className="text-base text-amplify-elements-textPrimary" />
+            <ProviderIcon name={provider.name} className="text-base text-amplify-elements-textPrimary" />
             <span className="text-sm font-bold text-amplify-elements-textPrimary">{provider.name} API Key</span>
           </div>
           <button
@@ -1634,36 +1610,78 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
 /* -------------------------------------------------------------------------- */
 
 /**
- * Map provider name -> Iconify icon. Mirrors the curated design's icon set
- * but extended for every built-in provider in this repo.
+ * ProviderIcon — renders a provider's logo using the LOCAL SVG collection
+ * (`/icons/<Name>.svg`, wired into UnoCSS as `i-amplify:<Name>`).
+ *
+ * Why local SVGs instead of Iconify (`logos:anthropic-icon` etc.)?
+ *   - Iconify icons are fetched from a CDN at runtime; if the CDN is
+ *     unreachable, blocked, or the icon name is wrong, the icon slot
+ *     renders EMPTY — which is exactly the "most providers are missing
+ *     a logo" bug we are fixing.
+ *   - The local SVGs in `/icons/` are bundled into the CSS at build time
+ *     via UnoCSS `presetIcons` + the `customIconCollection` in
+ *     `uno.config.ts`. They always render, offline, with no network
+ *     dependency.
+ *
+ * Every provider in `PROVIDER_LIST` has a matching `<Name>.svg` file
+ * (see `/icons/` directory). The map below is the source of truth for
+ * the provider-name → SVG-filename mapping. The `Github` provider is
+ * named `'Github'` (lowercase `h`) in the provider class — the map
+ * handles that case explicitly so the GitHub logo resolves correctly.
  */
-function providerIcon(name: string): string {
-  const map: Record<string, string> = {
-    Anthropic: 'logos:anthropic-icon',
-    OpenAI: 'logos:openai-icon',
-    Google: 'logos:google-gemini',
-    DeepSeek: 'selfhst:deepseek',
-    xAI: 'selfhst:grok-light',
-    Cohere: 'logos:cohere-icon',
-    Mistral: 'logos:mistral-icon',
-    Groq: 'logos:groq-icon',
-    Together: 'logos:together-ai-icon',
-    OpenRouter: 'simple-icons:openrouter',
-    Hyperbolic: 'simple-icons:h',
-    Perplexity: 'simple-icons:perplexity',
-    HuggingFace: 'logos:hugging-face-icon',
-    Moonshot: 'simple-icons:moon',
-    Fireworks: 'simple-icons:fireworks',
-    Cerebras: 'simple-icons:cerebras',
-    AmazonBedrock: 'logos:aws',
-    GitHub: 'logos:github-icon',
-    Ollama: 'simple-icons:ollama',
-    LMStudio: 'simple-icons:lmms',
-    OpenAILike: 'lucide:plug',
-    'Z.ai': 'simple-icons:zhipuai',
-  };
-  return map[name] || 'lucide:cpu';
+const PROVIDER_ICON_CLASS: Record<string, string> = {
+  Anthropic: 'i-amplify:Anthropic',
+  OpenAI: 'i-amplify:OpenAI',
+  Google: 'i-amplify:Google',
+  Deepseek: 'i-amplify:Deepseek',
+  xAI: 'i-amplify:xAI',
+  Cohere: 'i-amplify:Cohere',
+  Mistral: 'i-amplify:Mistral',
+  Groq: 'i-amplify:Groq',
+  Together: 'i-amplify:Together',
+  OpenRouter: 'i-amplify:OpenRouter',
+  Hyperbolic: 'i-amplify:Hyperbolic',
+  Perplexity: 'i-amplify:Perplexity',
+  HuggingFace: 'i-amplify:HuggingFace',
+  Moonshot: 'i-amplify:Moonshot',
+  Fireworks: 'i-amplify:Fireworks',
+  Cerebras: 'i-amplify:Cerebras',
+  AmazonBedrock: 'i-amplify:AmazonBedrock',
+  Github: 'i-amplify:Github',
+  GitHub: 'i-amplify:Github',
+  Ollama: 'i-amplify:Ollama',
+  LMStudio: 'i-amplify:LMStudio',
+  OpenAILike: 'i-amplify:OpenAILike',
+  'Z.ai': 'i-amplify:Zai',
+};
+
+function providerIconClass(name: string): string {
+  return PROVIDER_ICON_CLASS[name] || 'i-amplify:Default';
 }
+
+/**
+ * ProviderIcon — renders the provider logo as a UnoCSS icon (`<i>`-like div).
+ *
+ * Pass `size` as a Tailwind text-size class (e.g. `text-base`, `text-lg`,
+ * `text-xl`) — UnoCSS icon classes use `1em` units, so the SVG scales with
+ * the surrounding font-size. This matches how `framework-meta.ts` renders
+ * its icons (e.g. `<div className="i-amplify:react text-xl" />`).
+ */
+const ProviderIcon = ({
+  name,
+  className = '',
+}: {
+  name: string;
+  className?: string;
+}) => {
+  return (
+    <div
+      className={classNames(providerIconClass(name), 'inline-block', className)}
+      role="img"
+      aria-label={name}
+    />
+  );
+};
 
 /**
  * Determine the reasoning/thinking control state for a (provider, model) pair.

@@ -493,23 +493,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     isStreaming={isStreaming}
                     handleStop={handleStop}
                     handleSendMessage={handleSendMessage}
-                    enhancingPrompt={enhancingPrompt}
-                    enhancePrompt={enhancePrompt}
-                    isListening={isListening}
-                    startListening={startListening}
-                    stopListening={stopListening}
                     chatStarted={chatStarted}
-                    exportChat={exportChat}
-                    qrModalOpen={qrModalOpen}
-                    setQrModalOpen={setQrModalOpen}
                     handleFileUpload={handleFileUpload}
-                    chatMode={chatMode}
-                    setChatMode={setChatMode}
-                    designScheme={designScheme}
-                    setDesignScheme={setDesignScheme}
                     selectedElement={selectedElement}
                     setSelectedElement={setSelectedElement}
-                    onWebSearchResult={onWebSearchResult}
                     messages={messages}
                   />
                 </div>
@@ -677,23 +664,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           isStreaming={isStreaming}
                           handleStop={handleStop}
                           handleSendMessage={handleSendMessage}
-                          enhancingPrompt={enhancingPrompt}
-                          enhancePrompt={enhancePrompt}
-                          isListening={isListening}
-                          startListening={startListening}
-                          stopListening={stopListening}
                           chatStarted={chatStarted}
-                          exportChat={exportChat}
-                          qrModalOpen={qrModalOpen}
-                          setQrModalOpen={setQrModalOpen}
                           handleFileUpload={handleFileUpload}
-                          chatMode={chatMode}
-                          setChatMode={setChatMode}
-                          designScheme={designScheme}
-                          setDesignScheme={setDesignScheme}
                           selectedElement={selectedElement}
                           setSelectedElement={setSelectedElement}
-                          onWebSearchResult={onWebSearchResult}
                           messages={messages}
                         />
                       </div>
