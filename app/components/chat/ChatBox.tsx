@@ -1910,49 +1910,68 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
 /* -------------------------------------------------------------------------- */
 
 /**
- * ProviderIcon — renders a provider's logo using the LOCAL SVG collection
- * (`/icons/<Name>.svg`, wired into UnoCSS as `i-amplify:<Name>`).
+ * ProviderIcon — renders a provider's brand logo.
  *
- * Why local SVGs instead of Iconify (`logos:anthropic-icon` etc.)?
- *   - Iconify icons are fetched from a CDN at runtime; if the CDN is
- *     unreachable, blocked, or the icon name is wrong, the icon slot
- *     renders EMPTY — which is exactly the "most providers are missing
- *     a logo" bug we are fixing.
- *   - The local SVGs in `/icons/` are bundled into the CSS at build time
- *     via UnoCSS `presetIcons` + the `customIconCollection` in
- *     `uno.config.ts`. They always render, offline, with no network
- *     dependency.
+ * ICON SOURCE STRATEGY (VERIFIED):
+ * --------------------------------
+ * All provider icons are bundled as local SVGs in `/icons/*.svg` and
+ * wired into UnoCSS as `i-amplify:<Name>` classes. The SVGs come from
+ * three sources, but at runtime there is ONE unified code path —
+ * UnoCSS reads the small per-icon SVG files at build time, so there's
+ * no CDN dependency, no multi-MB JSON collection to load, and no
+ * chance of an icon silently failing to render.
  *
- * Every provider in `PROVIDER_LIST` has a matching `<Name>.svg` file
- * (see `/icons/` directory). The map below is the source of truth for
- * the provider-name → SVG-filename mapping. The `Github` provider is
- * named `'Github'` (lowercase `h`) in the provider class — the map
- * handles that case explicitly so the GitHub logo resolves correctly.
+ * 1. Iconify `logos` collection — extracted to local SVGs via
+ *    `scripts/extract-iconify-icons.py`. These retain the official
+ *    brand colors (multi-color where applicable):
+ *      Anthropic, OpenAI, Google (Gemini), DeepSeek, xAI, Mistral,
+ *      Perplexity, HuggingFace, Moonshot, GitHub, AWS (for Bedrock)
+ *
+ * 2. Iconify `simpleIcons` collection — extracted to local SVGs:
+ *      Ollama, OpenRouter, LMStudio, Z.ai
+ *
+ * 3. Direct fetches from provider websites (cropped to icon-only):
+ *      Cohere (cohere.com/logo.svg)
+ *      Groq (groq.com homepage — lightning bolt extracted)
+ *      Together (together.ai homepage nav-logo)
+ *      Hyperbolic (hyperbolic.xyz homepage svg-logo)
+ *      Cerebras (cerebras.ai homepage)
+ *      Fireworks (docs.fireworks.ai/favicon.svg)
+ *
+ * Files suffixed `-iconify.svg` are from source (1) or (2).
+ * Files without the suffix are from source (3) or pre-existing local assets.
  */
 const PROVIDER_ICON_CLASS: Record<string, string> = {
-  Anthropic: 'i-amplify:Anthropic',
-  OpenAI: 'i-amplify:OpenAI',
-  Google: 'i-amplify:Google',
-  Deepseek: 'i-amplify:Deepseek',
-  xAI: 'i-amplify:xAI',
+  // === From Iconify `logos` collection (extracted to local SVGs) ===
+  Anthropic: 'i-amplify:Anthropic-iconify',
+  OpenAI: 'i-amplify:OpenAI-iconify',
+  Google: 'i-amplify:Google-iconify',
+  Deepseek: 'i-amplify:Deepseek-iconify',
+  xAI: 'i-amplify:xAI-iconify',
+  Mistral: 'i-amplify:Mistral-iconify',
+  Perplexity: 'i-amplify:Perplexity-iconify',
+  HuggingFace: 'i-amplify:HuggingFace-iconify',
+  Moonshot: 'i-amplify:Moonshot-iconify',
+  Github: 'i-amplify:Github-iconify',
+  GitHub: 'i-amplify:Github-iconify',
+  AmazonBedrock: 'i-amplify:AmazonBedrock-iconify',
+
+  // === From Iconify `simpleIcons` collection (extracted to local SVGs) ===
+  Ollama: 'i-amplify:Ollama-iconify',
+  OpenRouter: 'i-amplify:OpenRouter-iconify',
+  LMStudio: 'i-amplify:LMStudio-iconify',
+  'Z.ai': 'i-amplify:Zai-iconify',
+
+  // === Direct fetches from provider websites (cropped to icon-only) ===
   Cohere: 'i-amplify:Cohere',
-  Mistral: 'i-amplify:Mistral',
   Groq: 'i-amplify:Groq',
   Together: 'i-amplify:Together',
-  OpenRouter: 'i-amplify:OpenRouter',
   Hyperbolic: 'i-amplify:Hyperbolic',
-  Perplexity: 'i-amplify:Perplexity',
-  HuggingFace: 'i-amplify:HuggingFace',
-  Moonshot: 'i-amplify:Moonshot',
-  Fireworks: 'i-amplify:Fireworks',
   Cerebras: 'i-amplify:Cerebras',
-  AmazonBedrock: 'i-amplify:AmazonBedrock',
-  Github: 'i-amplify:Github',
-  GitHub: 'i-amplify:Github',
-  Ollama: 'i-amplify:Ollama',
-  LMStudio: 'i-amplify:LMStudio',
+  Fireworks: 'i-amplify:Fireworks',
+
+  // === Generic local SVGs ===
   OpenAILike: 'i-amplify:OpenAILike',
-  'Z.ai': 'i-amplify:Zai',
 };
 
 function providerIconClass(name: string): string {

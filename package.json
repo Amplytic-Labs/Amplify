@@ -189,6 +189,7 @@
     "@electron/notarize": "^2.5.0",
     "@iconify-json/logos": "^1.2.11",
     "@iconify-json/ph": "^1.2.1",
+    "@iconify-json/simple-icons": "^1.2.91",
     "@iconify/types": "^2.0.0",
     "@remix-run/dev": "^2.15.2",
     "@remix-run/serve": "^2.15.2",
