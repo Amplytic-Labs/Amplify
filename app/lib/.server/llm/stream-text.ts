@@ -22,6 +22,8 @@ import { getTemplates } from '~/utils/selectStarterTemplate';
 import { SkillLoader } from '~/lib/services/skillLoader';
 import { stripChatName } from '~/lib/chat/chatname';
 import { getToolState, getToolOutput } from '~/lib/chat/tool-parts';
+import { buildThinkingProviderOptions, supportsThinkingConfig } from './thinking';
+import { preFlightCheck, estimateRequestTokens, shrinkMessagesToFit, type RateLimitConfig } from './rate-limit';
 
 export type Messages = UIMessage[];
 
@@ -164,6 +166,29 @@ export async function streamText(props: {
    * the model works WITH the existing workspace instead of reinitializing.
    */
   projectContinuation?: boolean;
+
+  /**
+   * Unified thinking/reasoning config from the ChatBox settings popup.
+   * Translated into per-provider `providerOptions` via
+   * `buildThinkingProviderOptions` (see ./thinking.ts).
+   */
+  modelConfig?: {
+    thinkingEnabled: boolean;
+    budgetTokens: number;
+    effort: 'low' | 'medium' | 'high';
+    maxOutputTokens: number;
+  };
+
+  /**
+   * Per-provider rate-limit config (RPM / TPM / RPD) entered by the user.
+   * Used for pre-flight TPM checks and RPM throttling before the API call.
+   */
+  rateLimit?: {
+    rpm: number;
+    tpm: number;
+    rpd: number;
+    autoShrinkToTpm: boolean;
+  };
 }) {
   const {
     messages,
@@ -183,6 +208,8 @@ export async function streamText(props: {
     userContext,
     projectContext,
     projectContinuation,
+    modelConfig,
+    rateLimit,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -193,6 +220,7 @@ export async function streamText(props: {
       const { model, provider, content } = extractPropertiesFromMessage(message);
       currentModel = model;
       currentProvider = provider;
+
       // In UIMessage, content is accessed via parts; store sanitized content for compatibility
       if (typeof content === 'string') {
         (newMessage as any).content = sanitizeText(content);
@@ -204,6 +232,7 @@ export async function streamText(props: {
             .map((p: any) => p.text)
             .join('')
         : (message as any).content || '';
+
       /*
        * Strip any `<chatname>…</chatname>` tag the model emitted on a
        * PREVIOUS turn. The tag is a one-shot naming signal consumed by
@@ -247,6 +276,7 @@ export async function streamText(props: {
          * v4 parts (still in IndexedDB for old chats) are also truncated.
          */
         const partAny = part as any;
+
         if (isToolUIPart(partAny)) {
           const partState = getToolState(partAny);
           const result = getToolOutput(partAny);
@@ -259,16 +289,18 @@ export async function streamText(props: {
             const truncatedResult =
               result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
 
-            // Rebuild the part with the truncated output. Keep the FLAT v7
-            // shape (`output` directly on the part) as the primary form;
-            // also mirror it onto the legacy `toolInvocation.result` for
-            // any consumer still expecting the nested v4 shape.
-            //
-            // Cast through `any` again because the `isToolUIPart` type guard
-            // narrows `partAny` to `ToolUIPart | DynamicToolUIPart`, which
-            // doesn't include the legacy `toolInvocation` field. We need to
-            // access it conditionally for backward compatibility with old
-            // persisted v4 messages.
+            /*
+             * Rebuild the part with the truncated output. Keep the FLAT v7
+             * shape (`output` directly on the part) as the primary form;
+             * also mirror it onto the legacy `toolInvocation.result` for
+             * any consumer still expecting the nested v4 shape.
+             *
+             * Cast through `any` again because the `isToolUIPart` type guard
+             * narrows `partAny` to `ToolUIPart | DynamicToolUIPart`, which
+             * doesn't include the legacy `toolInvocation` field. We need to
+             * access it conditionally for backward compatibility with old
+             * persisted v4 messages.
+             */
             const legacy: any = partAny as any;
             const updatedPart: any = { ...partAny, output: truncatedResult };
 
@@ -564,8 +596,12 @@ export async function streamText(props: {
     );
   }
 
-  // Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models
-  const tokenParams = isReasoning ? { maxCompletionTokens: safeMaxTokens } : { maxTokens: safeMaxTokens };
+  /*
+   * Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models.
+   * NOTE: the actual tokenParams used in streamParams are computed later as
+   * `effectiveTokenParams` (which folds in the user's maxOutputTokens override).
+   * This declaration is kept only for the `isReasoning ? { temperature: 1 }` block below.
+   */
 
   // Filter out unsupported parameters for reasoning models
   const filteredOptions =
@@ -610,12 +646,131 @@ export async function streamText(props: {
     providerSettings,
   });
 
+  /*
+   * RATE-LIMIT PRE-FLIGHT (RPM / TPM / RPD)
+   * ----------------------------------------
+   * The user inputs their provider's actual limits in the ChatBox
+   * settings popup (we cannot reliably know them — they vary by tier,
+   * account, and payment status). Here we:
+   *
+   *   1. Estimate the request's token count from the message bodies.
+   *   2. Run the pre-flight check (see ./rate-limit.ts).
+   *   3. If the check says to throttle, sleep `throttleMs` before sending.
+   *   4. If the check says to auto-shrink, drop older messages from the
+   *      head of `processedMessages` until the estimate fits.
+   *   5. If the check says to hard-reject, throw with a user-readable
+   *      error so the UI surfaces a clear "would exceed X" message
+   *      instead of a generic 429 from the provider.
+   *
+   * NOTE: this runs ON THE SERVER, per-request. The counters are
+   * in-memory and per-instance (see ./rate-limit.ts header comment).
+   */
+  if (rateLimit && (rateLimit.rpm > 0 || rateLimit.tpm > 0 || rateLimit.rpd > 0)) {
+    const estimatedTokens = estimateRequestTokens(processedMessages as any, systemPrompt, safeMaxTokens);
+
+    const preFlight = preFlightCheck(provider.name, rateLimit as RateLimitConfig, estimatedTokens);
+
+    if (preFlight.message) {
+      logger.info(`[rate-limit] ${provider.name}: ${preFlight.message}`);
+    }
+
+    // Hard reject — surface a clean error to the user.
+    if (!preFlight.ok) {
+      const errMsg =
+        preFlight.message ?? `Rate limit (${preFlight.reason?.toUpperCase()}) would be exceeded for ${provider.name}.`;
+
+      logger.warn(`[rate-limit] REJECTING request for ${provider.name}: ${errMsg}`);
+      throw new Error(errMsg);
+    }
+
+    // Throttle — sleep before sending.
+    if (preFlight.throttleMs > 0) {
+      logger.info(`[rate-limit] Throttling ${preFlight.throttleMs}ms before sending to ${provider.name}…`);
+      await new Promise((resolve) => setTimeout(resolve, preFlight.throttleMs));
+    }
+
+    // Auto-shrink — drop older messages from the head.
+    if (preFlight.shrinkToTokens !== undefined && preFlight.shrinkToTokens > 0) {
+      const shrunk = shrinkMessagesToFit(
+        processedMessages as any,
+        systemPrompt,
+        safeMaxTokens,
+        preFlight.shrinkToTokens,
+      );
+
+      if (shrunk.length < processedMessages.length) {
+        logger.info(
+          `[rate-limit] Shrunk ${processedMessages.length - shrunk.length} older message(s) ` +
+            `to fit TPM budget for ${provider.name}.`,
+        );
+        processedMessages = shrunk as typeof processedMessages;
+      }
+    }
+  }
+
+  /*
+   * THINKING / REASONING providerOptions
+   * ------------------------------------
+   * Translate the unified `modelConfig` (edited by the ChatBox settings
+   * popup) into the per-provider `providerOptions` shape the Vercel AI
+   * SDK expects. This is the CRITICAL wiring that was missing — without
+   * it, the thinking toggle / effort slider in the UI had zero effect
+   * on the actual API request.
+   *
+   * For Gemini specifically, `includeThoughts: true` MUST be set or
+   * the API silently discards thought tokens even when the model is
+   * "thinking" internally.
+   *
+   * See ./thinking.ts for the full per-provider breakdown.
+   */
+  const thinkingProviderOptions = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig);
+
+  const hasThinkingOpts = supportsThinkingConfig(provider.name, modelDetails.name);
+
+  if (hasThinkingOpts) {
+    logger.info(
+      `[thinking] providerOptions for ${provider.name}/${modelDetails.name}: ` +
+        JSON.stringify(thinkingProviderOptions),
+    );
+  }
+
+  /*
+   * User-configured maxOutputTokens (from the ChatBox "Max Output Cap"
+   * slider) overrides the model's default. 0 = use model default
+   * (safeMaxTokens already reflects the model cap).
+   */
+  const effectiveMaxTokens =
+    modelConfig?.maxOutputTokens && modelConfig.maxOutputTokens > 0
+      ? Math.min(modelConfig.maxOutputTokens, safeMaxTokens)
+      : safeMaxTokens;
+
+  const effectiveTokenParams = isReasoning
+    ? { maxCompletionTokens: effectiveMaxTokens }
+    : { maxTokens: effectiveMaxTokens };
+
   const streamParams = {
     model: modelInstance,
     system: chatMode === 'build' ? systemPrompt : discussPrompt(),
-    ...tokenParams,
+    ...effectiveTokenParams,
     messages: await convertToModelMessages(processedMessages as any),
     ...filteredOptions,
+
+    /*
+     * CRITICAL — merge the per-provider thinking options into the
+     * streamText call. The AI SDK passes `providerOptions` straight
+     * through to the underlying provider's HTTP request body, where:
+     *
+     *   - Google reads `providerOptions.google.thinkingConfig`
+     *   - Anthropic reads `providerOptions.anthropic.thinking`
+     *   - OpenAI reads `providerOptions.openai.reasoningEffort`
+     *   - xAI (openai-compatible) reads `providerOptions.openaiCompatible.reasoningEffort`
+     *   - Mistral reads `providerOptions.mistral.reasoningEffort`
+     *
+     * Empty object = SDK uses default behavior (no thinking config).
+     */
+    ...(hasThinkingOpts && Object.keys(thinkingProviderOptions).length > 0
+      ? { providerOptions: thinkingProviderOptions }
+      : {}),
 
     tools: {
       ...options?.tools,

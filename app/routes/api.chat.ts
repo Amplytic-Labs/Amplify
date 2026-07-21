@@ -53,10 +53,7 @@ function parseCookies(cookieHeader: string): Record<string, string> {
  * Helper to write a progress data chunk via the UIMessageStreamWriter.
  * Replaces the old dataStream.writeData({ type: 'progress', ... }) pattern.
  */
-function writeProgress(
-  writer: UIMessageStreamWriter,
-  annotation: ProgressAnnotation,
-) {
+function writeProgress(writer: UIMessageStreamWriter, annotation: ProgressAnnotation) {
   writer.write({ type: 'data-progress' as const, data: annotation });
 }
 
@@ -64,10 +61,7 @@ function writeProgress(
  * Helper to write a message annotation data chunk via the UIMessageStreamWriter.
  * Replaces the old dataStream.writeMessageAnnotation({ ... }) pattern.
  */
-function writeAnnotation(
-  writer: UIMessageStreamWriter,
-  annotation: Record<string, any>,
-) {
+function writeAnnotation(writer: UIMessageStreamWriter, annotation: Record<string, any>) {
   writer.write({ type: 'data-annotation' as const, data: annotation });
 }
 
@@ -93,6 +87,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     userContext,
     projectContext,
     projectContinuation,
+    modelConfig,
+    rateLimit,
   } = await request.json<{
     messages: Messages;
     files: any;
@@ -113,6 +109,28 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     userContext?: string;
     projectContext?: string;
     projectContinuation?: boolean;
+
+    /*
+     * Unified thinking/reasoning config — translated into per-provider
+     * providerOptions inside stream-text.ts (see buildThinkingProviderOptions).
+     */
+    modelConfig?: {
+      thinkingEnabled: boolean;
+      budgetTokens: number;
+      effort: 'low' | 'medium' | 'high';
+      maxOutputTokens: number;
+    };
+
+    /*
+     * Per-provider rate-limit config — used for pre-flight TPM check
+     * and RPM throttle inside stream-text.ts.
+     */
+    rateLimit?: {
+      rpm: number;
+      tpm: number;
+      rpd: number;
+      autoShrinkToTpm: boolean;
+    };
   }>();
 
   const cookieHeader = request.headers.get('Cookie');
@@ -137,6 +155,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
       // UIMessage uses parts array, not content string
       const textParts = message.parts?.filter((p: any) => p.type === 'text') || [];
       const text = textParts.map((p: any) => p.text || '').join('');
+
       return acc + text;
     }, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
@@ -209,6 +228,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             providerSettings,
             promptId,
             contextOptimization,
+
             // AI SDK v7: use onFinish instead of onEnd
             onFinish(resp: any) {
               if (resp.usage) {
@@ -216,7 +236,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
                 logger.debug('createSummary token usage', JSON.stringify(resp.usage));
                 cumulativeUsage.completionTokens += u.completionTokens || u.outputTokens || 0;
                 cumulativeUsage.promptTokens += u.promptTokens || u.inputTokens || 0;
-                cumulativeUsage.totalTokens += u.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
+                cumulativeUsage.totalTokens +=
+                  u.totalTokens || cumulativeUsage.completionTokens + cumulativeUsage.promptTokens;
               }
             },
           });
@@ -255,6 +276,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
             promptId,
             contextOptimization,
             summary,
+
             // AI SDK v7: use onFinish instead of onEnd
             onFinish(resp: any) {
               if (resp.usage) {
@@ -262,7 +284,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
                 logger.debug('selectContext token usage', JSON.stringify(resp.usage));
                 cumulativeUsage.completionTokens += u.completionTokens || u.outputTokens || 0;
                 cumulativeUsage.promptTokens += u.promptTokens || u.inputTokens || 0;
-                cumulativeUsage.totalTokens += u.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
+                cumulativeUsage.totalTokens +=
+                  u.totalTokens || cumulativeUsage.completionTokens + cumulativeUsage.promptTokens;
               }
             },
           });
@@ -313,7 +336,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               const usageAny = usage as any;
               cumulativeUsage.completionTokens += usageAny.completionTokens || usageAny.outputTokens || 0;
               cumulativeUsage.promptTokens += usageAny.promptTokens || usageAny.inputTokens || 0;
-              cumulativeUsage.totalTokens += usageAny.totalTokens || (cumulativeUsage.completionTokens + cumulativeUsage.promptTokens);
+              cumulativeUsage.totalTokens +=
+                usageAny.totalTokens || cumulativeUsage.completionTokens + cumulativeUsage.promptTokens;
             }
 
             if (finishReason !== 'length') {
@@ -348,11 +372,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
             const lastUserMessage = processedMessages.filter((x: any) => x.role == 'user').slice(-1)[0];
             const { model, provider } = extractPropertiesFromMessage(lastUserMessage);
-            processedMessages.push({ id: generateId(), role: 'assistant' as const, parts: [{ type: 'text' as const, text: content }] });
+            processedMessages.push({
+              id: generateId(),
+              role: 'assistant' as const,
+              parts: [{ type: 'text' as const, text: content }],
+            });
             processedMessages.push({
               id: generateId(),
               role: 'user' as const,
-              parts: [{ type: 'text' as const, text: `[Model: ${model}]\n\n[Provider: ${provider}]\n\n${CONTINUE_PROMPT}` }],
+              parts: [
+                { type: 'text' as const, text: `[Model: ${model}]\n\n[Provider: ${provider}]\n\n${CONTINUE_PROMPT}` },
+              ],
             });
 
             const result = await streamText({
@@ -375,6 +405,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
               userContext,
               projectContext,
               projectContinuation,
+              modelConfig,
+              rateLimit,
             });
 
             writer.merge(result.toUIMessageStream({ sendReasoning: true }));
@@ -427,6 +459,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
           userContext,
           projectContext,
           projectContinuation,
+          modelConfig,
+          rateLimit,
         });
 
         (async () => {

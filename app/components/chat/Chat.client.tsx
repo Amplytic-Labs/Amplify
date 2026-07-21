@@ -1,4 +1,6 @@
 import { useStore } from '@nanostores/react';
+import { modelConfigStore, getWireConfig } from '~/lib/stores/model-config';
+import { rateLimitStore, getRateLimitWire } from '~/lib/stores/rate-limit';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai';
 import { useChat } from '@ai-sdk/react';
@@ -147,9 +149,11 @@ export const ChatImpl = memo(
      * never sees a stale false during the effect-to-render cycle.
      */
     const [chatStartedInternal, setChatStartedInternal] = useState((initialMessages?.length ?? 0) > 0 || showWorkbench);
+
     // Use ref for synchronous access to avoid race condition with async state updates
     const chatStartedRef = useRef((initialMessages?.length ?? 0) > 0 || showWorkbench);
-    const chatStarted = chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current;
+    const chatStarted =
+      chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -238,46 +242,92 @@ export const ChatImpl = memo(
      */
     const [input, setInput] = useState(Cookies.get(PROMPT_COOKIE_KEY) || '');
 
-    const handleInputChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-        setInput(e.target.value);
-      },
-      [],
-    );
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+      setInput(e.target.value);
+    }, []);
+
+    /*
+     * Subscribe to modelConfig + rateLimit stores so the transport body
+     * recomputes when the user changes thinking settings or rate limits
+     * in the ChatBox settings popup. The subscription itself is a no-op
+     * render-wise — we only read the latest value inside the body getter.
+     */
+    const modelConfig = useStore(modelConfigStore);
+    const rateLimits = useStore(rateLimitStore);
 
     /*
      * AI SDK v7 Native Transport Configuration
-     * 
+     *
      * Using DefaultChatTransport with NATIVE `body` option - NO CUSTOM FETCH!
      * The SDK handles merging body data with messages automatically.
      * This is identical to how bolt.diy v4 used `useChat({ body: {...} })`
      * but adapted for v7's transport-based architecture.
+     *
+     * The `body` here can be either a static object OR a function. We use
+     * a FUNCTION so the latest `modelConfig` / `rateLimits` values are
+     * read at REQUEST time (not at memo creation time) — this avoids
+     * stale-closure bugs where the user changes a slider but the next
+     * request still uses the old value.
      */
-    const chatTransport = useMemo(() => new DefaultChatTransport({
-      api: '/api/chat',
-      body: {
+    const chatTransport = useMemo(
+      () =>
+        new DefaultChatTransport({
+          api: '/api/chat',
+          body: () => ({
+            apiKeys,
+            files,
+            promptId,
+            contextOptimization: contextOptimizationEnabled,
+            chatMode,
+            designScheme,
+            supabase: {
+              isConnected: supabaseConn.isConnected,
+              hasSelectedProject: !!selectedProject,
+              credentials: {
+                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+                anonKey: supabaseConn?.credentials?.anonKey,
+              },
+            },
+            maxLLMSteps: mcpSettings.maxLLMSteps,
+            userContext: vectorUserContext || undefined,
+            projectContext: projectContextForPrompt,
+            projectContinuation,
+
+            /*
+             * Unified thinking/reasoning config (ChatBox settings popup).
+             * Server translates this into per-provider providerOptions.
+             */
+            modelConfig: getWireConfig(),
+
+            /*
+             * Per-provider rate-limit config for the CURRENT provider.
+             * Server uses this for pre-flight TPM checks and RPM throttling.
+             */
+            rateLimit: getRateLimitWire(provider.name),
+          }),
+
+          // Use debugFetch ONLY for debug page interception (optional)
+          fetch: debugFetch,
+        }),
+      [
         apiKeys,
         files,
         promptId,
-        contextOptimization: contextOptimizationEnabled,
+        contextOptimizationEnabled,
         chatMode,
         designScheme,
-        supabase: {
-          isConnected: supabaseConn.isConnected,
-          hasSelectedProject: !!selectedProject,
-          credentials: {
-            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-            anonKey: supabaseConn?.credentials?.anonKey,
-          },
-        },
-        maxLLMSteps: mcpSettings.maxLLMSteps,
-        userContext: vectorUserContext || undefined,
-        projectContext: projectContextForPrompt,
+        supabaseConn,
+        selectedProject,
+        mcpSettings.maxLLMSteps,
+        vectorUserContext,
+        projectContextForPrompt,
         projectContinuation,
-      },
-      // Use debugFetch ONLY for debug page interception (optional)
-      fetch: debugFetch,
-    }), [apiKeys, files, promptId, contextOptimizationEnabled, chatMode, designScheme, supabaseConn, selectedProject, mcpSettings.maxLLMSteps, vectorUserContext, projectContextForPrompt, projectContinuation, debugFetch]);
+        debugFetch,
+        modelConfig,
+        rateLimits,
+        provider.name,
+      ],
+    );
 
     const {
       messages,
@@ -290,9 +340,12 @@ export const ChatImpl = memo(
       addToolResult,
       addToolOutput,
     } = useChat({
-      // AI SDK v7: Use transport with NATIVE body option (no custom fetch needed)
-      // The SDK automatically merges body data with messages on each request
+      /*
+       * AI SDK v7: Use transport with NATIVE body option (no custom fetch needed)
+       * The SDK automatically merges body data with messages on each request
+       */
       transport: chatTransport,
+
       // Pass initial messages if available (for chat history restoration)
       ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
 
@@ -329,18 +382,22 @@ export const ChatImpl = memo(
           partsCount: message?.parts?.length,
           totalMessagesBefore: messages?.length,
         });
-        
+
         logger.debug('[Chat] Finished streaming - message received:', {
           messageId: message?.id,
           role: message?.role,
           hasParts: Array.isArray(message?.parts),
           partsCount: message?.parts?.length,
-          contentPreview:
-            Array.isArray(message?.parts)
-              ? (message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('') || '').slice(0, 100)
-              : '(no parts)',
+          contentPreview: Array.isArray(message?.parts)
+            ? (
+                message.parts
+                  .filter((p: any) => p.type === 'text')
+                  .map((p: any) => p.text)
+                  .join('') || ''
+              ).slice(0, 100)
+            : '(no parts)',
           totalMessages: messages?.length,
-          allMessageIds: messages?.map(m => ({ id: m.id, role: m.role })),
+          allMessageIds: messages?.map((m) => ({ id: m.id, role: m.role })),
         });
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
@@ -348,14 +405,21 @@ export const ChatImpl = memo(
 
         // Helper to extract text content from UIMessage parts (v7 uses parts, not content)
         const getMessageContent = (msg: any): string => {
-          if (!msg) return '';
-          if (typeof msg.content === 'string') return msg.content;
+          if (!msg) {
+            return '';
+          }
+
+          if (typeof msg.content === 'string') {
+            return msg.content;
+          }
+
           if (Array.isArray(msg.parts)) {
             return msg.parts
               .filter((p: any) => p.type === 'text')
               .map((p: any) => p.text)
               .join('');
           }
+
           return '';
         };
 
@@ -398,6 +462,7 @@ export const ChatImpl = memo(
           sdkSendMessage(
             {
               role: 'user' as const,
+
               // AI SDK v7: use parts array instead of content
               parts: message.parts || [{ type: 'text' as const, text: message.content || '' }],
             } as any,
@@ -405,10 +470,7 @@ export const ChatImpl = memo(
           );
         } else {
           // Assistant messages are appended locally (not sent to API)
-          setMessages((prev: any[]) => [
-            ...prev,
-            { ...message, id: `local-${Date.now()}` } as any,
-          ]);
+          setMessages((prev: any[]) => [...prev, { ...message, id: `local-${Date.now()}` } as any]);
         }
       },
       [sdkSendMessage, setMessages],
@@ -519,10 +581,11 @@ export const ChatImpl = memo(
           chatStarted: {
             ref: chatStartedRef.current,
             state: chatStartedInternal,
-            derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+            derived:
+              chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
           },
         });
-        
+
         logger.debug('[Chat] Messages state updated:', {
           count: messages?.length,
           lastMessage: {
@@ -533,7 +596,8 @@ export const ChatImpl = memo(
           chatStarted: {
             ref: chatStartedRef.current,
             state: chatStartedInternal,
-            derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+            derived:
+              chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
           },
         });
       }
@@ -553,9 +617,11 @@ export const ChatImpl = memo(
 
           // Get last user message for context query
           const userMessages = (messages || []).filter((m) => m.role === 'user');
+
           // Extract content from UIMessage v7 (uses parts array)
           const lastUserMsg = userMessages[(userMessages?.length ?? 1) - 1];
           let lastMsg = '';
+
           if (lastUserMsg) {
             if (typeof (lastUserMsg as any).content === 'string') {
               lastMsg = (lastUserMsg as any).content;
@@ -615,6 +681,7 @@ export const ChatImpl = memo(
 
       // Extract content from UIMessage v7 (uses parts array)
       let content = '';
+
       if (lastAssistantMessage) {
         if (typeof (lastAssistantMessage as any).content === 'string') {
           content = (lastAssistantMessage as any).content.trim();
@@ -732,9 +799,11 @@ export const ChatImpl = memo(
         }
       }
 
-      // Note: toolInvocations is deprecated in AI SDK v7, but kept for backward compatibility
-      // In v7, tool invocations live inline on the part (flat). This branch only
-      // catches old persisted v4 messages.
+      /*
+       * Note: toolInvocations is deprecated in AI SDK v7, but kept for backward compatibility
+       * In v7, tool invocations live inline on the part (flat). This branch only
+       * catches old persisted v4 messages.
+       */
       if (Array.isArray((lastAssistant as any).toolInvocations)) {
         allInvocations.push(...(lastAssistant as any).toolInvocations);
       }
@@ -993,8 +1062,11 @@ export const ChatImpl = memo(
 
             for (const { toolCallId, toolName } of pending) {
               logger.debug(`[auto-approve] flushing delayed ${toolCallId}`);
-              // AI SDK v7 signature: { tool, toolCallId, output, state }
-              // State must be 'output-available' (not 'result' from v4)
+
+              /*
+               * AI SDK v7 signature: { tool, toolCallId, output, state }
+               * State must be 'output-available' (not 'result' from v4)
+               */
               addToolResult({
                 tool: toolName || 'unknown',
                 toolCallId,
@@ -1090,8 +1162,11 @@ export const ChatImpl = memo(
 
               for (const { toolCallId, toolName } of pending) {
                 logger.debug(`[auto-approve] flushing delayed ${toolCallId} (stabilize timer)`);
-                // AI SDK v7 signature: { tool, toolCallId, output, state }
-                // State must be 'output-available' (not 'result' from v4)
+
+                /*
+                 * AI SDK v7 signature: { tool, toolCallId, output, state }
+                 * State must be 'output-available' (not 'result' from v4)
+                 */
                 addToolResult({
                   tool: toolName || 'unknown',
                   toolCallId,
@@ -1158,8 +1233,11 @@ export const ChatImpl = memo(
           }
 
           logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
-          // AI SDK v7 signature: { tool, toolCallId, output, state }
-          // State must be 'output-available' (not 'result' from v4)
+
+          /*
+           * AI SDK v7 signature: { tool, toolCallId, output, state }
+           * State must be 'output-available' (not 'result' from v4)
+           */
           addToolResult({
             tool: inv.toolName,
             toolCallId: inv.toolCallId,
@@ -1287,15 +1365,23 @@ export const ChatImpl = memo(
 
         // Get tool execution results from recent messages (extract from parts for v7)
         const getToolInvocations = (msg: any): any[] => {
-          if (!msg || !Array.isArray(msg.parts)) return [];
+          if (!msg || !Array.isArray(msg.parts)) {
+            return [];
+          }
+
           const out: any[] = [];
+
           for (const p of msg.parts) {
-            if (!isToolPart(p)) continue;
+            if (!isToolPart(p)) {
+              continue;
+            }
+
             out.push({
               toolName: getToolNameFromPart(p),
               result: getToolOutput(p),
             });
           }
+
           return out;
         };
         const toolResults = messages
@@ -1303,11 +1389,11 @@ export const ChatImpl = memo(
           .flatMap((m) => {
             // Try v7 parts first, fallback to legacy toolInvocations
             const invocations = getToolInvocations(m);
+
             if (invocations.length > 0) {
-              return invocations.map(
-                (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-              );
+              return invocations.map((ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`);
             }
+
             // Fallback for backward compatibility
             return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
@@ -1575,15 +1661,23 @@ export const ChatImpl = memo(
 
         // Get tool execution results from recent messages (extract from parts for v7)
         const getToolInvocationsForResume = (msg: any): any[] => {
-          if (!msg || !Array.isArray(msg.parts)) return [];
+          if (!msg || !Array.isArray(msg.parts)) {
+            return [];
+          }
+
           const out: any[] = [];
+
           for (const p of msg.parts) {
-            if (!isToolPart(p)) continue;
+            if (!isToolPart(p)) {
+              continue;
+            }
+
             out.push({
               toolName: getToolNameFromPart(p),
               result: getToolOutput(p),
             });
           }
+
           return out;
         };
         const toolResults = messages
@@ -1591,11 +1685,11 @@ export const ChatImpl = memo(
           .flatMap((m) => {
             // Try v7 parts first, fallback to legacy toolInvocations
             const invocations = getToolInvocationsForResume(m);
+
             if (invocations.length > 0) {
-              return invocations.map(
-                (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-              );
+              return invocations.map((ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`);
             }
+
             // Fallback for backward compatibility
             return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
@@ -1815,6 +1909,7 @@ export const ChatImpl = memo(
           provider: provider.name,
           errorType,
         });
+
         // Note: setData removed in @ai-sdk/react v4 — data is no longer managed by useChat
       },
       [provider.name, stop],
@@ -1873,7 +1968,7 @@ export const ChatImpl = memo(
 
     /*
      * runAnimation - toggles chatStarted and runs exit animations.
-     * 
+     *
      * CRITICAL: chatStartedRef.current is set SYNCHRONOUSLY before any async
      * operations. This ensures:
      * 1. Messages component renders immediately (not after await)
@@ -1905,8 +2000,10 @@ export const ChatImpl = memo(
       }
     };
 
-    // Helper function to create message parts array from text and images
-    // AI SDK v7: FileUIPart requires mediaType and url (not mimeType and data)
+    /*
+     * Helper function to create message parts array from text and images
+     * AI SDK v7: FileUIPart requires mediaType and url (not mimeType and data)
+     */
     const createMessageParts = (text: string, images: string[] = []): any[] => {
       // Create an array of properly typed message parts
       const parts: any[] = [
@@ -1926,6 +2023,7 @@ export const ChatImpl = memo(
         parts.push({
           type: 'file' as const,
           mediaType,
+
           // In v7, FileUIPart uses url (data URL) instead of data
           url: `data:${mediaType};base64,${base64Data}`,
         });
@@ -2001,10 +2099,12 @@ export const ChatImpl = memo(
 
         const attachmentOptions = attachments ? { experimental_attachments: attachments } : undefined;
 
-        // FIX: Use sendMessage instead of setMessages + reload()
-        // Previously: setMessages([userMessage]) + reload() which called regenerate()
-        // Problem: regenerate() tries to re-generate last ASSISTANT message - but there isn't one yet!
-        // Solution: Use sdkSendMessage() which properly sends user message AND streams AI response
+        /*
+         * FIX: Use sendMessage instead of setMessages + reload()
+         * Previously: setMessages([userMessage]) + reload() which called regenerate()
+         * Problem: regenerate() tries to re-generate last ASSISTANT message - but there isn't one yet!
+         * Solution: Use sdkSendMessage() which properly sends user message AND streams AI response
+         */
         sdkSendMessage(
           {
             role: 'user' as const,
@@ -2216,12 +2316,11 @@ export const ChatImpl = memo(
 
             // For assistant messages with parsed content, update the text part
             const parsedContent = parsedMessages[i] || '';
+
             if (parsedContent && Array.isArray(message.parts)) {
               return {
                 ...message,
-                parts: message.parts.map((part) =>
-                  part.type === 'text' ? { ...part, text: parsedContent } : part
-                ),
+                parts: message.parts.map((part) => (part.type === 'text' ? { ...part, text: parsedContent } : part)),
               };
             }
 
@@ -2260,9 +2359,13 @@ export const ChatImpl = memo(
           setDesignScheme={setDesignScheme}
           selectedElement={selectedElement}
           setSelectedElement={setSelectedElement}
-          addToolResult={// Adapt AI SDK v7 addToolResult signature to BaseChat's expected interface
-            // BaseChat expects: ({ toolCallId, result }) => void
-            // v7 provides: ({ tool, toolCallId, state, output }) => void
+          addToolResult={
+
+            // Adapt AI SDK v7 addToolResult signature to BaseChat's expected interface
+            /*
+             * BaseChat expects: ({ toolCallId, result }) => void
+             * v7 provides: ({ tool, toolCallId, state, output }) => void
+             */
             ({ toolCallId, result }: { toolCallId: string; result: any }) => {
               addToolResult({
                 tool: 'unknown', // BaseChat doesn't track tool name
@@ -2270,7 +2373,8 @@ export const ChatImpl = memo(
                 output: result,
                 state: 'output-available',
               });
-            }}
+            }
+          }
           onWebSearchResult={handleWebSearchResult}
           planExecuting={planExecuting}
           planProgress={planProgress}

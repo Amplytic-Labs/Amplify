@@ -15,6 +15,20 @@ import { useStore } from '@nanostores/react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import Cookies from 'js-cookie';
 import { PROVIDER_LIST } from '~/utils/constants';
+import {
+  modelConfigStore,
+  updateModelConfig,
+  saveForModel,
+  restoreForModel,
+  type ReasoningEffort,
+} from '~/lib/stores/model-config';
+import {
+  rateLimitStore,
+  updateRateLimit,
+  resetRateLimit,
+  SUGGESTED_DEFAULTS,
+  type RateLimitConfig,
+} from '~/lib/stores/rate-limit';
 
 /**
  * Strip a trailing parenthesised context suffix from a model label.
@@ -82,11 +96,42 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileActiveTab, setMobileActiveTab] = useState<'list' | 'config'>('list');
 
-  // Model-specific configurations
-  const [thinkingEnabled, setThinkingEnabled] = useState(true);
-  const [thinkingOverride, setThinkingOverride] = useState<'low' | 'medium' | 'high' | 'auto' | 'off'>('auto');
-  const [budgetTokens, setBudgetTokens] = useState(4096);
-  const [maxOutputTokens, setMaxOutputTokens] = useState(4096);
+  /*
+   * ----- Model configuration (thinking + output cap) -----
+   * Backed by `modelConfigStore` (nanostores) so the same values are
+   * available to Chat.client.tsx's request body without prop drilling.
+   * The store also persists to localStorage and remembers per-model
+   * settings, so switching back to a model restores the user's tweaks.
+   */
+  const modelConfig = useStore(modelConfigStore);
+  const thinkingEnabled = modelConfig.thinkingEnabled;
+  const budgetTokens = modelConfig.budgetTokens;
+  const thinkingOverride: ReasoningEffort = modelConfig.effort;
+  const maxOutputTokens = modelConfig.maxOutputTokens;
+
+  const setThinkingEnabled = (v: boolean) => updateModelConfig({ thinkingEnabled: v });
+  const setBudgetTokens = (v: number) => updateModelConfig({ budgetTokens: v });
+  const setThinkingOverride = (v: ReasoningEffort) => updateModelConfig({ effort: v });
+  const setMaxOutputTokens = (v: number) => updateModelConfig({ maxOutputTokens: v });
+
+  /*
+   * Rate-limit store — PER PROVIDER, edited in the same settings popup.
+   * The store persists to localStorage. Only the CURRENT provider's
+   * config is sent to the server on each request (see Chat.client.tsx).
+   *
+   * NOTE: `currentRateLimit` is computed from `props.provider` (not the
+   * later `activeProvider` const) so it can be defined before that const
+   * is in scope — they point to the same object.
+   */
+  const rateLimits = useStore(rateLimitStore);
+  const rateLimitProviderName = props.provider?.name ?? '';
+  const currentRateLimit: RateLimitConfig = rateLimits[rateLimitProviderName] ??
+    SUGGESTED_DEFAULTS[rateLimitProviderName] ?? {
+      rpm: 0,
+      tpm: 0,
+      rpd: 0,
+      autoShrinkToTpm: false,
+    };
 
   /*
    * Settings popup state (the new slider button beside the model picker
@@ -245,27 +290,56 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
 
   const activeProvider: ProviderInfo | undefined = props.provider;
 
-  // Reset config when model changes (mirror curated design's behaviour)
+  /*
+   * Per-model config restore / save.
+   *
+   * When the user switches models:
+   *   1. The PREVIOUS model's current settings are snapshotted into the
+   *      perModel map (so switching back restores them).
+   *   2. If the NEW model has saved settings, they're restored.
+   *   3. Otherwise, sensible defaults are applied based on the new model's
+   *      `thinkingControlState`.
+   *
+   * This effect runs on `activeModel` / `activeProvider` change. We track
+   * the previous (provider, model) in a ref so we know which entry to
+   * snapshot into perModel before switching.
+   */
+  const previousModelKey = useRef<string | null>(null);
+
   useEffect(() => {
     if (!activeModel || !activeProvider) {
       return;
     }
 
-    const ctrl = getThinkingControlState(activeProvider.name, activeModel);
+    const newKey = `${activeProvider.name}:${activeModel.name}`;
+    const prevKey = previousModelKey.current;
 
-    if (ctrl === 'toggle+budget') {
-      setThinkingEnabled(true);
-      setBudgetTokens(4096);
-      setThinkingOverride('auto');
-    } else if (ctrl === 'effort-only') {
-      setThinkingOverride('medium');
-    } else if (ctrl === 'toggle-only') {
-      setThinkingEnabled(true);
+    // 1. Snapshot the previous model's settings (if any).
+    if (prevKey && prevKey !== newKey) {
+      const [prevProvider, prevModel] = prevKey.split(':');
+      saveForModel(prevProvider, prevModel);
     }
 
-    if (activeModel.maxCompletionTokens) {
-      setMaxOutputTokens(Math.min(activeModel.maxCompletionTokens, 16384));
+    // 2. Restore saved settings for the new model, or apply defaults.
+    const restored = restoreForModel(activeProvider.name, activeModel.name);
+
+    if (!restored) {
+      const ctrl = getThinkingControlState(activeProvider.name, activeModel);
+
+      if (ctrl === 'toggle+budget') {
+        updateModelConfig({ thinkingEnabled: true, budgetTokens: 4096, effort: 'medium' });
+      } else if (ctrl === 'effort-only') {
+        updateModelConfig({ effort: 'medium' });
+      } else if (ctrl === 'toggle-only') {
+        updateModelConfig({ thinkingEnabled: true });
+      }
+
+      if (activeModel.maxCompletionTokens) {
+        updateModelConfig({ maxOutputTokens: Math.min(activeModel.maxCompletionTokens, 16384) });
+      }
     }
+
+    previousModelKey.current = newKey;
   }, [activeModel, activeProvider]);
 
   // Close popups on outside click / Escape
@@ -455,13 +529,69 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   };
 
   const thinkingControlState = useMemo<
-    'toggle+budget' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked'
+    'toggle+budget' | 'toggle+effort' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked'
   >(() => {
     if (!activeModel || !activeProvider) {
       return 'off-and-locked';
     }
 
     return getThinkingControlState(activeProvider.name, activeModel);
+  }, [activeModel, activeProvider]);
+
+  /*
+   * Slider max + help text for the budget-token control. Different models
+   * support very different budget ranges:
+   *   - Gemini 2.5 Flash: max 24576 thinking tokens
+   *   - Gemini 2.5 Pro:   max 32768 thinking tokens
+   *   - Claude 3.7 Sonnet: max 64000 (but < maxTokens)
+   *   - Claude Opus 4 / Sonnet 4: up to 64000
+   */
+  const budgetSliderMax = useMemo(() => {
+    if (!activeModel || !activeProvider) {
+      return 32768;
+    }
+
+    const name = (activeModel.name || '').toLowerCase();
+
+    if (activeProvider.name === 'Google' && name.includes('pro')) {
+      return 32768;
+    }
+
+    if (activeProvider.name === 'Google' && name.includes('flash')) {
+      return 24576;
+    }
+
+    if (activeProvider.name === 'Anthropic') {
+      // Claude allows up to 64k thinking tokens, but must be < maxTokens.
+      const cap = activeModel.maxCompletionTokens || 64000;
+
+      return Math.min(64000, cap - 1024);
+    }
+
+    return 32768;
+  }, [activeModel, activeProvider]);
+
+  const budgetHelpText = useMemo(() => {
+    if (!activeModel || !activeProvider) {
+      return '';
+    }
+
+    const name = (activeModel.name || '').toLowerCase();
+
+    if (activeProvider.name === 'Google') {
+      return 'Gemini 2.5 — thinkingBudget sets the max thinking tokens. includeThoughts is auto-enabled so thought summaries are streamed back.';
+    }
+
+    if (activeProvider.name === 'Anthropic' && /claude-opus-4-[6-9]|claude-sonnet-4-[6-9]/.test(name)) {
+      // Should not appear (4.6+ uses adaptive) — but kept as a safety net.
+      return 'Claude 4.6+ uses adaptive thinking — budget_tokens is deprecated and ignored.';
+    }
+
+    if (activeProvider.name === 'Anthropic') {
+      return 'Claude — budgetTokens must be ≥ 1024 and < maxTokens. The model dynamically decides how much to actually use.';
+    }
+
+    return '';
   }, [activeModel, activeProvider]);
 
   // Handle send: trigger the slide-out animation, then send.
@@ -1213,7 +1343,52 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   </div>
                 )}
 
-                {/* 2. BUDGET TOKEN TOGGLE + SLIDER (Gemini 2.5+, Claude 3.7/4) */}
+                {/* 1b. TOGGLE + EFFORT PICKER (Gemini 3.x — uses thinkingLevel) */}
+                {thinkingControlState === 'toggle+effort' && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
+                        Enable Thinking
+                      </span>
+                      <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+                    </div>
+                    {thinkingEnabled ? (
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
+                          Thinking Level
+                        </span>
+                        <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
+                          {(['low', 'medium', 'high'] as const).map((effort) => (
+                            <button
+                              key={effort}
+                              onClick={() => setThinkingOverride(effort)}
+                              className={classNames(
+                                'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
+                                thinkingOverride === effort
+                                  ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
+                                  : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
+                              )}
+                            >
+                              {effort}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
+                          Gemini 3 uses <span className="font-mono">thinkingLevel</span> (minimal/low/medium/high).{' '}
+                          <span className="text-accent-500">includeThoughts</span> is auto-enabled so thought summaries
+                          are streamed back.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
+                        Thinking set to MINIMAL (Gemini 3 has no hard off switch — minimal produces ~zero thought
+                        tokens).
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. BUDGET TOKEN TOGGLE + SLIDER (Gemini 2.5+, Claude 3.7/Opus 4/Sonnet 4) */}
                 {thinkingControlState === 'toggle+budget' && (
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -1234,22 +1409,25 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           type="range"
                           className="chatbox-range w-full cursor-pointer"
                           min={1024}
-                          max={32768}
+                          max={budgetSliderMax}
                           step={1024}
                           value={budgetTokens}
                           onChange={(e) => setBudgetTokens(Number(e.target.value))}
                           style={{
-                            ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / (32768 - 1024)) * 100}%`,
+                            ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / Math.max(1, budgetSliderMax - 1024)) * 100}%`,
                           }}
                         />
                         <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
                           <span>1,024</span>
-                          <span>32,768 max</span>
+                          <span>{budgetSliderMax.toLocaleString()} max</span>
+                        </div>
+                        <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
+                          {budgetHelpText}
                         </div>
                       </div>
                     ) : (
                       <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
-                        Thinking disabled. Falling back to simple response path.
+                        Thinking disabled. Model will respond without extended reasoning.
                       </div>
                     )}
                   </div>
@@ -1307,6 +1485,128 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                     </div>
                   </div>
                 )}
+
+                {/* 6. PROVIDER RATE LIMITS (RPM / TPM / RPD) — user-configurable */}
+                <div className="space-y-2.5 pt-2 border-t border-amplify-elements-borderColor">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
+                      Rate Limits — {rateLimitProviderName || 'Provider'}
+                    </span>
+                    {SUGGESTED_DEFAULTS[rateLimitProviderName] && (
+                      <button
+                        onClick={() => resetRateLimit(rateLimitProviderName)}
+                        className="text-[9px] text-amplify-elements-textTertiary hover:text-accent-500 transition-colors uppercase tracking-wider font-semibold"
+                        title="Reset to suggested defaults for this provider"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[9px] text-amplify-elements-textSecondary leading-normal">
+                    Enter your provider's actual limits (varies by tier/account — see their docs). The server throttles,
+                    auto-shrinks context, or refuses requests to avoid being blocked.
+                  </div>
+
+                  {/* RPM */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-amplify-elements-textSecondary">Requests / min (RPM):</span>
+                      <span className="font-mono text-amplify-elements-textPrimary">
+                        {currentRateLimit.rpm === 0 ? '∞' : currentRateLimit.rpm.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000}
+                      step={1}
+                      value={currentRateLimit.rpm}
+                      onChange={(e) =>
+                        updateRateLimit(rateLimitProviderName, {
+                          rpm: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
+                      placeholder="0 = unlimited"
+                    />
+                  </div>
+
+                  {/* TPM */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-amplify-elements-textSecondary">Tokens / min (TPM):</span>
+                      <span className="font-mono text-amplify-elements-textPrimary">
+                        {currentRateLimit.tpm === 0 ? '∞' : currentRateLimit.tpm.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000000}
+                      step={1000}
+                      value={currentRateLimit.tpm}
+                      onChange={(e) =>
+                        updateRateLimit(rateLimitProviderName, {
+                          tpm: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
+                      placeholder="0 = unlimited"
+                    />
+                    <div className="text-[9px] text-amplify-elements-textTertiary leading-normal">
+                      Tip: if the model supports 1M context but your tier caps TPM at 250k, set 250000 here — the server
+                      will auto-shrink context to fit instead of getting 429'd.
+                    </div>
+                  </div>
+
+                  {/* RPD */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-amplify-elements-textSecondary">Requests / day (RPD):</span>
+                      <span className="font-mono text-amplify-elements-textPrimary">
+                        {currentRateLimit.rpd === 0 ? '∞' : currentRateLimit.rpd.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={10000000}
+                      step={1}
+                      value={currentRateLimit.rpd}
+                      onChange={(e) =>
+                        updateRateLimit(rateLimitProviderName, {
+                          rpd: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
+                      placeholder="0 = unlimited"
+                    />
+                  </div>
+
+                  {/* Auto-shrink toggle */}
+                  <label className="flex items-start gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={currentRateLimit.autoShrinkToTpm}
+                      onChange={(e) =>
+                        updateRateLimit(rateLimitProviderName, {
+                          autoShrinkToTpm: e.target.checked,
+                        })
+                      }
+                      className="mt-0.5 w-3.5 h-3.5 accent-accent-500 flex-shrink-0"
+                    />
+                    <div className="flex-1">
+                      <div className="text-[10px] font-semibold text-amplify-elements-textPrimary">
+                        Auto-shrink context to fit TPM
+                      </div>
+                      <div className="text-[9px] text-amplify-elements-textSecondary leading-normal">
+                        When a request would exceed TPM, drop older messages from the head of the conversation to fit,
+                        instead of erroring out.
+                      </div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </motion.div>
           )}
@@ -1667,19 +1967,9 @@ function providerIconClass(name: string): string {
  * the surrounding font-size. This matches how `framework-meta.ts` renders
  * its icons (e.g. `<div className="i-amplify:react text-xl" />`).
  */
-const ProviderIcon = ({
-  name,
-  className = '',
-}: {
-  name: string;
-  className?: string;
-}) => {
+const ProviderIcon = ({ name, className = '' }: { name: string; className?: string }) => {
   return (
-    <div
-      className={classNames(providerIconClass(name), 'inline-block', className)}
-      role="img"
-      aria-label={name}
-    />
+    <div className={classNames(providerIconClass(name), 'inline-block', className)} role="img" aria-label={name} />
   );
 };
 
@@ -1688,32 +1978,59 @@ const ProviderIcon = ({
  *
  * This is a heuristic since the actual provider configs don't expose thinking
  * capability in the static model list — we infer it from provider + model
- * name patterns. Matches the 5 states from the curated design.
+ * name patterns. Matches the curated design's 6 states:
+ *
+ *   - 'toggle+budget' : On/off + token budget slider (Gemini 2.5, Claude 3.7/4)
+ *   - 'toggle+effort' : On/off + effort picker (Gemini 3.x — uses thinkingLevel)
+ *   - 'effort-only'   : Effort picker only (OpenAI o-series, xAI Grok, Mistral Magistral)
+ *   - 'toggle-only'   : On/off only (reserved — currently unused)
+ *   - 'on-and-locked' : Always reasons, no config (DeepSeek Reasoner)
+ *   - 'off-and-locked': No reasoning (default)
+ *
+ * The state MUST stay in sync with the server-side translator at
+ * `app/lib/.server/llm/thinking.ts` (`buildThinkingProviderOptions`) —
+ * each state here corresponds to a `providerOptions` shape there.
  */
 function getThinkingControlState(
   providerName: string,
   model: ModelInfo,
-): 'toggle+budget' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked' {
+): 'toggle+budget' | 'toggle+effort' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked' {
   const name = (model.name || '').toLowerCase();
   const label = (model.label || '').toLowerCase();
 
   // DeepSeek Reasoner — always reasons, no toggle, no budget.
-  if (providerName === 'DeepSeek' && (name.includes('reasoner') || label.includes('reasoner'))) {
+  if (providerName === 'Deepseek' && (name.includes('reasoner') || label.includes('reasoner'))) {
     return 'on-and-locked';
   }
 
-  // OpenAI o-series — effort-only (low/medium/high).
-  if (providerName === 'OpenAI' && (name.startsWith('o1') || name.startsWith('o3') || name.startsWith('o4'))) {
+  // OpenAI o-series + GPT-5 — effort-only (low/medium/high).
+  if (
+    providerName === 'OpenAI' &&
+    (name.startsWith('o1') || name.startsWith('o3') || name.startsWith('o4') || name.startsWith('gpt-5'))
+  ) {
     return 'effort-only';
   }
 
-  // xAI Grok — effort-only.
+  // xAI Grok 3/4 — effort-only.
   if (providerName === 'xAI' && (name.includes('grok-3') || name.includes('grok-4'))) {
     return 'effort-only';
   }
 
-  // Google Gemini 2.5+/3 — toggle + token budget.
-  if (providerName === 'Google' && (name.includes('gemini-2.5') || name.includes('gemini-3'))) {
+  /*
+   * Mistral Magistral — effort-only (high/none per SDK, but we expose low/medium/high
+   * and the translator maps low/medium → none/high appropriately).
+   */
+  if (providerName === 'Mistral' && name.includes('magistral')) {
+    return 'effort-only';
+  }
+
+  // Google Gemini 3.x — toggle + EFFORT (uses thinkingLevel, not budget).
+  if (providerName === 'Google' && /gemini-3[.-]/.test(name)) {
+    return 'toggle+effort';
+  }
+
+  // Google Gemini 2.5 — toggle + token budget.
+  if (providerName === 'Google' && name.includes('gemini-2.5')) {
     return 'toggle+budget';
   }
 
@@ -1729,7 +2046,7 @@ function getThinkingControlState(
   }
 
   // DeepSeek Chat (V3) — no thinking.
-  if (providerName === 'DeepSeek' && name.includes('chat')) {
+  if (providerName === 'Deepseek' && name.includes('chat')) {
     return 'off-and-locked';
   }
 
