@@ -79,6 +79,20 @@ export const ThoughtsPanel = memo(
      * Flatten parts + thought text into ordered steps. Tools stay as
      * individual steps (Copilot shows each tool call as its own node on the
      * chain, not grouped into a card).
+     *
+     * BUGFIX (duplicate tool usage): the incoming `parts` array can carry
+     * MULTIPLE entries for the same `toolCallId` — this happens when the
+     * AI SDK streams a tool through its state machine
+     * (`input-streaming` → `input-available` → `output-available`) and the
+     * parts array is appended to (rather than updated in-place) during
+     * multi-step / restored-persistence flows. Without de-duplication each
+     * state shows up as its own "Read file" / "Edited file" row, so the
+     * user sees the same tool twice.
+     *
+     * Fix: walk parts once, track seen `toolCallId`s, and keep only the
+     * MOST PROGRESSED state per call (output-* > input-available >
+     * input-streaming). We also de-duplicate reasoning parts by their
+     * text content so the step count stays stable across re-renders.
      */
     const steps = useMemo<ThoughtStep[]>(() => {
       const out: ThoughtStep[] = [];
@@ -90,12 +104,78 @@ export const ThoughtsPanel = memo(
       }
 
       if (parts) {
+        /*
+         * toolCallId → index in `out` where we last placed this tool step.
+         * We replace the entry in-place when a more progressed state arrives.
+         */
+        const toolIndexById = new Map<string, number>();
+
+        /*
+         * Reasoning text dedupe set — avoids stacking the same reasoning
+         * text twice if the SDK re-emits it across ticks.
+         */
+        const seenReasoning = new Set<string>();
+
+        const toolStateRank = (state: string): number => {
+          // Higher = more progressed. Output states beat input states.
+          if (
+            state === 'output-available' ||
+            state === 'output-error' ||
+            state === 'output-denied' ||
+            state === 'result'
+          ) {
+            return 3;
+          }
+
+          if (state === 'input-available' || state === 'call') {
+            return 2;
+          }
+
+          if (state === 'input-streaming' || state === 'partial' || state === 'partial-call') {
+            return 1;
+          }
+
+          return 0;
+        };
+
         for (const part of parts) {
           if (isToolPart(part)) {
+            const id = getToolCallId(part);
+
+            if (id) {
+              const existingIdx = toolIndexById.get(id);
+
+              if (existingIdx !== undefined) {
+                /*
+                 * Already have a step for this toolCallId — replace ONLY if
+                 * this part is more progressed. This collapses the
+                 * streaming → available → result chain into a single row.
+                 */
+                const existingStep = out[existingIdx];
+
+                if (existingStep.kind === 'tool') {
+                  const existingRank = toolStateRank(getToolState(existingStep.item));
+                  const newRank = toolStateRank(getToolState(part));
+
+                  if (newRank > existingRank) {
+                    out[existingIdx] = {
+                      kind: 'tool',
+                      item: part,
+                      key: `tool-${id}`,
+                    };
+                  }
+                }
+
+                continue;
+              }
+
+              toolIndexById.set(id, out.length);
+            }
+
             out.push({
               kind: 'tool',
               item: part,
-              key: `tool-${getToolCallId(part) ?? counter++}`,
+              key: `tool-${id ?? counter++}`,
             });
             continue;
           }
@@ -106,7 +186,8 @@ export const ThoughtsPanel = memo(
               ? r.details.map((d: any) => d.text || '').join('')
               : (r as any).textDelta || (r as any).text || '';
 
-            if (text && text.trim()) {
+            if (text && text.trim() && !seenReasoning.has(text)) {
+              seenReasoning.add(text);
               out.push({ kind: 'reasoning', text, key: `reasoning-${counter++}` });
             }
           }
@@ -116,12 +197,34 @@ export const ThoughtsPanel = memo(
       return out;
     }, [thoughtText, parts]);
 
+    /*
+     * Step count for the "Completed with N steps" header label. We count
+     * BOTH reasoning steps AND tool steps — the user perceives the whole
+     * chain (reasoning + tools) as the model's "thinking" phase.
+     */
+    const stepCount = steps.length;
+
+    /*
+     * Whether the panel actually has any reasoning (i.e. native reasoning
+     * parts OR <thought> tag text). When false AND not streaming, the
+     * model didn't really "think" — we still render the panel if there
+     * are tool calls, but we DON'T show a misleading "Thought process"
+     * label (see ThinkingBox).
+     */
+    const hasReasoning = steps.some((s) => s.kind === 'reasoning');
+
     if (steps.length === 0 && !isActive && !thinkingDone) {
       return null;
     }
 
     return (
-      <ThinkingBox isActive={isActive} thoughtStreaming={thoughtStreaming}>
+      <ThinkingBox
+        isActive={isActive}
+        thoughtStreaming={thoughtStreaming}
+        stepCount={stepCount}
+        hasReasoning={hasReasoning}
+        thinkingDone={thinkingDone}
+      >
         {steps.map((step) => {
           if (step.kind === 'reasoning') {
             return (
@@ -137,8 +240,11 @@ export const ThoughtsPanel = memo(
           const state = getToolState(step.item);
           const toolName = getToolNameFromPart(step.item);
           const result = getToolOutput(step.item);
-          // v7 'output-error' is itself an error; v7 'output-available' (v4 'result')
-          // is an error only when the result string starts with a known error prefix.
+
+          /*
+           * v7 'output-error' is itself an error; v7 'output-available' (v4 'result')
+           * is an error only when the result string starts with a known error prefix.
+           */
           const isError =
             state === 'output-error' || (state === 'output-available' && classifyResult(result) === 'error');
           const toolIcon = getToolIcon(toolName);

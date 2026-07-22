@@ -26,6 +26,7 @@ interface AssistantMessageProps {
   onRewind?: (messageId: string) => void;
   onFork?: (messageId: string) => void;
   append?: (message: UIMessage) => void;
+
   /** Regenerate (retry) this assistant answer. Passed through to AnswerActions. */
   onRegenerate?: () => void;
   chatMode?: 'discuss' | 'build';
@@ -205,9 +206,11 @@ export const AssistantMessage = memo(
         return;
       }
 
-      // Always set the docxArtifactStore so a DocxPreviewPanel that's
-      // explicitly mounted (by the user clicking a "View document" button
-      // or by the workspace being opened later) has content to show.
+      /*
+       * Always set the docxArtifactStore so a DocxPreviewPanel that's
+       * explicitly mounted (by the user clicking a "View document" button
+       * or by the workspace being opened later) has content to show.
+       */
       setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming, docxTheme);
 
       const loadedProjectId = workbenchStore.loadedProjectId.get();
@@ -218,8 +221,10 @@ export const AssistantMessage = memo(
         workbenchStore.showWorkbench.set(true);
         workbenchStore.currentView.set('document');
       } else {
-        // No workspace yet — park the docx in localStorage so it can be
-        // migrated when a workspace is initialized in this same chat.
+        /*
+         * No workspace yet — park the docx in localStorage so it can be
+         * migrated when a workspace is initialized in this same chat.
+         */
         const currentChatId = chatIdAtom.get();
 
         if (currentChatId) {
@@ -278,20 +283,52 @@ export const AssistantMessage = memo(
     const hasPanelContent = hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
 
     /*
-     * Thinking is "done" when the `</thought>` tag has been received and the
-     * next parts are a normal response (no tool calls). This triggers the
-     * "Done" node at the end of the chain-of-thought panel, signalling
-     * that the AI has moved past reasoning to its final answer.
+     * Thinking is "done" when streaming has ended AND there's actual panel
+     * content (reasoning text and/or tool invocations) to summarise.
+     *
+     * Previously this required `hasThoughts` (i.e. a closed `<thought>` tag),
+     * which meant models that use NATIVE reasoning parts (no `<thought>` tag)
+     * or models that only called tools never got the "Done" checkmark at the
+     * end of the chain — the panel sat in the limbo "Thought process" state.
+     *
+     * New rule:
+     *   - Not streaming (no active response)
+     *   - Not mid-`<thought>` (close tag received, or no thought block at all)
+     *   - Panel has content (reasoning OR tools)
+     *   - All tool calls have completed (every tool part is in an output state)
+     *
+     * The "all tools complete" check uses the deduped parts list so a single
+     * toolCallId appearing in multiple states doesn't keep the panel "active"
+     * forever.
      */
-    const hasToolCalls = useMemo(() => {
+    const hasPendingToolCalls = useMemo(() => {
       if (!parts) {
         return false;
       }
 
-      return parts.some((p) => isToolPart(p));
+      /*
+       * A tool call is "pending" if it's in an input state (no output yet).
+       * We use the same state vocabulary as tool-parts.ts (v7 + v4 normalised).
+       */
+      return parts.some((p) => {
+        if (!isToolPart(p)) {
+          return false;
+        }
+
+        const state = (p as any).state || (p as any).toolInvocation?.state || '';
+
+        return (
+          state === 'input-streaming' ||
+          state === 'input-available' ||
+          state === 'partial' ||
+          state === 'partial-call' ||
+          state === 'call' ||
+          state === 'approval-requested'
+        );
+      });
     }, [parts]);
 
-    const thinkingDone = hasThoughts && !thoughtStreaming && !hasToolCalls;
+    const thinkingDone = !isStreaming && !thoughtStreaming && hasPanelContent && !hasPendingToolCalls;
 
     return (
       <div className="group relative overflow-hidden w-full">
