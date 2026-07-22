@@ -1,0 +1,120 @@
+---
+title: Workbench
+description: IDE-like environment with file tree, editor, terminal, live preview, and diff view
+---
+
+# Workbench
+
+The Workbench is Amplify's IDE-like environment that sits alongside the chat. It provides a complete development experience — file navigation, code editing, live preview, terminal access, and change tracking — all within the browser.
+
+## IDE-Like Environment
+
+The workbench mirrors the layout of a traditional IDE:
+
+- **Left panel**: File tree for navigating project files
+- **Center panel**: Code editor for viewing and editing files
+- **Right panel**: Preview or terminal, switchable via tabs
+- **Top bar**: File breadcrumb, search, and panel controls
+
+Panels are resizable with drag handles, and the layout adapts responsively for mobile devices with a tab bar switching between views.
+
+## File Tree Navigation
+
+The file tree provides a hierarchical view of your project:
+
+- Expand/collapse folders with click or keyboard
+- File icons are mapped by extension (TypeScript, CSS, Markdown, JSON, etc.)
+- Click a file to open it in the editor
+- Locked files show a visual indicator (lock icon)
+- The tree updates in real-time as the AI creates, modifies, or deletes files
+
+## CodeMirror Editor
+
+The editor is built on **CodeMirror 6** with full language support:
+
+- **20+ languages** with syntax highlighting: TypeScript, JavaScript, CSS, HTML, Markdown, JSON, Python, Rust, Go, Java, C++, Shell, YAML, TOML, XML, SQL, GraphQL, Dockerfile, and more
+- **Intelligent indentation** — language-aware auto-indent rules
+- **Environment variable masking** — `.env` files mask sensitive values on screen
+- **Binary file detection** — binary files show a placeholder instead of garbled text
+- **Custom theme** — matches Amplify's dark/light theme with proper token coloring
+- **Line numbers, folding, bracket matching** — standard editor features
+
+The editor supports both reading (when a file is locked) and editing (manual changes by the user).
+
+## Live Preview
+
+The **Preview panel** runs your project in a browser-like environment powered by **WebContainers**:
+
+- WebContainers run a full Node.js environment inside the browser — no server needed
+- Supports npm install, build scripts, and dev servers
+- The preview frame renders your running application
+- The **Port Dropdown** shows available preview URLs when multiple ports are active
+- Hot-reload works for supported frameworks (Vite, Next.js, etc.)
+- Screenshots can be captured from the preview for sharing or AI analysis
+
+WebContainers require authentication — Amplify handles the auth flow automatically when you connect.
+
+## Integrated Terminal
+
+The **xterm.js terminal** provides direct shell access inside WebContainer:
+
+- Full terminal emulation with proper theme and font rendering
+- Multiple terminal tabs for concurrent operations
+- Shell commands: `npm install`, `npm run dev`, `git`, `ls`, `cat`, and more
+- Terminal output is captured and available to the AI for debugging
+- Custom terminal theme matches the Amplify design system
+
+## Diff View for AI-Made Changes
+
+When the AI modifies a file, the **Diff View** shows exactly what changed:
+
+- Side-by-side or inline diff comparison
+- Old content (red) vs. new content (green) highlighting
+- Accessible from the file breadcrumb or the change notification
+- You can accept, reject, or manually adjust individual changes
+
+This gives you full visibility into every modification the AI makes, ensuring you never lose track of what changed in your project.
+
+## File Locking System
+
+The **file locking system** prevents conflicting edits:
+
+- When the AI is editing a file, it becomes locked — you can view it but not edit
+- Lock indicators appear in the file tree and editor header
+- The **LockManager** component shows which files are locked and by which operation
+- Locks are released automatically when the AI finishes its edit
+- You can also lock files manually to prevent the AI from modifying them
+
+This prevents the classic problem of you and the AI editing the same file simultaneously.
+
+## Project Snapshot Restoration
+
+Amplify saves project snapshots at key moments:
+
+- Before AI operations that modify multiple files
+- After significant changes are applied
+- Snapshots include the full file map state
+- You can restore a snapshot to roll back to a previous state
+- Snapshots are stored in IndexedDB alongside the project data
+
+This provides a safety net — if the AI's changes don't work out, you can always revert.
+
+## Search Within Files
+
+The **Search panel** in the workbench lets you search across all project files:
+
+- Search by text content or file name
+- Results show matching files with context
+- Click a result to jump to the matching location in the editor
+- Supports regex and case-sensitive options
+
+This is useful for both manual navigation and for verifying that the AI's changes are consistent across the project.
+
+## Port Dropdown
+
+When your project's dev server starts, the **Port Dropdown** appears in the preview header:
+
+- Shows all active ports detected from the WebContainer
+- Click to switch the preview to a different port
+- Useful for projects that run multiple services (e.g., API on 3001, frontend on 5173)
+- Auto-detects new ports as services start up

@@ -1,0 +1,186 @@
+---
+title: Rate Limits
+description: Per-provider rate limit configuration, auto-shrink, pre-flight checks, and token estimation heuristics.
+---
+
+Most LLM providers enforce rate limits that can cause 429 errors, account cooldowns, or even hours-long blocks. Amplify includes a client-side rate limit system that helps you stay within your provider's limits by estimating token usage before sending requests, throttling when RPM is exceeded, and automatically shrinking context when TPM is tight.
+
+## Why Rate Limits Matter
+
+The model's **context window** (1M tokens for Gemini, 200K for Claude) is almost always larger than the provider's **TPM cap** (250K for Gemini free tier, 80K for Anthropic Tier 1). A request that fits within the model's context window can still be rejected (429) if its estimated token count exceeds your TPM limit — and on some providers (DeepSeek), repeated 429s trigger an account-level cooldown that persists for hours.
+
+## Client-Side Configuration
+
+Rate limits are configured per-provider via a nanostores atom persisted to localStorage under the key `amplify:rate-limits`.
+
+```typescript
+interface RateLimitConfig {
+  rpm: number;            // Requests per minute. 0 = unlimited.
+  tpm: number;            // Tokens per minute (input + output). 0 = unlimited.
+  rpd: number;            // Requests per day. 0 = unlimited.
+  autoShrinkToTpm: boolean; // Auto-shrink context to fit TPM instead of erroring.
+}
+```
+
+You can configure these values in Settings → Providers for each provider. The values are **suggestions** — Amplify cannot reliably know your exact limits (they vary by tier, account, and payment status), so you should set them to match your provider's published limits.
+
+## Suggested Defaults
+
+The following defaults are built into Amplify based on official provider documentation (2025-2026). You can override every value.
+
+| Provider | RPM | TPM | RPD | Auto-Shrink |
+|----------|-----|-----|-----|-------------|
+| **Google** | 10 | 250,000 | 1,000 | Yes |
+| **Anthropic** | 50 | 80,000 | 0 (unlimited) | Yes |
+| **OpenAI** | 500 | 200,000 | 0 (unlimited) | Yes |
+| **DeepSeek** | 60 | 100,000 | 0 (unlimited) | Yes |
+| **xAI** | 60 | 16,000 | 0 (unlimited) | Yes |
+| **Mistral** | 10 | 50,000 | 0 (unlimited) | Yes |
+| **Groq** | 30 | 30,000 | 14,400 | Yes |
+| **OpenRouter** | 20 | 200,000 | 1,000 | Yes |
+| **Together** | 60 | 100,000 | 0 (unlimited) | Yes |
+| **Fireworks** | 10 | 100,000 | 0 (unlimited) | Yes |
+| **HuggingFace** | 30 | 50,000 | 0 (unlimited) | Yes |
+| **Cerebras** | 50 | 200,000 | 0 (unlimited) | Yes |
+| **Perplexity** | 50 | 200,000 | 0 (unlimited) | Yes |
+| **Hyperbolic** | 30 | 100,000 | 0 (unlimited) | Yes |
+| **Cohere** | 100 | 100,000 | 0 (unlimited) | Yes |
+| **GitHub** | 30 | 100,000 | 0 (unlimited) | Yes |
+| **AmazonBedrock** | 60 | 100,000 | 0 (unlimited) | Yes |
+| **Z.AI** | 60 | 100,000 | 0 (unlimited) | Yes |
+| **Ollama** | 0 (unlimited) | 0 (unlimited) | 0 (unlimited) | No |
+| **LMStudio** | 0 (unlimited) | 0 (unlimited) | 0 (unlimited) | No |
+| **OpenAILike** | 0 (unlimited) | 0 (unlimited) | 0 (unlimited) | No |
+
+### Tier Variations
+
+Published limits vary significantly by tier:
+
+- **Google Free**: 2 RPM, 50 RPD, ~250K TPM → Tier 1: 100 RPM, 1K RPD
+- **Anthropic T1**: 50 RPM, 30K ITPM → T4: 1,000+ RPM, 400K+ ITPM
+- **OpenAI T1**: 500 RPM, 200K TPM → T5: 5,000+ RPM, 10M+ TPM
+- **xAI T1**: 60 RPM, 16K TPM → T2: 480 RPM, 2M TPM
+- **Groq Free**: 30 RPM, 14,400 RPD
+- **Fireworks Free**: 10 RPM → 6,000 RPM with credit card
+
+If you're on a paid tier, update your rate limit settings to match your actual limits to avoid unnecessary throttling.
+
+## Server-Side Enforcement
+
+The server-side rate limit system (in the `/api/llmcall` route) uses the client-provided `RateLimitConfig` to enforce three mechanisms:
+
+### 1. Pre-Flight Check
+
+Before sending a request to the provider, the server estimates the total token count (input + expected output) and checks it against your TPM limit. If the estimated tokens would exceed TPM:
+
+- With **auto-shrink enabled**: The server automatically reduces the context (drops older messages or triggers earlier summarization) to fit within TPM
+- With **auto-shrink disabled**: The request is rejected with a clear message: "Would exceed your TPM limit of X tokens"
+
+### 2. RPM Throttle
+
+The server tracks the number of requests sent to each provider in the last 60 seconds. If you've exceeded your RPM limit, the server **sleeps** before sending the request rather than immediately failing. This prevents 429 errors from the provider.
+
+### 3. RPD Enforcement
+
+RPD (Requests Per Day) is tracked cumulatively. When you've reached your daily cap:
+
+- The request is **hard rejected** — no throttling, no sleeping
+- You receive a clear message indicating the daily limit has been reached
+- The counter resets at midnight (or after 24 hours from the first request, depending on provider policy)
+
+This prevents situations where a user unknowingly burns through their entire daily allocation in a single session.
+
+## Auto-Shrink Feature
+
+When `autoShrinkToTpm` is enabled (default for all cloud providers), Amplify automatically reduces the conversation context to fit within your TPM limit rather than failing with an error.
+
+### How it works
+
+1. The server estimates the total token count for the request
+2. If the estimate exceeds TPM, the server progressively drops older messages from the conversation history
+3. Each reduction is re-estimated until the count fits within TPM
+4. The user sees a "Context auto-shrunk to fit TPM limit" notification
+
+This is especially important for providers like Google Gemini where the 1M context window far exceeds the 250K TPM cap on free tiers.
+
+## Token Estimation Heuristic
+
+Since exact tokenization depends on the model provider and is only available after sending the request, Amplify uses a **character-based heuristic** for pre-flight estimates.
+
+### Formula
+
+- **English / prose text**: 1 token ≈ 4 characters (ratio = 4)
+- **Code / structured text**: 1 token ≈ 3 characters (ratio = 3)
+- **CJK text** (Chinese, Japanese, Korean): 1 token ≈ 1 character
+
+The heuristic detects code-like content by counting "code indicator" characters (`{`, `}`, `[`, `]`, `(`, `)`, `=>`, `;`, `:`) and checking their density:
+
+```typescript
+const codeDensity = matchCount / characters;
+const ratio = codeDensity > 0.1 ? 3 : 4;  // >10% code indicators → treat as code
+const tokens = Math.ceil(characters / ratio);
+```
+
+### Limitations
+
+- This is an **estimate**, not an exact count
+- Mixed content (prose + code) is handled by the density heuristic
+- CJK text uses approximately 1 char per token, which can significantly increase estimates for non-English conversations
+- The estimate tends to be **slightly conservative** (overestimates), which is desirable for rate limit purposes
+
+## Managing Rate Limits
+
+### View Current Settings
+
+Open Settings → Providers and click on any provider to see its rate limit configuration.
+
+### Update Settings
+
+```typescript
+import { updateRateLimit } from '~/lib/stores/rate-limit';
+
+// Increase Anthropic RPM to 100
+updateRateLimit('Anthropic', { rpm: 100 });
+
+// Disable auto-shrink for a provider
+updateRateLimit('OpenAI', { autoShrinkToTpm: false });
+```
+
+### Reset to Defaults
+
+```typescript
+import { resetRateLimit } from '~/lib/stores/rate-limit';
+
+// Reset Anthropic back to suggested defaults
+resetRateLimit('Anthropic');
+```
+
+### Wire Format to Server
+
+Only the **current provider's** rate limit config is sent to the server with each request (via the `getRateLimitWire` function). The server doesn't need every provider's settings — just the one being used for the current chat.
+
+## Common Issues
+
+### "Would exceed TPM limit"
+
+This means the estimated token count for your request exceeds your TPM setting. Solutions:
+
+1. **Enable auto-shrink** — Set `autoShrinkToTpm: true` for the provider
+2. **Increase TPM** — Update your TPM limit to match your actual provider tier
+3. **Reduce context** — Start a new chat or manually reduce the conversation length
+
+### 429 Errors Despite Rate Limits
+
+If you're still getting 429 errors from the provider:
+
+1. Your rate limit settings may be **too high** — lower them to match your actual tier
+2. Some providers (DeepSeek) have **concurrency limits** not covered by RPM/TPM — reduce concurrent requests
+3. The token estimation heuristic may **underestimate** for CJK-heavy content
+
+### Daily Limit Exhausted
+
+When RPD is exceeded, you'll see a hard rejection message. Solutions:
+
+1. **Wait for reset** — Daily limits reset after 24 hours
+2. **Increase RPD** — If you're on a higher tier, update your RPD setting
+3. **Set RPD to 0** — Disable daily limits if your provider doesn't enforce them

@@ -1,0 +1,148 @@
+---
+title: Local Providers
+description: Run AI models locally with Ollama, LM Studio, or any OpenAI-compatible endpoint — no cloud API keys required.
+---
+
+Amplify supports three local provider options, allowing you to run models entirely on your own hardware without sending data to cloud APIs. Local providers have **no rate limits** and **no API costs**.
+
+## Ollama
+
+**Environment variable:** `OLLAMA_API_BASE_URL`
+**Default base URL:** `http://127.0.0.1:11434`
+**Download:** [ollama.com/download](https://ollama.com/download)
+
+Ollama is the most popular local inference engine. It runs models natively on macOS, Linux, and Windows using optimized GPU backends.
+
+### Setup
+
+1. **Install Ollama** from [ollama.com/download](https://ollama.com/download)
+2. **Pull a model** using the CLI:
+   ```bash
+   ollama pull llama3.1
+   ollama pull codellama
+   ollama pull qwen2.5-coder
+   ```
+3. **Set the base URL** in Settings → Providers → Ollama, or via environment variable:
+   ```
+   OLLAMA_API_BASE_URL=http://127.0.0.1:11434
+   ```
+
+### Model Discovery
+
+Ollama uses **fully dynamic** model discovery — the `staticModels` array is empty. When you select Ollama in the model picker, Amplify calls `${baseUrl}/api/tags` to list all models you've pulled locally. Each model shows its parameter size (e.g. `llama3.1 (8B)`).
+
+If Ollama isn't running, the model fetch gracefully returns an empty list and logs a warning.
+
+### Configuration
+
+- **`DEFAULT_NUM_CTX`** — Override the default context window size (default: 32,768 tokens). Set this as an environment variable if you need larger contexts.
+- **No API key required** — Ollama's local API doesn't use authentication.
+
+---
+
+## LM Studio
+
+**Environment variable:** `LMSTUDIO_API_BASE_URL`
+**Default base URL:** `http://localhost:1234`
+**Download:** [lmstudio.ai](https://lmstudio.ai/)
+
+LM Studio provides a GUI for downloading and running models locally. It exposes an OpenAI-compatible API, making it easy to integrate.
+
+### Setup
+
+1. **Install LM Studio** from [lmstudio.ai](https://lmstudio.ai/)
+2. **Download a model** through the LM Studio UI (e.g. Llama 3.1, Qwen 2.5 Coder)
+3. **Start the local server** — Click "Start Server" in LM Studio (default port 1234)
+4. **Set the base URL** in Settings → Providers → LM Studio, or via environment variable:
+   ```
+   LMSTUDIO_API_BASE_URL=http://localhost:1234
+   ```
+
+### Model Discovery
+
+LM Studio also uses **fully dynamic** model discovery. Amplify calls `${baseUrl}/v1/models` to list loaded models. If LM Studio isn't running, it returns an empty list with a warning.
+
+### Configuration
+
+- **No API key required** — LM Studio's local server doesn't use authentication by default.
+- Uses the OpenAI-compatible `@ai-sdk/openai` package with LM Studio's base URL.
+
+---
+
+## OpenAI-like Custom Provider
+
+**Environment variables:**
+- `OPENAI_LIKE_API_BASE_URL` — Base URL of the OpenAI-compatible endpoint
+- `OPENAI_LIKE_API_KEY` — Bearer token for authentication
+- `OPENAI_LIKE_API_MODELS` — Fallback model list (semicolon-separated)
+
+The OpenAI-like provider is a generic connector for **any** service that implements the OpenAI chat completions API. This includes services like vLLM, LocalAI, Text Generation WebUI, and many others.
+
+### Setup
+
+1. **Start your OpenAI-compatible server** (e.g. vLLM, LocalAI)
+2. **Set the environment variables**:
+   ```
+   OPENAI_LIKE_API_BASE_URL=http://localhost:8000/v1
+   OPENAI_LIKE_API_KEY=your-key-if-needed
+   ```
+3. If the server doesn't expose a `/models` endpoint, provide a fallback list:
+   ```
+   OPENAI_LIKE_API_MODELS=model-name:8000;another-model:32000
+   ```
+   The format is `model-path:context-limit` separated by semicolons.
+
+### Model Discovery
+
+Primary discovery calls `${baseUrl}/models` (note: `/models`, not `/v1/models`). If this fails, it falls back to the `OPENAI_LIKE_API_MODELS` environment variable.
+
+---
+
+## Docker Considerations
+
+When Amplify runs inside a Docker container, local services on the host machine are not accessible via `localhost` or `127.0.0.1`. Instead, you must use `host.docker.internal` (or the equivalent for your Docker setup).
+
+### Automatic URL Rewriting
+
+Amplify handles this automatically. The `BaseProvider.resolveDockerUrl` method rewrites `localhost` and `127.0.0.1` URLs to `host.docker.internal` when the following environment variable is set:
+
+```
+RUNNING_IN_DOCKER=true
+```
+
+This applies to:
+- **Ollama** — `http://127.0.0.1:11434` → `http://host.docker.internal:11434`
+- **LM Studio** — `http://localhost:1234` → `http://host.docker.internal:1234`
+- **OpenAI-like** — Any localhost/127.0.0.1 URL gets rewritten
+
+### Manual Configuration
+
+If automatic rewriting doesn't work for your setup (e.g. on Linux where `host.docker.internal` may not be available), you can manually set the base URLs:
+
+```
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+```
+
+On Linux, you may need to add this to your Docker run command or `docker-compose.yaml`:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+---
+
+## No Rate Limits for Local Providers
+
+Local providers (Ollama, LM Studio, OpenAI-like) have **no rate limits** by default. In the rate limit store, their configuration is:
+
+```typescript
+Ollama:    { rpm: 0, tpm: 0, rpd: 0, autoShrinkToTpm: false }
+LMStudio:  { rpm: 0, tpm: 0, rpd: 0, autoShrinkToTpm: false }
+OpenAILike: { rpm: 0, tpm: 0, rpd: 0, autoShrinkToTpm: false }
+```
+
+A value of `0` means "unlimited" — no throttling, no pre-flight token checks, and no auto-shrinking. The only practical limit is your hardware's memory and compute capacity.
+
+See [Rate Limits](/docs/providers/rate-limits) for full details on how rate limiting works for cloud providers.

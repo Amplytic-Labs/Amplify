@@ -1,0 +1,244 @@
+---
+title: Vector Database
+description: Browser-native full-text search with BM25 ranking for user profiles and project context
+---
+
+## Overview
+
+Amplify uses **@orama/orama** (v3.1.2) as its vector database engine — a browser-native full-text search library that provides BM25 ranking with stemming and stop-word removal. All data is persisted to IndexedDB, making the vector stores entirely client-side with zero server dependencies.
+
+## Why Orama
+
+Orama was chosen over traditional vector databases for several reasons:
+
+| Feature              | Orama                                          | Traditional Vector DBs                     |
+|----------------------|------------------------------------------------|--------------------------------------------|
+| **Runtime**          | Browser-native (no server required)            | Requires a server-side deployment          |
+| **Persistence**      | IndexedDB (built into every browser)           | Separate database infrastructure           |
+| **Search algorithm** | BM25 with stemming and stop-word removal       | Cosine similarity on embeddings            |
+| **Size**             | ~2 KB gzipped                                  | Multi-MB server processes                  |
+| **Dependencies**     | Zero                                           | Embedding models, vector libraries         |
+| **Latency**          | Sub-millisecond (in-browser)                   | Network round-trip + inference             |
+| **Privacy**          | All data stays in the user's browser           | Data sent to external servers              |
+
+For Amplify's use case — recalling user preferences and project context within a coding assistant — BM25 full-text search provides better relevance than embedding-based similarity while keeping everything local and fast.
+
+## UserProfileVectorStore
+
+Stores and retrieves facts about the user: preferences, tech stack, coding style, and domain knowledge. This replaces simple localStorage substring matching with proper BM25-ranked semantic search.
+
+### Categories
+
+Each user profile entry belongs to one of eight categories:
+
+| Category               | Description                                     | Example                                   |
+|------------------------|-------------------------------------------------|-------------------------------------------|
+| `preference`           | General preferences and choices                 | "Prefers dark mode over light mode"       |
+| `tech_stack`           | Technologies the user works with                | "Uses React + TypeScript for frontend"    |
+| `coding_style`         | How the user writes code                        | "Prefers functional style over OOP"       |
+| `domain_knowledge`     | Areas of expertise                              | "Expert in financial data modeling"        |
+| `workflow`             | How the user organizes their work               | "Uses Git branching strategy with PRs"    |
+| `communication_style`  | How the user communicates                       | "Prefers concise summaries, not lengthy explanations" |
+| `project_preference`   | Project-specific preferences                    | "Likes monorepo structure for large apps" |
+| `general`              | Catch-all for uncategorized facts               | "Works from UTC-5 timezone"               |
+
+### Features
+
+- **BM25 search** — Full-text search with English stemming and stop-word removal
+- **Deduplication** — When adding a new entry, if a similar entry already exists (similarity threshold **0.8**), the existing entry is updated instead of creating a duplicate. The newer wording is kept, and confidence scores are merged (max of old and new)
+- **Access count tracking** — Each entry tracks how many times it has been accessed, enabling relevance boosting over time
+- **Confidence scoring** — Distinguishes explicit facts (stated directly by the user) from inferred facts (deduced from behavior). Explicit facts get higher confidence scores
+- **IndexedDB persistence** — Data survives across browser sessions using key `vector_store_user_profile`
+
+### Token Budget
+
+When injecting user profile context into the AI prompt, the store uses a **500-token** budget by default. This ensures user context doesn't dominate the prompt while still providing relevant personalization.
+
+### Search API
+
+```ts
+// Search for relevant user context
+const results = await userProfileStore.search("React components", {
+  limit: 5,          // Max results to return
+  threshold: 0.8,    // Minimum BM25 score
+  category: "tech_stack", // Filter by category
+});
+
+// Format context for prompt injection (respects token budget)
+const context = await userProfileStore.formatContextForPrompt("React components", 500);
+// Output: "- [tech_stack] Uses React + TypeScript for frontend"
+```
+
+### Entry Structure
+
+```ts
+interface UserProfileEntry {
+  id: string;           // crypto.randomUUID()
+  content: string;      // The fact itself
+  category: UserProfileEntryCategory;
+  createdAt: string;    // ISO timestamp
+  updatedAt: string;    // ISO timestamp (updated on deduplication)
+  accessCount: number;  // Incremented on each access
+  source?: string;      // "conversation" | "explicit" | "inferred"
+  confidence: number;   // 0.0–1.0 (higher for explicit facts)
+}
+```
+
+## ProjectContextVectorStore
+
+Manages **per-project context** using isolated Orama database instances. Each project gets its own database, ensuring clean separation between projects.
+
+### Context Types
+
+| Type                    | Description                                     | Example                                   |
+|-------------------------|-------------------------------------------------|-------------------------------------------|
+| `requirement`           | What the user wants (features, behavior)        | "Must support dark mode"                  |
+| `decision`              | Architectural or design decisions made           | "Chose SQLite over PostgreSQL for local storage" |
+| `error`                 | Errors encountered during development            | "TypeError: Cannot read property of undefined" |
+| `fix`                   | How errors were resolved                        | "Added null check before accessing property" |
+| `pattern`               | Established coding patterns in the project       | "All API calls go through the useApi hook" |
+| `architecture`          | Project structure and component relationships    | "Frontend (React) → API (Express) → DB (SQLite)" |
+| `constraint`            | Things NOT to do (restrictions, rules)          | "Never use class components — always functional" |
+| `file_context`          | What specific files do and their purpose         | "utils/format.ts handles date formatting" |
+| `conversation_summary`  | Summaries of past conversations                  | "Discussed migration strategy for v2"      |
+| `tool_usage`            | Records of tool invocations and results          | "Used grep_search to find all API routes" |
+| `flow_definition`       | Defined user flows                               | "Login flow: landing → login → dashboard" |
+| `screen_connection`     | How screens/pages connect to each other          | "Dashboard links to Settings and Profile" |
+
+### Features
+
+- **Per-project isolation** — Each project ID gets a separate Orama database instance, stored in IndexedDB under key `vector_store_project_{projectId}`
+- **BM25 search** — Same BM25 engine as user profile store, with English language stemming
+- **Category filtering** — Search can be filtered by `type`, `tags`, or both using Orama's `where` clause
+- **Type-specific queries** — Convenience methods like `getErrorHistory()`, `getDecisions()`, `getPatterns()`, `getRequirements()`, and `getFlowDefinitions()` provide pre-built queries for common context types
+- **Priority-ordered context** — When formatting for prompt injection, entries are ordered by type priority: requirements → constraints → decisions → errors → fixes → patterns → architecture → flows → files
+
+### Token Budget
+
+Project context uses a **1000-token** budget for prompt injection — larger than user profile because project context is more directly relevant to the current coding task.
+
+### Special Queries
+
+```ts
+// Get error + fix pairs (helps AI avoid repeating mistakes)
+const history = await projectContextStore.getErrorHistory(projectId);
+
+// Get architectural decisions
+const decisions = await projectContextStore.getDecisions(projectId);
+
+// Get flow definitions and screen connections (verification system)
+const flows = await projectContextStore.getFlowDefinitions(projectId);
+```
+
+### Entry Structure
+
+```ts
+interface ProjectContextEntry {
+  id: string;              // crypto.randomUUID()
+  projectId: string;       // The project this entry belongs to
+  content: string;         // The context content
+  type: ProjectContextEntryType;
+  createdAt: string;       // ISO timestamp
+  updatedAt: string;       // ISO timestamp
+  sourceChatId?: string;   // Which chat session produced this entry
+  planPointId?: string;    // Which plan step produced this entry
+  files?: string[];        // Files referenced by this entry
+  tags?: string[];         // Tags for filtering
+}
+```
+
+## Persistence Layer
+
+All Orama databases are serialized to IndexedDB through a shared persistence layer (`persistence.ts`). The layer provides four operations:
+
+### IndexedDB Structure
+
+- **Database name**: `amplify_vector_stores`
+- **Version**: `1`
+- **Object store**: `stores` (keyed by `name`)
+
+### CRUD Operations
+
+```ts
+// Save a serialized Orama database
+await saveOramaToIDB("vector_store_user_profile", serializedData);
+
+// Load a serialized Orama database (returns null if not found)
+const data = await loadOramaFromIDB("vector_store_user_profile");
+
+// Delete a specific database
+await deleteOramaFromIDB("vector_store_project_my-project");
+
+// List all stored database names
+const names = await listOramaDatabases();
+```
+
+Orama's native `save()` API produces a serializable snapshot, and `load()` restores it into a fresh database instance. This approach is necessary because plain JSON parse produces objects lacking Orama's internal methods.
+
+## Context Flow
+
+The complete flow from user input to AI context injection:
+
+```
+┌─────────────┐
+│  User types  │
+│  a message   │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────┐
+│  Client-side search   │
+│  ├─ UserProfileStore  │──► BM25 search on user message
+│  ├─ ProjectContextStore│──► BM25 search on user message
+│  └──────────────────  │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│  Format within token  │
+│  budgets:              │
+│  ├─ 500 tokens (user) │
+│  ├─ 1000 tokens (proj)│
+└──────────────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│  Inject into prompt   │
+│  as <user_context>    │
+│  and <project_context>│
+└──────────────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│  AI receives relevant │
+│  context and responds │
+│  with personalization │
+└──────────────────────┘
+```
+
+After the AI responds, new facts are extracted from the conversation and stored back into the vector stores, completing the learning loop.
+
+## Token Savings
+
+By using targeted BM25 search instead of naive context injection, Amplify achieves significant token savings:
+
+| Method                     | Approximate tokens | Relevance |
+|----------------------------|--------------------|-----------|
+| **Naive injection** (all context) | 5,000–10,000      | Low (noise) |
+| **BM25 vector search**     | 500–1,500          | High (relevant only) |
+| **Savings**                | **70–90%**         | Better quality |
+
+Naive injection would send every stored fact and every project context entry in every prompt. The vector store approach sends only the most relevant entries within a tight token budget, reducing cost and improving AI focus.
+
+## Built-in Tools
+
+The vector stores are accessible to the AI through four built-in tools registered in `MCPService`:
+
+| Tool                   | Description                                   | Context      |
+|------------------------|-----------------------------------------------|--------------|
+| `search_user_context`  | Search user profile store by query            | Browser-only |
+| `store_user_fact`      | Store a fact about the user                   | Browser-only |
+| `search_project_context` | Search project context by query and projectId | Browser-only |
+| `store_project_context` | Store a project context entry                 | Browser-only |
+
+All four tools are **browser-only** — they use `typeof window` guards and lazy imports to prevent server-side execution, since IndexedDB is only available in the browser.

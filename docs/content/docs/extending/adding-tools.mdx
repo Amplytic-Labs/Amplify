@@ -1,0 +1,323 @@
+---
+title: Adding a New Native Tool
+description: How to create native Copilot-style tools for Amplify's AI toolkit
+---
+
+Amplify includes a set of native tools (similar to VSCode Copilot's built-in tools) that the AI can invoke during conversations. These tools are defined in `app/lib/tools/nativeTools.ts` using Zod schemas and are automatically registered by the `MCPService`.
+
+## Tool Architecture
+
+Amplify's native tools follow a specific execution model:
+
+- **Read-only tools** operate on the `files` map shipped with every `/api/chat` request. They don't modify anything.
+- **Mutating tools** return a JSON "mutation signal" that the browser-side `Chat.client.tsx` parses and applies to the workbench file store.
+- Tools are defined with `description`, `parameters` (Zod schema), and `execute` function.
+
+## Step-by-Step Guide
+
+### 1. Define the Tool in nativeTools.ts
+
+Open `app/lib/tools/nativeTools.ts` and add your tool to the `buildNativeTools()` function:
+
+```ts
+export function buildNativeTools(): Record<string, any> {
+  return {
+    // ... existing tools ...
+
+    /* --------------------------------------------------- your_new_tool */
+    your_new_tool: {
+      description:
+        'Describe what your tool does. This description is shown to the AI ' +
+        'when it decides which tool to use. Be specific about inputs and outputs.',
+      parameters: z.object({
+        // Define parameters using Zod schemas
+        inputParam: z.string().describe('Description of this parameter'),
+        optionalParam: z.number().optional().describe('Optional parameter description'),
+      }),
+      execute: async (
+        { inputParam, optionalParam }: { inputParam: string; optionalParam?: number },
+        ctx: NativeToolContext = {},
+      ) => {
+        // Tool implementation goes here
+        // Return a string result for the AI
+        return `Result: processed ${inputParam}`;
+      },
+    },
+  };
+}
+```
+
+### 2. Understanding Tool Types
+
+#### Read-Only Tools
+
+Read-only tools operate on the `files` map from `ctx` and return plain text results. They auto-execute without user approval:
+
+```ts
+count_lines: {
+  description:
+    'Count the number of lines in a file from the workspace.',
+  parameters: z.object({
+    filePath: z.string().describe('Path of the file to count lines in'),
+  }),
+  execute: async ({ filePath }: { filePath: string }, ctx: NativeToolContext = {}) => {
+    const file = getFileFromMap(ctx.files, filePath);
+    if (!file) {
+      return `File not found: ${filePath}`;
+    }
+    if (file.isBinary) {
+      return `File is binary: ${filePath}`;
+    }
+    const lineCount = file.content.split('\n').length;
+    return `File ${normalizePath(filePath)} has ${lineCount} lines`;
+  },
+},
+```
+
+#### Mutating Tools (Mutation Signals)
+
+Mutating tools return a structured JSON "mutation signal" that the browser applies to the file system. These require user approval before execution:
+
+```ts
+delete_file: {
+  description:
+    'Delete a file from the workspace. The user must approve this action.',
+  parameters: z.object({
+    filePath: z.string().describe('Path of the file to delete'),
+  }),
+  execute: async ({ filePath }: { filePath: string }, ctx: NativeToolContext = {}) => {
+    const rel = normalizePath(filePath);
+    const file = getFileFromMap(ctx.files, rel);
+    if (!file) {
+      return `File not found: ${filePath}`;
+    }
+
+    // Return a mutation signal
+    const signal: FileMutationSignal = {
+      type: 'amplify_file_mutation',
+      operations: [{ op: 'create', filePath: rel, content: '' }], // Or define a 'delete' op
+    };
+
+    return JSON.stringify(signal);
+  },
+},
+```
+
+### 3. How Mutation Signals Work
+
+Mutation signals are JSON strings with `type: 'amplify_file_mutation'`. The browser-side `Chat.client.tsx` detects these in tool results and applies the operations to the workbench store.
+
+**Signal structure:**
+
+```ts
+interface FileMutationSignal {
+  type: 'amplify_file_mutation';
+  operations: FileMutationOperation[];
+}
+
+type FileMutationOperation =
+  | { op: 'create'; filePath: string; content: string }
+  | { op: 'replace'; filePath: string; oldString: string; newString: string }
+  | { op: 'multi_replace'; filePath: string; edits: Array<{ oldString: string; newString: string }> };
+```
+
+**Flow:**
+
+1. AI calls a mutating tool (e.g., `create_file`)
+2. The tool validates the request and returns a `FileMutationSignal` as JSON
+3. `Chat.client.tsx` checks each tool result with `isFileMutationSignal()`
+4. If a signal is detected, it parses it with `parseFileMutationSignal()`
+5. The operations are applied to the workbench file store
+6. The file store writes changes to WebContainer
+
+### 4. Register in the Tool Name List
+
+Add your tool name to `NATIVE_TOOL_NAMES` and categorize it:
+
+```ts
+export const NATIVE_TOOL_NAMES = [
+  'read_file',
+  'list_dir',
+  'find_files',
+  'grep_search',
+  'web_search',
+  'replace_string_in_file',
+  'multi_replace_string_in_file',
+  'create_file',
+  'your_new_tool',  // Add your tool here
+] as const;
+```
+
+**For read-only tools** (auto-execute without approval):
+
+```ts
+export const READ_ONLY_NATIVE_TOOLS: ReadonlySet<string> = new Set([
+  'read_file',
+  'list_dir',
+  'find_files',
+  'grep_search',
+  'web_search',
+  'your_new_tool',  // Add here if read-only
+]);
+```
+
+**For mutating tools** (require user approval), simply don't add them to `READ_ONLY_NATIVE_TOOLS`. They'll automatically require the Approve/Reject UI.
+
+### 5. Auto-Registration by MCPService
+
+The `MCPService._registerInternalTools()` method automatically calls `buildNativeTools()` and registers all returned tools. You don't need to manually register anything — just add your tool definition to `buildNativeTools()` and it will be available.
+
+The `MCPService` also creates a "without execute" version of each tool (just `description` + `parameters`, no `execute`) for the AI's tool schema, so the AI knows what tools are available before deciding to call one.
+
+## NativeToolContext
+
+The `ctx` (second argument to `execute`) provides these fields:
+
+```ts
+interface NativeToolContext {
+  files?: NativeFileMap;     // The workspace file snapshot
+  toolCallId?: string;       // Unique ID for this tool call
+  messages?: any[];          // Chat messages for context
+  fetch?: typeof fetch;      // Server-side fetch function
+  apiBaseUrl?: string;       // URL prefix for internal API calls
+}
+```
+
+The `files` map is the same snapshot the system prompt uses, ensuring the AI and tools see consistent data.
+
+## Zod Schema Patterns
+
+Use Zod to define tool parameters with rich descriptions:
+
+```ts
+// Required string parameter
+filePath: z.string().describe('Absolute or workspace-relative path'),
+
+// Optional number with default
+limit: z.number().optional().default(10).describe('Max results to return'),
+
+// Boolean with default
+caseSensitive: z.boolean().optional().default(true).describe('Case-sensitive search'),
+
+// Enum for fixed options
+mode: z.enum(['exact', 'fuzzy', 'regex']).describe('Search mode'),
+
+// Array of objects
+edits: z.array(
+  z.object({
+    oldString: z.string(),
+    newString: z.string(),
+  })
+).min(1).describe('Array of edits to apply'),
+
+// Optional string with description
+includePattern: z.string().optional().describe('Glob filter pattern'),
+```
+
+## Full Code Example: Adding a "diff_files" Tool
+
+Here's a complete example adding a tool that shows the diff between two files:
+
+```ts
+/* --------------------------------------------------- diff_files */
+diff_files: {
+  description:
+    'Compare two files and show their differences. Returns a unified diff ' +
+    'format showing added (+) and removed (-) lines. Useful for reviewing ' +
+    'changes before applying edits.',
+  parameters: z.object({
+    filePathA: z.string().describe('Path of the first (original) file'),
+    filePathB: z.string().describe('Path of the second (modified) file'),
+    contextLines: z.number().optional().default(3).describe('Number of context lines around changes'),
+  }),
+  execute: async (
+    { filePathA, filePathB, contextLines }: { filePathA: string; filePathB: string; contextLines?: number },
+    ctx: NativeToolContext = {},
+  ) => {
+    const fileA = getFileFromMap(ctx.files, filePathA);
+    const fileB = getFileFromMap(ctx.files, filePathB);
+
+    if (!fileA) {
+      return `File not found: ${filePathA}`;
+    }
+    if (!fileB) {
+      return `File not found: ${filePathB}`;
+    }
+    if (fileA.isBinary || fileB.isBinary) {
+      return `Cannot diff binary files`;
+    }
+
+    const linesA = fileA.content.split('\n');
+    const linesB = fileB.content.split('\n');
+    const ctxN = contextLines ?? 3;
+
+    // Simple line-by-line diff
+    const diffLines: string[] = [];
+    const maxLen = Math.max(linesA.length, linesB.length);
+
+    for (let i = 0; i < maxLen; i++) {
+      const a = i < linesA.length ? linesA[i] : undefined;
+      const b = i < linesB.length ? linesB[i] : undefined;
+
+      if (a === b) continue;
+
+      // Add context lines before the change
+      for (let c = Math.max(0, i - ctxN); c < i; c++) {
+        if (c < linesA.length && c < linesB.length && linesA[c] === linesB[c]) {
+          diffLines.push(`  ${linesA[c]}`);
+        }
+      }
+
+      if (a !== undefined && a !== b) {
+        diffLines.push(`- ${a}`);
+      }
+      if (b !== undefined && a !== b) {
+        diffLines.push(`+ ${b}`);
+      }
+    }
+
+    if (diffLines.length === 0) {
+      return `Files are identical: ${normalizePath(filePathA)} and ${normalizePath(filePathB)}`;
+    }
+
+    return `Diff between ${normalizePath(filePathA)} and ${normalizePath(filePathB)}:\n\n${diffLines.join('\n')}`;
+  },
+},
+```
+
+Then add `'diff_files'` to `NATIVE_TOOL_NAMES` and `READ_ONLY_NATIVE_TOOLS` (since it's read-only).
+
+## Testing Your Tool
+
+Amplify includes a test file at `app/lib/tools/nativeTools.spec.ts`. Add tests for your new tool:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { buildNativeTools } from '~/lib/tools/nativeTools';
+
+describe('your_new_tool', () => {
+  const tools = buildNativeTools();
+
+  it('should return expected result', async () => {
+    const result = await tools.your_new_tool.execute(
+      { inputParam: 'test-value' },
+      { files: mockFileMap },
+    );
+    expect(result).toContain('expected output');
+  });
+
+  it('should handle missing files', async () => {
+    const result = await tools.your_new_tool.execute(
+      { inputParam: 'nonexistent' },
+      { files: {} },
+    );
+    expect(result).toContain('not found');
+  });
+});
+```
+
+Run tests with:
+
+```bash
+pnpm test app/lib/tools/nativeTools.spec.ts
+```

@@ -1,0 +1,413 @@
+---
+title: Adding New Routes
+description: How to create API endpoints and UI pages using Remix routing conventions
+---
+
+Amplify uses [Remix](https://remix.run/) with its file-based routing system. Routes are defined by files in the `app/routes/` directory, and their filenames determine the URL path they handle.
+
+## Remix File Conventions
+
+Remix routes follow a strict naming convention:
+
+| Convention | Purpose | Example |
+|-----------|---------|---------|
+| `_index.tsx` | Root index route | Matches `/` |
+| `about.tsx` | Static path route | Matches `/about` |
+| `$projectId.tsx` | Dynamic segment | Matches `/any-project-id` |
+| `$projectId.$chatId.tsx` | Nested dynamic segments | Matches `/project-id/chat-id` |
+| `api.health.ts` | API route (server-only) | Matches `/api/health` |
+| `api.models.$provider.ts` | API route with dynamic segment | Matches `/api/models/openai` |
+| `sim.tsx` | Simple path route | Matches `/sim` |
+
+### Route Types in Amplify
+
+Amplify has two main route categories:
+
+#### API Routes (`api.*.ts`)
+
+Server-side endpoints that handle data operations. They export `action` (for POST/PUT/DELETE) and/or `loader` (for GET):
+
+```ts
+// app/routes/api.health.ts
+import { json, type LoaderFunctionArgs } from '@remix-run/cloudflare';
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  return json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+  });
+};
+```
+
+#### UI Routes (`*.tsx`)
+
+React pages that render in the browser. They export a default React component and optionally a `loader` for data fetching:
+
+```tsx
+// app/routes/_index.tsx
+import { json, type MetaFunction } from '@remix-run/cloudflare';
+
+export const meta: MetaFunction = () => {
+  return [{ title: 'Amplify' }];
+};
+
+export const loader = () => json({});
+
+export default function Index() {
+  return <div>Hello, Amplify!</div>;
+}
+```
+
+## Adding an API Route
+
+### 1. Create the Route File
+
+Create a file matching the URL path you want. For example, `/api/stats`:
+
+```ts
+// app/routes/api.stats.ts
+import { json, type LoaderFunctionArgs, type ActionFunctionArgs } from '@remix-run/cloudflare';
+
+// GET /api/stats
+export async function loader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
+  const projectId = url.searchParams.get('projectId');
+
+  if (!projectId) {
+    return json({ error: 'projectId is required' }, { status: 400 });
+  }
+
+  // Fetch stats from your data store
+  const stats = {
+    totalChats: 42,
+    totalFiles: 128,
+    lastActive: new Date().toISOString(),
+  };
+
+  return json(stats);
+}
+
+// POST /api/stats
+export async function action({ request }: ActionFunctionArgs) {
+  const body = await request.json();
+
+  // Process the POST request
+  console.log('Received stats update:', body);
+
+  return json({ success: true });
+}
+```
+
+### 2. Dynamic API Routes
+
+For routes with dynamic URL segments, use `$paramName` in the filename:
+
+```ts
+// app/routes/api.models.$provider.ts
+import { json, type LoaderFunctionArgs } from '@remix-run/cloudflare';
+import { LLMManager } from '~/lib/modules/llm/manager';
+
+export async function loader({ params }: LoaderFunctionArgs) {
+  const providerName = params.provider; // Extracted from URL
+
+  if (!providerName) {
+    return json({ error: 'Provider name is required' }, { status: 400 });
+  }
+
+  const manager = LLMManager.getInstance();
+  const provider = manager.getProvider(providerName);
+
+  if (!provider) {
+    return json({ error: `Provider ${providerName} not found` }, { status: 404 });
+  }
+
+  return json({
+    name: provider.name,
+    models: provider.staticModels,
+  });
+}
+```
+
+The URL `/api/models/openai` would set `params.provider` to `"openai"`.
+
+### 3. Common API Route Patterns
+
+#### JSON Response with Status
+
+```ts
+return json(data, { status: 200 });
+return json({ error: 'Not found' }, { status: 404 });
+return json({ error: 'Bad request' }, { status: 400 });
+return json({ error: 'Unauthorized' }, { status: 401 });
+```
+
+#### Streaming Response
+
+For routes that stream data (like the chat endpoint), use `createUIMessageStreamResponse`:
+
+```ts
+import { createUIMessageStreamResponse } from 'ai';
+
+export async function action({ request }: ActionFunctionArgs) {
+  const stream = createUIMessageStream({
+    execute: async (writer) => {
+      // Stream data to the client
+      writer.write({ type: 'text', content: 'Hello' });
+    },
+  });
+
+  return createUIMessageStreamResponse(stream);
+}
+```
+
+#### Error Handling
+
+```ts
+export async function loader({ request }: LoaderFunctionArgs) {
+  try {
+    const data = await fetchData();
+    return json(data);
+  } catch (error) {
+    console.error('Failed to fetch data:', error);
+    return json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+```
+
+## Adding a UI Route
+
+### 1. Create the Route Component
+
+```tsx
+// app/routes/debug.tsx
+import { json, type LoaderFunctionArgs, type MetaFunction } from '@remix-run/cloudflare';
+import { ClientOnly } from 'remix-utils/client-only';
+
+export const meta: MetaFunction = () => {
+  return [{ title: 'Amplify Debug' }];
+};
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  return json({
+    env: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+export default function DebugPage() {
+  return (
+    <ClientOnly fallback={<div>Loading...</div>}>
+      {() => <DebugContent />}
+    </ClientOnly>
+  );
+}
+
+// Client-side component (uses browser APIs)
+import { useLoaderData } from '@remix-run/react';
+import { useStore } from '@nanostores/react';
+import { chatStore } from '~/lib/stores/chat';
+
+function DebugContent() {
+  const loaderData = useLoaderData<typeof loader>();
+  const chat = useStore(chatStore);
+
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-bold">Debug Panel</h1>
+      <pre>{JSON.stringify(loaderData, null, 2)}</pre>
+      <pre>{JSON.stringify(chat, null, 2)}</pre>
+    </div>
+  );
+}
+```
+
+### 2. Client-Only Components
+
+Many Amplify components use browser-only APIs (IndexedDB, WebContainer, etc.). Wrap them in `ClientOnly` to prevent SSR errors:
+
+```tsx
+import { ClientOnly } from 'remix-utils/client-only';
+
+export default function MyPage() {
+  return (
+    <ClientOnly fallback={<div>Loading...</div>}>
+      {() => <BrowserOnlyComponent />}
+    </ClientOnly>
+  );
+}
+```
+
+### 3. Dynamic UI Routes
+
+```tsx
+// app/routes/chat.$id.tsx
+import { json, type LoaderFunctionArgs } from '@remix-run/cloudflare';
+
+export const loader = async ({ params }: LoaderFunctionArgs) => {
+  const chatId = params.id;
+  // Load chat data
+  return json({ chatId });
+};
+
+export default function ChatPage() {
+  const { chatId } = useLoaderData<typeof loader>();
+  return <ChatView chatId={chatId} />;
+}
+```
+
+## Layout Routes and Nested Routes
+
+Remix supports layout routes that wrap child routes with shared UI:
+
+### Layout Routes
+
+A file named `_layout.tsx` creates a layout that wraps all nested routes:
+
+```
+app/routes/
+  _layout.tsx          # Layout wrapper
+  _layout._index.tsx   # Index within the layout
+  _layout.about.tsx    # About page within the layout
+```
+
+The layout component must render `<Outlet />` for child routes:
+
+```tsx
+// app/routes/_layout.tsx
+import { Outlet } from '@remix-run/react';
+
+export default function Layout() {
+  return (
+    <div>
+      <nav>Shared Navigation</nav>
+      <main>
+        <Outlet /> {/* Child routes render here */}
+      </main>
+    </div>
+  );
+}
+```
+
+### Nested Routes without Layout
+
+Use `_` prefix to create pathless layout groups that share data but don't add UI wrappers:
+
+```
+app/routes/
+  _auth.login.tsx      # /login
+  _auth.register.tsx   # /register
+```
+
+The `_auth` part is not included in the URL, but both routes can share a common loader or context.
+
+## Loading Data in Routes
+
+### Server-Side Loading (Loader)
+
+```ts
+export const loader = async ({ request, params, context }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const query = url.searchParams.get('q');
+
+  // Access server-side resources
+  const data = await fetchDataFromDatabase(query);
+
+  return json(data);
+};
+```
+
+### Client-Side Data Access
+
+```tsx
+import { useLoaderData } from '@remix-run/react';
+
+export default function MyPage() {
+  const data = useLoaderData<typeof loader>();
+  // data is typed based on what the loader returns
+}
+```
+
+### Form Submissions (Action)
+
+```ts
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const formData = await request.formData();
+  const name = formData.get('name');
+
+  // Process form submission
+  return json({ success: true, name });
+};
+```
+
+## Route File Naming Reference
+
+| Filename | URL Path | Type |
+|----------|---------|------|
+| `_index.tsx` | `/` | UI route |
+| `api.health.ts` | `/api/health` | API route |
+| `api.chat.ts` | `/api/chat` | API route |
+| `api.models.$provider.ts` | `/api/models/:provider` | API route (dynamic) |
+| `chat.$id.tsx` | `/chat/:id` | UI route (dynamic) |
+| `$projectId.$chatId.tsx` | `/:projectId/:chatId` | UI route (multi-dynamic) |
+| `debug.tsx` | `/debug` | UI route |
+| `git.tsx` | `/git` | UI route |
+
+## Import Conventions
+
+Amplify uses `~/` path aliases instead of relative imports (enforced by ESLint):
+
+```ts
+// ✅ Correct
+import { WORK_DIR } from '~/utils/constants';
+import { BaseProvider } from '~/lib/modules/llm/base-provider';
+
+// ❌ Wrong (ESLint will flag this)
+import { WORK_DIR } from '../utils/constants';
+import { BaseProvider } from '../../lib/modules/llm/base-provider';
+```
+
+## Full Example: Adding a Project Export Route
+
+Here's a complete example adding `/api/export-project` that exports project data as JSON:
+
+```ts
+// app/routes/api.export-project.ts
+import { json, type ActionFunctionArgs } from '@remix-run/cloudflare';
+import { createScopedLogger } from '~/utils/logger';
+
+const logger = createScopedLogger('api.export-project');
+
+export async function action({ request }: ActionFunctionArgs) {
+  try {
+    const body = await request.json();
+    const { projectId, format } = body as { projectId: string; format?: 'json' | 'markdown' };
+
+    if (!projectId) {
+      return json({ error: 'projectId is required' }, { status: 400 });
+    }
+
+    // Export logic here
+    logger.info('Exporting project', projectId, 'as', format ?? 'json');
+
+    const exportData = {
+      projectId,
+      exportedAt: new Date().toISOString(),
+      format: format ?? 'json',
+      // ... project data
+    };
+
+    if (format === 'markdown') {
+      // Convert to markdown format
+      const markdown = `# Project ${projectId}\n\nExported at: ${exportData.exportedAt}\n`;
+      return json({ content: markdown, format: 'markdown' });
+    }
+
+    return json(exportData);
+  } catch (error) {
+    logger.error('Export failed:', error);
+    return json({ error: 'Export failed' }, { status: 500 });
+  }
+}
+```
+
+The route is immediately available at `/api/export-project` with no additional configuration needed.

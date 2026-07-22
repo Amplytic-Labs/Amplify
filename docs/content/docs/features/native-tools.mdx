@@ -1,0 +1,141 @@
+---
+title: Native Tools
+description: 8 Copilot-style tools for reading, searching, editing, and web searching within the workspace
+---
+
+# Native Tools
+
+Amplify includes 8 built-in **Copilot-style native tools** that give the AI direct access to your workspace. These tools mirror VSCode Copilot's built-in toolset, providing a familiar and powerful interface for the AI to understand and modify your project.
+
+## Overview
+
+The native tools are divided into two categories:
+
+| Category | Tools | Auto-Execute? |
+|----------|-------|---------------|
+| **Read-only** | `read_file`, `list_dir`, `find_files`, `grep_search`, `web_search` | Yes — no approval needed |
+| **Mutating** | `replace_string_in_file`, `multi_replace_string_in_file`, `create_file` | No — requires user approval |
+
+Read-only tools auto-execute without prompting you, just like VSCode Copilot. The AI can freely explore your project. Mutating tools always show an Approve/Reject dialog, keeping you in control of every file change.
+
+## Read-Only Tools
+
+### read_file
+
+Reads the contents of a text file from the workspace.
+
+**Parameters**: `filePath` (required), `offset` (optional, 1-based line number), `limit` (optional, max lines to read)
+
+- Line numbers are 1-indexed and displayed inline
+- Truncates at 2000 lines — use `offset` and `limit` for large files
+- Binary files return a "cannot display" message instead of garbled text
+- If the file doesn't exist, suggests using `list_dir` to explore first
+
+### list_dir
+
+Lists the contents of a directory in the workspace.
+
+**Parameters**: `path` (required)
+
+- Returns entries sorted with folders first, then files alphabetically
+- Each entry shows `[dir]` prefix for folders
+- Returns "empty or does not exist" for invalid paths
+
+### find_files
+
+Finds files whose path matches a glob pattern.
+
+**Parameters**: `pattern` (required — glob pattern like `**/*.tsx`, `src/components/*.ts`)
+
+- Supports `*`, `**`, and `?` wildcards
+- Returns up to 200 matches
+- Useful for locating files by extension, name, or directory structure
+
+### grep_search
+
+Searches file contents for a pattern (regex or literal).
+
+**Parameters**: `pattern` (required), `includePattern` (optional glob filter), `isRegex` (optional, default false), `caseSensitive` (optional, default true)
+
+- Returns matching file paths with line numbers and the matching line text
+- Truncates at 50 matches to keep results manageable
+- Supports regex and literal search modes
+- Optional glob filter limits which files are searched (e.g., `*.ts`)
+
+### web_search
+
+Searches the web for current information using DuckDuckGo's Instant Answer API.
+
+**Parameters**: `query` (required), `maxResults` (optional, default 5)
+
+- Returns results with title, URL, and snippet
+- Falls back to the internal web-search API route if DuckDuckGo returns nothing
+- Used when the AI needs information outside the workspace (docs, recent events, library versions)
+
+## Mutating Tools
+
+### replace_string_in_file
+
+Edits an existing file by replacing one exact occurrence of `oldString` with `newString`.
+
+**Parameters**: `filePath` (required), `oldString` (required, must be unique), `newString` (required)
+
+- `oldString` must match **exactly** — including all whitespace, indentation, and newlines
+- Must be **unique** in the file — if it matches multiple locations, the edit fails
+- Include 3 lines of surrounding context to ensure uniqueness
+- If `oldString` isn't found, the tool suggests copying the exact text
+
+### multi_replace_string_in_file
+
+Applies multiple edits to a single file in one call.
+
+**Parameters**: `filePath` (required), `edits` (required — array of `{oldString, newString}` pairs, minimum 1)
+
+- Each edit follows the same uniqueness rules as `replace_string_in_file`
+- Edits are validated against the **original** content before any are applied
+- Applied sequentially in the order given on the client side
+- Useful for making several related changes (imports, function signature, tests) in one operation
+
+### create_file
+
+Creates a new file with the given content.
+
+**Parameters**: `filePath` (required), `content` (required)
+
+- Fails if the file already exists — use `replace_string_in_file` for modifications
+- Parent directories are created automatically
+- Returns a mutation signal that the browser applies to the workbench
+
+## How Mutations Work
+
+Mutating tools don't directly modify the file system. Instead, they return a **mutation signal** — a structured JSON payload that flows from the server to the browser:
+
+```json
+{
+  "type": "amplify_file_mutation",
+  "operations": [
+    { "op": "create", "filePath": "src/components/Login.tsx", "content": "..." },
+    { "op": "replace", "filePath": "src/App.tsx", "oldString": "...", "newString": "..." },
+    { "op": "multi_replace", "filePath": "src/App.tsx", "edits": [...] }
+  ]
+}
+```
+
+The browser-side `Chat.client.tsx` detects these signals in tool results and applies them to the workbench file store, which in turn writes to WebContainer. This architecture ensures:
+
+- The server never directly touches the browser's file system
+- The AI and the user see a consistent snapshot
+- Mutations can be previewed, approved, or rejected before application
+- The same pattern is used by the `execute_plan` tool
+
+## Tool Approval / Denial Flow
+
+When a mutating tool is invoked:
+
+1. The AI emits a tool call with the proposed mutation
+2. The UI renders a **Tool Confirmation** panel showing the proposed change
+3. You click **Approve** to apply the change, or **Deny** to reject it
+4. On approval, the mutation signal is applied to the workbench
+5. The AI receives the result and continues its response
+
+For read-only tools, this step is skipped — they execute immediately and the result flows back to the AI without interruption.

@@ -1,0 +1,323 @@
+---
+title: Electron Desktop App
+description: Build and run Amplify as a standalone desktop application for macOS, Windows, and Linux.
+---
+
+Amplify can be packaged as a desktop application using Electron. This provides an offline-capable, native experience with OS-integrated menus, auto-updates, and cross-platform support.
+
+## Building from Source
+
+Amplify's Electron build process compiles the Remix web application and wraps it in an Electron shell. The build system uses electron-builder for packaging and distribution.
+
+### Build Architecture
+
+The Electron build involves three separate compilation steps:
+
+```text
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│ Renderer Build    │     │ Main Process      │     │ Preload Scripts  │
+│ (Remix + Vite)   │     │ (Vite)            │     │ (Vite)           │
+│                   │     │                   │     │                  │
+│ remix vite:build  │     │ vite build        │     │ vite build       │
+│ --config vite-    │     │ --config          │     │ --config         │
+│ electron.config   │     │ electron/main/    │     │ electron/preload/│
+└──────────────────┘     │ vite.config       │     │ vite.config      │
+                         └──────────────────┘     └──────────────────┘
+                                  │                       │
+                                  └───────────┬───────────┘
+                                              │
+                                    ┌─────────▼──────────┐
+                                    │  electron-builder   │
+                                    │  Packaging &        │
+                                    │  Distribution       │
+                                    └────────────────────┘
+```
+
+### Prerequisites
+
+- Node.js 22+ and pnpm installed
+- All Remix/Vite dependencies installed (`pnpm install`)
+- macOS: Xcode Command Line Tools (for macOS builds)
+- Windows: Visual Studio Build Tools (for Windows builds)
+- Linux: Standard build essentials
+
+### Step-by-Step Build
+
+#### 1. Install Dependencies
+
+```bash
+pnpm install
+```
+
+#### 2. Build for All Platforms (macOS, Windows, Linux)
+
+```bash
+pnpm electron:build:dist
+```
+
+This command:
+
+1. Cleans the `dist` directory
+2. Builds the Remix renderer with the Electron-specific Vite config
+3. Builds the main process and preload scripts concurrently
+4. Packages with `electron-builder --mwl` (mac, windows, linux)
+
+#### 3. Build for macOS Only
+
+```bash
+pnpm electron:build:mac
+```
+
+Produces a `.dmg` installer for macOS. The build configuration includes:
+
+- DMG target format
+- Hardened runtime for Gatekeeper compatibility
+- Developer tools category classification
+- Entitlements for system access
+
+#### 4. Build for Windows Only
+
+```bash
+pnpm electron:build:win
+```
+
+Produces a `.exe` NSIS installer for Windows with:
+
+- Custom installation directory option
+- Desktop and Start Menu shortcuts
+- Setup wizard with progress indicators
+
+#### 5. Build for Linux Only
+
+```bash
+pnpm electron:build:linux
+```
+
+Produces both `.AppImage` and `.deb` packages for Linux.
+
+#### 6. Build for Unpacking (Testing)
+
+To create an unpacked build for testing without packaging:
+
+```bash
+pnpm electron:build:unpack
+```
+
+This creates the Electron app in a directory without compressing it into an installer, allowing quick testing of the desktop application.
+
+### Build Scripts Breakdown
+
+The build process uses several individual scripts that can be run separately:
+
+```bash
+# Build the main process
+pnpm electron:build:main
+
+# Build the preload scripts
+pnpm electron:build:preload
+
+# Build both main and preload concurrently
+pnpm electron:build:deps
+
+# Build the renderer (Remix app)
+pnpm electron:build:renderer
+```
+
+## Downloadable Binaries
+
+Pre-built binaries are available from GitHub Releases, so you don't need to build from source unless you're making modifications.
+
+### Download Locations
+
+Binaries are published at:
+
+```text
+https://github.com/Derek-X-Wang/amplify/releases
+```
+
+Available artifacts per platform:
+
+| Platform | Format | Filename Pattern |
+| --- | --- | --- |
+| macOS | DMG | `Amplify-{version}-mac-{arch}.dmg` |
+| Windows | NSIS EXE | `Amplify-{version}-win-{arch}-setup.exe` |
+| Linux | AppImage | `Amplify-{version}-linux-{arch}.AppImage` |
+| Linux | DEB | `Amplify-{version}-linux-{arch}.deb` |
+
+### Installing Binaries
+
+- **macOS**: Open the DMG, drag Amplify to Applications folder
+- **Windows**: Run the EXE installer, follow the setup wizard
+- **Linux**: Run the AppImage directly, or install the DEB package with `dpkg -i`
+
+## Auto-Update Mechanism
+
+The Electron app includes a built-in auto-update system using `electron-updater`:
+
+### How It Works
+
+1. On startup, the app checks for updates against GitHub Releases
+2. If an update is available, a dialog prompts the user to download it
+3. Once downloaded, the user can choose to restart and install immediately or defer
+4. Periodic checks run every **4 hours** while the app is open
+
+### Update Flow
+
+```text
+App Start ──► Check for Updates ──► Update Available?
+                                        │
+                              Yes ──────┼────── No
+                              │                   │
+                              ▼                   ▼
+                    "Update Available"      "No Update" Log
+                    Dialog: Update/Later
+                              │
+                    Download ──┼─── Later (defer)
+                              │
+                              ▼
+                    "Update Downloaded"
+                    Dialog: Restart/Later
+                              │
+                    Restart ──┼─── Later (defer)
+                              │
+                              ▼
+                    quitAndInstall()
+```
+
+### Configuration
+
+The update system reads from `electron-update.yml`, which is bundled with the application:
+
+```yaml
+# electron-update.yml (included in build)
+provider: github
+owner: Derek-X-Wang
+repo: amplify
+private: true
+releaseType: release
+```
+
+Auto-update behavior:
+
+- `autoDownload: false` — The user must approve before downloading
+- `autoInstallOnAppQuit: true` — Pending updates install automatically on next app quit
+- Checks run on startup and every 4 hours thereafter
+
+### Disabling Auto-Updates
+
+If you're building a custom deployment and want to disable auto-updates, modify the Electron main process to skip the `setupAutoUpdater()` call.
+
+## Development Mode
+
+For developing the Electron app itself:
+
+```bash
+# Start the Electron app in dev mode with live reload
+pnpm electron:dev
+```
+
+This:
+
+1. Starts the Remix dev server
+2. Launches the Electron window pointing at the dev server
+3. Provides live reload on both renderer and main process changes
+
+For debugging the main process:
+
+```bash
+# Start with Chrome DevTools Inspector on port 9229
+pnpm electron:dev:inspect
+```
+
+## Electron Builder Configuration
+
+The `electron-builder.yml` configuration defines packaging details:
+
+```yaml
+appId: com.amplify.dev
+productName: Amplify
+directories:
+  buildResources: build
+  output: dist
+files:
+  - build/**/*
+  - package.json
+  - node_modules/**/*
+  - icons/**
+  - electron-update.yml
+extraMetadata:
+  main: build/electron/main/index.mjs
+asarUnpack:
+  - resources/**
+  - build/client/**/*
+  - build/server/**/*
+  - electron-update.yml
+```
+
+Notable settings:
+
+- **App ID**: `com.amplify.dev` — Used for macOS bundle identification and Windows registry entries
+- **ASAR unpacking**: The client/server bundles and resources are unpacked from the ASAR archive for direct file access, which is required by the Remix SSR runtime
+- **Files**: Includes the full build output, node_modules, icons, and update configuration
+
+### Platform-Specific Settings
+
+```yaml
+mac:
+  icon: assets/icons/icon.icns
+  target: dmg
+  category: "public.app-category.developer-tools"
+  hardenedRuntime: true
+  entitlements: "assets/entitlements.mac.plist"
+
+win:
+  icon: assets/icons/icon.ico
+  target: nsis
+
+linux:
+  icon: assets/icons/icon.png
+  target: [AppImage, deb]
+  category: Development
+```
+
+## Environment Configuration in Electron
+
+The Electron app reads environment configuration from:
+
+1. **Embedded `.env.local`** — If present in the packaged build
+2. **System environment variables** — Set at the OS level
+3. **User settings store** — `electron-store` persists settings across sessions
+
+When packaging the Electron app, include your `.env.local` in the build process or set API keys through the application's settings interface after installation.
+
+## Common Issues
+
+### macOS Gatekeeper
+
+If macOS blocks the app from opening:
+
+1. Right-click the app → Open → Open (confirm)
+2. Or: System Preferences → Security & Privacy → Open Anyway
+
+For developer builds, `gatekeeperAssess: false` bypasses Gatekeeper assessment during packaging.
+
+### Windows SmartScreen
+
+Windows SmartScreen may warn about unrecognized apps. Users can click "More info" → "Run anyway" to proceed. For production distribution, consider code signing with a Windows certificate.
+
+### Linux AppImage Permissions
+
+AppImages need execution permission:
+
+```bash
+chmod +x Amplify-*-linux-*.AppImage
+./Amplify-*-linux-*.AppImage
+```
+
+### Build Failures
+
+Common Electron build issues:
+
+- **Missing icons**: Ensure `assets/icons/` contains `icon.icns` (macOS), `icon.ico` (Windows), and `icon.png` (Linux)
+- **ASAR issues**: If the app fails to start, check that ASAR unpacking covers all required files
+- **Electron mirror**: The build config uses `https://npmmirror.com/mirrors/electron/` as the Electron download mirror for faster downloads in certain regions

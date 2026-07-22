@@ -1,0 +1,148 @@
+---
+title: Changelog
+description: Release history, highlights, and what's coming next for Amplify
+---
+
+## v1.0 Release Highlights
+
+Amplify v1.0 marks the first stable release of the open-source AI-powered coding environment. Here's what shipped.
+
+### Key Features
+
+#### Multi-Provider LLM Support
+
+Amplify supports 20+ AI providers out of the box:
+
+- **Cloud providers:** OpenAI, Anthropic, Google, Groq, Together, Fireworks, Cohere, Mistral, Deepseek, Perplexity, OpenRouter, xAI, HuggingFace, Hyperbolic, Cerebras, Moonshot, Amazon Bedrock, GitHub Models, ZAI
+- **Local providers:** Ollama, LM Studio, OpenAI-Like (custom endpoints)
+- Dynamic model discovery — the AI fetches available models live from each provider
+- Provider auto-registration — new providers are discovered at startup with zero config
+
+#### Copilot-Style Native Tools
+
+A complete set of built-in tools mirroring VSCode Copilot's capabilities:
+
+- `read_file`, `list_dir`, `find_files`, `grep_search` — read-only tools that auto-execute
+- `replace_string_in_file`, `multi_replace_string_in_file`, `create_file` — mutating tools with user approval
+- `web_search` — web search via DuckDuckGo API
+- Mutation signal system — browser-side `Chat.client.tsx` applies file changes safely
+
+#### Skill System
+
+An extensible skill framework for task-specific AI behavior:
+
+- 8+ built-in skills covering React components, web apps, mobile apps, HTML pages, Supabase backends, Appwrite backends, DOCX generation
+- YAML frontmatter + Markdown format for skill definitions
+- Progressive loading — metadata always loaded, full content loaded on demand
+- Token budget management — skills fit within context window constraints
+- User skill directory (`user_skills/`) for custom contributions
+
+#### Design Systems
+
+80+ visual design systems that the AI follows when generating UI:
+
+- Categories: Minimal, Professional, Enterprise, Creative, Luxury, Tech, Playful, Dark, and more
+- Real-world inspired: Apple, Stripe, Notion, Airbnb, SpaceX, Vercel, etc.
+- Auto-discovered from `design/design-systems/` directory
+- Each system defines: color palette, typography, components, layout, elevation, responsive rules
+
+#### MCP (Model Context Protocol) Support
+
+Full MCP integration for extending AI capabilities:
+
+- Three transport types: stdio, SSE, streamable-http
+- UI-driven configuration via Settings > MCP tab
+- Auto-discovery of tools from connected servers
+- Popular servers supported: filesystem, GitHub, PostgreSQL, Brave Search, Puppeteer, Memory
+
+#### Vector Store System
+
+Persistent context retrieval using Orama + IndexedDB:
+
+- `UserProfileVectorStore` — learns user preferences, tech stack, coding style
+- `ProjectContextVectorStore` — stores requirements, decisions, errors, fixes, patterns per project
+- BM25 full-text search with relevance scoring
+- IndexedDB persistence across browser sessions
+- MCP tool integration for AI access during conversations
+
+#### WebContainer Integration
+
+Full browser-based development environment powered by WebContainers:
+
+- Node.js runtime in the browser
+- Terminal access with real shell commands
+- File system with real file operations
+- Package installation via npm/pnpm
+- Live preview of running applications
+
+#### Project Management
+
+- Project gallery with visual tiles
+- Project memory panel for persistent context
+- Chat history with date-binned organization
+- Git integration (clone, deploy to GitHub/GitLab)
+- Netlify and Vercel deployment support
+
+### Improvements
+
+#### Performance
+
+- Context budget system — intelligently manages token usage across providers
+- Stream recovery — handles network interruptions during chat streaming
+- Dynamic model caching — reduces API calls for model listings
+- Progressive skill loading — only loads full skill content when activated
+
+#### Developer Experience
+
+- Remix-based routing with clean file conventions
+- Zod schemas for runtime validation
+- Nanostores for lightweight state management
+- `~/` path aliases enforced by ESLint
+- Vitest for unit testing
+- UnoCSS for utility-first styling
+
+#### Accessibility
+
+- Keyboard navigation for all interactive elements
+- Screen reader support with ARIA labels
+- 4.5:1 contrast ratio enforcement in design systems
+- Focus management in modals and dialogs
+
+### Breaking Changes
+
+There are no breaking changes in v1.0 relative to pre-release versions, as this is the first stable release. However, note these differences from the earlier Bolt prototype:
+
+- **Provider system replaced the hardcoded model list** — models are now discovered dynamically from `BaseProvider` subclasses rather than a static array
+- **Native tools replaced the artifact system** — file operations use `read_file`, `create_file`, `replace_string_in_file` instead of XML-tagged artifacts
+- **Mutation signals replaced direct file writes** — the AI returns JSON signals that `Chat.client.tsx` applies, ensuring safe and auditable file changes
+- **Skill system replaced the monolithic prompt** — task-specific behavior is now modular and extensible via `SKILL.md` files
+- **Orama replaced simple localStorage** — context retrieval uses BM25 search with relevance scoring instead of flat key-value storage
+
+### What's Coming Next
+
+#### v1.1 (Planned)
+
+- **Skill marketplace** — browse, install, and share skills via a community marketplace
+- **Enhanced project memory** — automatic context capture from conversations and tool usage
+- **Flow verification system** — "every button does something, every screen is connected"
+- **Sub-chat engine** — spawn parallel conversations for complex multi-step tasks
+- **Electron desktop app** — native desktop experience with system access
+
+#### v1.2 (Planned)
+
+- **Voice input** — speech-to-text for chat messages
+- **Image understanding** — VLM integration for screenshot analysis
+- **Collaborative editing** — real-time multi-user sessions
+- **Plugin API** — formal extension system for third-party integrations
+- **Custom theme builder** — create and share visual themes
+
+#### Long-term Vision
+
+- **Agent autonomy** — AI-driven project scaffolding and maintenance
+- **Cross-platform mobile** — native iOS/Android companion app
+- **Enterprise features** — team management, shared context, audit logs
+- **Local-first architecture** — full offline capability with optional cloud sync
+
+---
+
+Have a feature idea? [Open a feature request](https://github.com/Amplytic-Labs/open-claude/issues/new) on GitHub.

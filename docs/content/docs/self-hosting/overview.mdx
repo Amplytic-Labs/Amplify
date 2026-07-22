@@ -1,0 +1,117 @@
+---
+title: Self-Hosting Overview
+description: Explore the different ways to deploy and self-host Amplify in your own infrastructure.
+---
+
+Amplify is designed to be flexible and deployable across a wide range of environments. Whether you want to run it on a single server, in a cloud platform, or as a desktop application, this section covers everything you need to know.
+
+## Deployment Options
+
+Amplify supports four primary deployment methods, each suited to different use cases:
+
+| Method | Best For | Complexity | Scalability |
+| --- | --- | --- | --- |
+| **Docker** | Production self-hosting, teams | Medium | High |
+| **Cloudflare Pages** | Cloud-native, global edge | Low | Very High |
+| **Native / Development** | Local development, testing | Low | Single instance |
+| **Electron Desktop** | Personal use, offline-first | Low | Single user |
+
+### Docker (Recommended for Self-Hosting)
+
+Docker is the recommended approach for self-hosting Amplify in production. It provides:
+
+- **Isolated environment** — No conflicts with host system dependencies
+- **Easy configuration** — Environment variables and volume mounts for persistence
+- **Multi-stage builds** — Optimized production images with minimal footprint
+- **Compose profiles** — Separate configurations for production, development, and prebuilt images
+- **Health checks** — Built-in container health monitoring
+
+See the [Docker Deployment](/docs/self-hosting/docker) guide for detailed instructions.
+
+### Cloudflare Pages
+
+Cloudflare Pages offers a zero-config cloud deployment with global edge distribution:
+
+- **Edge deployment** — Serve from Cloudflare's global network
+- **Node.js compatibility** — `nodejs_compat` flag enables server-side rendering
+- **Wrangler integration** — Built-in tooling for builds and deployments
+- **Custom domains** — Easy custom domain setup with Cloudflare DNS
+
+See the [Cloudflare Pages Deployment](/docs/self-hosting/cloudflare) guide for detailed instructions.
+
+### Native / Development
+
+Running Amplify natively is ideal for local development and testing:
+
+- **Quick setup** — `pnpm install && pnpm run dev`
+- **Hot Module Replacement** — Live updates during development
+- **No container overhead** — Direct execution on your machine
+- **Full debugging** — Native Node.js debugging and profiling
+
+See the [Native Installation](/docs/self-hosting/native) guide for detailed instructions.
+
+### Electron Desktop App
+
+Amplify can also run as a standalone desktop application using Electron:
+
+- **Offline capability** — Works without a persistent server connection
+- **Native menus** — OS-integrated menu bar and keyboard shortcuts
+- **Auto-updates** — Automatic update checks every 4 hours
+- **Cross-platform** — macOS, Windows, and Linux support
+
+See the [Electron Desktop App](/docs/self-hosting/electron) guide for detailed instructions.
+
+## Choosing the Right Method
+
+### For Personal Use
+
+If you're an individual developer who wants Amplify on your own machine, the **Electron desktop app** or **native development** setup are the simplest options. No server infrastructure required.
+
+### For Teams and Organizations
+
+For teams that need shared access, **Docker** is the best choice. It provides consistent environments, easy updates, and can be deployed on any server infrastructure. You can combine Docker with a reverse proxy (nginx, Caddy, Traefik) for SSL and domain management.
+
+### For Global Availability
+
+If you need Amplify accessible worldwide with minimal latency, **Cloudflare Pages** pushes your application to the edge. This is ideal for public-facing deployments or teams distributed across multiple regions.
+
+### For Custom Infrastructure
+
+If you have existing Kubernetes clusters, VM fleets, or specialized infrastructure, refer to the [Migration](/docs/migration) section for guides on adapting Amplify to your environment.
+
+## Architecture Overview
+
+Regardless of deployment method, Amplify's core architecture remains consistent:
+
+```text
+┌─────────────────────────────────────────────────┐
+│                   Amplify                        │
+│                                                  │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ Remix    │  │ Vite     │  │ Wrangler      │  │
+│  │ SSR      │  │ Client   │  │ Pages Dev     │  │
+│  │ Server   │  │ Bundle   │  │ / Cloudflare  │  │
+│  └──────────┘  └──────────┘  └───────────────┘  │
+│                                                  │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ AI SDK   │  │ MCP      │  │ WebContainer  │  │
+│  │ Provider │  │ Service  │  │ Sandbox       │  │
+│  └──────────┘  └──────────┘  └───────────────┘  │
+│                                                  │
+│  ┌──────────┐  ┌──────────┐                     │
+│  │ Vector   │  │ Orama    │                     │
+│  │ Store    │  │ Search   │                     │
+│  └──────────┘  └──────────┘                     │
+└─────────────────────────────────────────────────┘
+```
+
+The Remix SSR server handles incoming requests, Vite provides the client-side bundle, and Wrangler bridges the gap between local development and Cloudflare Pages production. The AI SDK provider system, MCP service, and WebContainer sandbox handle the core AI and code execution features.
+
+## Next Steps
+
+Choose the deployment guide that matches your needs:
+
+- [Docker Deployment](/docs/self-hosting/docker) — Production self-hosting with Docker
+- [Cloudflare Pages Deployment](/docs/self-hosting/cloudflare) — Cloud-native edge deployment
+- [Native Installation](/docs/self-hosting/native) — Local development setup
+- [Electron Desktop App](/docs/self-hosting/electron) — Standalone desktop application

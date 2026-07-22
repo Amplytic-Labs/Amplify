@@ -1,0 +1,278 @@
+---
+title: Cloudflare Pages Deployment
+description: Deploy Amplify to Cloudflare Pages for global edge distribution with server-side rendering support.
+---
+
+Cloudflare Pages provides a zero-infrastructure deployment option that runs Amplify on Cloudflare's global edge network. This guide covers everything you need to deploy Amplify as a Cloudflare Pages application.
+
+## Wrangler Configuration
+
+Amplify uses Wrangler — Cloudflare's CLI tool — for both local development and production deployment. The configuration lives in `wrangler.toml`:
+
+```toml
+#:schema node_modules/wrangler/config-schema.json
+name = "amplify"
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-03-28"
+pages_build_output_dir = "./build/client"
+send_metrics = false
+```
+
+Key settings:
+
+- **`name`**: The project name on Cloudflare Pages (`amplify`)
+- **`compatibility_flags`**: `nodejs_compat` enables Node.js APIs in the Cloudflare Workers runtime, which is required for Remix SSR
+- **`compatibility_date`**: Pins the runtime to a specific compatibility version for predictable behavior
+- **`pages_build_output_dir`**: Points to the Vite build output (`./build/client`)
+- **`send_metrics`**: Disabled to prevent Wrangler from sending usage data
+
+### The `nodejs_compat` Flag
+
+The `nodejs_compat` compatibility flag is essential for Amplify. Without it, many Node.js APIs used by Remix and the AI SDK providers would not be available in the Cloudflare Workers runtime. This flag enables:
+
+- `process.env` access for environment variables
+- Node.js stream APIs
+- Buffer and crypto modules
+- File system emulation for server-side rendering
+
+If you remove this flag, Amplify will fail to start on Cloudflare Pages.
+
+## Build Command
+
+Amplify's build command for Cloudflare Pages deployment is:
+
+```bash
+pnpm run deploy
+```
+
+This runs the following sequence:
+
+```bash
+npm run build && wrangler pages deploy
+```
+
+1. **`remix vite:build`** — Compiles the Remix application into server and client bundles
+2. **`wrangler pages deploy`** — Uploads the `./build/client` directory to Cloudflare Pages
+
+### Build Configuration
+
+The Vite build produces two outputs:
+
+- **`build/client`** — Static client-side bundle (JavaScript, CSS, HTML shell)
+- **`build/server`** — Server-side rendering entry point for Remix
+
+Cloudflare Pages serves the client bundle statically and invokes the server bundle for SSR requests via the `_worker.js` file in the output directory.
+
+## The `bindings.sh` Script
+
+The `bindings.sh` script is responsible for passing environment variables to Wrangler as Cloudflare bindings. This is how API keys and configuration reach the Workers runtime:
+
+```bash
+#!/bin/bash
+
+bindings=""
+
+# Read from .env.local if it exists
+if [ -f ".env.local" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ ! "$line" =~ ^# ]] && [[ -n "$line" ]]; then
+      name=$(echo "$line" | cut -d '=' -f 1)
+      value=$(echo "$line" | cut -d '=' -f 2-)
+      value=$(echo $value | sed 's/^"\(.*\)"$/\1/')
+      bindings+="--binding ${name}=${value} "
+    fi
+  done < .env.local
+fi
+
+bindings=$(echo $bindings | sed 's/[[:space:]]*$//')
+echo $bindings
+```
+
+### Local Development with Bindings
+
+When running locally with Wrangler Pages dev:
+
+```bash
+# Unix/macOS
+bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings
+
+# The start script handles this automatically:
+pnpm run start
+```
+
+### Cloudflare Pages Production Bindings
+
+On Cloudflare Pages, environment variables are configured through the Cloudflare dashboard, not through `bindings.sh`. You set them in:
+
+**Cloudflare Dashboard → Pages → amplify → Settings → Environment variables**
+
+Add each API key and configuration variable as a production or preview binding:
+
+```text
+OPENAI_API_KEY        = sk-your-key-here
+ANTHROPIC_API_KEY     = your-key-here
+DEFAULT_NUM_CTX       = 32768
+VITE_LOG_LEVEL        = debug
+```
+
+## Custom Domain Setup
+
+Cloudflare Pages supports custom domains with automatic SSL certificate provisioning.
+
+### Via Cloudflare Dashboard
+
+1. Navigate to **Cloudflare Dashboard → Pages → amplify → Custom domains**
+2. Click **Set up a custom domain**
+3. Enter your domain (e.g., `amplify.yourdomain.com`)
+4. Cloudflare automatically creates the DNS record and provisions the SSL certificate
+5. Wait for DNS propagation (usually within minutes for Cloudflare-managed domains)
+
+### Via Wrangler CLI
+
+```bash
+# Add a custom domain
+wrangler pages project add-domain amplify amplify.yourdomain.com
+```
+
+### DNS Configuration
+
+If your domain is managed outside Cloudflare, add a CNAME record:
+
+```text
+amplify.yourdomain.com  →  amplify.pages.dev
+```
+
+## Production vs Development Environments
+
+Cloudflare Pages provides two environment contexts:
+
+| Setting | Production | Preview |
+| --- | --- | --- |
+| **URL** | `amplify.pages.dev` or custom domain | `*.amplify.pages.dev` |
+| **Trigger** | Main branch pushes | Pull requests and branch deployments |
+| **Bindings** | Production API keys | Preview/test API keys |
+| **Purpose** | Live application | Testing and review |
+
+### Setting Up Separate Bindings
+
+Configure different API keys for each environment in the Cloudflare dashboard:
+
+1. **Production bindings** — Use production API keys with full access
+2. **Preview bindings** — Use test/limited API keys or the same keys for internal teams
+
+```text
+# Production environment
+OPENAI_API_KEY = sk-prod-key-with-full-access
+
+# Preview environment  
+OPENAI_API_KEY = sk-preview-key-with-limited-access
+```
+
+### Preview Deployments
+
+Every push to a non-main branch creates a preview deployment with a unique URL. This is useful for:
+
+- Testing configuration changes before merging
+- Reviewing feature branches with real Cloudflare infrastructure
+- Validating Wrangler bindings and environment variables
+
+## Step-by-Step Deployment
+
+### 1. Prerequisites
+
+- A Cloudflare account (free tier works)
+- Node.js 22+ and pnpm installed
+- API keys for your desired AI providers
+
+### 2. Configure Environment Variables
+
+```bash
+# Copy the example file
+cp .env.example .env.local
+
+# Edit with your API keys
+# For Cloudflare Pages, you'll also set these in the dashboard
+```
+
+### 3. Build and Deploy
+
+```bash
+# Build the application
+pnpm run build
+
+# Deploy to Cloudflare Pages
+pnpm run deploy
+```
+
+Wrangler will prompt you to authenticate if this is your first deployment. After authentication, it uploads the build output and creates the Pages project.
+
+### 4. Set Production Bindings
+
+In the Cloudflare dashboard, add your environment variables:
+
+1. Go to **Pages → amplify → Settings → Environment variables**
+2. Add each required API key and configuration variable
+3. Set them for both **Production** and **Preview** contexts
+
+### 5. Configure Custom Domain (Optional)
+
+1. Go to **Pages → amplify → Custom domains**
+2. Add your domain
+3. Wait for DNS propagation and SSL provisioning
+
+### 6. Verify Deployment
+
+```bash
+# Check the deployment URL
+curl https://amplify.pages.dev
+
+# Or your custom domain
+curl https://amplify.yourdomain.com
+```
+
+## Continuous Deployment
+
+Cloudflare Pages supports automatic deployments from Git repositories:
+
+1. Connect your GitHub repository in the Cloudflare dashboard
+2. Set the build command: `pnpm run build`
+3. Set the output directory: `./build/client`
+4. Every push to `main` triggers a production deployment
+5. Every push to other branches triggers a preview deployment
+
+### Build Configuration in Dashboard
+
+```text
+Framework preset:   Remix
+Build command:      pnpm run build
+Build output dir:   ./build/client
+Node.js version:    22
+```
+
+## Troubleshooting
+
+### `nodejs_compat` Errors
+
+If you see errors about missing Node.js APIs:
+
+```text
+✘ [ERROR] process.env is not defined
+```
+
+Ensure `nodejs_compat` is in your `wrangler.toml` compatibility flags and that the compatibility date is set to `2025-03-28` or later.
+
+### Binding Not Found
+
+If API keys aren't reaching the runtime:
+
+1. Check that variables are set in the Cloudflare dashboard (not just `.env.local`)
+2. Verify the variable names match exactly (case-sensitive)
+3. Redeploy after adding new bindings
+
+### Build Failures
+
+Common build issues on Cloudflare Pages:
+
+- **Missing pnpm**: Add `npm install -g pnpm` as a pre-build command
+- **Memory limits**: Cloudflare Pages builds have memory limits. If your build fails with OOM, try reducing the Vite build's memory usage
+- **Timeout**: Builds must complete within 20 minutes. Large applications may need optimization

@@ -1,0 +1,88 @@
+---
+title: Deploy
+description: Deploy your projects to Netlify, Vercel, GitHub Pages, or GitLab with one-click integration
+---
+
+# Deploy
+
+Amplify provides one-click deployment to multiple platforms. After building your project in the workbench, you can deploy it directly from the chat interface — no manual CLI setup required.
+
+## Netlify Deploy
+
+The **Netlify deployment** integration allows you to push your project to Netlify with a single click:
+
+- Connect your Netlify account via OAuth in settings
+- The **NetlifyDeploy** component handles the deployment flow
+- Deployment status (building, live, failed) is shown inline in the chat
+- A **NetlifyDeploymentLink** appears in the response with the live URL
+- Site name, build settings, and environment variables are configurable
+- The Netlify API handles builds automatically — no local build step needed
+
+Setup steps:
+1. Go to Settings → Netlify
+2. Connect your Netlify account
+3. In chat, use the deploy action or ask the AI to deploy
+4. Monitor the build progress and get your live URL
+
+## Vercel Deploy
+
+The **Vercel deployment** integration provides similar one-click deployment:
+
+- Connect your Vercel account via OAuth in settings
+- The **VercelDeploy** component manages the deployment
+- Project detection for framework (Next.js, React, Vite, etc.)
+- Environment variable configuration
+- A **VercelDeploymentLink** appears in the chat with the deployment URL
+- Build and deployment happen on Vercel's infrastructure
+
+Setup steps:
+1. Go to Settings → Vercel
+2. Connect your Vercel account
+3. In chat, use the deploy action or ask the AI to deploy
+4. Get your live URL when the deployment completes
+
+## GitHub Pages Deploy
+
+The **GitHub Pages deployment** integration publishes your project through GitHub:
+
+- Connect your GitHub account in settings
+- The **GitHubDeploy** component handles the deployment flow
+- Creates or updates a repository with your project files
+- Pushes to a `gh-pages` branch or configured deployment branch
+- GitHub Pages serves the site from the repository
+- A **GitHubDeploymentDialog** provides configuration options
+
+Setup steps:
+1. Go to Settings → GitHub
+2. Connect your GitHub account and select a repository
+3. In chat, use the deploy action targeting GitHub Pages
+4. Your site is published at `https://<username>.github.io/<repo>`
+
+## GitLab Deployment
+
+The **GitLab deployment** integration mirrors the GitHub Pages approach:
+
+- Connect your GitLab account in settings
+- The **GitLabDeploy** component handles the deployment
+- Creates or updates a GitLab project with your files
+- Uses GitLab Pages or CI/CD pipeline for deployment
+- A **GitLabDeploymentDialog** provides configuration options
+- Branch management and pipeline triggers are handled automatically
+
+Setup steps:
+1. Go to Settings → GitLab
+2. Connect your GitLab account
+3. In chat, use the deploy action targeting GitLab
+4. Monitor the CI/CD pipeline and get your live URL
+
+## Deploy Button
+
+All deployment options are accessible through a unified **DeployButton** component:
+
+- Detects which platforms are configured
+- Shows available deployment targets
+- Handles the deployment flow with progress indicators
+- Displays success/failure status and the live URL
+- A **DeployAlert** component shows deployment status inline in the chat
+
+The shared `deployUtils` module provides common logic for all platforms — file packaging, environment variable handling, and deployment status tracking.

@@ -1,0 +1,501 @@
+---
+title: Adding a New Vector Store
+description: How to create custom vector stores for persistent context retrieval in Amplify
+---
+
+Amplify uses Orama (a full-text search engine with BM25 ranking) as its vector store engine, persisted to IndexedDB for browser-side durability. The existing stores — `UserProfileVectorStore` and `ProjectContextVectorStore` — provide reusable patterns for creating new stores.
+
+## Overview
+
+The vector store system has these components:
+
+- **`types.ts`** — shared type definitions (schemas, search options, result types)
+- **`persistence.ts`** — IndexedDB save/load/delete layer for Orama databases
+- **Store classes** — each store manages its own Orama databases with CRUD + search
+- **`index.ts`** — barrel export for the public API
+- **MCP tools** — registered in `mcpService.ts` so the AI can query stores
+
+## Step-by-Step Guide
+
+### 1. Define Types
+
+Add your entry type and schema to `app/lib/vector-store/types.ts`:
+
+```ts
+// Entry type — what the store stores conceptually
+export type BookmarkEntryCategory = 'documentation' | 'code_snippet' | 'reference' | 'todo';
+
+export interface BookmarkEntry {
+  id: string;
+  projectId: string;
+  content: string;
+  category: BookmarkEntryCategory;
+  url?: string;
+  createdAt: string;
+  updatedAt: string;
+  tags?: string[];
+}
+
+// Orama schema — what the database actually indexes
+// Every field must be a primitive Orama type: 'string', 'number', 'boolean', 'string[]'
+export interface BookmarkSchema {
+  id: string;
+  projectId: string;
+  content: string;
+  category: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+  [key: string]: any; // Allow extension
+}
+```
+
+### 2. Create the Store Class
+
+Create a new file `app/lib/vector-store/bookmark-store.ts` using Orama APIs:
+
+```ts
+/**
+ * Bookmark Vector Store
+ *
+ * Stores bookmarked references, code snippets, and documentation links
+ * per project using Orama full-text search persisted to IndexedDB.
+ */
+
+import { create, insert, search, remove, save, load } from '@orama/orama';
+import type {
+  BookmarkEntry,
+  BookmarkEntryCategory,
+  BookmarkSchema,
+  VectorSearchOptions,
+  VectorSearchResult,
+} from './types';
+import { saveOramaToIDB, loadOramaFromIDB, deleteOramaFromIDB } from './persistence';
+
+export class BookmarkVectorStore {
+  private static _instance: BookmarkVectorStore;
+  private databases: Map<string, any> = new Map();
+  private _initPromise: Promise<void> | null = null;
+
+  private constructor() {}
+
+  static getInstance(): BookmarkVectorStore {
+    if (!BookmarkVectorStore._instance) {
+      BookmarkVectorStore._instance = new BookmarkVectorStore();
+    }
+    return BookmarkVectorStore._instance;
+  }
+
+  /**
+   * Ensures the database for a specific project exists and is loaded.
+   */
+  async ensureProject(projectId: string): Promise<any> {
+    if (this.databases.has(projectId)) {
+      return this.databases.get(projectId)!;
+    }
+
+    const dbKey = `vector_store_bookmarks_${projectId}`;
+
+    // Try loading from IndexedDB first
+    try {
+      const savedData = await loadOramaFromIDB(dbKey);
+      if (savedData) {
+        const db = await create({
+          schema: {
+            id: 'string',
+            projectId: 'string',
+            content: 'string',
+            category: 'string',
+            url: 'string',
+            createdAt: 'string',
+            updatedAt: 'string',
+            tags: 'string[]',
+          },
+          language: 'english',
+        });
+        const rawData = JSON.parse(savedData);
+        await load(db, rawData);
+        this.databases.set(projectId, db);
+        console.log(`[BookmarkStore] Loaded project "${projectId}" from IndexedDB`);
+        return db;
+      }
+    } catch (error) {
+      console.warn(`[BookmarkStore] Failed to load project "${projectId}":`, error);
+    }
+
+    // Create new database for this project
+    const db = await create({
+      schema: {
+        id: 'string',
+        projectId: 'string',
+        content: 'string',
+        category: 'string',
+        url: 'string',
+        createdAt: 'string',
+        updatedAt: 'string',
+        tags: 'string[]',
+      },
+      language: 'english',
+    });
+
+    this.databases.set(projectId, db);
+    console.log(`[BookmarkStore] Created new database for project "${projectId}"`);
+    return db;
+  }
+
+  /**
+   * Adds a bookmark entry for a project.
+   */
+  async add(
+    projectId: string,
+    entry: Omit<BookmarkEntry, 'id' | 'createdAt' | 'updatedAt'>,
+  ): Promise<BookmarkEntry> {
+    const db = await this.ensureProject(projectId);
+
+    const newEntry: BookmarkEntry = {
+      ...entry,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await insert(db, {
+      id: newEntry.id,
+      projectId: newEntry.projectId,
+      content: newEntry.content,
+      category: newEntry.category,
+      url: newEntry.url ?? '',
+      createdAt: newEntry.createdAt,
+      updatedAt: newEntry.updatedAt,
+      tags: newEntry.tags ?? [],
+    });
+
+    await this.persistProject(projectId);
+    return newEntry;
+  }
+
+  /**
+   * Searches bookmarks using BM25 full-text search.
+   */
+  async search(
+    projectId: string,
+    query: string,
+    options?: VectorSearchOptions & { category?: BookmarkEntryCategory },
+  ): Promise<VectorSearchResult<BookmarkEntry>[]> {
+    const db = await this.ensureProject(projectId);
+
+    const limit = options?.limit ?? 5;
+    const searchParams: any = {
+      term: query,
+      limit: limit * 3,
+      properties: options?.properties ?? ['content'],
+    };
+
+    // Build where clause for filtering
+    const conditions: any = {};
+    if (options?.category) {
+      conditions.category = { eq: options.category };
+    }
+    if (options?.tags && options.tags.length > 0) {
+      conditions.tags = { containsAny: options.tags };
+    }
+    if (Object.keys(conditions).length > 0) {
+      searchParams.where = conditions;
+    }
+
+    const result = await search(db, searchParams);
+    const hits = Array.isArray(result.hits) ? result.hits : [];
+
+    const mapped: VectorSearchResult<BookmarkEntry>[] = hits
+      .filter((hit: any) => hit.score > 0)
+      .map((hit: any) => ({
+        entry: hit.document as unknown as BookmarkEntry,
+        score: hit.score,
+      }));
+
+    const threshold = options?.threshold ?? 0;
+    const filtered = threshold > 0 ? mapped.filter((r) => r.score >= threshold) : mapped;
+
+    return filtered.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
+  /**
+   * Deletes a specific bookmark.
+   */
+  async delete(projectId: string, entryId: string): Promise<boolean> {
+    const db = await this.ensureProject(projectId);
+    try {
+      await remove(db, entryId);
+      await this.persistProject(projectId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Deletes an entire project's bookmark store.
+   */
+  async deleteProject(projectId: string): Promise<void> {
+    const dbKey = `vector_store_bookmarks_${projectId}`;
+    await deleteOramaFromIDB(dbKey);
+    this.databases.delete(projectId);
+  }
+
+  /**
+   * Returns entry count for a project.
+   */
+  async count(projectId: string): Promise<number> {
+    const db = await this.ensureProject(projectId);
+    const result = await search(db, { term: '', limit: 10000, properties: ['content'] });
+    return Array.isArray(result.hits) ? result.hits.length : 0;
+  }
+
+  /**
+   * Lists all known project IDs.
+   */
+  listProjects(): string[] {
+    return Array.from(this.databases.keys());
+  }
+
+  /**
+   * Persists a single project's database to IndexedDB.
+   */
+  private async persistProject(projectId: string): Promise<void> {
+    const db = this.databases.get(projectId);
+    if (!db) return;
+
+    const dbKey = `vector_store_bookmarks_${projectId}`;
+    try {
+      const rawData = await save(db);
+      await saveOramaToIDB(dbKey, JSON.stringify(rawData));
+    } catch (error) {
+      console.error(`[BookmarkStore] Failed to persist project "${projectId}":`, error);
+    }
+  }
+}
+
+export const bookmarkStore = BookmarkVectorStore.getInstance();
+```
+
+### 3. Export from index.ts
+
+Add your new store to the barrel export in `app/lib/vector-store/index.ts`:
+
+```ts
+export { BookmarkVectorStore, bookmarkStore } from './bookmark-store';
+export type { BookmarkEntry, BookmarkEntryCategory, BookmarkSchema } from './types';
+```
+
+### 4. Add MCP Tool for AI Access
+
+Register MCP tools in `mcpService.ts` so the AI can query your store during conversations. Add tools in the `_registerInternalTools()` method:
+
+```ts
+// Inside _registerInternalTools():
+
+bookmark_search: {
+  description:
+    'Search bookmarked references, code snippets, and documentation for ' +
+    'the current project. Returns relevant entries with BM25 ranking.',
+  parameters: z.object({
+    query: z.string().describe('Search query'),
+    category: z.enum(['documentation', 'code_snippet', 'reference', 'todo'])
+      .optional()
+      .describe('Filter by category'),
+    limit: z.number().optional().default(5).describe('Max results'),
+  }),
+  execute: async (
+    { query, category, limit }: { query: string; category?: string; limit?: number },
+    ctx: any,
+  ) => {
+    // Lazy import to avoid browser-only module in server context
+    if (typeof window === 'undefined') {
+      return 'Bookmark search is only available in the browser environment.';
+    }
+    const { bookmarkStore } = await import('~/lib/vector-store/bookmark-store');
+    const projectId = ctx.projectId || 'default';
+    const results = await bookmarkStore.search(projectId, query, {
+      category: category as any,
+      limit: limit ?? 5,
+    });
+    if (results.length === 0) {
+      return `No bookmarks found matching "${query}"`;
+    }
+    return results.map((r) =>
+      `[${r.entry.category}] ${r.entry.content}${r.entry.url ? ` (${r.entry.url})` : ''} [score: ${r.score.toFixed(2)}]`
+    ).join('\n');
+  },
+},
+```
+
+### 5. Orama API Reference
+
+The key Orama APIs used in Amplify's vector stores:
+
+| API | Purpose | Returns |
+|-----|---------|---------|
+| `create({ schema, language })` | Create a new Orama database | `Promise<OramaDB>` |
+| `insert(db, doc)` | Insert a document | `Promise<string>` (document ID) |
+| `search(db, { term, limit, properties, where })` | BM25 full-text search | `Promise<SearchResult>` |
+| `remove(db, id)` | Delete a document by ID | `Promise<void>` |
+| `save(db)` | Serialize database to JSON | `Promise<OramaRawData>` |
+| `load(db, rawData)` | Restore database from serialized data | `Promise<void>` |
+
+### 6. Persistence with IndexedDB
+
+The `persistence.ts` module provides these helper functions:
+
+| Function | Purpose |
+|----------|---------|
+| `saveOramaToIDB(name, data)` | Save serialized Orama data to IndexedDB |
+| `loadOramaFromIDB(name)` | Load serialized data from IndexedDB (returns `null` if not found) |
+| `deleteOramaFromIDB(name)` | Delete a database from IndexedDB |
+| `listOramaDatabases()` | List all stored database names |
+
+Each store uses a unique key format (e.g., `vector_store_bookmarks_${projectId}`) to avoid collisions.
+
+### 7. Schema Design Guidelines
+
+When designing your Orama schema:
+
+- **All fields must be primitive Orama types**: `string`, `number`, `boolean`, `string[]`, `number[]`
+- **The `id` field is required** and must be `string`
+- **Use `string` for enum-like fields** (category, type) — filter with `{ eq: value }` in `where`
+- **Use `string[]` for tags** — filter with `{ containsAny: values }` in `where`
+- **Set `language: 'english'`** for BM25 relevance ranking
+- **Add `[key: string]: any`** to the TypeScript schema interface for flexibility
+
+### 8. Complete Directory Structure
+
+After adding your store, the vector-store directory looks like:
+
+```
+app/lib/vector-store/
+  types.ts              # Shared type definitions
+  persistence.ts        # IndexedDB helpers
+  user-profile-store.ts # Existing store
+  project-context-store.ts  # Existing store
+  bookmark-store.ts     # Your new store
+  index.ts              # Barrel exports
+```
+
+## Full Example: Adding a "Todo List" Vector Store
+
+Here's a streamlined example for a todo-list store:
+
+```ts
+// 1. types.ts additions
+export type TodoEntryStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
+
+export interface TodoEntry {
+  id: string;
+  projectId: string;
+  content: string;
+  status: TodoEntryStatus;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+  tags?: string[];
+}
+
+export interface TodoSchema {
+  id: string;
+  projectId: string;
+  content: string;
+  status: string;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+  [key: string]: any;
+}
+
+// 2. todo-store.ts
+import { create, insert, search, remove, save, load } from '@orama/orama';
+import { saveOramaToIDB, loadOramaFromIDB, deleteOramaFromIDB } from './persistence';
+import type { TodoEntry, TodoSchema, VectorSearchOptions, VectorSearchResult } from './types';
+
+export class TodoVectorStore {
+  private static _instance: TodoVectorStore;
+  private databases: Map<string, any> = new Map();
+
+  private constructor() {}
+
+  static getInstance(): TodoVectorStore {
+    if (!TodoVectorStore._instance) {
+      TodoVectorStore._instance = new TodoVectorStore();
+    }
+    return TodoVectorStore._instance;
+  }
+
+  async ensureProject(projectId: string) {
+    if (this.databases.has(projectId)) return this.databases.get(projectId)!;
+    const dbKey = `vector_store_todos_${projectId}`;
+    try {
+      const savedData = await loadOramaFromIDB(dbKey);
+      if (savedData) {
+        const db = await create({ schema: this._schema(), language: 'english' });
+        await load(db, JSON.parse(savedData));
+        this.databases.set(projectId, db);
+        return db;
+      }
+    } catch {}
+    const db = await create({ schema: this._schema(), language: 'english' });
+    this.databases.set(projectId, db);
+    return db;
+  }
+
+  private _schema() {
+    return {
+      id: 'string', projectId: 'string', content: 'string',
+      status: 'string', priority: 'number',
+      createdAt: 'string', updatedAt: 'string', tags: 'string[]',
+    };
+  }
+
+  async add(projectId: string, entry: Omit<TodoEntry, 'id' | 'createdAt' | 'updatedAt'>) {
+    const db = await this.ensureProject(projectId);
+    const newEntry: TodoEntry = {
+      ...entry, id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    };
+    await insert(db, { ...newEntry, tags: newEntry.tags ?? [] });
+    await this._persist(projectId);
+    return newEntry;
+  }
+
+  async search(projectId: string, query: string, options?: VectorSearchOptions) {
+    const db = await this.ensureProject(projectId);
+    const conditions: any = {};
+    if (options?.category) conditions.status = { eq: options.category };
+    const result = await search(db, {
+      term: query, limit: (options?.limit ?? 5) * 3,
+      properties: ['content'], where: Object.keys(conditions).length ? conditions : undefined,
+    });
+    return (Array.isArray(result.hits) ? result.hits : [])
+      .filter((h: any) => h.score > 0)
+      .map((h: any) => ({ entry: h.document as unknown as TodoEntry, score: h.score }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, options?.limit ?? 5);
+  }
+
+  async delete(projectId: string, entryId: string) {
+    const db = await this.ensureProject(projectId);
+    await remove(db, entryId);
+    await this._persist(projectId);
+    return true;
+  }
+
+  private async _persist(projectId: string) {
+    const db = this.databases.get(projectId);
+    if (!db) return;
+    await saveOramaToIDB(`vector_store_todos_${projectId}`, JSON.stringify(await save(db)));
+  }
+}
+
+export const todoStore = TodoVectorStore.getInstance();
+```
+
+The store will persist across browser sessions via IndexedDB and can be queried by the AI through MCP tool registration.

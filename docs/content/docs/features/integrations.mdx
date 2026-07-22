@@ -1,0 +1,116 @@
+---
+title: Integrations
+description: GitHub, GitLab, Supabase, and Git integrations for repository management, deployment, and database access
+---
+
+# Integrations
+
+Amplify integrates with external services to extend its capabilities beyond the browser-based workbench. These integrations provide repository access, deployment targets, database queries, and version control — all accessible from within the chat interface.
+
+## GitHub Integration
+
+The GitHub integration provides full repository management:
+
+### Clone Repositories
+
+- The **GitCloneButton** and **GitUrlImport** components let you clone any public or private GitHub repository directly into the workbench
+- The repository's files are loaded into WebContainer for editing
+- Branch selection is available before cloning
+- The **BranchSelector** component lets you switch branches after cloning
+
+### Deploy via GitHub
+
+- Deploy to GitHub Pages directly from the workbench (see [Deploy](/docs/features/deploy))
+- The **GitHubDeploy** component handles repository creation, file push, and Pages activation
+- A **GitHubDeploymentDialog** provides configuration options
+
+### GitHub Stats
+
+- The **useGitHubStats** hook fetches repository statistics (stars, forks, issues, PRs)
+- Stats are displayed in the settings dashboard and repository cards
+- The **GitHubStats** component renders visual stat indicators
+- Repository browsing with progressive loading
+
+### GitHub API Service
+
+- The **githubApiService** provides a full API client for:
+  - Repository listing and browsing
+  - Branch management
+  - File content retrieval
+  - Pull request and issue access
+- OAuth authentication via the **GitHubAuthDialog** in settings
+- The **GitHubConnection** component manages the auth flow and connection status
+
+## GitLab Integration
+
+The GitLab integration mirrors the GitHub integration for GitLab users:
+
+### Clone Repositories
+
+- Clone GitLab repositories into the workbench
+- Branch selection and project browsing
+- The **GitLabRepositorySelector** provides project search and selection
+
+### Deploy via GitLab
+
+- Deploy to GitLab Pages or via CI/CD pipelines (see [Deploy](/docs/features/deploy))
+- The **GitLabDeploy** component handles the deployment flow
+- A **GitLabDeploymentDialog** provides configuration
+
+### GitLab API Service
+
+- The **gitlabApiService** provides an API client for:
+  - Project listing and browsing
+  - Branch management
+  - File content and repository access
+- OAuth authentication via the **GitLabAuthDialog**
+- The **GitLabConnection** component manages auth and connection status
+- **GitLabStats** display for project statistics
+
+## Supabase Integration
+
+The Supabase integration provides database and backend access:
+
+### Database Access
+
+- Connect your Supabase project in settings
+- The **SupabaseAlert** component shows connection status inline in the chat
+- SQL queries can be executed directly from the chat via `/api/supabase/query`
+
+### SQL Queries
+
+- The AI can run SQL queries against your Supabase database
+- Results are returned in the chat for analysis and debugging
+- Query results can inform code generation (schema-aware component creation)
+
+### Environment Variables
+
+- Supabase project URL and anon key are managed via `/api/supabase/variables`
+- Credentials are stored securely and injected into the workbench environment
+
+### Supabase Connection
+
+- The **useSupabaseConnection** hook manages the connection lifecycle
+- The **SupabaseTab** in settings provides project configuration
+- Project selection and credential management
+
+## Git (isomorphic-git)
+
+Amplify uses **isomorphic-git** for in-browser Git operations:
+
+- All Git operations run inside WebContainer — no server-side Git required
+- Supported operations:
+  - `clone` — clone remote repositories
+  - `commit` — create commits with staged changes
+  - `push` — push commits to remote repositories
+  - `branch` — create, list, and switch branches
+  - `log` — view commit history
+  - `status` — check working tree status
+  - `diff` — compare changes between commits
+- The **useGit** hook provides reactive Git state management
+- The **GitUrlImport** component handles the clone workflow
+- Git operations are available both in the chat (via AI tool calls) and in the terminal
+
+### Why isomorphic-git?
+
+Traditional Git requires a native binary. isomorphic-git is a pure JavaScript implementation that runs in the browser, making Git operations possible without any server-side infrastructure. Combined with WebContainer, it provides a complete development environment that works entirely client-side.

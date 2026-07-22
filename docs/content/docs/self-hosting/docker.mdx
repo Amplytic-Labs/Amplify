@@ -1,0 +1,523 @@
+---
+title: Docker Deployment
+description: Deploy Amplify with Docker using multi-stage builds, Compose profiles, and production-optimized containers.
+---
+
+Docker is the recommended method for self-hosting Amplify in production. The project includes a production-ready Dockerfile with multi-stage builds and a `docker-compose.yaml` with multiple profiles for different deployment scenarios.
+
+## Dockerfile Overview
+
+Amplify's Dockerfile uses a three-stage build process that produces a minimal, optimized production image:
+
+```text
+┌──────────────┐     ┌──────────────┐     ┌───────────────────┐
+│   build      │ ──► │  prod-deps   │ ──► │  amplify-ai-      │
+│              │     │              │     │  production        │
+│ node:22-     │     │ pnpm prune   │     │ Wrangler Pages    │
+│ bookworm-    │     │ --prod       │     │ dev on port 5173  │
+│ slim         │     │              │     │                   │
+└──────────────┘     └──────────────┘     └───────────────────┘
+```
+
+### Stage 1: Build
+
+The build stage compiles the application from source:
+
+```dockerfile
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+
+# CI-friendly environment
+ENV HUSKY=0
+ENV CI=true
+
+# Enable pnpm
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+# Install git for build and runtime scripts
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Optional build-time public URL
+ARG VITE_PUBLIC_APP_URL
+ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
+
+# Efficient dependency installation
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm fetch
+
+# Copy source and build
+COPY . .
+RUN pnpm install --offline --frozen-lockfile
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
+```
+
+Key details:
+
+- **Base image**: `node:22-bookworm-slim` — minimal Debian-based Node.js image
+- **pnpm fetch**: Downloads dependencies into a global store before copying source, improving cache efficiency
+- **Frozen lockfile**: Ensures reproducible builds with `--frozen-lockfile`
+- **Memory allocation**: `--max-old-space-size=4096` prevents OOM during Vite builds
+
+### Stage 2: Production Dependencies
+
+Strips development-only dependencies to reduce image size:
+
+```dockerfile
+FROM build AS prod-deps
+RUN pnpm prune --prod --ignore-scripts
+```
+
+This removes test frameworks, build plugins, TypeScript, and other dev-only packages from the final image.
+
+### Stage 3: Production
+
+The final production image contains only what's needed to run the application:
+
+```dockerfile
+FROM prod-deps AS amplify-ai-production
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=5173
+ENV HOST=0.0.0.0
+
+# Docker-specific flags
+ENV RUNNING_IN_DOCKER=true
+ENV WRANGLER_SEND_METRICS=false
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy built files from previous stages
+COPY --from=prod-deps /app/build /app/build
+COPY --from=prod-deps /app/node_modules /app/node_modules
+COPY --from=prod-deps /app/package.json /app/package.json
+COPY --from=prod-deps /app/bindings.sh /app/bindings.sh
+
+# Disable Wrangler metrics
+RUN mkdir -p /root/.config/.wrangler && \
+    echo '{"enabled":false}' > /root/.config/.wrangler/metrics.json
+
+RUN chmod +x /app/bindings.sh
+
+EXPOSE 5173
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+  CMD curl -fsS http://localhost:5173/ || exit 1
+
+# Start with Wrangler Pages dev
+CMD ["pnpm", "run", "dockerstart"]
+```
+
+The production stage runs Amplify via Wrangler Pages dev, which emulates the Cloudflare Pages runtime locally. The `dockerstart` command is:
+
+```bash
+bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings --ip 0.0.0.0 --port 5173 --no-show-interactive-dev-session
+```
+
+## Docker Compose Profiles
+
+The `docker-compose.yaml` provides three profiles for different use cases:
+
+### Production Profile (`app-prod`)
+
+Builds and runs the production image from source:
+
+```yaml
+app-prod:
+  image: amplify-ai:production
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: amplify-ai-production
+  ports:
+    - '5173:5173'
+  env_file:
+    - '.env'
+    - '.env.local'
+  environment:
+    - NODE_ENV=production
+    - RUNNING_IN_DOCKER=true
+  extra_hosts:
+    - 'host.docker.internal:host-gateway'
+  command: pnpm run dockerstart
+  profiles:
+    - production
+```
+
+Use this profile for production deployments where you build from source.
+
+### Development Profile (`app-dev`)
+
+Runs Amplify in development mode with live reload:
+
+```yaml
+app-dev:
+  image: amplify-ai:development
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: development
+  env_file:
+    - '.env'
+    - '.env.local'
+  environment:
+    - NODE_ENV=development
+    - VITE_HMR_PROTOCOL=ws
+    - VITE_HMR_HOST=localhost
+    - VITE_HMR_PORT=5173
+    - CHOKIDAR_USEPOLLING=true
+    - WATCHPACK_POLLING=true
+    - RUNNING_IN_DOCKER=true
+  extra_hosts:
+    - 'host.docker.internal:host-gateway'
+  volumes:
+    - type: bind
+      source: .
+      target: /app
+      consistency: cached
+    - /app/node_modules
+  ports:
+    - '5173:5173'
+  command: pnpm run dev --host 0.0.0.0
+  profiles: ['development', 'default']
+```
+
+Key features:
+
+- **Bind mount**: Source code is mounted into the container for live editing
+- **HMR**: Hot Module Replacement works via WebSocket
+- **Polling**: `CHOKIDAR_USEPOLLING` and `WATCHPACK_POLLING` enable file watching inside containers
+- **node_modules exclusion**: The `/app/node_modules` anonymous volume prevents conflicts between host and container modules
+
+### Prebuilt Profile (`app-prebuild`)
+
+Uses the official prebuilt image from GitHub Container Registry:
+
+```yaml
+app-prebuild:
+  image: ghcr.io/amplify/amplify:latest
+  ports:
+    - '5173:5173'
+  environment:
+    - NODE_ENV=production
+    - RUNNING_IN_DOCKER=true
+  extra_hosts:
+    - 'host.docker.internal:host-gateway'
+  command: pnpm run dockerstart
+  profiles:
+    - prebuilt
+```
+
+This is the fastest way to get started — no build required.
+
+## Docker-Specific Features
+
+### `RUNNING_IN_DOCKER` Flag
+
+The `RUNNING_IN_DOCKER=true` environment variable is set in all Docker profiles. Amplify uses this flag to:
+
+- Adjust network configurations for container environments
+- Modify localhost references to use `host.docker.internal` where needed
+- Enable container-aware behavior in the WebContainer sandbox
+
+### `host.docker.internal` Mapping
+
+All profiles include:
+
+```yaml
+extra_hosts:
+  - 'host.docker.internal:host-gateway'
+```
+
+This maps `host.docker.internal` to the host machine's IP, allowing the container to access:
+
+- **Ollama** running on the host at `http://host.docker.internal:11434`
+- **LM Studio** running on the host at `http://host.docker.internal:1234`
+- **Other local services** that the Amplify container needs to reach
+
+When configuring local AI providers in Docker, use `host.docker.internal` instead of `127.0.0.1` or `localhost`:
+
+```bash
+# In .env.local for Docker deployments
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+```
+
+## Environment Configuration
+
+Docker deployments use two environment files:
+
+1. **`.env`** — Base configuration shared across all environments
+2. **`.env.local`** — Local overrides with API keys and secrets (never committed to Git)
+
+Both files are loaded via the `env_file` directive in `docker-compose.yaml`:
+
+```yaml
+env_file:
+  - '.env'
+  - '.env.local'
+```
+
+The `bindings.sh` script reads `.env.local` and passes each variable as a Wrangler binding, making them available to the Cloudflare Pages runtime inside the container.
+
+### Required Environment Variables
+
+At minimum, configure one AI provider API key:
+
+```bash
+# .env.local
+OPENAI_API_KEY=sk-your-key-here
+# or
+ANTHROPIC_API_KEY=your-key-here
+```
+
+### Optional Configuration
+
+```bash
+# .env.local
+DEFAULT_NUM_CTX=32768          # Context window size for local models
+VITE_LOG_LEVEL=debug           # Logging verbosity
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434  # Local Ollama
+```
+
+You can also pass environment variables directly via `docker run` or the `environment` section in `docker-compose.yaml`:
+
+```bash
+docker run -e OPENAI_API_KEY=sk-your-key -p 5173:5173 amplify-ai:production
+```
+
+## Health Check
+
+The production image includes a built-in health check:
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+  CMD curl -fsS http://localhost:5173/ || exit 1
+```
+
+Parameters:
+
+- **interval**: Check every 10 seconds
+- **timeout**: 3 seconds to respond
+- **start-period**: 5 seconds grace period on container start
+- **retries**: 5 consecutive failures before marking unhealthy
+
+Docker reports the health status via `docker inspect` or `docker ps`:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+# NAME              STATUS
+# amplify-ai        Up 2 minutes (healthy)
+```
+
+## Volume Mounts and Persistence
+
+### Development Volumes
+
+The development profile uses a bind mount for source code:
+
+```yaml
+volumes:
+  - type: bind
+    source: .
+    target: /app
+    consistency: cached
+  - /app/node_modules    # Anonymous volume for container modules
+```
+
+### Production Persistence
+
+For production deployments, you may want to persist data such as:
+
+- **User settings** — Configuration files stored by the application
+- **Vector store data** — Orama search indexes
+- **Logs** — Application logs for debugging
+
+Create named volumes in your `docker-compose.yaml`:
+
+```yaml
+volumes:
+  amplify-data:
+    driver: local
+  amplify-logs:
+    driver: local
+
+services:
+  app-prod:
+    # ... existing configuration ...
+    volumes:
+      - amplify-data:/app/data
+      - amplify-logs:/app/logs
+```
+
+## Networking
+
+Amplify runs on port **5173** by default. In Docker, this port is mapped to the host:
+
+```yaml
+ports:
+  - '5173:5173'
+```
+
+To change the external port (e.g., to serve on port 80):
+
+```yaml
+ports:
+  - '80:5173'
+```
+
+For reverse proxy setups (nginx, Caddy, Traefik), you can omit the port mapping and let the proxy handle external traffic:
+
+```yaml
+# Internal-only access for reverse proxy
+expose:
+  - '5173'
+```
+
+## Step-by-Step Deployment
+
+### Option 1: Prebuilt Image (Fastest)
+
+1. Create your environment file:
+
+```bash
+cp .env.example .env.local
+# Edit .env.local with your API keys
+```
+
+2. Run the prebuilt image:
+
+```bash
+docker compose --profile prebuilt up -d
+```
+
+3. Access Amplify at `http://localhost:5173`
+
+### Option 2: Build from Source (Production)
+
+1. Create your environment file:
+
+```bash
+cp .env.example .env.local
+# Edit .env.local with your API keys
+```
+
+2. Build the production image:
+
+```bash
+docker compose --profile production build
+```
+
+Or use the dedicated build command:
+
+```bash
+pnpm run dockerbuild:prod
+```
+
+3. Start the container:
+
+```bash
+docker compose --profile production up -d
+```
+
+4. Verify the container is healthy:
+
+```bash
+docker ps
+curl http://localhost:5173
+```
+
+### Option 3: Development Mode
+
+1. Build the development image:
+
+```bash
+pnpm run dockerbuild
+# or
+docker compose build
+```
+
+2. Start in development mode (default profile):
+
+```bash
+docker compose up
+```
+
+3. Edit source files on your host machine — changes are reflected live in the container via HMR.
+
+### Stopping Containers
+
+```bash
+# Stop all containers
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+
+# Stop a specific profile
+docker compose --profile production down
+```
+
+## Advanced Configuration
+
+### Custom Docker Build Arguments
+
+Pass build arguments to customize the image:
+
+```bash
+docker build \
+  --target amplify-ai-production \
+  --build-arg VITE_PUBLIC_APP_URL=https://amplify.example.com \
+  --build-arg DEFAULT_NUM_CTX=65536 \
+  -t amplify-ai:production .
+```
+
+### Resource Limits
+
+Add memory and CPU limits to your compose configuration:
+
+```yaml
+services:
+  app-prod:
+    # ... existing configuration ...
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+```
+
+### Behind a Reverse Proxy
+
+For SSL termination and custom domains, use a reverse proxy:
+
+```nginx
+# nginx configuration
+server {
+    listen 443 ssl http2;
+    server_name amplify.example.com;
+
+    ssl_certificate /etc/ssl/certs/amplify.crt;
+    ssl_certificate_key /etc/ssl/private/amplify.key;
+
+    location / {
+        proxy_pass http://amplify:5173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support for HMR and real-time features
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```

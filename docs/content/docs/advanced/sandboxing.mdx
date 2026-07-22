@@ -1,0 +1,216 @@
+---
+title: Sandboxing (WebContainers)
+description: Browser-based Node.js runtime powered by StackBlitz WebContainers
+---
+
+## Overview
+
+Amplify uses **@webcontainer/api** (v1.6.1-internal.1) — StackBlitz's browser-based Node.js runtime — to provide a fully functional development environment without any server-side infrastructure. WebContainers run Node.js, npm, and other tools directly in the browser, enabling real file operations, package installation, and app execution.
+
+This means Amplify can run, build, and preview projects entirely client-side: no remote VMs, no Docker containers, no cloud compute. The user's browser is the sandbox.
+
+## WebContainer.boot() Configuration
+
+The WebContainer is initialized with the following configuration:
+
+```ts
+webcontainer = WebContainer.boot({
+  coep: 'credentialless',     // Cross-Origin Embedder Policy mode
+  workdirName: WORK_DIR_NAME, // Working directory name for the project
+  forwardPreviewErrors: true, // Forward errors from preview iframes
+});
+```
+
+| Option                | Value              | Description                                                         |
+|-----------------------|--------------------|---------------------------------------------------------------------|
+| `coep`                | `'credentialless'` | Sets COEP to "credentialless" mode, required for SharedArrayBuffer |
+| `workdirName`         | `WORK_DIR_NAME`    | The root directory name where project files are placed              |
+| `forwardPreviewErrors`| `true`             | Enables forwarding of uncaught exceptions from preview iframes      |
+
+## Client-Side Only (SSR Guard)
+
+WebContainers cannot run during server-side rendering. The initialization is guarded with an SSR check:
+
+```ts
+if (!import.meta.env.SSR) {
+  // Only boot WebContainer in the browser
+  webcontainer = WebContainer.boot({ ... });
+}
+```
+
+During SSR, `webcontainer` is set to an empty promise that never resolves, preventing any server-side attempts to access browser-only APIs.
+
+## HMR-Aware Initialization
+
+The WebContainer instance is stored in `import.meta.hot.data` to survive Hot Module Replacement (HMR) cycles. Without this, every HMR update would reboot the container, destroying the running project:
+
+```ts
+webcontainer =
+  import.meta.hot?.data.webcontainer ??  // Reuse existing instance
+  WebContainer.boot({ ... });
+
+if (import.meta.hot) {
+  import.meta.hot.data.webcontainer = webcontainer;  // Persist for next HMR
+}
+```
+
+Similarly, `webcontainerContext.loaded` is persisted through HMR:
+
+```ts
+export const webcontainerContext = import.meta.hot?.data.webcontainerContext ?? {
+  loaded: false,
+};
+```
+
+## Preview Error Forwarding
+
+When `forwardPreviewErrors: true` is enabled, the WebContainer listens for `preview-message` events and forwards them to the workbench store:
+
+```ts
+webcontainer.on('preview-message', (message) => {
+  if (message.type === 'PREVIEW_UNCAUGHT_EXCEPTION' ||
+      message.type === 'PREVIEW_UNHANDLED_REJECTION') {
+    workbenchStore.actionAlert.set({
+      type: 'preview',
+      title: isPromise ? 'Unhandled Promise Rejection' : 'Uncaught Exception',
+      description: message.message,
+      content: `Error at ${message.pathname}...\nStack: ${cleanStackTrace(message.stack)}`,
+      source: 'preview',
+    });
+  }
+});
+```
+
+This surfaces runtime errors from the preview iframe directly in the workbench UI, so users see errors in their app without needing to open DevTools.
+
+## Inspector Script Injection
+
+After booting, Amplify injects an inspector script into the WebContainer's preview environment:
+
+```ts
+const response = await fetch('/inspector-script.js');
+const inspectorScript = await response.text();
+await webcontainer.setPreviewScript(inspectorScript);
+```
+
+This script enables the workbench to capture preview screenshots, detect DOM elements, and communicate with the running application through the preview iframe.
+
+## Required COOP/COEP Headers
+
+WebContainers require **Cross-Origin isolation** headers to function. These headers enable `SharedArrayBuffer`, which WebContainers need for their in-browser Node.js runtime. Amplify sets these headers in two places:
+
+### Production (entry.server.tsx)
+
+```ts
+responseHeaders.set('Cross-Origin-Embedder-Policy', 'require-corp');
+responseHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+```
+
+### Development (vite.config.ts)
+
+```ts
+headers: {
+  'Cross-Origin-Embedder-Policy': 'credentialless',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'cross-origin',
+}
+```
+
+**Note:** Production uses `require-corp` while development uses `credentialless`. The `credentialless` mode is more permissive and allows loading third-party resources without explicit CORS headers, which is useful during development.
+
+If these headers are missing or misconfigured, WebContainers will fail to boot with a `SharedArrayBuffer is not defined` error.
+
+## WebContainer Routes
+
+Two dedicated routes handle WebContainer connectivity:
+
+### Connect iframe (`/webcontainer/connect/:id`)
+
+Loads StackBlitz's `setupConnect` script to establish the communication channel between the workbench and the WebContainer:
+
+```html
+<script type="module">
+  const { setupConnect } = await import('@webcontainer/api/dist/connect.js');
+  setupConnect({ editorOrigin: 'https://stackblitz.com' });
+</script>
+```
+
+### Preview iframe (`/webcontainer/preview/:id`)
+
+Embeds the running application in an iframe with the URL `https://{previewId}.local-credentialless.webcontainer-api.io`. This route:
+
+- Renders the preview in a sandboxed iframe with appropriate `sandbox` and `allow` attributes
+- Uses `BroadcastChannel` to listen for file-change events and refresh the preview
+- Notifies other tabs when the preview is ready
+
+```html
+<iframe
+  sandbox="allow-scripts allow-forms allow-popups allow-modals
+           allow-storage-access-by-user-activation allow-same-origin"
+  allow="cross-origin-isolated"
+/>
+```
+
+## Workbench ↔ WebContainer Interaction
+
+The workbench interacts with WebContainer through a layered architecture:
+
+```
+┌──────────────────┐
+│  Workbench Store  │   (Zustand — files, terminal, preview state)
+└──────────┬────────┘
+           │  File writes, command execution
+           ▼
+┌──────────────────┐
+│  WebContainer API │   (Node.js runtime in browser)
+└──────────┬────────┘
+           │  fs.writeFile, spawn, on('server-ready')
+           ▼
+┌──────────────────┐
+│  Preview iframe   │   (Running app at *.local-credentialless.webcontainer-api.io)
+└──────────────────┘
+```
+
+1. **File operations** — When the AI creates or modifies files, the workbench store updates, then writes changes to WebContainer via `webcontainer.fs.writeFile()`
+2. **Command execution** — The terminal store spawns shell commands through `webcontainer.spawn()`, with output streamed to xterm
+3. **Preview updates** — When a dev server starts (`webcontainer.on('server-ready')`), the preview URL is set and the iframe loads the running app
+
+## Terminal Integration
+
+Amplify uses **xterm.js** for terminal rendering, connected to WebContainer's shell through a `TerminalManager`:
+
+```ts
+// Spawn a process in the WebContainer
+const process = await webcontainer.spawn(command, args);
+
+// Stream output to xterm
+process.output.pipeTo(new WritableStream({
+  write(data) { terminal.write(data); }
+}));
+```
+
+Key features:
+- Multiple terminal instances (each project can have its own terminal)
+- Process output streaming with ANSI color support
+- Custom terminal theme matching Amplify's design system
+- Terminal persistence across HMR updates
+
+## File Operations
+
+All file operations flow through WebContainer's filesystem API:
+
+| Operation         | WebContainer API                       | Trigger                     |
+|-------------------|----------------------------------------|-----------------------------|
+| **Read file**     | `webcontainer.fs.readFile(path)`       | AI `read_file` tool         |
+| **Write file**    | `webcontainer.fs.writeFile(path, content)` | AI `create_file` / `replace_string_in_file` tool |
+| **List directory**| `webcontainer.fs.readdir(path)`        | AI `list_dir` tool          |
+| **Create folder** | `webcontainer.fs.mkdir(path)`          | Project initialization      |
+| **Delete file**   | `webcontainer.fs.rm(path)`             | User action or cleanup      |
+
+The workbench file store acts as the authoritative source — it holds the current file map, syncs changes to WebContainer, and reflects mutations from tool execution back into the UI.
+
+## Licensing Note
+
+WebContainers are developed by StackBlitz and require a **commercial license** for production use beyond the open-source edition. Amplify uses the `@webcontainer/api` package under StackBlitz's licensing terms. If you deploy Amplify commercially, ensure you have the appropriate WebContainer license from StackBlitz.
+
+For more information, see the [WebContainer licensing page](https://webcontainers.io/licensing).

@@ -1,0 +1,292 @@
+---
+title: LLM Pipeline
+description: How Amplify discovers models, streams responses, enforces rate limits, and manages context budgets.
+---
+
+The LLM pipeline is the server-side engine that powers all AI interactions in Amplify. It handles model discovery, streaming, rate limiting, context budgeting, thinking/reasoning configuration, and summarization — all within a Cloudflare Workers runtime.
+
+## LLMManager Singleton and Provider Registry
+
+The `LLMManager` class (`app/lib/modules/llm/manager.ts`) is the central orchestrator. It's a **singleton** because Cloudflare Workers have limited memory and initialization cost — re-creating the registry on every request would be wasteful.
+
+```ts
+class LLMManager {
+  private static _instance: LLMManager;
+  private _providers: Map<string, BaseProvider> = new Map();
+  private _modelList: ModelInfo[] = [];
+
+  static getInstance(env?: Record<string, string>): LLMManager {
+    // Singleton pattern — env is updated on subsequent calls
+    // so Cloudflare Workers get fresh bindings
+  }
+}
+```
+
+On construction, `LLMManager` iterates through all exported classes from `registry.ts` and registers those that extend `BaseProvider`:
+
+```ts
+for (const exportedItem of Object.values(providers)) {
+  if (typeof exportedItem === 'function'
+      && exportedItem.prototype instanceof BaseProvider) {
+    const provider = new exportedItem();
+    this.registerProvider(provider);
+  }
+}
+```
+
+The singleton's `_env` is updated on each `getInstance()` call with fresh Cloudflare Worker bindings, ensuring API keys injected via `wrangler.toml` are always current.
+
+## BaseProvider Abstract Class Pattern
+
+Every provider extends `BaseProvider` (`app/lib/modules/llm/base-provider.ts`), which defines the contract:
+
+```ts
+abstract class BaseProvider implements ProviderInfo {
+  abstract name: string;           // e.g. 'Anthropic', 'Google'
+  abstract staticModels: ModelInfo[];
+  abstract config: ProviderConfig;
+  abstract getModelInstance(options): LanguageModel;
+
+  // Optional — only providers with runtime model discovery implement this
+  getDynamicModels?(...): Promise<ModelInfo[]>;
+}
+```
+
+`BaseProvider` provides shared utilities:
+- **`getProviderBaseUrlAndKey()`** — resolves API key and base URL from multiple sources (cookies, env, config) with a consistent priority order
+- **`convertEnvToRecord()`** — converts Cloudflare Worker `Env` bindings to a plain `Record<string, string>`
+- **`resolveDockerUrl()`** — rewrites `localhost` → `host.docker.internal` for Docker deployments
+- **`createTimeoutSignal()`** — creates an `AbortSignal.timeout()` for model listing API calls (5-second default)
+- **`getModelsFromCache()` / `storeDynamicModels()`** — in-memory caching keyed on apiKey + baseUrl + settings
+
+## 22 Provider Implementations
+
+The registry (`app/lib/modules/llm/registry.ts`) exports all 22 providers:
+
+| Provider | SDK Used | Dynamic Models? | Notes |
+|----------|---------|-----------------|-------|
+| Anthropic | `@ai-sdk/anthropic` | Yes (API `/v1/models`) | Claude 3.5, 4 Opus, 4 Sonnet |
+| AmazonBedrock | `@ai-sdk/amazon-bedrock` | No | Static list of Claude on Bedrock |
+| Cerebras | `@ai-sdk/openai` | No | OpenAI-compatible endpoint |
+| Cohere | `@ai-sdk/cohere` | No | Command R+ models |
+| DeepSeek | `@ai-sdk/openai` | Yes (API `/v1/models`) | DeepSeek Reasoner auto-thinks |
+| Fireworks | `@ai-sdk/openai` | No | OpenAI-compatible |
+| Github | `@ai-sdk/openai` | Yes (GitHub Models API) | Models endpoint |
+| Google | `@ai-sdk/google` | Yes (API `/v1beta/models`) | Gemini 2.5, 3.x, Gemma 4 |
+| Groq | `@ai-sdk/openai` | No | Ultra-fast inference |
+| HuggingFace | `@ai-sdk/openai` | No | Inference endpoint |
+| Hyperbolic | `@ai-sdk/openai` | No | OpenAI-compatible |
+| LMStudio | `@ai-sdk/openai` | Yes (`/v1/models`) | Local inference |
+| Mistral | `@ai-sdk/mistral` | No | Magistral, Small, Medium |
+| Moonshot | `@ai-sdk/openai` | No | Kimi models |
+| Ollama | `ollama-ai-provider` | Yes (`/api/tags`) | Local, Docker URL rewrite |
+| OpenAI | `@ai-sdk/openai` | Yes (API `/v1/models`) | GPT-4o, o1, o3, gpt-5 |
+| OpenAILike | `@ai-sdk/openai` | Yes (`/v1/models`) | Custom base URL |
+| OpenRouter | `@ai-sdk/openai` | Yes (API) | Multi-provider routing |
+| Perplexity | `@ai-sdk/openai` | No | Online-augmented search |
+| Together | `@ai-sdk/openai` | Yes (API) | Open-source model hosting |
+| xAI | `@ai-sdk/openai` | No | Grok 3, Grok 4 |
+| Z.ai | `@ai-sdk/openai` | No | Z.ai GLM models |
+
+**Key pattern**: most "OpenAI-compatible" providers use `createOpenAI()` from `@ai-sdk/openai` with a custom `baseURL`. This is important for reasoning config — they all read `providerOptions.openai.*`, not `providerOptions.openaiCompatible.*`.
+
+## Static vs Dynamic Model Discovery
+
+Each provider has two model sources:
+
+1. **Static models** — hardcoded in the provider's `staticModels` array. Always available, no API key needed to list them. Used as a fallback when the API is unreachable.
+
+2. **Dynamic models** — fetched at runtime from the provider's API (e.g. Anthropic `/v1/models`, Google `/v1beta/models`). Requires an API key and network access. Returns accurate context windows (e.g. Gemini's real `inputTokenLimit` vs. hardcoded guesses).
+
+The merged list prioritizes dynamic models over static ones:
+
+```ts
+// Dynamic entries win; static entries with the same name are dropped
+const modelList = [...dynamicModelsFlat, ...filteredStaticModels];
+```
+
+Caching is keyed on `apiKey + providerSettings + relevantEnvKeys` so the list is refetched only when configuration changes. In-memory cache (per Cloudflare Worker instance) avoids redundant API calls.
+
+## Vercel AI SDK Model Instance Creation
+
+Each provider's `getModelInstance()` method creates a Vercel AI SDK `LanguageModel` object. The pattern is:
+
+```ts
+// Anthropic example
+const anthropic = createAnthropic({ apiKey, headers });
+return anthropic(model);  // Returns LanguageModel
+
+// Google example
+const google = createGoogleGenerativeAI({ apiKey });
+return google(model);     // Returns LanguageModel
+
+// OpenAI-compatible example (used by 15+ providers)
+const openai = createOpenAI({ baseURL, apiKey });
+return openai(model);     // Returns LanguageModel
+```
+
+The `LanguageModel` is then passed to `streamText()` as the `model` parameter, where the AI SDK handles the actual HTTP request to the provider's API.
+
+## Stream-Text Handler
+
+The `streamText()` function (`app/lib/.server/llm/stream-text.ts`) is the core of the LLM pipeline. It orchestrates:
+
+### System Prompt Assembly
+
+The system prompt is built fresh every turn from multiple sources:
+- Base system prompt (from `getSystemPrompt()` / `PromptLibrary`)
+- Workspace file paths (injected by `selectContext()`)
+- Chat summary (if summarization ran, injected as a `<chatSummary>` block)
+- Skill content (progressive loading via `SkillLoader`)
+- Design scheme (user's chosen design system rules)
+- Allowed HTML elements list
+- MCP tool definitions (from `MCPService.getToolDefinitions()`)
+- Project marker detection (`workspaceHasProject()` — suppresses `inject_template` if project already exists)
+
+### Tool Definitions
+
+The stream-text handler defines native Vercel AI SDK v7 tools:
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Reads a workspace file, returns content for context |
+| `list_files` | Lists the workspace file tree at a given path |
+| `web_search` | Fetches web page content via `fetchWebPage()` |
+| `inject_template` | Bootstraps a project from a starter template (suppressed when workspace has existing project) |
+
+### Streaming Response
+
+The function calls the Vercel AI SDK's `_streamText()` and wraps it:
+
+```ts
+const result = await _streamText({
+  model,
+  system: assembledSystemPrompt,
+  messages: processedMessages,
+  tools: toolDefinitions,
+  maxTokens: maxCompletionTokens,
+  providerOptions: thinkingConfig,
+  onStepFinish: (step) => { /* annotation / progress writing */ },
+});
+```
+
+Progress annotations and context budget info are interleaved into the stream via the `SwitchableStream` class, which allows the server to inject metadata without breaking the client's stream consumer.
+
+## Context Budget Estimation
+
+The context budget system (`app/lib/.server/llm/context-budget.ts`) replaces fixed message-count thresholds with token-aware budgeting.
+
+### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `SYSTEM_PROMPT_RESERVE` | 8,192 tokens | Reserve for system prompt + workspace paths |
+| `DEFAULT_CONTEXT_WINDOW` | 128,000 tokens | Fallback when model can't be resolved |
+| `DEFAULT_MAX_COMPLETION_TOKENS` | 8,192 tokens | Fallback output limit |
+| `SUMMARIZATION_THRESHOLD` | 0.7 (70%) | Trigger summarization at this fraction of usable budget |
+
+### Budget Calculation
+
+```
+usableBudget = maxTokenAllowed − maxCompletionTokens − SYSTEM_PROMPT_RESERVE
+summarizationTrigger = usableBudget × SUMMARIZATION_THRESHOLD
+```
+
+For a 200k-context Claude model with 32k output:
+- `usableBudget = 200,000 − 32,000 − 8,192 = 159,808`
+- `summarizationTrigger = 159,808 × 0.7 = 111,866`
+
+Summarization runs when estimated conversation tokens exceed 111,866 — roughly 8-10 long messages, or much more for short ones.
+
+### Token Estimation
+
+`estimateConversationTokens()` uses a `chars/4` heuristic (from `countTokens()` in the token-counter utility). Each message also gets a 4-token overhead for role tags. Tool-call structured parts are counted by stringifying their input/output.
+
+### What Gets Summarized
+
+- Earlier user + assistant **text messages** → collapsed into a `CHAT SUMMARY` block
+- Tool-call structured parts → skipped (only text extracted)
+- The last 3 messages → always kept verbatim
+
+### What Survives (Never Summarized)
+
+- The system prompt (rebuilt fresh every turn)
+- Workspace file paths (injected into system prompt)
+- The `CHAT SUMMARY` text itself
+- The last few messages
+
+## Rate Limit Enforcement
+
+The rate-limit system (`app/lib/.server/llm/rate-limit.ts`) enforces three independent limits per provider:
+
+| Limit | Unit | Behavior |
+|-------|------|----------|
+| RPM | Requests per minute | Throttle (sleep) or reject |
+| TPM | Tokens per minute | Auto-shrink or reject |
+| RPD | Requests per day | Hard reject until UTC midnight |
+
+### Pre-Flight Check Flow
+
+```
+preFlightCheck(providerName, config, estimatedTokens)
+  → RPD: daily cap exceeded? → REJECT ("wait until UTC midnight")
+  → TPM: would exceed? → AUTO-SHRINK (drop older messages) or THROTTLE (sleep ≤60s)
+  → RPM: saturated? → THROTTLE (sleep until oldest request rolls off) or REJECT
+  → All passed → RECORD entry in rpmTpmLog + bump rpdCounter
+```
+
+### Token Estimation Heuristic
+
+`estimateTokens()` uses a CJK-aware heuristic:
+- English: ~1 token per 4 characters
+- CJK (Chinese/Japanese/Korean): ~1 token per character
+- This is deliberately conservative — over-estimating is safer than under-estimating for rate limiting
+
+### Auto-Shrink Mechanism
+
+When `autoShrinkToTpm` is enabled and a request would exceed TPM, `shrinkMessagesToFit()` drops messages from the head of the conversation (keeping the last 4 as a "protected tail") until the estimated token count fits within the target budget.
+
+```ts
+shrinkMessagesToFit(messages, systemPromptText, expectedCompletionTokens, targetTokens, protectedTailCount = 4)
+```
+
+All counters are in-memory and per-Worker-instance. In multi-instance deployments this is a soft limit, but for single-user Amplify this is sufficient and avoids shared-store complexity.
+
+## Thinking/Reasoning Configuration Translation
+
+The `thinking.ts` module translates the unified `ModelConfigWire` (edited by the ChatBox settings popup) into per-provider `providerOptions` shapes the Vercel AI SDK expects.
+
+### Per-Provider Translation
+
+| Provider | Model Pattern | providerOptions Shape |
+|----------|---------------|------------------------|
+| Google Gemini 3.x | `gemini-3*` | `google.thinkingConfig` with `thinkingLevel` + `includeThoughts` |
+| Google Gemini 2.5 | `gemini-2.5*` | `google.thinkingConfig` with `thinkingBudget` + `includeThoughts` |
+| Anthropic Claude 3.7/4 | `claude-3-7, claude-opus-4, claude-sonnet-4` | `anthropic.thinking` with `type: 'enabled'` + `budgetTokens` |
+| Anthropic Claude 4.6+ | `claude-opus-4-6+` | `anthropic.thinking` with `type: 'adaptive'` |
+| OpenAI o-series/GPT-5 | `o1, o3, o4, gpt-5` | `openai.reasoningEffort` + `reasoningSummary: 'auto'` |
+| xAI Grok 3 | `grok-3*` | `openai.reasoningEffort` |
+| Mistral Magistral | `magistral*` | `mistral.reasoningEffort` (`'high'` or `'none'`) |
+| DeepSeek Reasoner | `deepseek-r*` | No config needed (auto-thinks) |
+
+**Critical detail**: `reasoningSummary: 'auto'` is REQUIRED for OpenAI models — without it, the SDK defaults to `'none'` and the user gets zero reasoning text back.
+
+**SDK compatibility note**: xAI, Groq, Together, and all "OpenAI-compatible" providers use `@ai-sdk/openai` (not `@ai-sdk/openai-compatible`), so they all read `providerOptions.openai.*`. Only providers built with `createOpenAICompatible()` would read `providerOptions.openaiCompatible.*`, and Amplify has none of those.
+
+## Message Extraction and Summarization
+
+When the context budget triggers summarization, the `createSummary()` function (`app/lib/.server/llm/.server/llm/create-summary.ts`) runs a separate LLM call to compress the conversation:
+
+1. **Process messages** — strip `<amplifyAction>` tags and `<boltThought>` / `<think>` blocks from assistant messages
+2. **Extract existing summary** — if a prior summary exists, use it as the base
+3. **Slice messages** — skip messages already covered by the existing summary
+4. **Generate summary** — call `generateText()` (not `streamText()`) with a structured summarization prompt
+5. **Return summary** — injected into the system prompt as a `<chatSummary>` annotation
+
+The summary follows a structured format (Project Overview, Conversation Context, Implementation Status, Critical Memory, Next Actions) to maximize information density for the LLM while minimizing token cost.
+
+## Related Pages
+
+- [Architecture Overview](/docs/architecture/overview) — high-level design philosophy
+- [Client-Server Architecture](/docs/architecture/client-server) — how the client applies mutations
+- [State Management](/docs/architecture/state-management) — how model config and rate limits persist

@@ -1,0 +1,481 @@
+---
+title: Migrate from Workbench to Docker
+description: Transition from the built-in WebContainer workbench to a Docker-based deployment for production-grade code execution.
+---
+
+Amplify's built-in workbench uses WebContainer — a browser-based runtime that executes code inside a sandboxed environment. While convenient for quick prototyping and browser-based workflows, it has limitations that make it unsuitable for many production scenarios. This guide walks you through migrating to Docker for a more robust, scalable deployment.
+
+## Why Migrate Away from the Workbench
+
+The WebContainer workbench provides an impressive in-browser development experience, but it has inherent constraints:
+
+| Limitation | Workbench (WebContainer) | Docker |
+| --- | --- | --- |
+| **Runtime** | Browser-based (WebAssembly) | Native Node.js on Linux |
+| **Isolation** | Browser sandbox | Container isolation (namespaces, cgroups) |
+| **Performance** | Limited by browser constraints | Native performance |
+| **Networking** | Restricted browser networking | Full network stack |
+| **File system** | Virtual in-memory filesystem | Persistent volumes |
+| **Process support** | Single-threaded limitations | Full process spawning |
+| **System packages** | Cannot install native packages | Full apt/alpine package access |
+| **Persistence** | Lost on page refresh | Persistent across restarts |
+| **Scaling** | Single user per browser tab | Multiple users per container |
+
+Docker provides a real Linux environment with full system capabilities, persistent storage, and container-level isolation that's appropriate for production deployments.
+
+## Setting Up a Custom Docker Container
+
+### Dockerfile Template
+
+Here's a Dockerfile template for a custom Amplify deployment with Docker-based code execution:
+
+```dockerfile
+# ---- build stage ----
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+
+ENV HUSKY=0
+ENV CI=true
+
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
+
+ARG VITE_PUBLIC_APP_URL
+ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
+
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm fetch
+
+COPY . .
+RUN pnpm install --offline --frozen-lockfile
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
+
+# ---- production dependencies ----
+FROM build AS prod-deps
+RUN pnpm prune --prod --ignore-scripts
+
+# ---- production stage ----
+FROM prod-deps AS production
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=5173
+ENV HOST=0.0.0.0
+ENV RUNNING_IN_DOCKER=true
+ENV WRANGLER_SEND_METRICS=false
+
+# Install curl for health checks and additional system packages
+# for code execution (e.g., Python, gcc)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    python3 \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=prod-deps /app/build /app/build
+COPY --from=prod-deps /app/node_modules /app/node_modules
+COPY --from=prod-deps /app/package.json /app/package.json
+COPY --from=prod-deps /app/bindings.sh /app/bindings.sh
+
+RUN mkdir -p /root/.config/.wrangler && \
+    echo '{"enabled":false}' > /root/.config/.wrangler/metrics.json
+RUN chmod +x /app/bindings.sh
+
+EXPOSE 5173
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+  CMD curl -fsS http://localhost:5173/ || exit 1
+
+CMD ["pnpm", "run", "dockerstart"]
+```
+
+This template extends the official Dockerfile with additional system packages (Python, gcc, g++) that enable richer code execution capabilities not possible in the WebContainer workbench.
+
+## Configuring Environment Variables for Docker
+
+### Mapping Workbench Settings to Docker
+
+When migrating from the workbench, translate your browser-based configuration to Docker environment variables:
+
+```bash
+# .env.local for Docker deployment
+
+# AI Provider Keys (same as workbench)
+OPENAI_API_KEY=sk-your-key-here
+ANTHROPIC_API_KEY=your-key-here
+
+# Local providers — now accessible from the container
+# Use host.docker.internal instead of localhost
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+
+# Docker-specific flags
+RUNNING_IN_DOCKER=true
+DEFAULT_NUM_CTX=32768
+VITE_LOG_LEVEL=debug
+```
+
+### Key Differences from Workbench Configuration
+
+1. **Local provider access**: Replace `localhost` with `host.docker.internal` for any service running on the host machine
+2. **`RUNNING_IN_DOCKER`**: This flag tells Amplify to use container-aware networking and filesystem paths
+3. **No browser storage**: Settings are stored in persistent volumes instead of browser localStorage
+4. **No CORS restrictions**: The container can make requests to any endpoint without browser CORS limitations
+
+## Mapping the WebContainer to a Real Container
+
+The WebContainer provides a virtual Node.js runtime in the browser. When migrating to Docker, you replace this virtual runtime with a real Linux environment.
+
+### What the WebContainer Does
+
+```text
+┌──────────────────────────────────────────┐
+│           Browser Tab                     │
+│                                           │
+│  ┌─────────────────────────────────────┐ │
+│  │         WebContainer                │ │
+│  │                                     │ │
+│  │  ┌────────────┐  ┌──────────────┐  │ │
+│  │  │ Virtual FS │  │ WebAssembly  │  │ │
+│  │  │ (in-memory)│  │ Node.js      │  │ │
+│  │  └────────────┘  └──────────────┘  │ │
+│  │                                     │ │
+│  │  ┌────────────┐  ┌──────────────┐  │ │
+│  │  │ Terminal   │  │ Process      │  │ │
+│  │  │ (xterm.js) │  │ emulation    │  │ │
+│  │  └────────────┘  └──────────────┘  │ │
+│  └─────────────────────────────────────┘ │
+└──────────────────────────────────────────┘
+```
+
+### What Docker Provides
+
+```text
+┌──────────────────────────────────────────┐
+│           Docker Container                │
+│                                           │
+│  ┌─────────────────────────────────────┐ │
+│  │         Linux Namespace             │ │
+│  │                                     │ │
+│  │  ┌────────────┐  ┌──────────────┐  │ │
+│  │  │ Real FS    │  │ Native       │  │ │
+│  │  │ (volume)   │  │ Node.js      │  │ │
+│  │  └────────────┘  └──────────────┘  │ │
+│  │                                     │ │
+│  │  ┌────────────┐  ┌──────────────┐  │ │
+│  │  │ Full       │  │ Process      │  │ │
+│  │  │ networking │  │ spawning     │  │ │
+│  │  └────────────┘  └──────────────┘  │ │
+│  └─────────────────────────────────────┘ │
+└──────────────────────────────────────────┘
+```
+
+## Using `host.docker.internal` for Local Provider Access
+
+When the workbench runs in the browser, it accesses local AI providers (Ollama, LM Studio) directly via `localhost`. In Docker, the container has its own network namespace, so `localhost` inside the container refers to the container itself, not the host machine.
+
+The `host.docker.internal` mapping resolves this:
+
+```yaml
+extra_hosts:
+  - 'host.docker.internal:host-gateway'
+```
+
+This DNS entry points to the host machine, allowing the container to reach:
+
+- **Ollama**: `http://host.docker.internal:11434`
+- **LM Studio**: `http://host.docker.internal:1234`
+- **Custom API endpoints**: `http://host.docker.internal:<port>`
+
+### Platform Notes
+
+- **macOS and Windows**: `host.docker.internal` is available by default in Docker Desktop
+- **Linux**: Requires the `extra_hosts` configuration shown above
+- **Custom networks**: If using a custom Docker network, add `host.docker.internal` resolution manually
+
+## Port Mapping and Networking
+
+### Basic Port Mapping
+
+```yaml
+ports:
+  - '5173:5173'    # Amplify web interface
+```
+
+### Extended Port Mapping
+
+If you want to expose additional services alongside Amplify:
+
+```yaml
+ports:
+  - '5173:5173'    # Amplify web interface
+  - '11434:11434'  # Ollama (if running inside the container)
+```
+
+### Network Isolation
+
+For multi-container setups, create a custom Docker network:
+
+```yaml
+networks:
+  amplify-net:
+    driver: bridge
+
+services:
+  amplify:
+    networks:
+      - amplify-net
+  ollama:
+    networks:
+      - amplify-net
+```
+
+This isolates Amplify and related services while allowing inter-container communication.
+
+## Volume Persistence Strategies
+
+The WebContainer workbench stores files in an in-memory virtual filesystem that disappears when the browser tab is closed. Docker volumes provide persistent storage that survives container restarts and updates.
+
+### Named Volumes
+
+```yaml
+volumes:
+  amplify-data:
+    driver: local
+
+services:
+  amplify:
+    volumes:
+      - amplify-data:/app/data
+```
+
+### Bind Mounts for Development
+
+```yaml
+services:
+  amplify:
+    volumes:
+      - ./projects:/app/data/projects    # Map local directory for project files
+      - ./config:/app/config              # Configuration persistence
+```
+
+### Data Categories to Persist
+
+| Data Type | Path | Volume Type |
+| --- | --- | --- |
+| **Project files** | `/app/data/projects` | Named or bind mount |
+| **Vector store** | `/app/data/vectorstore` | Named volume |
+| **User settings** | `/app/data/settings` | Named volume |
+| **Logs** | `/app/logs` | Bind mount (for external log collection) |
+
+## Replacing WebContainer with Docker Containers
+
+For production code execution, you can replace the WebContainer sandbox with Docker containers that provide real Linux environments.
+
+### Architecture Change
+
+```text
+Workbench Architecture:
+  Browser ──► WebContainer ──► Virtual Node.js (in-browser)
+
+Docker Architecture:
+  Browser ──► Amplify Container ──► Docker API ──► Execution Containers
+                                              (real Linux environments)
+```
+
+### Implementation Approach
+
+1. **Install Docker-in-Docker (DinD)** or use the Docker socket from the host:
+
+```yaml
+services:
+  amplify:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock    # Access host Docker daemon
+```
+
+2. **Configure Amplify to spawn execution containers** instead of using WebContainer:
+
+The `RUNNING_IN_DOCKER=true` flag can be used to conditionally switch between WebContainer mode and Docker container execution mode in your application code.
+
+3. **Define execution container images** for different languages:
+
+```yaml
+# In your docker-compose.yaml
+execution-node:
+  image: node:22-slim
+  # Used for Node.js code execution
+
+execution-python:
+  image: python:3.12-slim
+  # Used for Python code execution
+```
+
+## Security Considerations
+
+Migrating from WebContainer to Docker changes the security model significantly:
+
+### WebContainer Security (Browser Sandbox)
+
+- **Same-origin policy**: Browser security restricts cross-origin requests
+- **No filesystem access**: WebContainer can't read host files
+- **No system access**: Cannot install packages or spawn processes outside the browser
+- **Sandboxed execution**: Code runs in WebAssembly, isolated from the host
+
+### Docker Security (Container Isolation)
+
+- **Namespace isolation**: Containers have separate PID, network, and filesystem namespaces
+- **Resource limits**: cgroups limit CPU, memory, and I/O per container
+- **Network access**: Containers can reach any endpoint the host can
+- **Root access**: By default, containers may run as root (configure `USER` directive)
+- **Docker socket**: Access to the Docker socket grants control over all containers on the host
+
+### Security Best Practices
+
+1. **Run as non-root user**:
+
+```dockerfile
+# Add to Dockerfile
+RUN groupadd -r amplify && useradd -r -g amplify amplify
+USER amplify
+```
+
+2. **Limit container capabilities**:
+
+```yaml
+services:
+  amplify:
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE    # Only if binding to privileged ports
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/run
+```
+
+3. **Use resource limits**:
+
+```yaml
+services:
+  amplify:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+```
+
+4. **Network isolation**: Don't expose the Docker socket unless you specifically need DinD functionality
+
+5. **Image scanning**: Scan your production image for vulnerabilities before deploying:
+
+```bash
+docker scan amplify-ai:production
+```
+
+6. **Regular updates**: Keep the base image updated to receive security patches
+
+## Step-by-Step Migration Instructions
+
+### Step 1: Assess Current Workbench Usage
+
+Identify what features you're using in the WebContainer workbench:
+
+- Project creation and editing
+- Terminal commands and code execution
+- Package installation
+- Git operations
+- Local AI provider connections
+
+### Step 2: Set Up Docker Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/Derek-X-Wang/amplify.git
+cd amplify
+
+# Create environment file
+cp .env.example .env.local
+
+# Edit .env.local with your API keys
+# Replace localhost URLs with host.docker.internal for local providers
+```
+
+### Step 3: Build the Production Image
+
+```bash
+# Build production Docker image
+pnpm run dockerbuild:prod
+
+# Or via docker compose
+docker compose --profile production build
+```
+
+### Step 4: Configure Volumes for Persistence
+
+Add volume mounts to your `docker-compose.yaml` or create a custom compose file:
+
+```yaml
+volumes:
+  amplify-data:
+    driver: local
+
+services:
+  app-prod:
+    volumes:
+      - amplify-data:/app/data
+```
+
+### Step 5: Start the Container
+
+```bash
+docker compose --profile production up -d
+```
+
+### Step 6: Verify the Migration
+
+```bash
+# Check container health
+docker ps
+
+# Test the application
+curl http://localhost:5173
+
+# Verify environment variables are loaded
+docker compose --profile production exec app-prod env | grep API_KEY
+```
+
+### Step 7: Transfer Workbench Projects
+
+If you have projects stored in the WebContainer workbench:
+
+1. Export project files from the browser (download as ZIP)
+2. Place them in your persistent volume directory
+3. Projects will be available in the Docker deployment on next startup
+
+### Step 8: Configure Local Providers
+
+Update local AI provider URLs to use Docker networking:
+
+```bash
+# .env.local
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+```
+
+### Step 9: Set Up a Reverse Proxy (Optional)
+
+For production deployments with SSL and custom domains, add a reverse proxy:
+
+```bash
+# Using Caddy (simple setup)
+caddy reverse-proxy --from amplify.example.com --to localhost:5173
+```
+
+### Step 10: Remove Workbench Dependency
+
+After confirming the Docker deployment works correctly, you can optionally disable the WebContainer workbench in the application configuration to enforce container-only execution.

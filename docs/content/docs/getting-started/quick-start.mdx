@@ -1,0 +1,100 @@
+---
+title: "Quick Start"
+description: "Get Amplify running in under 5 minutes"
+---
+
+This guide walks you through the fastest path to running Amplify locally. By the end, you'll have a working development server and be ready to start chatting with an AI model.
+
+## Prerequisites
+
+Before you begin, make sure your system has:
+
+- **Node.js 18.18.0+** — We recommend the latest LTS version. Check with `node --version`.
+- **pnpm** — Amplify uses pnpm as its package manager. Install it with `corepack enable pnpm` or `npm install -g pnpm`.
+- **Git** — Required to clone the repository.
+
+## Clone the Repository
+
+```bash
+git clone https://github.com/imtia33/Open_Claude.git
+cd Open_Claude
+```
+
+## Install Dependencies
+
+```bash
+pnpm install
+```
+
+This installs all dependencies including the Vercel AI SDK, Remix, WebContainers, and the 22+ provider SDKs.
+
+## Configure API Keys
+
+Amplify requires at least **one LLM provider API key** to function. Create your environment file:
+
+```bash
+cp .env.example .env.local
+```
+
+Then edit `.env.local` and add your API key. The quickest option is to configure one of these providers:
+
+| Provider | Environment Variable | Where to Get a Key |
+|----------|---------------------|--------------------|
+| Anthropic | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| OpenAI | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` | [makersuite.google.com](https://makersuite.google.com/app/apikey) |
+| DeepSeek | `DEEPSEEK_API_KEY` | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
+| Groq | `GROQ_API_KEY` | [console.groq.com](https://console.groq.com/keys) |
+
+For example, to use Anthropic Claude:
+
+```bash
+# .env.local
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+You can add keys for additional providers at any time — each one unlocks more models in the UI. See the [Configuration](/docs/getting-started/configuration) page for the full list.
+
+## Run the Dev Server
+
+```bash
+pnpm run dev
+```
+
+The server starts on **http://localhost:5173**. You'll see output like:
+
+```
+★═══════════════════════════════════════★
+          A M P L I F Y
+         ⚡️  Welcome  ⚡️
+★═══════════════════════════════════════★
+```
+
+## Open the App
+
+Navigate to **http://localhost:5173** in your browser. You'll see Amplify's chat interface ready for interaction.
+
+## Choose a Model and Provider
+
+1. Click the **model selector** in the top-left area of the chat interface.
+2. Pick a provider (e.g., Anthropic) and a model (e.g., `claude-3-5-sonnet-latest`).
+3. Only providers with a configured API key appear in the selector.
+
+If you don't see a provider you expect, double-check that the corresponding API key is set in `.env.local` and restart the dev server.
+
+## Basic Usage Flow
+
+Here's the typical workflow for a new session:
+
+1. **Start a chat** — Type a prompt in the input box. Describe what you want to build, modify, or explore.
+2. **Select a starter template** (optional) — Amplify offers templates for Next.js, Astro, Vue, Svelte, Remix, and more. Pick one to scaffold a project instantly.
+3. **Review AI-generated code** — Amplify streams responses in real-time. Code changes appear in the workbench editor panel.
+4. **Preview in the browser** — The preview panel renders your application inside a WebContainer sandbox, giving you a live preview without needing a separate server.
+5. **Iterate** — Refine the output by sending follow-up messages. Amplify remembers the full conversation context.
+
+## Next Steps
+
+Once you're up and running, explore these topics:
+
+- **[Installation](/docs/getting-started/installation)** — Detailed setup for different environments, production deployment, and local providers
+- **[Configuration](/docs/getting-started/configuration)** — All environment variables, rate limits, thinking settings, and UI customization

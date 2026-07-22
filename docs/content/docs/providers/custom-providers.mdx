@@ -1,0 +1,244 @@
+---
+title: Custom Providers
+description: Add your own OpenAI-compatible endpoints via the UI or by extending BaseProvider in the codebase.
+---
+
+Amplify supports two ways to add custom AI providers: a quick UI-based approach for any OpenAI-compatible endpoint, and a code-based approach for providers that need custom logic.
+
+## Adding a Provider via UI
+
+The simplest way to add a custom provider is through the "Add Provider" popup in the model selector. This requires no code changes and works with any service that implements the OpenAI chat completions API.
+
+### Steps
+
+1. **Open the model selector** in the chat interface
+2. **Click "Add Provider"** — This opens a popup form
+3. **Fill in the details:**
+   - **Name** — A display name for your provider (e.g. "My vLLM Server")
+   - **Base URL** — The endpoint URL (e.g. `https://my-vllm.example.com/v1`)
+   - **API Key** — Bearer token for authentication (if required)
+4. **Click Save** — The provider is immediately available in the model selector
+
+### CustomProvider Store
+
+Custom providers are managed by the `customProvidersStore` (located in `app/lib/stores/custom-providers.ts`). Each entry has:
+
+```typescript
+interface CustomProvider {
+  id: string;          // Stable UUID generated client-side
+  name: string;        // User-chosen display name
+  baseUrl: string;     // OpenAI-compatible endpoint URL
+  apiKey: string;      // Bearer token for Authorization header
+  createdAt: string;   // ISO timestamp for sorting/display
+}
+```
+
+### Persistence
+
+Custom providers are persisted to **localStorage** under the key `amplify_custom_providers`. The store:
+
+- Is the in-memory source of truth; localStorage is the persistence layer
+- Syncs across tabs via the `storage` event listener
+- Validates entries on read (requires `id`, `name`, `baseUrl`, and `apiKey`)
+
+### Security Notes
+
+- The API key is stored in localStorage, which is acceptable for a local-first, browser-only app
+- The key never leaves the browser except when forwarded to the user's own endpoint via `/api/test-provider` and `/api/llmcall`
+- Custom provider keys are **not** written into cookies (unlike built-in provider keys) because cookies are sent on every request and custom endpoints are user-specific
+
+### Dynamic Model Discovery
+
+Custom providers use **lazy dynamic model discovery**. When you select a custom provider in the model picker, Amplify calls `${baseUrl}/v1/models` to list available models. This happens only after you pick the provider — we can't know which models a custom endpoint exposes without calling its API.
+
+### Managing Custom Providers
+
+- **Add** — Use `addCustomProvider({ name, baseUrl, apiKey })` or the UI popup
+- **Remove** — Use `removeCustomProvider(id)` or the UI
+- **Update** — Use `updateCustomProvider(id, { name?, baseUrl?, apiKey? })` to change individual fields
+
+---
+
+## Adding a Provider Programmatically
+
+For providers that need custom logic (special authentication, retry mechanisms, model filtering, etc.), you can extend `BaseProvider` and register it with `LLMManager`.
+
+### Step-by-Step Guide
+
+#### 1. Create the provider file
+
+Create a new file in `app/lib/modules/llm/providers/`. Use an existing provider as a template — `openai-like.ts` is a good starting point for OpenAI-compatible services.
+
+```typescript
+// app/lib/modules/llm/providers/my-provider.ts
+
+import { BaseProvider } from '~/lib/modules/llm/base-provider';
+import type { ModelInfo } from '~/lib/modules/llm/types';
+import type { IProviderSetting } from '~/types/model';
+import { createOpenAI } from '@ai-sdk/openai';
+
+export default class MyProvider extends BaseProvider {
+  name = 'MyProvider';
+  getApiKeyLink = 'https://my-service.example.com/api-keys';
+
+  config = {
+    apiTokenKey: 'MY_PROVIDER_API_KEY',
+    baseUrlKey: 'MY_PROVIDER_BASE_URL',
+    baseUrl: 'https://my-service.example.com/v1',
+  };
+
+  staticModels: ModelInfo[] = [
+    {
+      name: 'my-model-1',
+      label: 'My Model 1 (128k context)',
+      provider: 'MyProvider',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 8192,
+    },
+  ];
+
+  // Optional: fetch models from the provider's API
+  async getDynamicModels(
+    apiKeys?: Record<string, string>,
+    settings?: IProviderSetting,
+    serverEnv?: Record<string, string>,
+  ): Promise<ModelInfo[]> {
+    const { apiKey } = this.getProviderBaseUrlAndKey({
+      apiKeys,
+      providerSettings: settings,
+      serverEnv: serverEnv as any,
+      defaultBaseUrlKey: 'MY_PROVIDER_BASE_URL',
+      defaultApiTokenKey: 'MY_PROVIDER_API_KEY',
+    });
+
+    if (!apiKey) {
+      return [];
+    }
+
+    const response = await fetch('https://my-service.example.com/v1/models', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: this.createTimeoutSignal(),
+    });
+
+    const data = (await response.json()) as any;
+    const staticModelIds = this.staticModels.map((m) => m.name);
+
+    return data.data
+      .filter((model: any) => !staticModelIds.includes(model.id))
+      .map((m: any) => ({
+        name: m.id,
+        label: `${m.id} (Dynamic)`,
+        provider: this.name,
+        maxTokenAllowed: 128000,
+      }));
+  }
+
+  getModelInstance(options: {
+    model: string;
+    serverEnv: Env;
+    apiKeys?: Record<string, string>;
+    providerSettings?: Record<string, IProviderSetting>;
+  }): any {
+    const { model, serverEnv, apiKeys, providerSettings } = options;
+
+    const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({
+      apiKeys,
+      providerSettings: providerSettings?.[this.name],
+      serverEnv: serverEnv as any,
+      defaultBaseUrlKey: 'MY_PROVIDER_BASE_URL',
+      defaultApiTokenKey: 'MY_PROVIDER_API_KEY',
+    });
+
+    if (!apiKey) {
+      throw new Error(`Missing API key for ${this.name} provider`);
+    }
+
+    const client = createOpenAI({
+      baseURL: baseUrl || this.config.baseUrl,
+      apiKey,
+    });
+
+    return client(model);
+  }
+}
+```
+
+#### 2. Register in the registry
+
+Add your provider to `app/lib/modules/llm/registry.ts`:
+
+```typescript
+import MyProvider from './providers/my-provider';
+
+export {
+  // ... existing providers ...
+  MyProvider,
+};
+```
+
+The `LLMManager._registerProvidersFromDirectory` method automatically discovers all exported classes that extend `BaseProvider` and registers them. No additional registration code is needed.
+
+#### 3. Add rate limit defaults
+
+Add your provider to `SUGGESTED_DEFAULTS` in `app/lib/stores/rate-limit.ts`:
+
+```typescript
+MyProvider: { rpm: 60, tpm: 100000, rpd: 0, autoShrinkToTpm: true },
+```
+
+#### 4. Add the provider icon
+
+Place an SVG icon in `public/icons/MyProvider.svg` and `icons/MyProvider.svg`. The icon system uses these for the model selector and settings UI.
+
+#### 5. Add environment variable support
+
+If deploying on Cloudflare Workers, add your env var to the `wrangler.toml` and `worker-configuration.d.ts` files. For local development, add it to `.env.local`.
+
+#### 6. Test
+
+- Verify the provider appears in Settings → Providers
+- Confirm the API key popup works (uses `getApiKeyLink`)
+- Test model discovery (static + dynamic)
+- Send a chat message using your provider's model
+
+### Key Methods to Understand
+
+| Method | Purpose | Required |
+|--------|---------|----------|
+| `name` | Unique identifier used everywhere | Yes |
+| `staticModels` | Fallback models when API is unreachable | Yes (can be empty) |
+| `config` | Env var names for API key and base URL | Yes |
+| `getDynamicModels` | Fetch models from provider API at runtime | No |
+| `getModelInstance` | Create AI SDK `LanguageModel` for chat | Yes |
+| `getApiKeyLink` | URL for the "Get API Key" button | No |
+| `labelForGetApiKey` | Custom label for the key button | No |
+| `resolveDockerUrl` | Rewrite localhost URLs for Docker | Inherited |
+| `createTimeoutSignal` | 5s timeout for model fetches | Inherited |
+| `getProviderBaseUrlAndKey` | Resolve key/URL from multiple sources | Inherited |
+
+### Using a Dedicated SDK Package
+
+If your provider has a dedicated AI SDK package (like `@ai-sdk/anthropic` or `@ai-sdk/mistral`), use it in `getModelInstance` instead of the generic `createOpenAI`:
+
+```typescript
+import { createMyProvider } from '@ai-sdk/my-provider';
+
+getModelInstance(options) {
+  const { apiKey } = this.getProviderBaseUrlAndKey({...});
+  const provider = createMyProvider({ apiKey });
+  return provider(options.model);
+}
+```
+
+### Using `getOpenAILikeModel`
+
+For providers that are OpenAI-compatible but need a custom base URL, you can use the shared helper:
+
+```typescript
+import { getOpenAILikeModel } from '~/lib/modules/llm/base-provider';
+
+getModelInstance(options) {
+  const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({...});
+  return getOpenAILikeModel(baseUrl, apiKey, options.model);
+}
+```

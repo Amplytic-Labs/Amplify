@@ -1,0 +1,288 @@
+---
+title: "Installation"
+description: "Detailed setup instructions for all environments and deployment modes"
+---
+
+This page covers every installation method, environment setup, and deployment option for Amplify. If you just want to get running quickly, start with the [Quick Start](/docs/getting-started/quick-start) guide instead.
+
+## System Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| Node.js | 18.18.0 | 22+ LTS |
+| pnpm | 9.x | Latest stable |
+| RAM | 4 GB | 8 GB+ |
+| Disk space | 500 MB | 1 GB |
+| OS | Linux, macOS, Windows | Linux / macOS |
+
+Amplify runs client-side AI calls through a Remix server. The browser must support ES2020+ (Chrome 80+, Firefox 80+, Safari 14+, Edge 80+).
+
+## Installation Methods
+
+### pnpm (Recommended)
+
+Amplify is designed for pnpm and uses it as the canonical package manager.
+
+```bash
+git clone https://github.com/imtia33/Open_Claude.git
+cd Open_Claude
+pnpm install
+```
+
+### npm
+
+If you prefer npm, you can use it instead — but pnpm is the tested default:
+
+```bash
+git clone https://github.com/imtia33/Open_Claude.git
+cd Open_Claude
+npm install
+```
+
+Note: The `package-lock.json` is present but `pnpm-lock.yaml` is the authoritative lockfile. Mixing lockfiles may cause subtle dependency mismatches.
+
+### yarn
+
+Yarn is not officially supported but will work for basic setups:
+
+```bash
+git clone https://github.com/imtia33/Open_Claude.git
+cd Open_Claude
+yarn install
+```
+
+You'll need to generate a `yarn.lock` yourself. Some scripts (e.g., `electron:build`) may need adjustment.
+
+## Development Mode
+
+The development server uses Remix's Vite dev mode with hot module replacement:
+
+```bash
+pnpm run dev
+```
+
+This command:
+
+1. Runs `pre-start.cjs` to display version info and initialize embedded services
+2. Starts the Remix Vite dev server on port 5173
+3. Watches for file changes with instant HMR
+
+### Custom Port
+
+Set the `PORT` environment variable to change the default port:
+
+```bash
+PORT=3000 pnpm run dev
+```
+
+## Production Mode
+
+For production, Amplify builds a static client bundle and runs it through Cloudflare's Wrangler local emulator:
+
+### Build
+
+```bash
+pnpm run build
+```
+
+This runs `remix vite:build`, producing the client bundle in `./build/client`.
+
+### Start (Unix)
+
+```bash
+pnpm run start:unix
+```
+
+This reads Cloudflare bindings from `bindings.sh` and starts Wrangler's Pages dev server:
+
+```bash
+bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings
+```
+
+### Start (Windows)
+
+```bash
+pnpm run start:windows
+```
+
+Uses Wrangler directly without shell variable expansion:
+
+```bash
+wrangler pages dev ./build/client
+```
+
+### Preview (Build + Start)
+
+A convenience script that builds and then starts:
+
+```bash
+pnpm run preview
+```
+
+## Environment Variable Setup
+
+### Create the Env File
+
+```bash
+cp .env.example .env.local
+```
+
+The `.env.local` file is where all your secrets live. It is **never** committed to Git (it's in `.gitignore`).
+
+### Minimum Required Variables
+
+You need **at least one** provider API key to use Amplify. Set whichever keys you have:
+
+```bash
+# At least one of these:
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GOOGLE_GENERATIVE_AI_API_KEY=...
+DEEPSEEK_API_KEY=...
+# ... or any other provider key
+```
+
+### All Provider API Keys
+
+Below is the complete list of API key environment variables. Set only the ones you need:
+
+| Variable | Provider |
+|----------|----------|
+| `ANTHROPIC_API_KEY` | Anthropic Claude |
+| `OPENAI_API_KEY` | OpenAI GPT |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Google Gemini |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `GROQ_API_KEY` | Groq |
+| `MISTRAL_API_KEY` | Mistral |
+| `COHERE_API_KEY` | Cohere |
+| `XAI_API_KEY` | xAI (Grok) |
+| `PERPLEXITY_API_KEY` | Perplexity |
+| `OPEN_ROUTER_API_KEY` | OpenRouter |
+| `TOGETHER_API_KEY` | Together AI |
+| `FIREWORKS_API_KEY` | Fireworks |
+| `CEREBRAS_API_KEY` | Cerebras |
+| `HuggingFace_API_KEY` | Hugging Face |
+| `HYPERBOLIC_API_KEY` | Hyperbolic |
+| `MOONSHOT_API_KEY` | Moonshot AI |
+| `GITHUB_API_KEY` | GitHub Models |
+| `ZAI_API_KEY` | Z.AI (GLM) |
+| `AWS_BEDROCK_CONFIG` | Amazon Bedrock (JSON) |
+
+## Configuring Multiple Providers
+
+You can set as many API keys as you like — each one unlocks its provider in the model selector:
+
+```bash
+# .env.local — using multiple providers
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GOOGLE_GENERATIVE_AI_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+DEEPSEEK_API_KEY=...
+```
+
+All configured providers appear in the UI automatically. The server checks which keys are present at startup and exposes that information to the client.
+
+### Provider Priority
+
+Amplify doesn't enforce a provider priority — you select the model explicitly in the chat interface. The default model is `claude-3-5-sonnet-latest` if Anthropic is configured.
+
+## Using Local Providers
+
+Amplify supports three local/inference providers that run models on your own hardware:
+
+### Ollama
+
+Ollama runs models locally on your machine. Set the base URL to point to the Ollama server:
+
+```bash
+OLLAMA_API_BASE_URL=http://127.0.0.1:11434
+```
+
+**Important:** Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
+
+Before starting Amplify, make sure Ollama is running and has at least one model pulled:
+
+```bash
+# Install and start Ollama (see https://ollama.com/download)
+ollama pull llama3
+ollama serve
+```
+
+Ollama models appear automatically in the model selector once the server is reachable. Amplify fetches the model list from Ollama's `/api/tags` endpoint at runtime.
+
+### LM Studio
+
+LM Studio provides a GUI for running local models with an OpenAI-compatible API:
+
+```bash
+LMSTUDIO_API_BASE_URL=http://127.0.0.1:1234
+```
+
+**Important:** Use `127.0.0.1` instead of `localhost`, and enable CORS in LM Studio's settings.
+
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. Load a model in LM Studio
+3. Start the local server (default port 1234)
+4. Ensure CORS is enabled in LM Studio's developer settings
+
+### OpenAI-Like
+
+The OpenAI-Like provider is a generic connector for any service that exposes an OpenAI-compatible API (e.g., vLLM, LiteLLM, custom endpoints):
+
+```bash
+OPENAI_LIKE_API_BASE_URL=http://127.0.0.1:8080/v1
+OPENAI_LIKE_API_KEY=your-key-if-needed
+```
+
+This is useful for self-hosted inference servers, corporate proxy endpoints, or any OpenAI-compatible API not covered by a dedicated provider.
+
+### Docker Considerations
+
+When running Amplify inside Docker, local provider URLs are automatically rewritten from `localhost` / `127.0.0.1` to `host.docker.internal` so the container can reach services on the host machine. This is handled internally — no manual configuration needed.
+
+Set `RUNNING_IN_DOCKER=true` in your environment to enable this behavior.
+
+## Docker Deployment
+
+Amplify includes Docker support for containerized deployments:
+
+### Build the Docker Image
+
+```bash
+# Development image
+pnpm run dockerbuild
+
+# Production image
+pnpm run dockerbuild:prod
+```
+
+### Run the Container
+
+```bash
+pnpm run dockerrun
+```
+
+Or manually:
+
+```bash
+docker run -it -d \
+  --name amplify-ai \
+  -p 5173:5173 \
+  --env-file .env.local \
+  amplify-ai
+```
+
+The container exposes port 5173 and reads environment variables from `.env.local`.
+
+## Cloudflare Pages Deployment
+
+Amplify is designed for Cloudflare Pages. To deploy:
+
+```bash
+pnpm run deploy
+```
+
+This builds the project and deploys to Cloudflare Pages using Wrangler. You'll need to set your API keys as Cloudflare secrets (environment variables in the Cloudflare dashboard) rather than in a local `.env.local` file.
+
+See [Configuration](/docs/getting-started/configuration) for details on Wrangler configuration and Cloudflare bindings.

@@ -1,0 +1,436 @@
+---
+title: Migrate to Custom Infrastructure
+description: Explore alternative deployment options beyond Docker and Kubernetes, including Podman, Vagrant, LXC, bare metal, and serverless platforms.
+---
+
+Docker and Kubernetes aren't the only ways to deploy Amplify. This guide covers alternative deployment options for teams with unique infrastructure requirements, compliance constraints, or different operational preferences.
+
+## Podman as an Alternative to Docker
+
+Podman is a Docker-compatible container engine that runs containers without a daemon, offering enhanced security and rootless execution.
+
+### Why Consider Podman
+
+- **No daemon required** — Containers run directly, no background service
+- **Rootless execution** — Containers can run without root privileges
+- **Docker-compatible** — Supports Dockerfile and Docker Compose formats
+- **Pod concept** — Groups of containers share resources like Kubernetes pods
+
+### Running Amplify with Podman
+
+Podman can use Amplify's existing Dockerfile without modifications:
+
+```bash
+# Build the production image
+podman build -t amplify-ai:production --target amplify-ai-production .
+
+# Run the container
+podman run -d \
+  --name amplify \
+  -p 5173:5173 \
+  --env-file .env.local \
+  -e RUNNING_IN_DOCKER=true \
+  amplify-ai:production
+```
+
+### Podman Compose
+
+Podman supports Docker Compose files via `podman-compose`:
+
+```bash
+# Install podman-compose
+pip install podman-compose
+
+# Run with the existing docker-compose.yaml
+podman-compose --profile production up -d
+```
+
+### Rootless Podman
+
+For enhanced security, run Amplify without root privileges:
+
+```bash
+# Enable rootless mode (configured during Podman installation)
+podman run -d \
+  --name amplify \
+  -p 5173:5173 \
+  --env-file .env.local \
+  amplify-ai:production
+```
+
+Rootless Podman limitations:
+
+- No binding to ports below 1024 (use a reverse proxy for port 80/443)
+- Reduced networking capabilities
+- No access to the Docker socket (use Podman's API instead)
+
+### Podman vs Docker Trade-offs
+
+| Feature | Docker | Podman |
+| --- | --- | --- |
+| Daemon | Required (dockerd) | None (fork-exec model) |
+| Rootless | Experimental | Native and mature |
+| Compose | Built-in | Via podman-compose plugin |
+| Kubernetes YAML | Compose2kube | Generate kube YAML directly |
+| CI/CD integration | Extensive | Growing adoption |
+
+## Vagrant for VM-Based Setups
+
+Vagrant provides reproducible virtual machine environments, ideal for teams that need full OS-level isolation or want to test across different Linux distributions.
+
+### Vagrant Configuration
+
+```ruby
+# Vagrantfile
+Vagrant.configure("2") do |config|
+  config.vm.box = "debian/bookworm64"
+
+  config.vm.network "forwarded_port", guest: 5173, host: 5173
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "4096"
+    vb.cpus = 2
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    # Install Node.js 22
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+
+    # Install pnpm
+    npm install -g pnpm@9
+
+    # Install git
+    apt-get install -y git
+
+    # Clone and set up Amplify
+    cd /home/vagrant
+    git clone https://github.com/Derek-X-Wang/amplify.git
+    cd amplify
+    pnpm install
+    pnpm run build
+  SHELL
+
+  config.vm.provision "shell", run: "always", inline: <<-SHELL
+    cd /home/vagrant/amplify
+    pnpm run start
+  SHELL
+end
+```
+
+### Usage
+
+```bash
+# Create and start the VM
+vagrant up
+
+# SSH into the VM for debugging
+vagrant ssh
+
+# Stop the VM
+vagrant halt
+
+# Destroy and recreate
+vagrant destroy && vagrant up
+```
+
+### When to Use Vagrant
+
+- **Cross-platform testing** — Verify Amplify works on different OS distributions
+- **Full OS isolation** — Need complete kernel-level isolation (not just container namespaces)
+- **Development environments** — Provide consistent VMs to team members
+- **Compliance requirements** — Some regulations require full VM isolation for workloads
+
+### Vagrant Limitations
+
+- Higher resource overhead than containers (each VM needs its own kernel)
+- Slower startup time compared to containers
+- Less portable than container images
+- Filesystem sharing between host and VM can be slow
+
+## LXC/LXD Containers
+
+LXC (Linux Containers) provide OS-level virtualization that's lighter than full VMs but offers more isolation than Docker containers.
+
+### Why Consider LXC
+
+- **Full OS environment** — Run a complete Linux distribution, not just an application
+- **Systemd support** — Full init system for managing services
+- **Snapshots** — Instant container snapshots for fast backup/restore
+- **Privileged and unprivileged modes** — Flexible security configuration
+
+### Setting Up Amplify with LXC
+
+```bash
+# Create an LXC container with Debian
+lxc launch images:debian/bookworm amplify
+
+# Enter the container
+lxc exec amplify -- bash
+
+# Install prerequisites inside the container
+apt update && apt install -y curl git
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+npm install -g pnpm@9
+
+# Clone and set up Amplify
+git clone https://github.com/Derek-X-Wang/amplify.git /opt/amplify
+cd /opt/amplify
+pnpm install
+pnpm run build
+
+# Configure as a systemd service
+cat > /etc/systemd/system/amplify.service << EOF
+[Unit]
+Description=Amplify AI Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/amplify
+Environment=NODE_ENV=production
+Environment=PORT=5173
+ExecStart=/usr/bin/pnpm run start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable amplify
+systemctl start amplify
+```
+
+### LXC Network Configuration
+
+```bash
+# Forward port from LXC container to host
+lxc config device add amplify proxy5173 proxy \
+  listen=tcp:0.0.0.0:5173 \
+  connect=tcp:127.0.0.1:5173
+```
+
+### LXC vs Docker Trade-offs
+
+| Feature | Docker | LXC/LXD |
+| --- | --- | --- |
+| Image size | Small (application only) | Larger (full OS) |
+| Startup speed | Seconds | Seconds |
+| Init system | None (single process) | systemd (full services) |
+| Process management | Single CMD | Multiple services |
+| Snapshot speed | Layer-based (slow) | Instant (filesystem-level) |
+| Networking | Bridge/NAT | Bridge/NAT/macvlan |
+
+## Bare Metal Deployment
+
+Running Amplify directly on a physical server without containers or VMs.
+
+### Setup on Debian/Ubuntu
+
+```bash
+# Install Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+sudo apt install -y nodejs git
+
+# Install pnpm
+sudo npm install -g pnpm@9
+
+# Clone Amplify
+git clone https://github.com/Derek-X-Wang/amplify.git /opt/amplify
+cd /opt/amplify
+
+# Install dependencies and build
+pnpm install
+pnpm run build
+
+# Configure environment
+cp .env.example .env.local
+# Edit .env.local with your API keys
+```
+
+### systemd Service
+
+Create a systemd service for production management:
+
+```ini
+[Unit]
+Description=Amplify AI Agent
+After=network.target
+
+[Service]
+Type=simple
+User=amplify
+Group=amplify
+WorkingDirectory=/opt/amplify
+Environment=NODE_ENV=production
+Environment=PORT=5173
+ExecStart=/usr/local/bin/pnpm run start
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Create the service user
+sudo useradd -r -s /bin/false amplify
+sudo chown -R amplify:amplify /opt/amplify
+
+# Enable and start the service
+sudo systemctl daemon-reload
+sudo systemctl enable amplify
+sudo systemctl start amplify
+
+# Check status
+sudo systemctl status amplify
+
+# View logs
+sudo journalctl -u amplify -f
+```
+
+### Bare Metal Considerations
+
+- **No isolation** — Application runs directly on the host OS
+- **Manual dependency management** — Node.js, pnpm, and system packages must be maintained
+- **Security hardening** — Use systemd security directives for isolation
+- **Update complexity** — No container rebuild workflow; manual update process required
+- **Full performance** — No container overhead or virtualization layer
+
+## Serverless Deployment Options
+
+### AWS Lambda
+
+Amplify's Remix SSR can be adapted for AWS Lambda using the Remix adapter pattern, though significant modifications are required:
+
+1. **Replace Wrangler with AWS Lambda adapter** — Use `@remix-run/architect` or a custom adapter
+2. **Package as a Lambda function** — Bundle the server code with all dependencies
+3. **Configure API Gateway** — Set up HTTP proxy integration for the Lambda function
+4. **Handle streaming** — AI streaming responses need special Lambda configuration
+
+Limitations:
+
+- Lambda's 15-minute timeout may conflict with long-running AI operations
+- Lambda's 6MB request/response payload limit (use streaming for larger outputs)
+- No persistent filesystem (use S3/DynamoDB for data storage)
+- Cold starts can add latency to first requests
+
+### Cloudflare Workers
+
+While Amplify already runs on Cloudflare Pages (which uses Workers under the hood), a pure Workers deployment would:
+
+- Remove the Remix SSR layer for a simpler API-only deployment
+- Use Cloudflare KV for state persistence
+- Use Cloudflare D1 for relational data
+- Use Cloudflare R2 for object storage
+
+This is more suitable for deploying only Amplify's AI pipeline or API, not the full web interface. See the [API Migration](/docs/migration/api-migration) guide for details.
+
+## Replacing WebContainer Sandboxing
+
+The WebContainer provides browser-based sandboxing that isolates code execution within the browser's security model. When moving away from the workbench, you need an alternative sandboxing strategy:
+
+### Container-Based Sandboxing
+
+Use Docker/Podman containers as execution sandboxes:
+
+```text
+Amplify Container ──► Docker API ──► Execution Container (isolated)
+                                     ├── Resource limits (CPU, memory)
+                                     ├── Network restrictions
+                                     └── Readonly filesystem
+                                     └── Timeout enforcement
+```
+
+### Process-Level Sandboxing
+
+Use OS-level sandboxing on bare metal:
+
+- **seccomp** — Restrict system calls available to child processes
+- **AppArmor** — Profile-based access control
+- **cgroups** — Resource isolation (CPU, memory, I/O)
+- **chroot/unshare** — Filesystem and namespace isolation
+
+### Virtual Machine Sandboxing
+
+For the strongest isolation:
+
+- **Firecracker** — Lightweight micro-VMs (AWS Lambda's technology)
+- **QEMU/KVM** — Full hardware virtualization
+- **Vagrant VMs** — Reproducible VM environments
+
+### Sandboxing Comparison
+
+| Method | Isolation Level | Start Time | Resource Overhead | Best For |
+| --- | --- | --- | --- | --- |
+| WebContainer | Browser sandbox | Instant | Minimal | Browser-based, demo |
+| Docker/Podman | Container namespace | Seconds | Low | Production, multi-user |
+| seccomp/AppArmor | OS-level restrictions | Instant | Minimal | Bare metal, trusted code |
+| Firecracker | VM-level | ~125ms | Low-medium | High-security, multi-tenant |
+| Full VM | Hardware-level | Minutes | High | Compliance, untrusted code |
+
+## Security Model Changes
+
+Moving away from browser sandboxing fundamentally changes your security posture:
+
+### Browser Sandbox (WebContainer)
+
+- **Same-origin policy**: Prevents unauthorized cross-origin requests
+- **No filesystem access**: Code can't read host files
+- **No system access**: Can't install packages or spawn processes
+- **Limited networking**: Browser restricts network operations
+- **User-controlled**: End user controls the browser environment
+
+### Container/Server Sandbox
+
+- **No same-origin policy**: Server can make any HTTP request
+- **Full filesystem access**: Can read/write mounted volumes
+- **System access**: Can install packages and spawn processes
+- **Full networking**: No browser restrictions on connections
+- **Admin-controlled**: Infrastructure team controls the environment
+
+### Mitigating Security Risks
+
+When moving to a server-based deployment:
+
+1. **Validate all inputs**: Never trust client-side data; validate on the server
+2. **Limit container capabilities**: Use `cap_drop: ALL` and selectively add capabilities
+3. **Run as non-root**: Always specify `USER` in your Dockerfile
+4. **Resource limits**: Set memory and CPU limits to prevent resource exhaustion
+5. **Network policies**: Restrict outbound connections to required endpoints only
+6. **Audit logging**: Log all code execution requests and results
+7. **Rate limiting**: Prevent abuse through API rate limits
+8. **Isolation between users**: Each user's execution environment must be separate
+
+## Trade-offs of Each Approach
+
+### Decision Matrix
+
+| Requirement | Docker | Podman | Vagrant | LXC | Bare Metal | Serverless |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Ease of setup** | ★★★★★ | ★★★★ | ★★★ | ★★★ | ★★ | ★★★★★ |
+| **Isolation** | ★★★★ | ★★★★★ | ★★★★★ | ★★★★ | ★★ | ★★★★ |
+| **Performance** | ★★★★ | ★★★★ | ★★★ | ★★★★ | ★★★★★ | ★★ |
+| **Scalability** | ★★★★ | ★★★★ | ★★ | ★★★ | ★★ | ★★★★★ |
+| **Cost efficiency** | ★★★★ | ★★★★ | ★★ | ★★★★ | ★★★ | ★★★ |
+| **Portability** | ★★★★★ | ★★★★ | ★★★ | ★★ | ★ | ★★★★ |
+| **Operations complexity** | ★★ | ★★ | ★★★ | ★★★ | ★★★★ | ★ |
+| **Persistent storage** | ★★★★ | ★★★★ | ★★★★★ | ★★★★ | ★★★★★ | ★★ |
+
+Choose the deployment method that best aligns with your team's priorities:
+
+- **Maximum portability and ease**: Docker or Podman
+- **Maximum isolation and compliance**: Vagrant or Firecracker
+- **Maximum performance**: Bare metal
+- **Maximum scalability and zero ops**: Serverless (with adaptation)
+- **Balanced approach**: Docker with proper security configuration

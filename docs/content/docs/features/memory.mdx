@@ -1,0 +1,106 @@
+---
+title: Memory
+description: Dual memory systems with vector-store-backed context recall for user preferences and project knowledge
+---
+
+# Memory
+
+Amplify uses a **dual memory system** to persist and recall context across conversations. Instead of sending the entire project history in every prompt, Amplify stores facts in vector databases and injects only the relevant context when needed.
+
+## Legacy MemoryStore
+
+The original **MemoryStore** uses simple localStorage-based substring matching:
+
+- Facts are stored as plain text entries in localStorage
+- When a message is sent, the system searches for entries whose content contains keywords from the message
+- Matches are injected into the system prompt as `<user_context>`
+- Simple but limited — no semantic understanding, no ranking, no deduplication
+
+This system still exists as a fallback, but the primary memory system has moved to vector stores.
+
+## Orama Vector Stores
+
+Amplify's modern memory system uses **Orama** — a full-text search engine with BM25 ranking, persisted to IndexedDB:
+
+- **BM25 ranking** with stemming and stop-word removal for relevance scoring
+- **Category-based filtering** for targeted retrieval
+- **Access count tracking** — frequently accessed facts get boosted relevance
+- **Confidence scoring** — explicit facts (user stated) rank higher than inferred ones
+- **IndexedDB persistence** via Orama serialization — data survives page reloads
+- **Automatic deduplication** of similar entries
+
+There are two distinct vector stores, each serving a different purpose.
+
+## UserProfileVectorStore
+
+The **UserProfileVectorStore** stores facts about you as a developer:
+
+| Category | Example |
+|----------|---------|
+| `preference` | "I prefer dark themes" |
+| `tech_stack` | "My projects use React + TypeScript" |
+| `coding_style` | "I use functional components, not classes" |
+| `domain_knowledge` | "I work in fintech, familiar with payment APIs" |
+| `workflow` | "I like to test before deploying" |
+| `communication_style` | "Keep responses concise, skip explanations I know" |
+| `project_preference` | "I always include error boundaries" |
+| `general` | "My timezone is UTC-5" |
+
+Each entry includes:
+
+- `content` — the fact text
+- `category` — which aspect of the user profile it describes
+- `confidence` — how certain the fact is (1.0 for explicit, lower for inferred)
+- `accessCount` — how often this fact has been retrieved (boosts future relevance)
+- `source` — where the fact came from (user message, AI inference, etc.)
+
+## ProjectContextVectorStore
+
+The **ProjectContextVectorStore** stores per-project knowledge in isolated databases. Each project gets its own Orama instance:
+
+| Type | Example |
+|------|---------|
+| `requirement` | "The app needs real-time notifications" |
+| `decision` | "Using Supabase for auth instead of Firebase" |
+| `error` | "CORS error when calling the API from localhost" |
+| `fix` | "Added proxy middleware to resolve CORS" |
+| `pattern` | "All API calls use the `useQuery` hook pattern" |
+| `architecture` | "Frontend: React SPA, Backend: Express REST API" |
+| `constraint` | "No jQuery — use native DOM APIs only" |
+| `file_context` | "authService.ts handles login, logout, token refresh" |
+| `conversation_summary` | "Discussed migration from REST to GraphQL" |
+| `tool_usage` | "Used create_file to add the dashboard component" |
+| `flow_definition` | "Login flow: landing → login → dashboard" |
+| `screen_connection` | "Dashboard screen links to Settings and Profile" |
+
+Each entry is tagged with:
+
+- `projectId` — which project it belongs to
+- `sourceChatId` — which conversation produced it
+- `planPointId` — which plan point produced it (if from planning)
+- `files` — which files are related
+- `tags` — free-form tags for additional categorization
+
+## AI Can Store and Recall Facts
+
+The AI can store and recall facts using **MCP tools** exposed to the conversation:
+
+- **Store tools** — the AI can save new facts about the user or project during conversation
+- **Recall tools** — the AI can query the vector stores to retrieve relevant context
+- This happens transparently — the AI decides when storing or recalling is useful
+
+For example, if you mention "I always use Tailwind CSS," the AI can store that as a user preference. Next time you start a new project, the AI recalls your preference and defaults to Tailwind.
+
+## Context Flow
+
+The context injection pipeline works as follows:
+
+1. **User sends a message** → the client searches both vector stores for relevant context
+2. **Top N results** are formatted and sent to the server with the chat request
+3. **Server injects them** into the system prompt as labeled sections:
+   - `<user_context>` — relevant user profile facts
+   - `<project_context>` — relevant project knowledge
+4. **AI receives the enriched prompt** — it sees both the current message and the recalled context
+5. **After the AI responds** — new facts are extracted and stored back in the vector stores
+
+This replaces the approach of sending the entire project context in every prompt. Instead, only the most relevant facts are injected, keeping the context window efficient while preserving important knowledge across conversations.

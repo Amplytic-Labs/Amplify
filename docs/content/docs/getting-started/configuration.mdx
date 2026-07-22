@@ -1,0 +1,254 @@
+---
+title: "Configuration"
+description: "Customize providers, rate limits, thinking settings, and the UI"
+---
+
+Amplify offers extensive configuration through environment variables, UI settings, and Cloudflare bindings. This page covers every configurable aspect of the system.
+
+## Environment Variables Overview
+
+Amplify uses two categories of environment variables:
+
+- **Server-side variables** — Read by the Remix server. These include all API keys and base URLs. They are **never** exposed to the browser.
+- **Client-side variables** — Prefixed with `VITE_`. These are bundled into the client JavaScript at build time and are accessible in the browser.
+
+### API Key Variables (Server-Side)
+
+These keys are checked by the server at startup. Any provider with a configured key becomes available in the model selector:
+
+| Variable | Provider | Key URL |
+|----------|----------|---------|
+| `ANTHROPIC_API_KEY` | Anthropic | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
+| `OPENAI_API_KEY` | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Google Gemini | [makersuite.google.com](https://makersuite.google.com/app/apikey) |
+| `DEEPSEEK_API_KEY` | DeepSeek | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
+| `GROQ_API_KEY` | Groq | [console.groq.com](https://console.groq.com/keys) |
+| `MISTRAL_API_KEY` | Mistral | [console.mistral.ai](https://console.mistral.ai/api-keys/) |
+| `COHERE_API_KEY` | Cohere | [dashboard.cohere.ai](https://dashboard.cohere.ai/api-keys) |
+| `XAI_API_KEY` | xAI | [console.x.ai](https://console.x.ai/) |
+| `PERPLEXITY_API_KEY` | Perplexity | [perplexity.ai](https://www.perplexity.ai/settings/api) |
+| `OPEN_ROUTER_API_KEY` | OpenRouter | [openrouter.ai](https://openrouter.ai/keys) |
+| `TOGETHER_API_KEY` | Together AI | [api.together.xyz](https://api.together.xyz/settings/api-keys) |
+| `FIREWORKS_API_KEY` | Fireworks | [fireworks.ai](https://fireworks.ai/api-keys) |
+| `CEREBRAS_API_KEY` | Cerebras | [cloud.cerebras.ai](https://cloud.cerebras.ai/settings) |
+| `HuggingFace_API_KEY` | Hugging Face | [huggingface.co](https://huggingface.co/settings/tokens) |
+| `HYPERBOLIC_API_KEY` | Hyperbolic | [app.hyperbolic.xyz](https://app.hyperbolic.xyz/settings) |
+| `MOONSHOT_API_KEY` | Moonshot AI | [platform.moonshot.ai](https://platform.moonshot.ai/console/api-keys) |
+| `GITHUB_API_KEY` | GitHub Models | [github.com](https://github.com/settings/tokens) |
+| `ZAI_API_KEY` | Z.AI (GLM) | [open.bigmodel.cn](https://open.bigmodel.cn/usercenter/apikeys) |
+| `AWS_BEDROCK_CONFIG` | Amazon Bedrock | JSON with region, accessKeyId, secretAccessKey |
+
+### Base URL Configuration
+
+For providers that support custom base URLs (useful for local or self-hosted inference):
+
+| Variable | Provider | Default |
+|----------|----------|---------|
+| `OLLAMA_API_BASE_URL` | Ollama | `http://127.0.0.1:11434` |
+| `LMSTUDIO_API_BASE_URL` | LM Studio | `http://127.0.0.1:1234` |
+| `OPENAI_LIKE_API_BASE_URL` | OpenAI-compatible | (none) |
+| `OPENAI_LIKE_API_KEY` | OpenAI-compatible | (none) |
+| `TOGETHER_API_BASE_URL` | Together AI | (provider default) |
+| `ZAI_BASE_URL` | Z.AI | (provider default) |
+
+Base URLs can also be configured per-provider in the **Settings panel** (see below), which overrides the environment variable for that session.
+
+### VITE_ Prefixed Client-Side Variables
+
+These variables are embedded in the client bundle at build time and are accessible from the browser:
+
+| Variable | Purpose |
+|----------|---------|
+| `VITE_GITHUB_ACCESS_TOKEN` | GitHub integration (importing repos, push access) |
+| `VITE_GITHUB_TOKEN_TYPE` | `classic` or `fine-grained` |
+| `VITE_GITLAB_ACCESS_TOKEN` | GitLab integration |
+| `VITE_GITLAB_URL` | GitLab instance URL (default: `https://gitlab.com`) |
+| `VITE_GITLAB_TOKEN_TYPE` | Token type (default: `personal-access-token`) |
+| `VITE_VERCEL_ACCESS_TOKEN` | Vercel deployment integration |
+| `VITE_NETLIFY_ACCESS_TOKEN` | Netlify deployment integration |
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous key |
+| `VITE_SUPABASE_ACCESS_TOKEN` | Supabase management token |
+| `VITE_LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) |
+
+**Important distinction:**
+
+- `VITE_` variables are **public** — they exist in the browser bundle. Never put secrets in `VITE_` variables unless you're comfortable with them being readable in client-side JavaScript.
+- Server-side API key variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) are **private** — they only exist on the server and are never sent to the browser. API calls are proxied through the Remix server to protect these keys.
+
+### Other Server-Side Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DEFAULT_NUM_CTX` | Default context window size for local models | `32768` |
+| `NODE_ENV` | Environment mode | `development` |
+| `PORT` | Dev server port | `5173` |
+| `RUNNING_IN_DOCKER` | Docker detection for URL rewriting | `false` |
+
+## Wrangler Configuration for Cloudflare Deployment
+
+When deploying to Cloudflare Pages, the `wrangler.toml` file defines the project:
+
+```toml
+name = "amplify"
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-03-28"
+pages_build_output_dir = "./build/client"
+send_metrics = false
+```
+
+### Setting Cloudflare Secrets
+
+API keys must be set as **Cloudflare environment variables** (not in a local `.env` file) when deploying to Cloudflare Pages. Set them in the Cloudflare dashboard under **Pages > amplify > Settings > Environment variables**.
+
+Add each API key as a production and/or preview variable:
+
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `GOOGLE_GENERATIVE_AI_API_KEY`
+- ... and so on for each provider you want to enable
+
+`VITE_` variables must also be set in the Cloudflare dashboard — they're injected during build time.
+
+### Local Wrangler Development
+
+The `bindings.sh` script extracts Cloudflare-compatible bindings for local Wrangler testing:
+
+```bash
+pnpm run start:unix
+```
+
+This reads the script output and passes it as arguments to `wrangler pages dev`.
+
+## Settings Panel in the UI
+
+Amplify's settings panel (accessible from the sidebar) provides runtime configuration that persists in `localStorage`. It consists of multiple tabs:
+
+### Provider Enable/Disable
+
+The **Cloud Providers** and **Local Providers** tabs let you:
+
+- **Enable or disable** individual providers. Disabled providers are hidden from the model selector even if an API key is configured.
+- **Configure base URLs** for local providers (Ollama, LM Studio, OpenAI-Like) directly in the UI, overriding environment variable defaults.
+- **Auto-detection** — Local providers that are reachable on startup are automatically enabled.
+
+Provider settings are persisted in `localStorage` under the key `provider_settings`.
+
+### Model Configuration
+
+When you select a model in the chat interface, you can configure model-specific settings through the settings popup:
+
+- **Thinking/Reasoning toggle** — Enable extended thinking for models that support it (Claude 3.7+, Gemini 2.5+, etc.)
+- **Budget tokens** — Set the token budget for thinking/reasoning output
+- **Reasoning effort** — Choose `low`, `medium`, or `high` for models that use effort-based reasoning (OpenAI o-series, xAI Grok, Mistral Magistral, Gemini 3.x)
+- **Max output tokens** — Override the model's default maximum completion tokens
+
+These settings are **per-model** — switching between models restores your previous configuration for that model. They're stored in `localStorage` under `amplify:model-config`.
+
+## Rate Limit Configuration
+
+Amplify provides per-provider rate limit settings to prevent 429 errors and account cooldowns. Rate limits are configured in the settings panel and persisted in `localStorage` under `amplify:rate-limits`.
+
+### Rate Limit Parameters
+
+| Parameter | Description | 0 = |
+|-----------|-------------|-----|
+| **RPM** (Requests Per Minute) | Maximum requests per 60-second window | Unlimited |
+| **TPM** (Tokens Per Minute) | Maximum tokens (input + output) per minute | Unlimited |
+| **RPD** (Requests Per Day) | Maximum requests per 24-hour window | Unlimited |
+| **Auto-shrink to TPM** | Automatically reduce context to fit TPM limits | Disabled |
+
+### How Rate Limits Work
+
+The server uses rate limits in three ways:
+
+1. **Pre-flight check** — Before sending a request, the server estimates token count and rejects requests that would exceed your TPM cap, showing a helpful message instead of a 429 error.
+2. **Throttle** — Enforces RPM by delaying requests if you've sent too many in the last 60 seconds.
+3. **Auto-shrink** — When enabled, the server automatically reduces the context window (via summarization) to fit within your TPM limit rather than failing.
+
+### Suggested Defaults
+
+Amplify ships with suggested defaults based on official provider documentation:
+
+| Provider | RPM | TPM | RPD |
+|----------|-----|-----|-----|
+| Anthropic | 50 | 80,000 | — |
+| OpenAI | 500 | 200,000 | — |
+| Google | 10 | 250,000 | 1,000 |
+| DeepSeek | 60 | 100,000 | — |
+| Groq | 30 | 30,000 | 14,400 |
+| OpenRouter | 20 | 200,000 | 1,000 |
+| xAI | 60 | 16,000 | — |
+| Mistral | 10 | 50,000 | — |
+| Ollama | 0 | 0 | 0 |
+| LM Studio | 0 | 0 | 0 |
+
+You can override every value from the settings panel. Local providers (Ollama, LM Studio, OpenAI-Like) default to unlimited (0) since they don't have provider-side rate limits.
+
+## Context Budget Settings
+
+Amplify uses context budget management to keep conversations within the model's token limits:
+
+- **Context optimization** — When enabled (default), Amplify automatically summarizes older messages to keep the context window within limits. Toggle this in **Settings > Features**.
+- **Token estimation** — The server estimates token count before each request and proactively manages the context window.
+- **Auto-shrink integration** — When rate-limit auto-shrink is enabled, context budget is adjusted to fit both the model's `maxTokenAllowed` and your TPM limit.
+
+The context budget indicator in the chat interface shows you how much of the available context window is currently used.
+
+## Thinking/Reasoning Configuration
+
+Models that support extended thinking or reasoning can be configured through the model settings popup:
+
+### Thinking Toggle
+
+Some models (Claude 3.7 Sonnet, Claude Opus 4, Claude Sonnet 4, Gemini 2.5+) support a thinking mode that produces internal reasoning before the final answer. Toggle this on/off in the settings popup.
+
+### Budget Tokens
+
+For models that use token-budget-based thinking (Claude, Gemini), set the `budgetTokens` value (default: 4096). Higher values produce more detailed reasoning but consume more of the context window.
+
+### Reasoning Effort
+
+For models that use effort-level-based reasoning (OpenAI o-series, xAI Grok, Mistral Magistral, Gemini 3.x), choose between:
+
+- **low** — Fastest, least reasoning
+- **medium** — Balanced (default)
+- **high** — Most thorough, slowest
+
+### Max Output Tokens
+
+Override the model's default maximum completion tokens. Set to `0` to use the model's default. This is useful for forcing shorter outputs when working within tight token budgets.
+
+## Tab Configuration and UI Customization
+
+The settings panel tabs can be customized to show or hide specific sections. Available tabs include:
+
+| Tab ID | Label | Category |
+|--------|-------|----------|
+| `profile` | Profile | Profile & Account |
+| `settings` | Settings | Preferences |
+| `notifications` | Notifications | Preferences |
+| `features` | Features | Preferences |
+| `data` | Data Management | System |
+| `memory` | User Memory | System |
+| `cloud-providers` | Cloud Providers | Connectivity |
+| `local-providers` | Local Providers | Connectivity |
+| `github` | GitHub | Services |
+| `gitlab` | GitLab | Services |
+| `netlify` | Netlify | Services |
+| `vercel` | Vercel | Services |
+| `supabase` | Supabase | Services |
+| `event-logs` | Event Logs | System |
+| `mcp` | MCP Servers | Connectivity |
+
+Tab visibility and order are persisted in `localStorage` under `amplify_tab_configuration`. You can reset to defaults from the settings panel.
+
+## Additional Settings
+
+| Setting | Where | Default | Description |
+|---------|-------|---------|-------------|
+| Auto-select starter template | Settings > Features | `true` | Automatically pick a template based on your prompt |
+| Latest branch | Settings > Features | `false` | Use the latest model versions instead of stable ones |
+| Context optimization | Settings > Features | `true` | Enable automatic context summarization |
+| Event logs | Settings > Features | `true` | Enable detailed event logging for debugging |
+| Developer mode | Settings > Features | `false` | Show advanced debug options |
