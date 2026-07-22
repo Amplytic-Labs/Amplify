@@ -289,8 +289,8 @@ export function preFlightCheck(
         };
       }
 
-      // Long wait OR autoShrink requested → shrink
-      if (config.autoShrinkToTpm) {
+      // Long wait OR TPM is set → auto-shrink context to fit
+      if (config.tpm > 0) {
         const shrinkTo = Math.max(0, config.tpm - tokensInWindow);
 
         return {

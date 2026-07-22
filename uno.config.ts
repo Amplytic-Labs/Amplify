@@ -9,6 +9,8 @@ import { defineConfig, presetIcons, presetUno, transformerDirectives } from 'uno
 
 // ── vscode-icons safelist ──────────────────────────────────────────
 const vscodeIconClasses: string[] = [
+  // Provider icons
+  'i-vscode-icons:file-type-gemini',
   // Languages
   'i-vscode-icons:file-type-typescript',
   'i-vscode-icons:file-type-js',
@@ -179,7 +181,7 @@ const customIconCollection = iconPaths.reduce(
     const [iconName] = basename(iconPath).split('.');
 
     acc[collectionName] ??= {};
-    acc[collectionName][iconName] = async () => fs.readFile(iconPath, 'utf8');
+    acc[collectionName][iconName.toLowerCase()] = async () => fs.readFile(iconPath, 'utf8');
 
     return acc;
   },

@@ -111,6 +111,59 @@ export function HistoryItem({
             onMouseDown={handleSubmit}
           />
         </form>
+      ) : isActiveChat && !selectionMode ? (
+        <div className="flex w-full relative truncate block cursor-default">
+          <WithTooltip tooltip={displayLabel}>
+            <span
+              className={classNames(
+                'truncate pr-24',
+                !currentDescription?.trim() && 'text-gray-400 dark:text-gray-500 italic',
+              )}
+            >
+              {displayLabel}
+            </span>
+          </WithTooltip>
+          <div
+            className={classNames(
+              'absolute right-0 top-0 bottom-0 flex items-center bg-transparent px-2 transition-colors',
+            )}
+          >
+            <div className="flex items-center gap-2.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChatActionButton
+                toolTipContent="Export"
+                icon="i-ph:download-simple h-4 w-4"
+                onClick={(event) => {
+                  event.preventDefault();
+                  exportChat(item.id);
+                }}
+              />
+              {onDuplicate && (
+                <ChatActionButton
+                  toolTipContent="Duplicate"
+                  icon="i-ph:copy h-4 w-4"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onDuplicate?.(item.id);
+                  }}
+                />
+              )}
+              <ChatActionButton
+                toolTipContent="Rename"
+                icon="i-ph:pencil-fill h-4 w-4"
+                onClick={(event) => {
+                  event.preventDefault();
+                  toggleEditMode();
+                }}
+              />
+              <ChatActionButton
+                toolTipContent="Delete"
+                icon="i-ph:trash h-4 w-4"
+                className="hover:text-red-500 dark:hover:text-red-400"
+                onClick={handleDeleteClick}
+              />
+            </div>
+          </div>
+        </div>
       ) : (
         <a
           href={item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`}

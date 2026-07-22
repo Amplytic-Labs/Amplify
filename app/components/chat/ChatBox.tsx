@@ -129,8 +129,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     SUGGESTED_DEFAULTS[rateLimitProviderName] ?? {
       rpm: 0,
       tpm: 0,
-      rpd: 0,
-      autoShrinkToTpm: false,
+      autoShrinkToTpm: true,
     };
 
   /*
@@ -142,6 +141,13 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [settingsTempKey, setSettingsTempKey] = useState('');
   const [showSettingsKey, setShowSettingsKey] = useState(false);
   const [isSavingSettingsKey, setIsSavingSettingsKey] = useState(false);
+
+  // Stores the last non-zero value for each field so toggling a rate-limit
+  // field back ON restores the previously entered number.
+  const [rateLimitLastValues, setRateLimitLastValues] = useState<{
+    rpm: number;
+    tpm: number;
+  }>({ rpm: 60, tpm: 250000 });
 
   /*
    * Provider currently being keyed (inside the overlay) — when set, an inline
@@ -1223,10 +1229,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, scale: 0.96, y: 8, filter: 'blur(2px)' }}
               transition={{ type: 'spring', bounce: 0.1, duration: 0.25 }}
-              className="absolute bottom-full mb-3 left-0 z-40 w-[340px] max-w-[calc(100vw-2rem)] bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] p-4 max-h-[78vh] overflow-y-auto no-scrollbar"
+              className="absolute bottom-full mb-3 left-0 z-40 w-[340px] max-w-[calc(100vw-2rem)] bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.4)] flex flex-col h-[380px] overflow-hidden"
             >
               {/* Header */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 px-4 pt-4 pb-1 flex-shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-amplify-elements-background-depth-3 flex items-center justify-center flex-shrink-0">
                     <ProviderIcon
@@ -1252,360 +1258,384 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 </button>
               </div>
 
-              {/* API Key section — only for non-local providers */}
-              {showKeyButton && (
-                <div className="mb-3 pb-3 border-b border-amplify-elements-borderColor">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary">
-                      API Key
-                    </span>
-                    {isKeyMissing ? (
-                      <span className="text-[9px] text-destructive flex items-center gap-0.5">
-                        <AlertCircle size={10} /> required
+              {/* Scrollable container */}
+              <div className="flex-grow overflow-y-auto px-4 pb-4 no-scrollbar space-y-3">
+                {/* API Key section — only for non-local providers */}
+                {showKeyButton && (
+                  <div className="mb-3 pb-3 border-b border-amplify-elements-borderColor">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary">
+                        API Key
                       </span>
-                    ) : (
-                      <span className="text-[9px] text-emerald-500 flex items-center gap-0.5">
-                        <CheckCircle2 size={10} /> set
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showSettingsKey ? 'text' : 'password'}
-                      value={settingsTempKey}
-                      onChange={(e) => setSettingsTempKey(e.target.value)}
-                      placeholder="sk-..."
-                      className="w-full pr-9 pl-3 py-2 text-xs rounded-md border border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-accent-500/40 transition-all"
-                    />
-                    <button
-                      onClick={() => setShowSettingsKey(!showSettingsKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-transparent"
-                      title={showSettingsKey ? 'Hide' : 'Show'}
-                    >
-                      {showSettingsKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <button
-                      onClick={handleSaveSettingsKey}
-                      disabled={!settingsTempKey.trim() || isSavingSettingsKey}
-                      className={classNames(
-                        'px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all',
-                        !settingsTempKey.trim() || isSavingSettingsKey
-                          ? 'bg-amplify-elements-borderColor text-amplify-elements-textTertiary cursor-not-allowed'
-                          : 'bg-accent-500 text-white hover:bg-accent-600',
-                      )}
-                    >
-                      {isSavingSettingsKey ? 'Saving...' : 'Save Key'}
-                    </button>
-                    {activeProvider?.getApiKeyLink && (
-                      <a
-                        href={activeProvider.getApiKeyLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-amplify-elements-textSecondary hover:text-accent-500 transition-colors flex items-center gap-1"
-                      >
-                        Get key <ExternalLink size={11} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Model Configuration section — moved here from the model picker's PANEL 2 */}
-              <div className="space-y-3">
-                <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary block">
-                  Model Configuration
-                </span>
-
-                {/* 1. EFFORT-BASED REASONING (OpenAI o-series, Grok 3/4) */}
-                {thinkingControlState === 'effort-only' && (
-                  <div className="space-y-2.5">
-                    <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
-                      Reasoning Effort
-                    </span>
-                    <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
-                      {(['low', 'medium', 'high'] as const).map((effort) => (
-                        <button
-                          key={effort}
-                          onClick={() => setThinkingOverride(effort)}
-                          className={classNames(
-                            'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
-                            thinkingOverride === effort
-                              ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
-                              : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
-                          )}
-                        >
-                          {effort}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 1b. TOGGLE + EFFORT PICKER (Gemini 3.x — uses thinkingLevel) */}
-                {thinkingControlState === 'toggle+effort' && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
-                        Enable Thinking
-                      </span>
-                      <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
-                    </div>
-                    {thinkingEnabled ? (
-                      <div className="space-y-2">
-                        <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
-                          Thinking Level
+                      {isKeyMissing ? (
+                        <span className="text-[9px] text-destructive flex items-center gap-0.5">
+                          <AlertCircle size={10} /> required
                         </span>
-                        <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
-                          {(['low', 'medium', 'high'] as const).map((effort) => (
-                            <button
-                              key={effort}
-                              onClick={() => setThinkingOverride(effort)}
-                              className={classNames(
-                                'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
-                                thinkingOverride === effort
-                                  ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
-                                  : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
-                              )}
-                            >
-                              {effort}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
-                          Gemini 3 uses <span className="font-mono">thinkingLevel</span> (minimal/low/medium/high).{' '}
-                          <span className="text-accent-500">includeThoughts</span> is auto-enabled so thought summaries
-                          are streamed back.
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
-                        Thinking set to MINIMAL (Gemini 3 has no hard off switch — minimal produces ~zero thought
-                        tokens).
-                      </div>
-                    )}
+                      ) : (
+                        <span className="text-[9px] text-emerald-500 flex items-center gap-0.5">
+                          <CheckCircle2 size={10} /> set
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showSettingsKey ? 'text' : 'password'}
+                        value={settingsTempKey}
+                        onChange={(e) => setSettingsTempKey(e.target.value)}
+                        placeholder="sk-..."
+                        className="w-full pr-9 pl-3 py-2 text-xs rounded-md border border-amplify-elements-borderColor bg-amplify-elements-background-depth-3 text-amplify-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-accent-500/40 transition-all"
+                      />
+                      <button
+                        onClick={() => setShowSettingsKey(!showSettingsKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary bg-transparent"
+                        title={showSettingsKey ? 'Hide' : 'Show'}
+                      >
+                        {showSettingsKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={handleSaveSettingsKey}
+                        disabled={!settingsTempKey.trim() || isSavingSettingsKey}
+                        className={classNames(
+                          'px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all',
+                          !settingsTempKey.trim() || isSavingSettingsKey
+                            ? 'bg-amplify-elements-borderColor text-amplify-elements-textTertiary cursor-not-allowed'
+                            : 'bg-accent-500 text-white hover:bg-accent-600',
+                        )}
+                      >
+                        {isSavingSettingsKey ? 'Saving...' : 'Save Key'}
+                      </button>
+                      {activeProvider?.getApiKeyLink && (
+                        <a
+                          href={activeProvider.getApiKeyLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] text-amplify-elements-textSecondary hover:text-accent-500 transition-colors flex items-center gap-1"
+                        >
+                          Get key <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* 2. BUDGET TOKEN TOGGLE + SLIDER (Gemini 2.5+, Claude 3.7/Opus 4/Sonnet 4) */}
-                {thinkingControlState === 'toggle+budget' && (
-                  <div className="space-y-2.5">
+                {/* Model Configuration section — moved here from the model picker's PANEL 2 */}
+                <div className="space-y-3">
+                  <span className="text-[10px] uppercase tracking-wider font-bold text-amplify-elements-textSecondary block">
+                    Model Configuration
+                  </span>
+
+                  {/* 1. EFFORT-BASED REASONING (OpenAI o-series, Grok 3/4) */}
+                  {thinkingControlState === 'effort-only' && (
+                    <div className="space-y-2.5">
+                      <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
+                        Reasoning Effort
+                      </span>
+                      <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
+                        {(['low', 'medium', 'high'] as const).map((effort) => (
+                          <button
+                            key={effort}
+                            onClick={() => setThinkingOverride(effort)}
+                            className={classNames(
+                              'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
+                              thinkingOverride === effort
+                                ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
+                                : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
+                            )}
+                          >
+                            {effort}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 1b. TOGGLE + EFFORT PICKER (Gemini 3.x — uses thinkingLevel) */}
+                  {thinkingControlState === 'toggle+effort' && (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
+                          Enable Thinking
+                        </span>
+                        <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+                      </div>
+                      {thinkingEnabled ? (
+                        <div className="space-y-2">
+                          <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider block font-bold">
+                            Thinking Level
+                          </span>
+                          <div className="bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor p-0.5 rounded-lg flex items-stretch justify-between h-[32px] relative">
+                            {(['low', 'medium', 'high'] as const).map((effort) => (
+                              <button
+                                key={effort}
+                                onClick={() => setThinkingOverride(effort)}
+                                className={classNames(
+                                  'flex-1 flex items-center justify-center text-[10px] capitalize font-semibold rounded-md transition-all',
+                                  thinkingOverride === effort
+                                    ? 'bg-amplify-elements-item-backgroundActive text-amplify-elements-textPrimary shadow-sm'
+                                    : 'bg-transparent text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary',
+                                )}
+                              >
+                                {effort}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
+                            Gemini 3 uses <span className="font-mono">thinkingLevel</span> (minimal/low/medium/high).{' '}
+                            <span className="text-accent-500">includeThoughts</span> is auto-enabled so thought summaries
+                            are streamed back.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
+                          Thinking set to MINIMAL (Gemini 3 has no hard off switch — minimal produces ~zero thought
+                          tokens).
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. BUDGET TOKEN TOGGLE + SLIDER (Gemini 2.5+, Claude 3.7/Opus 4/Sonnet 4) */}
+                  {thinkingControlState === 'toggle+budget' && (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
+                          Enable Thinking
+                        </span>
+                        <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+                      </div>
+                      {thinkingEnabled ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="text-amplify-elements-textSecondary">Thinking Budget:</span>
+                            <span className="font-mono text-accent-500 font-bold">
+                              {budgetTokens.toLocaleString()} tokens
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            className="chatbox-range w-full cursor-pointer"
+                            min={1024}
+                            max={budgetSliderMax}
+                            step={1024}
+                            value={budgetTokens}
+                            onChange={(e) => setBudgetTokens(Number(e.target.value))}
+                            style={{
+                              ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / Math.max(1, budgetSliderMax - 1024)) * 100}%`,
+                            }}
+                          />
+                          <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
+                            <span>1,024</span>
+                            <span>{budgetSliderMax.toLocaleString()} max</span>
+                          </div>
+                          <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
+                            {budgetHelpText}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
+                          Thinking disabled. Model will respond without extended reasoning.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. ALWAYS-ON LOCKED REASONING (DeepSeek Reasoner) */}
+                  {thinkingControlState === 'on-and-locked' && (
+                    <div className="space-y-2 text-center py-2 bg-accent-500/5 border border-accent-500/10 rounded-xl">
+                      <IconifyIcon icon="lucide:shield-alert" className="text-lg text-accent-500" />
+                      <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
+                      <p className="text-[10px] text-amplify-elements-textSecondary px-3 leading-normal">
+                        This model enforces internal thought pathways. No budget token caps can be configured.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 4. NON-REASONING CHANNELS */}
+                  {thinkingControlState === 'off-and-locked' && (
+                    <div className="py-4 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
+                      <IconifyIcon
+                        icon="lucide:alert-circle"
+                        className="text-amplify-elements-textSecondary text-lg mb-1"
+                      />
+                      <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
+                      <p className="text-amplify-elements-textTertiary text-[10px] px-3 mt-0.5 leading-normal">
+                        This model accepts standard parameters and does not route through reasoning token engines.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 5. DYNAMIC OUTPUT TOKEN CAP */}
+                  {activeModel?.maxCompletionTokens && (
+                    <div className="space-y-2 pt-2 border-t border-amplify-elements-borderColor">
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="text-amplify-elements-textSecondary">Max Output Cap:</span>
+                        <span className="font-mono text-amplify-elements-textPrimary">
+                          {maxOutputTokens.toLocaleString()} tokens
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        className="chatbox-range w-full cursor-pointer"
+                        min={1024}
+                        max={activeModel.maxCompletionTokens}
+                        step={1024}
+                        value={maxOutputTokens}
+                        onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
+                        style={{
+                          ['--chatbox-range-pct' as any]: `${((maxOutputTokens - 1024) / Math.max(1, activeModel.maxCompletionTokens - 1024)) * 100}%`,
+                        }}
+                      />
+                      <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
+                        <span>1,024</span>
+                        <span>{activeModel.maxCompletionTokens.toLocaleString()} max</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 6. PROVIDER RATE LIMITS (RPM / TPM) — user-configurable */}
+                  <div className="space-y-3 pt-2 border-t border-amplify-elements-borderColor">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
-                        Enable Thinking
+                        Rate Limits — {rateLimitProviderName || 'Provider'}
                       </span>
-                      <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+                      {SUGGESTED_DEFAULTS[rateLimitProviderName] && (
+                        <button
+                          onClick={() => resetRateLimit(rateLimitProviderName)}
+                          className="text-[9px] text-amplify-elements-textTertiary hover:text-accent-500 transition-colors uppercase tracking-wider font-semibold"
+                          title="Reset to suggested defaults for this provider"
+                        >
+                          Reset
+                        </button>
+                      )}
                     </div>
-                    {thinkingEnabled ? (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center text-[10px]">
-                          <span className="text-amplify-elements-textSecondary">Thinking Budget:</span>
-                          <span className="font-mono text-accent-500 font-bold">
-                            {budgetTokens.toLocaleString()} tokens
+
+                    <div className="bg-amplify-elements-background-depth-1 p-2.5 rounded-lg border border-amplify-elements-borderColor text-[11px] text-amplify-elements-textSecondary leading-relaxed">
+                      Enter your provider's actual limits (varies by tier/account — see their docs). The server
+                      throttles, auto-shrinks context, or refuses requests to avoid being blocked.
+                      <br />
+                      <span className="text-amplify-elements-textTertiary">
+                        Only enable the limits your provider actually enforces — leave others off.
+                      </span>
+                    </div>
+
+                    {/* RPM */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {/* Toggle */}
+                          <button
+                            role="switch"
+                            aria-checked={currentRateLimit.rpm > 0}
+                            onClick={() => {
+                              if (currentRateLimit.rpm > 0) {
+                                setRateLimitLastValues((prev) => ({ ...prev, rpm: currentRateLimit.rpm }));
+                                updateRateLimit(rateLimitProviderName, { rpm: 0 });
+                              } else {
+                                updateRateLimit(rateLimitProviderName, {
+                                  rpm: rateLimitLastValues.rpm || (SUGGESTED_DEFAULTS[rateLimitProviderName]?.rpm ?? 60),
+                                });
+                              }
+                            }}
+                            className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                              currentRateLimit.rpm > 0 ? 'bg-accent-500' : 'bg-amplify-elements-borderColor'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                currentRateLimit.rpm > 0 ? 'translate-x-3' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <span className="text-[11px] font-medium text-amplify-elements-textPrimary">
+                            Requests / min
                           </span>
+                          <span className="text-[10px] text-amplify-elements-textTertiary font-mono">(RPM)</span>
                         </div>
+                        <span className="font-mono text-[11px] text-amplify-elements-textPrimary">
+                          {currentRateLimit.rpm === 0 ? '∞ unlimited' : currentRateLimit.rpm.toLocaleString()}
+                        </span>
+                      </div>
+                      {currentRateLimit.rpm > 0 && (
                         <input
-                          type="range"
-                          className="chatbox-range w-full cursor-pointer"
-                          min={1024}
-                          max={budgetSliderMax}
-                          step={1024}
-                          value={budgetTokens}
-                          onChange={(e) => setBudgetTokens(Number(e.target.value))}
-                          style={{
-                            ['--chatbox-range-pct' as any]: `${((budgetTokens - 1024) / Math.max(1, budgetSliderMax - 1024)) * 100}%`,
-                          }}
+                          type="number"
+                          min={1}
+                          max={100000}
+                          step={1}
+                          value={currentRateLimit.rpm}
+                          onChange={(e) =>
+                            updateRateLimit(rateLimitProviderName, {
+                              rpm: Math.max(1, Number(e.target.value) || 1),
+                            })
+                          }
+                          className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1.5 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500 transition-colors"
+                          placeholder="e.g. 60"
                         />
-                        <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
-                          <span>1,024</span>
-                          <span>{budgetSliderMax.toLocaleString()} max</span>
+                      )}
+                    </div>
+
+                    {/* TPM */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button
+                            role="switch"
+                            aria-checked={currentRateLimit.tpm > 0}
+                            onClick={() => {
+                              if (currentRateLimit.tpm > 0) {
+                                setRateLimitLastValues((prev) => ({ ...prev, tpm: currentRateLimit.tpm }));
+                                updateRateLimit(rateLimitProviderName, { tpm: 0 });
+                              } else {
+                                updateRateLimit(rateLimitProviderName, {
+                                  tpm: rateLimitLastValues.tpm || (SUGGESTED_DEFAULTS[rateLimitProviderName]?.tpm ?? 250000),
+                                });
+                              }
+                            }}
+                            className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                              currentRateLimit.tpm > 0 ? 'bg-accent-500' : 'bg-amplify-elements-borderColor'
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                currentRateLimit.tpm > 0 ? 'translate-x-3' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                          <span className="text-[11px] font-medium text-amplify-elements-textPrimary">
+                            Tokens / min
+                          </span>
+                          <span className="text-[10px] text-amplify-elements-textTertiary font-mono">(TPM)</span>
                         </div>
-                        <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
-                          {budgetHelpText}
-                        </div>
+                        <span className="font-mono text-[11px] text-amplify-elements-textPrimary">
+                          {currentRateLimit.tpm === 0 ? '∞ unlimited' : currentRateLimit.tpm.toLocaleString()}
+                        </span>
                       </div>
-                    ) : (
-                      <div className="bg-amplify-elements-background-depth-1 p-2 text-amplify-elements-textSecondary text-[10px] border border-dashed border-amplify-elements-borderColor rounded-lg text-center">
-                        Thinking disabled. Model will respond without extended reasoning.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 3. ALWAYS-ON LOCKED REASONING (DeepSeek Reasoner) */}
-                {thinkingControlState === 'on-and-locked' && (
-                  <div className="space-y-2 text-center py-2 bg-accent-500/5 border border-accent-500/10 rounded-xl">
-                    <IconifyIcon icon="lucide:shield-alert" className="text-lg text-accent-500" />
-                    <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
-                    <p className="text-[10px] text-amplify-elements-textSecondary px-3 leading-normal">
-                      This model enforces internal thought pathways. No budget token caps can be configured.
-                    </p>
-                  </div>
-                )}
-
-                {/* 4. NON-REASONING CHANNELS */}
-                {thinkingControlState === 'off-and-locked' && (
-                  <div className="py-4 flex flex-col items-center justify-center text-center bg-amplify-elements-background-depth-1 border border-dashed border-amplify-elements-borderColor rounded-xl">
-                    <IconifyIcon
-                      icon="lucide:alert-circle"
-                      className="text-amplify-elements-textSecondary text-lg mb-1"
-                    />
-                    <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
-                    <p className="text-amplify-elements-textTertiary text-[10px] px-3 mt-0.5 leading-normal">
-                      This model accepts standard parameters and does not route through reasoning token engines.
-                    </p>
-                  </div>
-                )}
-
-                {/* 5. DYNAMIC OUTPUT TOKEN CAP */}
-                {activeModel?.maxCompletionTokens && (
-                  <div className="space-y-2 pt-2 border-t border-amplify-elements-borderColor">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-amplify-elements-textSecondary">Max Output Cap:</span>
-                      <span className="font-mono text-amplify-elements-textPrimary">
-                        {maxOutputTokens.toLocaleString()} tokens
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      className="chatbox-range w-full cursor-pointer"
-                      min={1024}
-                      max={activeModel.maxCompletionTokens}
-                      step={1024}
-                      value={maxOutputTokens}
-                      onChange={(e) => setMaxOutputTokens(Number(e.target.value))}
-                      style={{
-                        ['--chatbox-range-pct' as any]: `${((maxOutputTokens - 1024) / Math.max(1, activeModel.maxCompletionTokens - 1024)) * 100}%`,
-                      }}
-                    />
-                    <div className="flex justify-between text-[8px] text-amplify-elements-textSecondary font-mono">
-                      <span>1,024</span>
-                      <span>{activeModel.maxCompletionTokens.toLocaleString()} max</span>
+                      {currentRateLimit.tpm > 0 && (
+                        <>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100000000}
+                            step={1000}
+                            value={currentRateLimit.tpm}
+                            onChange={(e) =>
+                              updateRateLimit(rateLimitProviderName, {
+                                tpm: Math.max(1, Number(e.target.value) || 1),
+                              })
+                            }
+                            className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1.5 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500 transition-colors"
+                            placeholder="e.g. 250000"
+                          />
+                          <div className="text-[11px] text-amplify-elements-textSecondary leading-relaxed bg-amplify-elements-background-depth-1 px-2.5 py-2 rounded-md border border-amplify-elements-borderColor">
+                            <span className="font-semibold text-amplify-elements-textPrimary">⚡ Acts as your effective context window.</span>{' '}
+                            Even if the model supports 1M tokens, a provider TPM cap of 250k means any request over 250k tokens will be rejected (429).
+                            Setting TPM here tells the server to treat this as the real context limit — auto-shrinking older messages to fit, rather than getting blocked.
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
-                )}
-
-                {/* 6. PROVIDER RATE LIMITS (RPM / TPM / RPD) — user-configurable */}
-                <div className="space-y-2.5 pt-2 border-t border-amplify-elements-borderColor">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-amplify-elements-textSecondary uppercase tracking-wider font-bold">
-                      Rate Limits — {rateLimitProviderName || 'Provider'}
-                    </span>
-                    {SUGGESTED_DEFAULTS[rateLimitProviderName] && (
-                      <button
-                        onClick={() => resetRateLimit(rateLimitProviderName)}
-                        className="text-[9px] text-amplify-elements-textTertiary hover:text-accent-500 transition-colors uppercase tracking-wider font-semibold"
-                        title="Reset to suggested defaults for this provider"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[9px] text-amplify-elements-textSecondary leading-normal">
-                    Enter your provider's actual limits (varies by tier/account — see their docs). The server throttles,
-                    auto-shrinks context, or refuses requests to avoid being blocked.
-                  </div>
-
-                  {/* RPM */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-amplify-elements-textSecondary">Requests / min (RPM):</span>
-                      <span className="font-mono text-amplify-elements-textPrimary">
-                        {currentRateLimit.rpm === 0 ? '∞' : currentRateLimit.rpm.toLocaleString()}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100000}
-                      step={1}
-                      value={currentRateLimit.rpm}
-                      onChange={(e) =>
-                        updateRateLimit(rateLimitProviderName, {
-                          rpm: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
-                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
-                      placeholder="0 = unlimited"
-                    />
-                  </div>
-
-                  {/* TPM */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-amplify-elements-textSecondary">Tokens / min (TPM):</span>
-                      <span className="font-mono text-amplify-elements-textPrimary">
-                        {currentRateLimit.tpm === 0 ? '∞' : currentRateLimit.tpm.toLocaleString()}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100000000}
-                      step={1000}
-                      value={currentRateLimit.tpm}
-                      onChange={(e) =>
-                        updateRateLimit(rateLimitProviderName, {
-                          tpm: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
-                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
-                      placeholder="0 = unlimited"
-                    />
-                    <div className="text-[9px] text-amplify-elements-textTertiary leading-normal">
-                      Tip: if the model supports 1M context but your tier caps TPM at 250k, set 250000 here — the server
-                      will auto-shrink context to fit instead of getting 429'd.
-                    </div>
-                  </div>
-
-                  {/* RPD */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="text-amplify-elements-textSecondary">Requests / day (RPD):</span>
-                      <span className="font-mono text-amplify-elements-textPrimary">
-                        {currentRateLimit.rpd === 0 ? '∞' : currentRateLimit.rpd.toLocaleString()}
-                      </span>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={10000000}
-                      step={1}
-                      value={currentRateLimit.rpd}
-                      onChange={(e) =>
-                        updateRateLimit(rateLimitProviderName, {
-                          rpd: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
-                      className="w-full bg-amplify-elements-background-depth-1 border border-amplify-elements-borderColor rounded-md px-2 py-1 text-[11px] font-mono text-amplify-elements-textPrimary outline-none focus:border-accent-500"
-                      placeholder="0 = unlimited"
-                    />
-                  </div>
-
-                  {/* Auto-shrink toggle */}
-                  <label className="flex items-start gap-2 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={currentRateLimit.autoShrinkToTpm}
-                      onChange={(e) =>
-                        updateRateLimit(rateLimitProviderName, {
-                          autoShrinkToTpm: e.target.checked,
-                        })
-                      }
-                      className="mt-0.5 w-3.5 h-3.5 accent-accent-500 flex-shrink-0"
-                    />
-                    <div className="flex-1">
-                      <div className="text-[10px] font-semibold text-amplify-elements-textPrimary">
-                        Auto-shrink context to fit TPM
-                      </div>
-                      <div className="text-[9px] text-amplify-elements-textSecondary leading-normal">
-                        When a request would exceed TPM, drop older messages from the head of the conversation to fit,
-                        instead of erroring out.
-                      </div>
-                    </div>
-                  </label>
                 </div>
               </div>
             </motion.div>
@@ -1943,39 +1973,39 @@ const ApiKeyInlinePopup: React.FC<ApiKeyInlinePopupProps> = ({ provider, onClose
  */
 const PROVIDER_ICON_CLASS: Record<string, string> = {
   // === From Iconify `logos` collection (extracted to local SVGs) ===
-  Anthropic: 'i-amplify:Anthropic-iconify',
-  OpenAI: 'i-amplify:OpenAI-iconify',
-  Google: 'i-amplify:Google-iconify',
-  Deepseek: 'i-amplify:Deepseek-iconify',
-  xAI: 'i-amplify:xAI-iconify',
-  Mistral: 'i-amplify:Mistral-iconify',
-  Perplexity: 'i-amplify:Perplexity-iconify',
-  HuggingFace: 'i-amplify:HuggingFace-iconify',
-  Moonshot: 'i-amplify:Moonshot-iconify',
-  Github: 'i-amplify:Github-iconify',
-  GitHub: 'i-amplify:Github-iconify',
-  AmazonBedrock: 'i-amplify:AmazonBedrock-iconify',
+  Anthropic: 'i-amplify:anthropic-iconify',
+  OpenAI: 'i-amplify:openai-iconify',
+  Google: 'i-vscode-icons:file-type-gemini',
+  Deepseek: 'i-amplify:deepseek-iconify',
+  xAI: 'i-amplify:xai-iconify',
+  Mistral: 'i-amplify:mistral-iconify',
+  Perplexity: 'i-amplify:perplexity-iconify',
+  HuggingFace: 'i-amplify:huggingface-iconify',
+  Moonshot: 'i-amplify:moonshot-iconify',
+  Github: 'i-amplify:github-iconify',
+  GitHub: 'i-amplify:github-iconify',
+  AmazonBedrock: 'i-amplify:amazonbedrock-iconify',
 
   // === From Iconify `simpleIcons` collection (extracted to local SVGs) ===
-  Ollama: 'i-amplify:Ollama-iconify',
-  OpenRouter: 'i-amplify:OpenRouter-iconify',
-  LMStudio: 'i-amplify:LMStudio-iconify',
-  'Z.ai': 'i-amplify:Zai-iconify',
+  Ollama: 'i-amplify:ollama-iconify',
+  OpenRouter: 'i-amplify:openrouter-iconify',
+  LMStudio: 'i-amplify:lmstudio-iconify',
+  'Z.ai': 'i-amplify:zai-iconify',
 
   // === Direct fetches from provider websites (cropped to icon-only) ===
-  Cohere: 'i-amplify:Cohere',
-  Groq: 'i-amplify:Groq',
-  Together: 'i-amplify:Together',
-  Hyperbolic: 'i-amplify:Hyperbolic',
-  Cerebras: 'i-amplify:Cerebras',
-  Fireworks: 'i-amplify:Fireworks',
+  Cohere: 'i-amplify:cohere',
+  Groq: 'i-amplify:groq',
+  Together: 'i-amplify:together',
+  Hyperbolic: 'i-amplify:hyperbolic',
+  Cerebras: 'i-amplify:cerebras',
+  Fireworks: 'i-amplify:fireworks',
 
   // === Generic local SVGs ===
-  OpenAILike: 'i-amplify:OpenAILike',
+  OpenAILike: 'i-amplify:openailike',
 };
 
 function providerIconClass(name: string): string {
-  return PROVIDER_ICON_CLASS[name] || 'i-amplify:Default';
+  return PROVIDER_ICON_CLASS[name] || 'i-amplify:default';
 }
 
 /**
@@ -1986,9 +2016,26 @@ function providerIconClass(name: string): string {
  * the surrounding font-size. This matches how `framework-meta.ts` renders
  * its icons (e.g. `<div className="i-amplify:react text-xl" />`).
  */
+const PROVIDER_ASPECT_RATIOS: Record<string, string> = {
+  Cohere: '22 / 20',
+  Groq: '370 / 562.5',
+  Together: '30 / 26',
+};
+
 const ProviderIcon = ({ name, className = '' }: { name: string; className?: string }) => {
+  const aspectRatio = PROVIDER_ASPECT_RATIOS[name] || '1 / 1';
   return (
-    <div className={classNames(providerIconClass(name), 'inline-block', className)} role="img" aria-label={name} />
+    <div
+      className={classNames(providerIconClass(name), 'inline-block align-middle', className)}
+      style={{
+        height: '0.75em',
+        width: 'auto',
+        aspectRatio,
+        maxWidth: '2.5em',
+      }}
+      role="img"
+      aria-label={name}
+    />
   );
 };
 

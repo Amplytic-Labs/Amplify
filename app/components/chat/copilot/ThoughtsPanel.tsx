@@ -3,20 +3,8 @@ import { classNames } from '~/utils/classNames';
 import { ToolProgress, getToolIcon, classifyResult } from './ToolProgress';
 import { ThinkingBox } from './ThinkingBox';
 import { ReasoningMarkdown } from '~/components/chat/ReasoningMarkdown';
-import type {
-  TextUIPart,
-  ReasoningUIPart,
-  SourceUIPart,
-  FileUIPart,
-  StepStartUIPart,
-} from '@ai-sdk/ui-utils';
-import {
-  isToolPart,
-  getToolNameFromPart,
-  getToolCallId,
-  getToolState,
-  getToolOutput,
-} from '~/lib/chat/tool-parts';
+import type { TextUIPart, ReasoningUIPart, SourceUIPart, FileUIPart, StepStartUIPart } from '@ai-sdk/ui-utils';
+import { isToolPart, getToolNameFromPart, getToolCallId, getToolState, getToolOutput } from '~/lib/chat/tool-parts';
 import styles from './chat-copilot.module.scss';
 
 /**
@@ -30,9 +18,7 @@ import styles from './chat-copilot.module.scss';
  *   .chat-thinking-tool-wrapper           (tool — tool-type icon)
  *   .chat-thinking-spinner-item           (working — spinner icon)
  */
-type ThoughtStep =
-  | { kind: 'reasoning'; text: string; key: string }
-  | { kind: 'tool'; item: any; key: string };
+type ThoughtStep = { kind: 'reasoning'; text: string; key: string } | { kind: 'tool'; item: any; key: string };
 
 interface ThoughtsPanelProps {
   /** Text extracted from `<thought>…</thought>` tags in the answer body. */
@@ -49,9 +35,7 @@ interface ThoughtsPanelProps {
   thinkingDone?: boolean;
 
   /** Native reasoning + tool-invocation parts from the AI SDK. */
-  parts:
-    | (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[]
-    | undefined;
+  parts: (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[] | undefined;
 
   /** True when this is the streaming message and we're still producing parts. */
   isStreaming?: boolean;
@@ -156,8 +140,7 @@ export const ThoughtsPanel = memo(
           // v7 'output-error' is itself an error; v7 'output-available' (v4 'result')
           // is an error only when the result string starts with a known error prefix.
           const isError =
-            state === 'output-error' ||
-            (state === 'output-available' && classifyResult(result) === 'error');
+            state === 'output-error' || (state === 'output-available' && classifyResult(result) === 'error');
           const toolIcon = getToolIcon(toolName);
 
           return (
