@@ -100,8 +100,23 @@ export class AmplifyShell {
   executionState = atom<
     { sessionId: string; active: boolean; executionPrms?: Promise<any>; abort?: () => void } | undefined
   >();
-  #outputStream: ReadableStreamDefaultReader<string> | undefined;
   #shellInputStream: WritableStreamDefaultWriter<string> | undefined;
+
+  /*
+   * OSC signal queue: When OSC codes are detected in the terminal writer,
+   * they are pushed here. waitTillOscCode() reads from this queue instead
+   * of a separate stream reader. This eliminates the tee backpressure bug.
+   *
+   * Each entry: { osc: string, text: string, code?: string, sessionId?: string }
+   */
+  #oscQueue: Array<{ osc: string; text: string; code?: string; sessionId?: string }> = [];
+  #oscResolve: ((value: void) => void) | undefined;
+
+  /*
+   * Output accumulator: The terminal writer appends all text here.
+   * waitTillOscCode reads from this buffer when it needs output text.
+   */
+  #outputAccumulator = '';
 
   /*
    * Track the onData disposable + pipe so we can tear them down before re-init
@@ -159,8 +174,10 @@ export class AmplifyShell {
     }
     this.#process = undefined;
 
-    this.#outputStream = undefined;
     this.#shellInputStream = undefined;
+    this.#oscQueue = [];
+    this.#oscResolve = undefined;
+    this.#outputAccumulator = '';
   }
 
   async init(webcontainer: WebContainer, terminal: ITerminal) {
@@ -179,13 +196,12 @@ export class AmplifyShell {
     this.#webcontainer = webcontainer;
     this.#terminal = terminal;
 
-    // Use streams from tee: one for terminal (consumed inline), one for command execution
-    // Expo URL detection is now done inline in the terminal writer — no separate stream
-    const { process, commandStream } = await this.newAmplifyShellProcess(webcontainer, terminal);
+    // No tee — process.output is piped directly to a single WritableStream.
+    // This eliminates the backpressure bug where tee'd branches block each other
+    // when one isn't continuously consumed (the old commandStream reader).
+    // All data processing (terminal, Expo URL, OSC detection) happens in one place.
+    const { process } = await this.newAmplifyShellProcess(webcontainer, terminal);
     this.#process = process;
-    this.#outputStream = commandStream.getReader();
-
-    // No need for _watchExpoUrlInBackground — Expo URLs are detected inline in terminal writer
 
     await this.waitTillOscCode('interactive');
     this.#initialized?.();
@@ -234,37 +250,53 @@ export class AmplifyShell {
     const input = process.input.getWriter();
     this.#shellInputStream = input;
 
-    // Tee the output so we can have two independent readers
-    // Only a SINGLE tee is used now — triple-tee caused a blocking problem
-    // where streamC (commandStream) was only read during executeCommand,
-    // which blocked data flow to streamD (expoUrlStream) via the second tee.
-    // Expo URL detection is now done inline in the terminal writer below.
-    const [streamA, streamB] = process.output.tee();
-
     const jshReady = withResolvers<void>();
     let isInteractive = false;
 
     /*
-     * Expo URL detection: We track a buffer of terminal output and
-     * match Expo URLs (exp:// and *.boltexpo.dev) inline in the terminal
-     * writer. This is more reliable than a separate stream because the
-     * terminal writer is ALWAYS consuming data — it never blocks.
-     * The previous approach used a triple-tee (streamD) which broke
-     * because streamC wasn't continuously consumed, blocking the tee.
+     * NO TEE — pipe process.output directly to a single WritableStream.
+     *
+     * Why: The previous approach used ReadableStream.tee() to split the
+     * output into multiple branches (terminal + commandStream + expoUrlStream).
+     * This was fundamentally broken because .tee() applies backpressure
+     * from BOTH branches back to the original stream. If one branch's
+     * reader isn't actively consuming data (the commandStream reader was
+     * only used during executeCommand calls), the tee's internal queue
+     * fills up and blocks data flow to the other branches — including
+     * the terminal writer and the Expo URL detector. The Expo URL never
+     * appeared because data literally stopped flowing through the pipe.
+     *
+     * Now: A single WritableStream callback processes ALL data:
+     *   1. terminal.write(data) — render to xterm
+     *   2. Expo URL detection — regex match on stripped buffer
+     *   3. OSC code detection — push signals to #oscQueue for waitTillOscCode()
+     *   4. Accumulate output text — stored in #outputAccumulator
+     *
+     * Since this writer is ALWAYS consuming (pipeTo runs continuously),
+     * there is zero backpressure and data flows without interruption.
+     * waitTillOscCode() reads from the in-memory #oscQueue instead of
+     * a stream reader, so it always works regardless of tee state.
      */
     let expoUrlBuffer = '';
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
     const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-    const oscRegex = /\x1b\][^\x07]*\x07/g;
+    const oscTerminalRegex = /\x1b\][^\x07]*\x07/g;
 
-    /*
-     * Use an AbortController so #teardown() can cancel this pipe without
-     * waiting for the stream to end naturally.
-     */
+    // Reference to `this` for use inside the closure — private fields can only
+    // be accessed via `this.#field` directly inside the class body, not via
+    // a variable reference like `shell.#field`. We bridge them through a
+    // plain object that the closure can mutate.
+    const bridge = {
+      pushOsc: (entry: { osc: string; text: string; code?: string }) => { this.#oscQueue.push(entry); },
+      resolveOsc: () => { this.#oscResolve?.(); this.#oscResolve = undefined; },
+      appendOutput: (text: string) => { this.#outputAccumulator += text; },
+    };
+
     this.#terminalPipeController = new AbortController();
-    streamA.pipeTo(
+    process.output.pipeTo(
       new WritableStream({
         write(data) {
+          // --- OSC code detection (for jsh interactive + command completion) ---
           if (!isInteractive) {
             const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
 
@@ -274,20 +306,32 @@ export class AmplifyShell {
             }
           }
 
+          // Detect ALL OSC codes for the queue (command completion signals)
+          const [, osc, , , code] = data.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
+          if (osc) {
+            bridge.pushOsc({ osc, text: data, code });
+            // If waitTillOscCode is waiting, resolve its promise
+            bridge.resolveOsc();
+          }
+
+          // --- Write to terminal ---
           terminal.write(data);
 
-          // Detect Expo URLs inline — always runs since terminal writer is always consuming
+          // --- Accumulate output for waitTillOscCode ---
+          bridge.appendOutput(data || '');
+
+          // --- Expo URL detection ---
           expoUrlBuffer += data || '';
           // Strip ANSI + OSC + control chars before URL matching
           const cleanBuffer = expoUrlBuffer
             .replace(ansiRegex, '')
-            .replace(oscRegex, '')
+            .replace(oscTerminalRegex, '')
             .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
           const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
           if (expoUrlMatch) {
             const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
             expoUrlAtom.set(cleanUrl);
-            expoUrlBuffer = ''; // Clear after match — URL is emitted once per start
+            expoUrlBuffer = ''; // Clear after match
           }
           if (expoUrlBuffer.length > 4096) {
             expoUrlBuffer = expoUrlBuffer.slice(-2048);
@@ -310,18 +354,8 @@ export class AmplifyShell {
 
     await jshReady.promise;
 
-    // Return streams for use in init — no expoUrlStream needed now
-    return { process, terminalStream: streamA, commandStream: streamB };
+    return { process };
   }
-
-  // Expo URL detection is now done inline in the terminal writer (streamA)
-  // in newAmplifyShellProcess(). This method is no longer needed because
-  // the triple-tee approach caused a blocking problem where streamC
-  // (commandStream) wasn't continuously consumed, blocking data flow
-  // to the expoUrlStream via the second tee.
-  //
-  // The inline approach is more reliable since the terminal writer is
-  // ALWAYS consuming data — it never blocks.
 
   get terminal() {
     return this.#terminal;
@@ -663,66 +697,51 @@ export class AmplifyShell {
   onQRCodeDetected?: (qrCode: string) => void;
 
   async waitTillOscCode(waitCode: string) {
-    let fullOutput = '';
     let exitCode: number = 0;
-    let buffer = ''; // <-- Add a buffer to accumulate output
 
-    if (!this.#outputStream) {
-      return { output: fullOutput, exitCode };
-    }
-
-    const tappedStream = this.#outputStream;
-
-    // ANSI escape code regex — strip BEFORE URL matching so embedded ANSI
-    // sequences between URL characters don't break the match.
-    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-    // Also strip OSC sequences
-    const oscRegex = /\x1b\][^\x07]*\x07/g;
-    // Regex for Expo URL
-    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+    /*
+     * Queue-based OSC detection: Instead of reading from a separate stream
+     * (which caused the tee backpressure bug), we now read from an in-memory
+     * queue that is populated by the terminal writer callback in
+     * newAmplifyShellProcess(). The terminal writer pushes OSC codes to
+     * #oscQueue as it processes data, and signals #oscResolve when a new
+     * entry arrives.
+     *
+     * This approach works because:
+     * 1. The terminal writer is ALWAYS consuming data (no backpressure)
+     * 2. The queue is in-memory, so there's no stream blocking issue
+     * 3. We use a Promise-based signal (#oscResolve) to efficiently wait
+     *    for new OSC codes without polling
+     *
+     * The output text is taken from #outputAccumulator which the terminal
+     * writer continuously populates. We snapshot it at the start and
+     * compare with the current state when we find the matching OSC code.
+     */
+    const outputSnapshotStart = this.#outputAccumulator.length;
 
     while (true) {
-      const { value, done } = await tappedStream.read();
+      // Check the queue for any OSC codes that arrived since last check
+      while (this.#oscQueue.length > 0) {
+        const entry = this.#oscQueue.shift()!;
 
-      if (done) {
-        break;
+        if (entry.osc === 'exit' && entry.code) {
+          exitCode = parseInt(entry.code, 10);
+        }
+
+        if (entry.osc === waitCode) {
+          // Found the OSC code we're waiting for
+          // Return all accumulated output since we started waiting
+          const fullOutput = this.#outputAccumulator.slice(outputSnapshotStart);
+          return { output: fullOutput, exitCode };
+        }
       }
 
-      const text = value || '';
-      fullOutput += text;
-      buffer += text; // <-- Accumulate in buffer
-
-      // Strip ANSI escape codes AND OSC sequences from buffer before URL matching.
-      const cleanBuffer = buffer
-        .replace(ansiRegex, '')
-        .replace(oscRegex, '')
-        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
-
-      // Extract Expo URL from cleaned buffer and set store
-      const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
-
-      if (expoUrlMatch) {
-        // Remove any remaining non-printable characters from the matched URL
-        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
-        expoUrlAtom.set(cleanUrl);
-
-        // Clear buffer after successful match to avoid re-matching
-        buffer = '';
-      }
-
-      // Check if command completion signal with exit code
-      const [, osc, , , code] = text.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
-
-      if (osc === 'exit') {
-        exitCode = parseInt(code, 10);
-      }
-
-      if (osc === waitCode) {
-        break;
-      }
+      // No matching OSC code in queue — wait for the next one to arrive
+      // The terminal writer will resolve #oscResolve when it pushes a new entry
+      await new Promise<void>((resolve) => {
+        this.#oscResolve = resolve;
+      });
     }
-
-    return { output: fullOutput, exitCode };
   }
 }
 
