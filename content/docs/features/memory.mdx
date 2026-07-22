@@ -1,0 +1,187 @@
+---
+title: Memory System
+description: Amplify's Orama-powered vector database for persistent user profiles and project context — BM25 full-text search that provides intelligent context across sessions.
+---
+
+# Memory System
+
+The memory system uses **Orama** (a full-text search engine with BM25 ranking) to provide persistent, intelligent context across sessions. It consists of two separate stores: the **User Profile Store** for long-term preferences and the **Project Context Store** for project-specific knowledge.
+
+## Why Memory Matters
+
+LLMs have no inherent memory — each conversation starts fresh. Without a memory system:
+
+- The AI forgets your preferences every session
+- Previous decisions and patterns are lost
+- You must repeat the same instructions repeatedly
+
+Amplify's memory system solves this by automatically capturing and retrieving relevant context from past interactions, injecting it into the system prompt for continuity.
+
+## Architecture
+
+### Storage Engine
+
+Both stores use **Orama v3** with BM25 ranking for relevance-based retrieval:
+
+- **BM25** — The industry-standard ranking algorithm for full-text search
+- **IndexedDB persistence** — Data persists across browser sessions
+- **Schema-based indexing** — Each store defines searchable properties
+- **Threshold filtering** — Low-relevance results are automatically excluded
+
+### Data Flow
+
+```
+User sends message
+  → Vector Store searches for relevant context
+  → Top-k results injected into system prompt
+  → AI responds with awareness of past context
+  → New decisions/patterns extracted from response
+  → Stored back in vector DB for future retrieval
+```
+
+## User Profile Store
+
+The User Profile Store captures long-term preferences and patterns that apply across all projects:
+
+### Entry Categories
+
+| Category | Description | Example |
+|----------|-------------|---------|
+| `preference` | General preferences | "I prefer dark themes" |
+| `tech_stack` | Preferred technologies | "I use React with TypeScript" |
+| `coding_style` | Code style preferences | "I prefer functional components over classes" |
+| `domain_knowledge` | Domain expertise | "I'm experienced in fintech applications" |
+| `workflow` | Work patterns | "I start with tests before implementation" |
+| `communication_style` | How you communicate | "Keep responses concise" |
+| `project_preference` | Project-level preferences | "I prefer Vite over webpack" |
+| `general` | Miscellaneous | "My timezone is PST" |
+
+### Entry Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique entry identifier |
+| `content` | string | The actual preference/knowledge text |
+| `category` | string | Entry category (from above) |
+| `createdAt` | string | ISO 8601 timestamp |
+| `updatedAt` | string | Last modification timestamp |
+| `accessCount` | number | How many times this entry was retrieved |
+| `source` | string | Where this entry came from (optional) |
+| `confidence` | number | Confidence score (0-1) |
+
+### Auto-Learning
+
+The User Profile Store automatically learns from your interactions:
+- Frequently expressed preferences are captured with higher confidence
+- Access counts track which preferences are most relevant
+- Entries are deduplicated to avoid redundancy
+- Low-confidence entries can be pruned over time
+
+## Project Context Store
+
+The Project Context Store captures project-specific knowledge that persists across sessions within a project:
+
+### Entry Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `requirement` | Project requirements | "Must support offline mode" |
+| `decision` | Design decisions | "Using SQLite for local storage" |
+| `error` | Error patterns encountered | "CORS issues with external API" |
+| `fix` | How errors were resolved | "Added proxy middleware for CORS" |
+| `pattern` | Code patterns used | "Repository pattern for data access" |
+| `architecture` | Architecture notes | "Microservices with shared auth layer" |
+| `constraint` | Project constraints | "Must work on mobile browsers" |
+| `file_context` | File-specific context | "AuthService.ts handles JWT validation" |
+| `conversation_summary` | Chat summaries | "Created login flow with OAuth2" |
+| `tool_usage` | Tool usage patterns | "Used create_file for new components" |
+| `flow_definition` | Application flow | "Login → Dashboard → Settings → Profile" |
+| `screen_connection` | Screen relationships | "Dashboard links to Analytics and Reports" |
+
+### Entry Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique entry identifier |
+| `projectId` | string | Which project this entry belongs to |
+| `content` | string | The context text |
+| `type` | string | Entry type (from above) |
+| `createdAt` | string | ISO 8601 timestamp |
+| `updatedAt` | string | Last modification timestamp |
+| `sourceChatId` | string | Which chat produced this entry (optional) |
+| `planPointId` | string | Which plan point produced this entry (optional) |
+| `files` | string array | Related file paths (optional) |
+| `tags` | string array | Tags for categorization (optional) |
+
+### Context Retrieval
+
+When a new chat starts in a project:
+
+1. The system searches the Project Context Store for entries relevant to the current topic
+2. BM25 ranking identifies the most relevant entries
+3. Top-k results (configurable, default 10) are injected into the system prompt
+4. The AI has awareness of past decisions, errors, patterns, and architecture
+
+This provides continuity without dumping the entire conversation history — only the most relevant context is included.
+
+## Search Options
+
+Both stores support flexible search configuration:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `limit` | number | 10 | Maximum results to return |
+| `threshold` | number | 0.5 | Minimum relevance score (0-1) |
+| `category` | string | — | Filter by specific category/type |
+| `tags` | string array | — | Filter by tags |
+| `properties` | string array | — | Which properties to search in |
+
+## Memory Tab
+
+The Memory tab in the Settings panel provides a UI for managing memory:
+
+- **User Profile** — View, edit, and delete user profile entries
+- **Project Context** — View project-specific entries with filtering
+- **Search** — Test search queries to see what context would be injected
+- **Export/Import** — Export memory data for backup or sharing
+
+## Project Memory Detection
+
+The `project-memory-detect.ts` module automatically determines when to capture context:
+
+- After significant decisions are made in a chat
+- When error/fix patterns are identified
+- When architecture patterns emerge
+- When new requirements are stated
+
+Detection uses heuristics based on message content, tool usage patterns, and conversation length.
+
+## Memory and Planning Integration
+
+The memory system is deeply integrated with the planning system:
+
+1. **Before planning** — User profile and project context are injected into the planner's context
+2. **During planning** — Each PlanPoint specifies which context entries it needs via `requiredToolOutputs`
+3. **After execution** — Sub-chat results are extracted and stored as new context entries
+4. **For verification** — Previous error patterns help identify common issues
+
+This creates a virtuous cycle where every interaction enriches the context for future ones.
+
+## Persistence Details
+
+Both stores persist to IndexedDB:
+
+- **UserProfileSchema** — Indexed by `id`, `content`, `category`, `confidence`
+- **ProjectContextSchema** — Indexed by `id`, `projectId`, `content`, `type`, `tags`
+
+The persistence layer (`app/lib/vector-store/persistence.ts`) handles:
+- Database creation and schema migration
+- Batch insertion for efficient storage
+- Search with BM25 ranking
+- Cleanup of low-relevance entries
+
+## Next Steps
+
+- [Planning System](/docs/features/planning) — How memory feeds into task plans
+- [Vector DB Integration](/docs/integrations/vector-db) — Orama configuration details
+- [Extending Skills](/docs/extending/adding-skills) — Skills that leverage memory

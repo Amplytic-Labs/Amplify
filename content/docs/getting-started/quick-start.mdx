@@ -1,0 +1,93 @@
+---
+title: Quick Start
+description: Get Amplify up and running in minutes — from installation to your first AI-powered project.
+---
+
+# Quick Start
+
+Get Amplify running and build your first AI-powered project in under five minutes.
+
+## Prerequisites
+
+- **Node.js** 18.18.0 or later
+- **pnpm** (recommended) or npm
+- A modern browser (Chrome, Firefox, Edge, or Safari)
+- At least one LLM API key (e.g., OpenAI, Anthropic, Google)
+
+## Step 1: Clone and Install
+
+```bash
+git clone https://github.com/nicepkg/amplify.git
+cd amplify
+pnpm install
+```
+
+If you prefer npm:
+
+```bash
+git clone https://github.com/nicepkg/amplify.git
+cd amplify
+npm install
+```
+
+## Step 2: Configure Environment Variables
+
+Create a `.env.local` file in the project root with your API keys:
+
+```bash
+# At least one provider key is required
+OPENAI_API_KEY=sk-your-key-here
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+GOOGLE_GENERATIVE_AI_API_KEY=your-key-here
+
+# Optional: additional providers
+GROQ_API_KEY=gsk_your-key-here
+DEEPSEEK_API_KEY=your-key-here
+XAI_API_KEY=xai-your-key-here
+MISTRAL_API_KEY=your-key-here
+OPEN_ROUTER_API_KEY=sk-or-your-key-here
+
+# Optional: local providers
+OLLAMA_API_BASE_URL=http://localhost:11434
+LMSTUDIO_API_BASE_URL=http://localhost:1234
+```
+
+You only need **one** API key to start. Amplify will automatically detect which providers are configured and show available models in the selector.
+
+## Step 3: Start the Development Server
+
+```bash
+pnpm run dev
+```
+
+This runs the `pre-start.cjs` script and then launches the Remix Vite dev server. Open your browser to `http://localhost:5173`.
+
+## Step 4: Create Your First Project
+
+1. Click **New Chat** in the sidebar
+2. Select a provider and model from the dropdown (e.g., OpenAI + GPT-4o)
+3. Describe what you want to build — for example: "Create a React todo app with TypeScript"
+4. The AI will generate files, which appear in the workbench editor
+5. The WebContainer automatically boots and runs your project
+
+## Step 5: Explore the Workbench
+
+The workbench provides a full development environment in your browser:
+
+- **Editor** — CodeMirror-powered code editor with syntax highlighting
+- **Terminal** — Full terminal access inside the WebContainer
+- **Preview** — Live preview of your running application
+- **File Tree** — Browse and navigate all project files
+
+You can edit files directly in the editor, run commands in the terminal, and see changes reflected in the preview instantly.
+
+## Using the Cloud Version
+
+If you prefer not to run locally, Amplify is available as a hosted service. Simply visit the deployed instance, configure your API keys in the settings panel, and start chatting.
+
+## Next Steps
+
+- [Installation Guide](/docs/getting-started/installation) — Detailed installation options including Docker
+- [Configuration](/docs/getting-started/configuration) — Full configuration reference
+- [Architecture Overview](/docs/architecture/overview) — Understand how Amplify works internally
+- [Provider Setup](/docs/providers/overview) — Configure specific LLM providers

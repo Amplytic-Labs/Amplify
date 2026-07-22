@@ -1,0 +1,162 @@
+---
+title: Chat Interface
+description: The AI chat interface in Amplify — streaming responses, tool invocations, reasoning display, model selection, and context management.
+---
+
+# Chat Interface
+
+The chat interface is the primary way to interact with AI in Amplify. It supports streaming responses, real-time tool invocations, reasoning/thinking display, multi-model selection, and rich context management.
+
+## Chat Components
+
+The chat system consists of several interconnected components:
+
+- **BaseChat** — The core chat container managing layout and state
+- **Chat.client** — The client-side chat orchestrator handling streaming and mutations
+- **Messages.client** — Message rendering with tool invocation display
+- **ModelSelector** — Provider and model dropdown with dynamic discovery
+- **APIKeyManager** — Per-provider API key configuration popup
+- **SendButton** — Message submission with streaming abort support
+
+## Model Selection
+
+The model selector dropdown lets you choose:
+
+1. **Provider** — Which LLM backend to use (OpenAI, Anthropic, Google, etc.)
+2. **Model** — Specific model within the provider (GPT-4o, Claude 3.5 Sonnet, etc.)
+
+Models are discovered in two ways:
+- **Static models** — Well-known models hardcoded in each provider
+- **Dynamic models** — Fetched from the provider's API at runtime (requires API key)
+
+When you open the model selector, Amplify fetches available models from all configured providers and displays them grouped by provider name.
+
+## Streaming Responses
+
+Chat responses stream in real-time using **Server-Sent Events (SSE)** via the Vercel AI SDK. As the LLM generates tokens, they appear in the chat immediately.
+
+The streaming flow:
+1. User sends message → POST to `/api/chat`
+2. Server begins streaming → SSE connection opens
+3. Text tokens arrive → Rendered incrementally in the message
+4. Tool calls arrive → Displayed as annotation parts
+5. Stream completes → Final message stored in chat history
+
+### Aborting Streams
+
+You can abort an ongoing stream using the stop button. This sends an abort signal that:
+- Cancels the SSE connection
+- Preserves any partial response already received
+- Stops any in-progress tool executions
+
+## Tool Invocations
+
+When the AI invokes a tool, the chat displays a structured tool invocation panel showing:
+
+- **Tool name** — Which tool was called (e.g., `read_file`, `create_file`)
+- **Arguments** — The parameters passed to the tool
+- **Status** — Pending, executing, completed, or failed
+- **Result** — The tool's output (file contents, search results, etc.)
+
+### Tool Confirmation
+
+Some tools require user confirmation before execution. When a tool needs approval:
+1. A confirmation dialog appears with the tool name and arguments
+2. You can approve or deny the execution
+3. If denied, the AI receives a "denied" result and adapts its response
+
+### Tool Progress
+
+Complex tool operations show progress indicators:
+- File operations display file paths being modified
+- Search operations show query parameters
+- MCP tool calls show which server is being invoked
+
+## Reasoning Display
+
+Models that support reasoning/thinking (like Claude 3.5 Sonnet, o1-preview, Grok) display their internal thought process in a collapsible panel:
+
+- **ThinkingBox** — Collapsible reasoning content
+- **ThoughtsPanel** — Side panel for extended reasoning display
+
+Reasoning content is parsed from the streaming response using the thought parser, which identifies thinking blocks delimited by special markers.
+
+## Message Types
+
+The chat supports several message types:
+
+| Type | Description | Rendering |
+|------|-------------|-----------|
+| User message | Text input from the user | Markdown with file attachments |
+| Assistant message | AI response with streaming | Markdown with tool invocations |
+| System message | Context instructions (hidden) | Not rendered in UI |
+| Tool result | Output from tool execution | Structured card display |
+
+### File Attachments
+
+User messages can include file attachments:
+- **Drag and drop** — Drop files directly into the chat
+- **File picker** — Select files from the project file tree
+- **Screenshot** — Capture and attach screenshots
+- **Folder import** — Import entire folder contents
+
+Attachments appear as "file pills" — compact badges showing the file name and type.
+
+## Prompt Enhancement
+
+When the prompt enhancement feature is enabled, Amplify can improve your prompt before sending it to the LLM. The enhancement uses a separate LLM call (`/api/enhancer`) to:
+
+1. Expand abbreviated instructions into detailed prompts
+2. Add relevant context from the project
+3. Suggest improvements based on the selected model's capabilities
+
+Enhancement is triggered automatically when you type a short prompt, or manually via the enhance button.
+
+## Chat History
+
+All chats are persisted in IndexedDB and organized in the sidebar:
+
+- **Date-binned** — Chats grouped by date (Today, Yesterday, Last Week, etc.)
+- **Project-scoped** — Each chat belongs to a project
+- **Searchable** — Filter chats by content using the search filter
+- **Exportable** — Export chats as JSON or DOCX
+- **Importable** — Import previously exported chats
+
+### Chat Description
+
+Each chat can have a custom description (editable) that helps identify it in the sidebar. By default, the AI generates a description from the first message.
+
+## Starter Templates
+
+New chats can start from predefined templates that set up the project context:
+
+- **React + TypeScript** — Basic React application setup
+- **Vite + React** — Vite-based React project
+- **Next.js** — Next.js application template
+- **Static HTML** — Simple HTML page
+- And more framework-specific templates
+
+Templates provide both the initial file structure and a suggested first prompt.
+
+## Context Budget Indicator
+
+When enabled, the context budget indicator shows:
+- How many tokens the current conversation uses
+- The remaining capacity before hitting the model's context window limit
+- A visual progress bar that changes color as capacity decreases
+
+This helps you understand when a conversation is getting too long and might need summarization.
+
+## Speech Recognition
+
+Amplify supports voice input through the browser's Web Speech API:
+1. Click the microphone button in the chat input
+2. Speak your prompt
+3. The speech-to-text result appears in the input field
+4. You can edit the transcribed text before sending
+
+## Next Steps
+
+- [Workbench](/docs/features/workbench) — The development environment
+- [Native Tools](/docs/features/native-tools) — Copilot-style file operations
+- [Planning](/docs/features/planning) — Task decomposition with sub-chats

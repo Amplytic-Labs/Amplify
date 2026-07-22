@@ -1,0 +1,327 @@
+---
+title: Contributing to Amplify
+description: How to contribute to the Amplify project — development setup, code standards, pull request process, and community guidelines.
+---
+
+# Contributing to Amplify
+
+Amplify is an open-source project, and we welcome contributions from the community. This guide covers everything you need to know to get started.
+
+## Development Setup
+
+### Prerequisites
+
+- Node.js 18.18.0 or later
+- pnpm 9.x (recommended package manager)
+- Git 2.x
+- A modern browser for testing
+
+### Clone and Install
+
+```bash
+git clone https://github.com/nicepkg/amplify.git
+cd amplify
+pnpm install
+```
+
+### Start Development
+
+```bash
+pnpm run dev
+```
+
+This starts the Remix Vite dev server with HMR on `http://localhost:5173`.
+
+### Run Tests
+
+```bash
+# Run all tests
+pnpm run test
+
+# Run tests in watch mode
+pnpm run test:watch
+
+# Type checking
+pnpm run typecheck
+```
+
+### Linting
+
+```bash
+# Check for lint errors
+pnpm run lint
+
+# Fix lint errors automatically
+pnpm run lint:fix
+```
+
+The project uses ESLint with a custom configuration (`eslint.config.mjs`) and Prettier for code formatting.
+
+## Project Structure
+
+Understanding the project structure helps you find where to make changes:
+
+```
+app/
+├── components/        # UI components (React)
+│   ├── chat/          # Chat interface components
+│   ├── workbench/     # Workbench/editor components
+│   ├── @settings/     # Settings panel components
+│   └── ui/            # Shared UI primitives
+├── lib/
+│   ├── modules/llm/   # LLM provider system
+│   ├── tools/         # Native Copilot tools
+│   ├── planning/      # Task planning system
+│   ├── vector-store/  # Orama vector DB
+│   ├── services/      # MCP, skill loader, etc.
+│   ├── stores/        # Zustand/Nanostore state
+│   ├── persistence/   # IndexedDB persistence
+│   └── hooks/         # React hooks
+├── routes/            # Remix routes (API + pages)
+├── types/             # TypeScript type definitions
+├── utils/             # Utility functions
+└── styles/            # SCSS stylesheets
+```
+
+## Code Standards
+
+### TypeScript
+
+- All new code must be written in TypeScript
+- Use strict type checking (no `any` unless absolutely necessary)
+- Define interfaces for all data structures
+- Use Zod for runtime validation of tool parameters
+
+### React Components
+
+- Use functional components with hooks
+- Use named exports (not default exports)
+- Keep components focused — one responsibility per component
+- Extract reusable logic into custom hooks
+
+### State Management
+
+- Use Zustand for complex interconnected stores
+- Use Nanostores for simple atomic values
+- Persist user data to IndexedDB or localStorage
+- Never persist sensitive data (API keys) in plain text on the server
+
+### Naming Conventions
+
+- **Files** — PascalCase for components (`BaseChat.tsx`), camelCase for utilities (`useChatHistory.ts`)
+- **Variables** — camelCase for local variables, PascalCase for types/interfaces
+- **Constants** — UPPER_SNAKE_CASE for environment constants (`WORK_DIR`)
+- **Stores** — camelCase with "Store" suffix (`chatStore`, `workbenchStore`)
+- **Hooks** — camelCase with "use" prefix (`useChatHistory`, `useVectorContext`)
+
+### Styling
+
+- Use SCSS for component styles
+- Follow the BEM naming convention for CSS classes
+- Use CSS modules for component-scoped styles (`.module.scss`)
+- Global styles go in `app/styles/`
+- Use CSS variables from `app/styles/variables.scss`
+
+## Pull Request Process
+
+### 1. Create an Issue
+
+Before starting work, create a GitHub issue describing:
+- The problem or feature you're addressing
+- The proposed solution
+- Any alternative approaches considered
+
+This helps coordinate efforts and avoid duplicate work.
+
+### 2. Fork and Branch
+
+```bash
+# Fork the repository on GitHub
+# Then clone your fork
+git clone https://github.com/your-username/amplify.git
+
+# Create a feature branch
+git checkout -b feature/my-feature
+```
+
+### 3. Make Changes
+
+Follow the code standards above. Ensure:
+- All tests pass (`pnpm run test`)
+- Type checking passes (`pnpm run typecheck`)
+- Lint checks pass (`pnpm run lint`)
+- The dev server starts without errors (`pnpm run dev`)
+
+### 4. Commit Messages
+
+Use clear, descriptive commit messages:
+
+```bash
+# Good examples
+git commit -m "feat: add support for Mistral Large model"
+git commit -m "fix: resolve WebContainer boot error on Safari"
+git commit -m "docs: update provider configuration guide"
+
+# Bad examples
+git commit -m "fix stuff"
+git commit -m "update"
+```
+
+Follow the Conventional Commits format:
+- `feat:` — New feature
+- `fix:` — Bug fix
+- `docs:` — Documentation changes
+- `refactor:` — Code restructuring without behavior change
+- `test:` — Adding or updating tests
+- `chore:` — Build, config, or tooling changes
+
+### 5. Push and Create PR
+
+```bash
+# Push to your fork
+git push origin feature/my-feature
+
+# Create a Pull Request on GitHub
+# Include a description of your changes and link to the issue
+```
+
+### 6. Review Process
+
+PRs are reviewed by maintainers. Expect:
+- Code review for correctness and style
+- Test verification
+- Architecture compatibility check
+- Documentation review (if applicable)
+
+### 7. Address Feedback
+
+Respond to review comments by:
+- Making requested changes
+- Pushing new commits to the same branch
+- Explaining your reasoning if you disagree with a suggestion
+
+## Types of Contributions
+
+### Bug Fixes
+
+1. Find or report the bug as a GitHub issue
+2. Add a test that reproduces the bug
+3. Fix the bug
+4. Verify the test passes
+5. Submit a PR
+
+### New Features
+
+1. Discuss the feature in a GitHub issue first
+2. Implement with proper TypeScript types
+3. Add tests for the new functionality
+4. Update documentation if the feature affects user-facing behavior
+5. Submit a PR
+
+### New Providers
+
+See [Adding Providers](/docs/extending/adding-providers) for the full guide. Key steps:
+1. Create a new provider class in `app/lib/modules/llm/providers/`
+2. Register it in `registry.ts`
+3. Add environment variable documentation
+4. Add rate limit defaults
+5. Add tests
+6. Submit a PR
+
+### New Skills
+
+See [Adding Skills](/docs/extending/adding-skills) for the full guide. Key steps:
+1. Create a `SKILL.md` in the appropriate directory
+2. Ensure the skill is discoverable by the SkillLoader
+3. Add to the skill marketplace if applicable
+4. Submit a PR
+
+### Documentation
+
+1. Documentation files are in `content/docs/`
+2. Use MDX format with proper frontmatter
+3. Follow the MDX rules (no bare curly braces, no angle brackets with numbers)
+4. Test that Fumadocs renders the pages correctly
+5. Submit a PR
+
+## MDX Documentation Rules
+
+When editing documentation files:
+
+- **Frontmatter** — Always include `title` and `description` in the frontmatter
+- **No bare braces** — Do NOT use opening or closing curly brace characters in text or table cells; MDX interprets them as JSX expressions. Use the string literal escape syntax or describe the structure in words
+- **No angle brackets with numbers** — Do NOT use angle bracket followed by a number in text; MDX interprets it as a JSX tag. Use "under X" instead
+- **Code blocks** — Use `bash` or `text` language identifiers, NOT `env` (shiki doesn't support env)
+- **meta.json** — Include `title`, `description`, and `icon` fields
+
+## Testing Guidelines
+
+### Unit Tests
+
+Write unit tests for:
+- Provider model discovery and instance creation
+- Native tool execution and error handling
+- Store state management and persistence
+- Utility functions
+
+Use Vitest for testing:
+
+```typescript
+import { describe, it, expect } from 'vitest';
+
+describe('MyFeature', () => {
+  it('should work correctly', () => {
+    expect(myFunction('input')).toBe('expected output');
+  });
+});
+```
+
+### Integration Tests
+
+For API routes and streaming:
+- Test the `/api/chat` endpoint with mock providers
+- Test MCP server connectivity
+- Test model listing endpoints
+
+### Manual Testing
+
+Before submitting a PR:
+- Start the dev server and verify the UI loads
+- Test the chat interface with at least one provider
+- Check the workbench (editor, terminal, preview)
+- Verify settings persistence across page refreshes
+
+## Release Process
+
+Releases are managed by the maintainers:
+1. Version bumps follow semantic versioning
+2. Changelog is updated with all significant changes
+3. Docker images are built and published to GHCR
+4. Cloudflare Pages deployment is updated
+5. Electron builds are created for macOS, Windows, and Linux
+
+## Community Guidelines
+
+- **Be respectful** — Treat all contributors with respect
+- **Be constructive** — Provide helpful feedback in reviews
+- **Be patient** — Reviews may take time; don't rush maintainers
+- **Be clear** — Write clear issue descriptions and PR explanations
+- **Be collaborative** — Help others with their contributions
+
+## Getting Help
+
+- **GitHub Issues** — Report bugs and request features
+- **Discussions** — Ask questions and share ideas
+- **Code Review** — Request review from maintainers
+- **Documentation** — Refer to the docs at `/docs/`
+
+## License
+
+Amplify is licensed under the MIT License. By contributing, you agree that your contributions will be licensed under the same terms.
+
+## Next Steps
+
+- [Adding Providers](/docs/extending/adding-providers) — Create new LLM providers
+- [Adding Skills](/docs/extending/adding-skills) — Create domain-specific skills
+- [Adding Tools](/docs/extending/adding-tools) — Create custom MCP tools
+- [Architecture Overview](/docs/architecture/overview) — Understand the project internals

@@ -1,0 +1,306 @@
+---
+title: Adding Providers
+description: How to add a new LLM provider to Amplify — extending BaseProvider, registering in the LLM registry, and implementing model discovery.
+---
+
+# Adding Providers
+
+Amplify's provider system is designed for easy extension. Adding a new LLM provider requires creating a class that extends `BaseProvider`, implementing the required methods, and registering it in the provider registry.
+
+## Provider Architecture
+
+Each provider follows this pattern:
+
+1. **Class definition** — Extend `BaseProvider` with provider-specific properties
+2. **Static models** — Define well-known models that are always available
+3. **Model instance creation** — Implement `getModelInstance()` using the appropriate Vercel AI SDK factory
+4. **Dynamic discovery** — Optionally implement `getDynamicModels()` for runtime model fetching
+5. **Registry export** — Export the class from `registry.ts`
+
+## Step-by-Step Guide
+
+### Step 1: Create the Provider File
+
+Create a new file in `app/lib/modules/llm/providers/`:
+
+```typescript
+// app/lib/modules/llm/providers/my-provider.ts
+
+import { BaseProvider } from '~/lib/modules/llm/base-provider';
+import type { ModelInfo } from '~/lib/modules/llm/types';
+import type { IProviderSetting } from '~/types/model';
+import type { LanguageModel } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai'; // or appropriate SDK
+
+export default class MyProvider extends BaseProvider {
+  name = 'MyProvider';
+  getApiKeyLink = 'https://myprovider.com/api-keys';
+  labelForGetApiKey = 'Get MyProvider API Key';
+
+  config = {
+    apiTokenKey: 'MY_PROVIDER_API_KEY',
+    baseUrlKey: 'MY_PROVIDER_BASE_URL', // optional, for OpenAI-compatible providers
+  };
+
+  staticModels: ModelInfo[] = [
+    {
+      name: 'my-model-1',
+      label: 'My Model 1',
+      provider: 'MyProvider',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 4096,
+    },
+    {
+      name: 'my-model-2',
+      label: 'My Model 2',
+      provider: 'MyProvider',
+      maxTokenAllowed: 32000,
+      maxCompletionTokens: 8192,
+    },
+  ];
+
+  getModelInstance(options: {
+    model: string;
+    serverEnv: Env;
+    apiKeys?: Record<string, string>;
+    providerSettings?: Record<string, IProviderSetting>;
+  }): LanguageModel {
+    const { model, serverEnv, apiKeys, providerSettings } = options;
+
+    const { apiKey, baseUrl } = this.getProviderBaseUrlAndKey({
+      apiKeys,
+      providerSettings,
+      serverEnv: this.convertEnvToRecord(serverEnv),
+      defaultBaseUrlKey: 'MY_PROVIDER_BASE_URL',
+      defaultApiTokenKey: 'MY_PROVIDER_API_KEY',
+    });
+
+    const myProvider = createOpenAI({
+      apiKey,
+      baseURL: baseUrl,
+    });
+
+    return myProvider(model);
+  }
+}
+```
+
+### Step 2: Choose the SDK Factory
+
+Depending on your provider's API compatibility:
+
+| Compatibility | SDK Factory | Package |
+|---------------|-------------|---------|
+| OpenAI-compatible | `createOpenAI()` | `@ai-sdk/openai` |
+| Anthropic-compatible | `createAnthropic()` | `@ai-sdk/anthropic` |
+| Google-compatible | `createGoogleGenerativeAI()` | `@ai-sdk/google` |
+| Mistral-compatible | `createMistral()` | `@ai-sdk/mistral` |
+| Cohere-compatible | `createCohere()` | `@ai-sdk/cohere` |
+| Cerebras-compatible | `createCerebras()` | `@ai-sdk/cerebras` |
+| Fireworks-compatible | `createFireworks()` | `@ai-sdk/fireworks` |
+| Bedrock-compatible | `createAmazonBedrock()` | `@ai-sdk/amazon-bedrock` |
+| DeepSeek-compatible | `createDeepSeek()` | `@ai-sdk/deepseek` |
+
+Most providers are OpenAI-compatible, so `createOpenAI()` from `@ai-sdk/openai` is the most common choice. You just need to set the correct `baseURL`.
+
+### Step 3: Implement Dynamic Model Discovery (Optional)
+
+If your provider has a `/v1/models` endpoint:
+
+```typescript
+async getDynamicModels(
+  apiKeys?: Record<string, string>,
+  settings?: IProviderSetting,
+  serverEnv?: Record<string, string>,
+): Promise<ModelInfo[]> {
+  const { apiKey, baseUrl } = this.getProviderBaseUrlAndKey({
+    apiKeys,
+    providerSettings: settings,
+    serverEnv: this.convertEnvToRecord(serverEnv),
+    defaultBaseUrlKey: 'MY_PROVIDER_BASE_URL',
+    defaultApiTokenKey: 'MY_PROVIDER_API_KEY',
+  });
+
+  if (!apiKey) {
+    return [];
+  }
+
+  const response = await this.fetchModelList(
+    baseUrl + '/v1/models',
+    { Authorization: 'Bearer ' + apiKey },
+  );
+
+  return response.data.map((m: any) => ({
+    name: m.id,
+    label: m.id,
+    provider: this.name,
+    maxTokenAllowed: m.context_length || 128000,
+  }));
+}
+```
+
+The `BaseProvider` provides helper methods:
+- `fetchModelList()` — Fetches and parses model list with timeout
+- `getProviderBaseUrlAndKey()` — Resolves base URL and API key from env/settings
+- `convertEnvToRecord()` — Converts Cloudflare Env to plain Record
+- `resolveDockerUrl()` — Rewrites localhost URLs for Docker
+
+### Step 4: Register in the Registry
+
+Add the provider to `app/lib/modules/llm/registry.ts`:
+
+```typescript
+import MyProvider from './providers/my-provider';
+
+export {
+  // ... existing providers
+  MyProvider,
+};
+```
+
+The `LLMManager` automatically discovers and registers all exported classes that extend `BaseProvider`.
+
+### Step 5: Add Environment Variable Documentation
+
+Add the new provider's API key variable to the configuration documentation and `.env.example`:
+
+```bash
+# In .env.example
+MY_PROVIDER_API_KEY=your-key-here
+MY_PROVIDER_BASE_URL=https://api.myprovider.com  # optional
+```
+
+### Step 6: Add Rate Limit Defaults
+
+Add suggested rate limits in `app/lib/stores/rate-limit.ts`:
+
+```typescript
+export const SUGGESTED_DEFAULTS: Record<string, RateLimitConfig> = {
+  // ... existing defaults
+  MyProvider: { rpm: 60, tpm: 100000, rpd: 0, autoShrinkToTpm: true },
+};
+```
+
+### Step 7: Add Provider Icon
+
+Add an SVG icon in `icons/` and `public/icons/` directories for the UI.
+
+## Provider Configuration Types
+
+### Simple API Key Providers
+
+Most providers only need an API key:
+
+```typescript
+config = {
+  apiTokenKey: 'MY_PROVIDER_API_KEY',
+};
+```
+
+The API key is resolved from:
+1. Server environment variables (`.env.local`)
+2. Client-side settings (localStorage)
+3. Provider-specific settings overrides
+
+### Base URL Providers
+
+Providers with custom endpoints need a base URL:
+
+```typescript
+config = {
+  apiTokenKey: 'MY_PROVIDER_API_KEY',
+  baseUrlKey: 'MY_PROVIDER_BASE_URL',
+  baseUrl: 'https://api.myprovider.com/v1', // default
+};
+```
+
+### Custom Configuration Providers
+
+Some providers (like Amazon Bedrock) need complex JSON configuration:
+
+```typescript
+config = {
+  apiTokenKey: 'AWS_BEDROCK_CONFIG', // JSON string
+};
+```
+
+In `getModelInstance()`, parse the JSON configuration:
+
+```typescript
+const config = JSON.parse(apiKey || serverEnv.AWS_BEDROCK_CONFIG || '{}');
+```
+
+## Testing Your Provider
+
+### Unit Testing
+
+Create a test file in `app/lib/modules/llm/providers/my-provider.spec.ts`:
+
+```typescript
+import MyProvider from './my-provider';
+
+describe('MyProvider', () => {
+  it('should have correct name', () => {
+    const provider = new MyProvider();
+    expect(provider.name).toBe('MyProvider');
+  });
+
+  it('should have static models', () => {
+    const provider = new MyProvider();
+    expect(provider.staticModels.length).toBeGreaterThan(0);
+  });
+});
+```
+
+### Integration Testing
+
+Use the `/api/test-provider` endpoint:
+
+```bash
+curl -X POST http://localhost:5173/api/test-provider \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "MyProvider", "model": "my-model-1", "apiKey": "test-key"}'
+```
+
+## Common Patterns
+
+### OpenAI-Compatible Provider
+
+The simplest pattern — just set the base URL and use the OpenAI SDK:
+
+```typescript
+export default class MyOpenAICompatProvider extends BaseProvider {
+  name = 'MyOpenAICompat';
+  config = {
+    apiTokenKey: 'MY_COMPAT_API_KEY',
+    baseUrlKey: 'MY_COMPAT_BASE_URL',
+    baseUrl: 'https://api.mycompat.com/v1',
+  };
+
+  getModelInstance(options) {
+    const { apiKey, baseUrl } = this.getProviderBaseUrlAndKey(options);
+    return createOpenAI({ apiKey, baseURL: baseUrl })(options.model);
+  }
+}
+```
+
+### Provider with Custom Fetch
+
+For providers with unreliable endpoints (like Z.ai), add a custom fetch wrapper:
+
+```typescript
+getModelInstance(options) {
+  const provider = createOpenAI({
+    apiKey,
+    baseURL: baseUrl,
+    fetch: customRetryFetch, // Custom fetch with retry logic
+  });
+  return provider(options.model);
+}
+```
+
+## Next Steps
+
+- [Adding Skills](/docs/extending/adding-skills) — Creating domain-specific skill contexts
+- [Adding Tools](/docs/extending/adding-tools) — Creating MCP server tools
+- [Provider Overview](/docs/providers/overview) — Provider system architecture

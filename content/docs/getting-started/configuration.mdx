@@ -1,0 +1,166 @@
+---
+title: Configuration
+description: Complete configuration reference for Amplify — environment variables, provider settings, MCP servers, and runtime options.
+---
+
+# Configuration
+
+Amplify uses environment variables for server-side configuration and browser-local storage (IndexedDB / localStorage) for client-side settings. This guide covers all configuration options.
+
+## Environment Variables
+
+Environment variables are set in `.env.local` (for local development) or passed via Docker environment / Cloudflare Workers bindings.
+
+### Required Variables
+
+At least one LLM provider API key must be configured for Amplify to function. See [Providers](/docs/providers/overview) for the full list of API key variable names.
+
+### Core Runtime Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `5173` | Server port |
+| `NODE_ENV` | `development` | Runtime environment |
+| `RUNNING_IN_DOCKER` | `false` | Set to `true` inside Docker containers — enables localhost URL rewriting to `host.docker.internal` |
+| `DEFAULT_NUM_CTX` | `32768` | Default context window size for Ollama models |
+| `VITE_LOG_LEVEL` | `debug` | Client-side log level |
+| `VITE_PUBLIC_APP_URL` | — | Public URL for Remix/Vite (used in Cloudflare deployment) |
+
+### Provider API Keys
+
+Each LLM provider has its own environment variable for the API key:
+
+| Provider | Variable | Required |
+|----------|----------|----------|
+| OpenAI | `OPENAI_API_KEY` | At least one |
+| Anthropic | `ANTHROPIC_API_KEY` | At least one |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` | At least one |
+| DeepSeek | `DEEPSEEK_API_KEY` | Optional |
+| Groq | `GROQ_API_KEY` | Optional |
+| xAI | `XAI_API_KEY` | Optional |
+| Mistral | `MISTRAL_API_KEY` | Optional |
+| Cohere | `COHERE_API_KEY` | Optional |
+| OpenRouter | `OPEN_ROUTER_API_KEY` | Optional |
+| Together | `TOGETHER_API_KEY` | Optional |
+| Fireworks | `FIREWORKS_API_KEY` | Optional |
+| HuggingFace | `HuggingFace_API_KEY` | Optional |
+| Hyperbolic | `HYPERBOLIC_API_KEY` | Optional |
+| Cerebras | `CEREBRAS_API_KEY` | Optional |
+| Perplexity | `PERPLEXITY_API_KEY` | Optional |
+| GitHub Models | `GITHUB_API_KEY` | Optional |
+| Moonshot | `MOONSHOT_API_KEY` | Optional |
+| Amazon Bedrock | `AWS_BEDROCK_CONFIG` | Optional (JSON) |
+| Z.ai | `ZAI_API_KEY` | Optional |
+
+### Local Provider URLs
+
+| Provider | Variable | Default |
+|----------|----------|---------|
+| Ollama | `OLLAMA_API_BASE_URL` | `http://localhost:11434` |
+| LM Studio | `LMSTUDIO_API_BASE_URL` | `http://localhost:1234` |
+| OpenAI-like | `OPENAI_LIKE_API_BASE_URL` | — |
+| OpenAI-like Key | `OPENAI_LIKE_API_KEY` | — |
+| Together Base URL | `TOGETHER_API_BASE_URL` | Together default |
+
+### Amazon Bedrock Configuration
+
+Amazon Bedrock requires a JSON configuration instead of a simple API key:
+
+```bash
+AWS_BEDROCK_CONFIG='{"region":"us-east-1","accessKeyId":"AKIA...","secretAccessKey":"wJalr...","sessionToken":"optional"}'
+```
+
+## Client-Side Settings
+
+Client-side settings are managed through the Settings panel in the UI and persisted to localStorage/IndexedDB.
+
+### Provider Settings
+
+Each provider can be individually configured in the Settings panel:
+
+- **API Key** — Set or update API keys per provider (stored in browser localStorage)
+- **Base URL** — Override the default API endpoint (for local/self-hosted providers)
+- **Enabled/Disabled** — Toggle provider availability
+- **Custom Models** — Add custom model IDs to a provider
+
+### Rate Limit Configuration
+
+Rate limits are configured per provider to avoid 429 errors. See [Rate Limits](/docs/providers/rate-limits) for details.
+
+Each provider supports:
+
+- **RPM** — Requests Per Minute (0 = unlimited)
+- **TPM** — Tokens Per Minute (0 = unlimited)
+- **RPD** — Requests Per Day (0 = unlimited)
+- **Auto-shrink to TPM** — Automatically reduce context size when TPM is exceeded
+
+### MCP Server Configuration
+
+MCP servers are configured in the Settings panel under the MCP tab. Each server entry includes:
+
+- **Transport type** — `stdio`, `sse`, or `streamable-http`
+- **Command** (stdio) — The executable command to run
+- **URL** (sse/streamable-http) — The server endpoint URL
+- **Arguments** — Command-line arguments (stdio)
+- **Environment** — Custom environment variables for the server process
+- **Headers** (sse/streamable-http) — Custom HTTP headers
+
+Example MCP server configuration:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
+      "env": {}
+    },
+    "remote-api": {
+      "type": "sse",
+      "url": "https://example.com/mcp/sse",
+      "headers": {"Authorization": "Bearer token"}
+    }
+  }
+}
+```
+
+### Theme and Appearance
+
+- **Theme** — Light, dark, or system-default theme
+- **Sidebar position** — Left or right sidebar
+- **Tab configuration** — Customize which tabs appear in the workbench
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|---------|
+| `Cmd+Alt+Shift+D` | Toggle theme |
+| `Ctrl+`` | Toggle terminal |
+
+## Feature Flags
+
+Feature flags control experimental or optional functionality. These are managed in the Settings panel under the Features tab and persisted to localStorage.
+
+Available feature flags vary by version but typically include:
+
+- **Planning mode** — Enable the task planning system with sub-chats
+- **Prompt enhancement** — AI-powered prompt improvement before sending
+- **Context budget indicator** — Show token usage in the chat interface
+- **Speech recognition** — Voice input for chat messages
+- **Screenshot capture** — Send screenshots as context to the AI
+
+## Docker-Specific Configuration
+
+When running in Docker, additional considerations apply:
+
+1. **Local provider URLs** — URLs containing `localhost` or `127.0.0.1` are automatically rewritten to `host.docker.internal` when `RUNNING_IN_DOCKER=true`
+2. **Port exposure** — The container exposes port 5173; map it with `-p 5173:5173`
+3. **Health checks** — The Docker image includes a built-in health check on `http://localhost:5173/`
+4. **Volume mounts** — Development mode mounts the source directory for live editing
+
+## Next Steps
+
+- [Provider Setup](/docs/providers/overview) — Detailed provider configuration
+- [MCP Integration](/docs/integrations/mcp) — MCP server setup guide
+- [Self-Hosting](/docs/self-hosting/docker) — Production deployment guide

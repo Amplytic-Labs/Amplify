@@ -1,0 +1,213 @@
+---
+title: Native Tools
+description: Amplify's built-in Copilot-style tools for file operations — read, write, search, grep, and web search, modeled after VSCode Copilot's toolset.
+---
+
+# Native Tools
+
+Amplify includes a set of built-in tools modeled after **VSCode Copilot's native toolset**. These tools allow the AI to read, search, create, and modify files within the project workspace. Unlike MCP tools (which connect to external services), native tools operate directly on the project's file map.
+
+## Design Philosophy
+
+Native tools follow a specific execution model designed for the Amplify architecture:
+
+1. **Read-only tools** operate on the `files` map that the browser sends with every `/api/chat` request. This ensures the AI sees a consistent snapshot of the project state.
+
+2. **Mutating tools** do NOT directly touch the filesystem. They return a structured **mutation signal** (JSON). The browser-side `Chat.client.tsx` detects these signals and applies them to the workbench file store, which then writes to the WebContainer.
+
+3. **Web search** calls the `/api/web-search` route, reusing the existing provider plumbing for API keys and search configuration.
+
+This separation ensures the server never needs filesystem access while maintaining a consistent view of the project state.
+
+## Available Tools
+
+### read_file
+
+Reads the contents of a single file from the project.
+
+**Parameters:**
+- `path` — File path relative to the project root (e.g., `src/App.tsx`)
+
+**Behavior:**
+- Normalizes paths (handles absolute `/home/project/...` and relative paths)
+- Returns the full file content as a string
+- Returns an error message if the file does not exist
+- Skips binary files (returns a "binary file" indicator)
+
+**Example invocation:**
+```
+Tool: read_file
+Args: { path: "src/components/Header.tsx" }
+Result: File content of Header.tsx
+```
+
+### list_dir
+
+Lists the contents of a directory, returning file and folder names.
+
+**Parameters:**
+- `path` — Directory path (defaults to project root)
+
+**Behavior:**
+- Returns a structured list of files and directories
+- Each entry includes the name and type (file or folder)
+- Returns an error if the directory does not exist
+
+**Example invocation:**
+```
+Tool: list_dir
+Args: { path: "src" }
+Result: [App.tsx, components/, hooks/, utils/]
+```
+
+### find_files
+
+Searches for files by name pattern across the project.
+
+**Parameters:**
+- `pattern` — Glob-like pattern to match file names (e.g., `*.tsx`, `**/test/**`)
+
+**Behavior:**
+- Walks the entire file tree looking for matches
+- Returns matching file paths
+- Supports partial name matching
+
+**Example invocation:**
+```
+Tool: find_files
+Args: { pattern: "*.test.ts" }
+Result: [src/utils/formatSize.test.ts, src/utils/diff.spec.ts]
+```
+
+### grep_search (FindTextInFiles)
+
+Searches for text patterns across all project files.
+
+**Parameters:**
+- `pattern` — Text or regex pattern to search for
+- `includePattern` — Optional glob pattern to filter files (e.g., `*.tsx`)
+
+**Behavior:**
+- Searches through all text files in the project
+- Returns matching lines with file path, line number, and content
+- Supports regex patterns
+- Can filter by file type using include patterns
+
+**Example invocation:**
+```
+Tool: grep_search
+Args: { pattern: "useState", includePattern: "*.tsx" }
+Result: Matches in 3 files with line numbers and content
+```
+
+### replace_string_in_file
+
+Replaces a specific string within a file. This is a **mutating tool** that returns a mutation signal.
+
+**Parameters:**
+- `path` — File path to modify
+- `old_string` — The exact string to find and replace
+- `new_string` — The replacement string
+
+**Behavior:**
+- Searches for the exact `old_string` in the file content
+- Replaces it with `new_string`
+- Returns a mutation signal that the client applies to the workbench
+- Fails if `old_string` is not found (prevents accidental modifications)
+
+**Mutation Signal Format:**
+The tool returns a JSON structure indicating the file change, which the browser-side handler recognizes and applies to the file store.
+
+### multi_replace_string_in_file
+
+Performs multiple string replacements in a single file. This is a **mutating tool**.
+
+**Parameters:**
+- `path` — File path to modify
+- `replacements` — Array of old_string/new_string pairs
+
+**Behavior:**
+- Applies all replacements in order
+- More efficient than calling `replace_string_in_file` multiple times
+- Returns a mutation signal for the complete set of changes
+
+### create_file
+
+Creates a new file with specified content. This is a **mutating tool**.
+
+**Parameters:**
+- `path` — File path for the new file
+- `content` — Full content of the new file
+
+**Behavior:**
+- Creates the file at the specified path
+- If the file already exists, overwrites it
+- Returns a mutation signal that the client applies
+
+**Example invocation:**
+```
+Tool: create_file
+Args: { path: "src/hooks/useAuth.ts", content: "export function useAuth() {...}" }
+Result: Mutation signal → client creates the file in workbench
+```
+
+### web_search
+
+Searches the web using the configured search provider.
+
+**Parameters:**
+- `query` — Search query string
+
+**Behavior:**
+- Calls the `/api/web-search` route on the server
+- Uses the configured search API (requires API key)
+- Returns structured search results with titles, URLs, and snippets
+
+## Tool Execution Context
+
+All tools receive a `NativeToolContext` that provides:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `files` | NativeFileMap | The current project file map from the browser |
+| `toolCallId` | string | Unique identifier for this tool invocation |
+| `messages` | array | Current conversation messages |
+| `fetch` | function | Server-side fetch function for API calls |
+| `apiBaseUrl` | string | Base URL for internal API routes |
+
+The `files` map is the same data the system prompt context builder uses, ensuring the AI and the tools see a consistent project snapshot.
+
+## Mutation Signal Flow
+
+When a mutating tool executes, the flow is:
+
+1. Tool runs on the server, modifying the file content in the `files` map
+2. Tool returns a JSON result indicating what changed
+3. The streaming response includes the tool result
+4. `Chat.client.tsx` on the browser detects the mutation pattern
+5. The chat handler calls `workbenchStore` methods to apply the change
+6. `workbenchStore` updates `filesStore` with the new content
+7. `filesStore` writes the file to the WebContainer via `webcontainer.fs.writeFile()`
+8. The WebContainer detects the change and refreshes the preview
+
+This round-trip ensures that:
+- The server never directly writes to any filesystem
+- The browser remains the authoritative source of file state
+- All changes go through the reactive store system (enabling undo, diff view, etc.)
+
+## Relationship to MCP Tools
+
+Native tools and MCP tools coexist in the same chat session:
+
+- **Native tools** are always available and operate on the project file system
+- **MCP tools** connect to external services (databases, APIs, other tools)
+- Both are defined in the system prompt's tool section
+- The LLM chooses which tool to use based on the task
+
+The MCP service (`mcpService.ts`) orchestrates both native and MCP tool invocations, routing each to the appropriate handler.
+
+## Next Steps
+
+- [Chat Interface](/docs/features/chat) — How tools appear in the chat
+- [MCP Integration](/docs/integrations/mcp) — External tool connectivity
+- [Planning System](/docs/features/planning) — How tools are used in task plans

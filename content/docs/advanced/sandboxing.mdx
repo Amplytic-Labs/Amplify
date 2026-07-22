@@ -1,0 +1,208 @@
+---
+title: WebContainer Sandboxing
+description: How Amplify uses StackBlitz WebContainers for secure in-browser Node.js execution — boot process, file operations, terminal access, and preview hosting.
+---
+
+# WebContainer Sandboxing
+
+Amplify uses **StackBlitz WebContainers** to run a complete Node.js environment inside the browser. This allows users to build, run, and preview full-stack applications without any server-side execution — everything happens securely in the browser sandbox.
+
+## What Are WebContainers?
+
+WebContainers are a browser-based runtime that can boot a Node.js environment in milliseconds. They provide:
+
+- **Full Node.js runtime** — Run npm, node, and any Node.js package
+- **File system** — In-memory filesystem that supports all standard operations
+- **Terminal** — Interactive terminal with process management
+- **Network** — HTTP server hosting with port-based preview URLs
+- **Security** — Sandboxed execution that cannot access the host machine
+
+WebContainers run entirely in the browser using WebAssembly and service workers — no server-side code execution is needed.
+
+## Boot Process
+
+When a project loads, the WebContainer boots with specific configuration:
+
+```typescript
+WebContainer.boot({
+  coep: 'credentialless',      // Cross-Origin Embedder Policy
+  workdirName: 'project',       // Working directory name
+  forwardPreviewErrors: true,   // Enable error forwarding from iframes
+});
+```
+
+### Boot Sequence
+
+1. **Initialization** — WebContainer module is loaded (only on client-side, not SSR)
+2. **Boot** — `WebContainer.boot()` creates the runtime environment
+3. **Inspector setup** — The preview inspector script is fetched and injected
+4. **Error listener** — Preview error forwarding is configured
+5. **Store connection** — The workbench store connects to the container
+6. **Ready** — `webcontainerContext.loaded` is set to `true`
+
+### Cross-Origin Policies
+
+WebContainers require specific Cross-Origin headers:
+
+- **COEP: credentialless** — Required for SharedArrayBuffer support (used by WebAssembly)
+- These headers are configured at the deployment level (Cloudflare Pages, Docker, etc.)
+- Without proper COEP headers, WebContainers cannot boot
+
+### SSR Handling
+
+WebContainers are browser-only. During server-side rendering, the `webcontainer` promise is initialized as an empty never-resolving promise:
+
+```typescript
+export let webcontainer: Promise<WebContainer> = new Promise(() => {
+  // noop for SSR
+});
+```
+
+The actual boot only happens when `import.meta.env.SSR` is `false` (client-side only).
+
+## File System Integration
+
+The WebContainer file system is the bridge between the AI's file operations and the running project:
+
+### Writing Files
+
+When the AI creates or modifies files:
+
+1. The mutation signal arrives in the chat handler
+2. `workbenchStore` updates `filesStore` with new content
+3. `filesStore` calls `webcontainer.fs.writeFile(path, content)`
+4. The WebContainer updates its in-memory filesystem
+5. If a dev server is running, it detects the change and reloads
+
+### Reading Files
+
+When the AI or user reads files:
+
+1. The `filesStore` maintains the authoritative file map
+2. This map is sent with every `/api/chat` request
+3. Native tools operate on this map (not the WebContainer directly)
+4. The WebContainer is only accessed for terminal operations and preview
+
+### File Structure
+
+The WebContainer's working directory is `project` (defined by `WORK_DIR_NAME`). All file paths inside the container are prefixed with `/home/project/`. The path normalization in native tools strips this prefix to match the `filesStore` keys.
+
+## Terminal Integration
+
+The workbench terminal connects to the WebContainer's shell:
+
+### Terminal Manager
+
+The `TerminalManager` component manages terminal sessions:
+- Creates xterm.js instances connected to the WebContainer shell
+- Handles terminal input/output streaming
+- Tracks running processes and their output
+- Supports multiple terminal tabs
+
+### Process Execution
+
+Commands run in the WebContainer's Node.js environment:
+- `npm install` — Installs packages from package.json
+- `npm run dev` — Starts a development server
+- `node script.js` — Runs Node.js scripts
+- `git` — Git operations (requires git to be available)
+
+### Output Capture
+
+Terminal output is captured and stored for AI context:
+- Command results are available for the next chat turn
+- Error messages can be sent to the AI for debugging
+- Process logs are preserved in the terminal store
+
+## Preview Hosting
+
+WebContainers can host HTTP servers that appear in the preview panel:
+
+### Server Detection
+
+When a process starts a server on a port:
+1. The WebContainer detects the port binding
+2. The preview panel updates with the new URL
+3. The `PortDropdown` shows all available ports
+4. The user can switch between ports
+
+### Preview iframe
+
+The preview renders in an iframe with:
+- The inspector script injected for error forwarding
+- Direct URL access to the WebContainer's hosted server
+- Automatic refresh when files change
+- Error overlay for runtime exceptions
+
+### Preview Error Forwarding
+
+The WebContainer forwards preview errors to the workbench:
+
+```typescript
+webcontainer.on('preview-message', (message) => {
+  if (message.type === 'PREVIEW_UNCAUGHT_EXCEPTION' ||
+      message.type === 'PREVIEW_UNHANDLED_REJECTION') {
+    workbenchStore.actionAlert.set({
+      type: 'preview',
+      title: 'Error',
+      description: message.message,
+      content: `Stack trace: ${message.stack}`,
+      source: 'preview',
+    });
+  }
+});
+```
+
+This allows the AI to see runtime errors and suggest fixes.
+
+## Hot Module Replacement (HMR)
+
+When running a dev server with HMR support (Vite, Next.js, etc.):
+- File changes trigger instant updates in the preview
+- The WebContainer's dev server handles the HMR connection
+- Changes from AI tool calls are reflected immediately
+- Manual edits in the CodeMirror editor also trigger HMR
+
+## Security Model
+
+WebContainers provide strong security guarantees:
+
+| Concern | Protection |
+|---------|-----------|
+| Host filesystem access | None — container is entirely in-memory |
+| Network access to host | Blocked — container network is sandboxed |
+| Code execution on host | Impossible — runs in browser WebAssembly |
+| Data persistence | Only IndexedDB/localStorage (browser-scoped) |
+| Cross-origin attacks | COEP headers prevent cross-origin embedding |
+
+The WebContainer cannot:
+- Access files on your computer
+- Run processes outside the browser
+- Make network requests to internal services
+- Persist data outside browser storage
+
+## Performance Characteristics
+
+| Metric | Typical Value |
+|--------|---------------|
+| Boot time | 1-3 seconds |
+| File write latency | Under 10ms |
+| npm install time | 5-30 seconds (depends on packages) |
+| Dev server startup | 2-5 seconds |
+| Preview refresh | Under 500ms |
+
+Memory usage depends on the project size and installed packages. Large projects with many dependencies may require significant browser memory.
+
+## Known Limitations
+
+- **No native binary support** — Packages requiring native binaries (e.g., sharp, bcrypt) may not work
+- **No Docker support** — Cannot run Docker inside a WebContainer
+- **Memory limits** — Browser memory constraints apply (typically 2-4 GB)
+- **No persistent filesystem** — Files are in-memory; reload clears unless persisted to IndexedDB
+- **Network limitations** — Some WebSocket configurations may need adjustments
+
+## Next Steps
+
+- [Workbench](/docs/features/workbench) — The interactive development environment
+- [Troubleshooting](/docs/advanced/troubleshooting) — Common issues and solutions
+- [Self-Hosting](/docs/self-hosting/docker) — Docker deployment with WebContainer headers

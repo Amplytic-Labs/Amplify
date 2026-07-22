@@ -1,0 +1,313 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for Amplify — WebContainer errors, provider connectivity, rate limits, Docker networking, and configuration problems.
+---
+
+# Troubleshooting
+
+This guide covers the most common issues encountered when running Amplify and their solutions.
+
+## WebContainer Issues
+
+### WebContainer Won't Boot
+
+**Symptoms:** The workbench shows "Loading..." indefinitely, terminal doesn't appear.
+
+**Causes and Solutions:**
+
+1. **Missing COEP headers** — WebContainers require `Cross-Origin-Embedder-Policy: credentialless`. Check your deployment configuration:
+   - Cloudflare Pages: Add `_headers` file with `Cross-Origin-Embedder-Policy: credentialless`
+   - Docker: Configure headers in the reverse proxy
+   - Local dev: The Vite dev server handles this automatically
+
+2. **Browser compatibility** — WebContainers require a modern browser with SharedArrayBuffer support. Use Chrome 92+, Firefox 79+, or Edge 92+.
+
+3. **Memory pressure** — Large projects may exceed browser memory limits. Try closing other tabs and reducing project size.
+
+### Preview Not Loading
+
+**Symptoms:** Preview panel shows blank or error page.
+
+**Solutions:**
+
+1. Check that a dev server is running in the terminal (`npm run dev`)
+2. Verify the port number in the PortDropdown
+3. Check the terminal for startup errors
+4. Try refreshing the preview manually
+
+### npm Install Failures
+
+**Symptoms:** `npm install` fails with native binary errors.
+
+**Solutions:**
+
+1. Some packages require native binaries that WebContainers can't compile
+2. Use browser-compatible alternatives (e.g., `sharp` → `@sharp/browser`)
+3. Check the package's WebContainer compatibility
+4. Try `pnpm install` instead of `npm install`
+
+## Provider Connectivity Issues
+
+### API Key Not Recognized
+
+**Symptoms:** Provider shows "Not configured" despite entering an API key.
+
+**Solutions:**
+
+1. Check the API key format (e.g., OpenAI keys start with `sk-`, Anthropic with `sk-ant-`)
+2. Verify the key is entered in the correct field (server env vs. client settings)
+3. Test the key using the "Test Connection" button in Settings
+4. Check that the key hasn't expired or been revoked
+
+### Provider Connection Test Fails
+
+**Symptoms:** "Test Connection" returns an error.
+
+**Solutions:**
+
+```bash
+# Check the health endpoint
+curl http://localhost:5173/api/health
+
+# Check configured providers
+curl http://localhost:5173/api/configured-providers
+
+# Test a specific provider
+curl -X POST http://localhost:5173/api/test-provider \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "OpenAI", "model": "gpt-4o", "apiKey": "sk-..."}'
+```
+
+1. Verify the API key is valid and active
+2. Check network connectivity to the provider's API endpoint
+3. Ensure no firewall or proxy is blocking the request
+4. Verify the provider's API endpoint URL is correct
+
+### Models Not Appearing
+
+**Symptoms:** The model selector shows fewer models than expected.
+
+**Solutions:**
+
+1. Dynamic model discovery requires a working API key
+2. Check the browser console for fetch errors
+3. Some providers have 5-second timeouts for model listing
+4. Static models are always available as fallbacks
+5. Verify the provider supports `/v1/models` endpoint
+
+## Rate Limit Issues
+
+### Frequent 429 Errors
+
+**Symptoms:** Chat responses fail with "rate limit exceeded" errors.
+
+**Solutions:**
+
+1. Open Settings → Providers → adjust rate limits for the affected provider
+2. Reduce RPM (especially for DeepSeek, use under 60 RPM)
+3. Enable `autoShrinkToTpm` to automatically reduce context size
+4. Check your provider's actual tier limits (may differ from defaults)
+5. For DeepSeek: avoid burst requests; use conservative limits
+
+### Account Cooldown
+
+**Symptoms:** Provider returns 429 for hours after initial rate limit violation.
+
+**Solutions:**
+
+1. This primarily affects DeepSeek — once triggered, cooldowns last hours
+2. Use a different provider during the cooldown period
+3. Set very conservative rate limits to prevent triggering cooldowns
+4. Consider upgrading to a higher tier
+
+### Context Too Large for TPM
+
+**Symptoms:** Pre-flight check rejects the request with "would exceed TPM limit."
+
+**Solutions:**
+
+1. Enable `autoShrinkToTpm` in the rate limit settings
+2. Reduce the conversation length (start a new chat)
+3. Disable unnecessary context injection (skills, vector store)
+4. Use a model with a smaller context window
+5. Upgrade to a higher provider tier with larger TPM
+
+## Docker Issues
+
+### Can't Reach Local Providers
+
+**Symptoms:** Ollama/LM Studio show "disconnected" inside Docker.
+
+**Solutions:**
+
+```bash
+# Use host.docker.internal instead of localhost
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+```
+
+Amplify automatically rewires localhost URLs when `RUNNING_IN_DOCKER=true`, but you may need to set the URLs explicitly in your `.env.local`.
+
+### Port Binding Issues
+
+**Symptoms:** Can't access Amplify from external machines.
+
+**Solutions:**
+
+```bash
+# Expose on all interfaces
+docker run -p 5173:5173 --env-file .env.local amplify-ai:production
+```
+
+The Dockerfile already sets `HOST=0.0.0.0` and `PORT=5173` for the production stage.
+
+### Health Check Failures
+
+**Symptoms:** Docker health check reports unhealthy.
+
+**Solutions:**
+
+1. Ensure the application has finished starting (5-second start period)
+2. Check that port 5173 is accessible inside the container
+3. Verify `curl` is installed (the production image includes it)
+4. Check application logs for startup errors
+
+```bash
+# Check container logs
+docker logs amplify-ai-live
+
+# Check health endpoint manually
+docker exec amplify-ai-live curl -fsS http://localhost:5173/
+```
+
+### Docker Compose Issues
+
+**Symptoms:** `docker compose up` fails or services don't start.
+
+**Solutions:**
+
+1. Ensure `.env.local` exists with at least one API key
+2. Use the correct profile: `--profile production`, `--profile development`, or `--profile prebuilt`
+3. Check that Docker has sufficient memory (4 GB+ recommended)
+4. Verify the `host.docker.internal:host-gateway` entry in `extra_hosts`
+
+## Chat and Streaming Issues
+
+### Streaming Stops Mid-Response
+
+**Symptoms:** Chat response cuts off unexpectedly.
+
+**Solutions:**
+
+1. Check for rate limit errors in the browser console
+2. Verify network connectivity to the server
+3. Try refreshing the page and continuing in a new message
+4. Check if the abort signal was accidentally triggered
+
+### Tool Invocations Not Showing
+
+**Symptoms:** AI says it invoked a tool but no tool card appears.
+
+**Solutions:**
+
+1. Check browser console for tool execution errors
+2. Verify MCP servers are connected (Settings → MCP)
+3. Ensure the tool is properly defined in the server's schema
+4. Check that tool approval is not blocking execution
+
+### Mutation Signals Not Applied
+
+**Symptoms:** AI creates/edits files but the workbench doesn't update.
+
+**Solutions:**
+
+1. Check browser console for mutation handler errors
+2. Verify the workbench store is receiving the tool results
+3. Ensure the WebContainer is booted and ready
+4. Try refreshing the page and re-running the action
+
+## Configuration Issues
+
+### Environment Variables Not Loading
+
+**Symptoms:** Settings show "Not configured" for providers with env keys set.
+
+**Solutions:**
+
+1. Ensure `.env.local` is in the project root directory
+2. Check that variable names match exactly (e.g., `OPENAI_API_KEY` not `OPEN_AI_KEY`)
+3. Restart the dev server after changing environment variables
+4. For Docker: ensure variables are passed via `--env-file` or `-e`
+
+```bash
+# Verify environment variables are loaded
+curl http://localhost:5173/api/configured-providers
+```
+
+### Settings Not Persisting
+
+**Symptoms:** API keys or settings disappear after browser refresh.
+
+**Solutions:**
+
+1. Check that localStorage is available (not in private browsing mode)
+2. Verify browser storage quota is not exceeded
+3. Check for JavaScript errors that might prevent persistence
+4. Try exporting settings and re-importing them
+
+## Electron Issues
+
+### Electron App Won't Start
+
+**Symptoms:** Desktop app crashes or shows blank window.
+
+**Solutions:**
+
+1. Ensure the renderer is built first: `pnpm electron:build:renderer`
+2. Check that main and preload scripts are built: `pnpm electron:build:deps`
+3. Verify the Vite config for Electron is correct
+4. Check Electron logs for startup errors
+
+### API Keys in Electron
+
+**Symptoms:** Can't configure API keys in the desktop app.
+
+**Solutions:**
+
+1. API keys are stored in the app's localStorage (same as browser)
+2. Check the Electron preload script provides proper localStorage access
+3. Verify the IPC bridge between main and renderer processes
+
+## Diagnostics Endpoint
+
+Amplify provides a diagnostics API for troubleshooting:
+
+```bash
+# Get system diagnostics
+curl http://localhost:5173/api/system/diagnostics
+
+# Check disk info (useful for storage issues)
+curl http://localhost:5173/api/system/disk-info
+
+# Get git info
+curl http://localhost:5173/api/system/git-info
+
+# Health check
+curl http://localhost:5173/api/health
+```
+
+## Getting More Help
+
+If the solutions above don't resolve your issue:
+
+1. **Check GitHub Issues** — Search for similar problems at the Amplify repository
+2. **Enable Debug Logging** — Set `VITE_LOG_LEVEL=debug` for detailed logs
+3. **Browser Console** — Check for JavaScript errors in the developer console
+4. **Network Tab** — Monitor API requests and responses in the browser's network inspector
+5. **File a Bug Report** — Use `/api/bug-report` to submit structured bug reports
+
+## Next Steps
+
+- [Sandboxing](/docs/advanced/sandboxing) — WebContainer internals
+- [Configuration](/docs/getting-started/configuration) — Full configuration reference
+- [Rate Limits](/docs/providers/rate-limits) — Rate limit configuration

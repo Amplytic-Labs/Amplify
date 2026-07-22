@@ -1,0 +1,197 @@
+---
+title: Installation
+description: Detailed installation instructions for Amplify — local development, Docker, Cloudflare Pages, and prebuilt images.
+---
+
+# Installation
+
+Amplify can be installed and run in several ways depending on your needs. This guide covers all installation methods.
+
+## Local Development
+
+The simplest way to get started is cloning the repository and running the development server.
+
+### Requirements
+
+| Requirement | Minimum Version |
+|-------------|----------------|
+| Node.js | 18.18.0+ |
+| pnpm | 9.x (recommended) |
+| Git | 2.x |
+
+### Steps
+
+```bash
+# Clone the repository
+git clone https://github.com/nicepkg/amplify.git
+cd amplify
+
+# Install dependencies
+pnpm install
+
+# Create environment file
+cp .env.example .env.local
+# Edit .env.local with your API keys
+
+# Start the development server
+pnpm run dev
+```
+
+The dev server runs on port 5173 by default. The `pre-start.cjs` script handles environment validation before the Remix Vite dev server starts.
+
+### Using npm or bun
+
+Amplify also supports npm and bun as package managers:
+
+```bash
+# With npm
+npm install
+npm run dev
+
+# With bun
+bun install
+bun run dev
+```
+
+> Note: pnpm is the recommended package manager because the project uses pnpm workspaces and the lockfile is `pnpm-lock.yaml`.
+
+## Docker Installation
+
+Docker is the recommended method for production deployments and self-hosting.
+
+### Development Container
+
+```bash
+# Build the development image
+docker build -t amplify-ai:development --target development .
+
+# Run with environment variables
+docker run -it -d --name amplify-ai-dev \
+  -p 5173:5173 \
+  --env-file .env.local \
+  amplify-ai:development
+```
+
+### Production Container
+
+```bash
+# Build the production image
+docker build -t amplify-ai:production --target amplify-ai-production .
+
+# Run with environment variables
+docker run -it -d --name amplify-ai-live \
+  -p 5173:5173 \
+  --env-file .env.local \
+  amplify-ai:production
+```
+
+### Using Docker Compose
+
+Amplify includes a `docker-compose.yaml` with three profiles:
+
+```bash
+# Development (default profile)
+docker compose --profile development up
+
+# Production
+docker compose --profile production up
+
+# Prebuilt image (from GitHub Container Registry)
+docker compose --profile prebuilt up
+```
+
+The Docker Compose file handles:
+- Port mapping (5173:5173)
+- Environment variable injection from `.env` and `.env.local`
+- Host network access (`host.docker.internal` for local provider connections)
+- Volume mounting for development mode
+
+### Prebuilt Image
+
+The fastest way to get started with Docker is using the prebuilt image:
+
+```bash
+docker pull ghcr.io/amplify/amplify:latest
+docker run -it -p 5173:5173 \
+  --env-file .env.local \
+  ghcr.io/amplify/amplify:latest
+```
+
+## Cloudflare Pages Deployment
+
+Amplify is built on Remix v2 with Cloudflare Pages compatibility via Wrangler:
+
+```bash
+# Build for production
+pnpm run build
+
+# Deploy to Cloudflare Pages
+pnpm run deploy
+```
+
+The `wrangler.toml` configuration sets:
+- `compatibility_flags = ["nodejs_compat"]` — Node.js API compatibility in Workers
+- `compatibility_date = "2025-03-28"` — Latest Cloudflare runtime features
+- `pages_build_output_dir = "./build/client"` — Remix build output
+
+### Production Start on Cloudflare
+
+After deploying, the production start command uses Wrangler:
+
+```bash
+# Unix (with bindings)
+bindings=$(./bindings.sh) && wrangler pages dev ./build/client $bindings
+
+# Windows
+wrangler pages dev ./build/client
+```
+
+## Electron Desktop App
+
+Amplify can also be built as an Electron desktop application:
+
+```bash
+# Build Electron for macOS
+pnpm electron:build:mac
+
+# Build Electron for Windows
+pnpm electron:build:win
+
+# Build Electron for Linux
+pnpm electron:build:linux
+
+# Build for all platforms
+pnpm electron:build:dist
+```
+
+The Electron build process:
+1. Builds the Remix renderer with the Electron Vite config
+2. Builds the main process and preload scripts
+3. Packages with electron-builder
+
+### Electron Development
+
+```bash
+# Run Electron in development mode
+pnpm electron:dev
+```
+
+## Verification
+
+After installation, verify everything is working:
+
+1. Open `http://localhost:5173` in your browser
+2. Check the health endpoint: `http://localhost:5173/api/health`
+3. Verify configured providers: `http://localhost:5173/api/configured-providers`
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Port 5173 already in use | Change the PORT environment variable |
+| Missing API keys | Create `.env.local` with at least one provider key |
+| Build failures | Ensure Node.js 18.18.0+ and pnpm are installed |
+| Docker networking issues | Use `host.docker.internal` for local provider URLs |
+| WebContainer not loading | Ensure Cross-Origin headers are configured correctly |
+
+For more troubleshooting help, see the [Troubleshooting Guide](/docs/advanced/troubleshooting).

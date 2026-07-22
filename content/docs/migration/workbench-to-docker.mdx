@@ -1,0 +1,171 @@
+---
+title: Migrate from Workbench to Docker
+description: Move your Amplify project from the browser-based WebContainer workbench to a Docker deployment for persistent, server-based execution.
+---
+
+# Migrate from Workbench to Docker
+
+When you've built a project in Amplify's browser-based workbench and want to run it persistently on a server, you need to migrate the project out of the WebContainer sandbox into a Docker deployment. This guide covers the full process.
+
+## Why Migrate to Docker?
+
+The WebContainer workbench is excellent for development and prototyping, but has limitations for production use:
+
+- **No persistent filesystem** — WebContainer files are in-memory; refreshing the browser clears them
+- **Memory constraints** — Browser memory limits (typically 2-4 GB) constrain large projects
+- **No native binary support** — Packages requiring native compilation (sharp, bcrypt) don't work
+- **Single-user** — Each browser session is isolated; no multi-user access
+
+Docker provides:
+- Persistent filesystem and state
+- Unlimited memory (server-configurable)
+- Full native binary support
+- Multi-user access via network
+- Production-ready deployment with health checks
+
+## Migration Process
+
+### Step 1: Export the Project
+
+From the Amplify workbench:
+
+1. Click **Export** in the workbench header or sidebar
+2. Choose **Export Project Files** — downloads a ZIP of all project files
+3. Alternatively, use the terminal to push to a Git repository:
+
+```bash
+# In the WebContainer terminal
+git init
+git add .
+git commit -m "initial commit"
+git remote add origin https://github.com/your-org/your-project.git
+git push -u origin main
+```
+
+### Step 2: Prepare the Docker Environment
+
+Set up a Docker deployment that can serve the project:
+
+```bash
+# Clone the Amplify Docker image
+docker pull ghcr.io/amplify/amplify:latest
+
+# Or build from source
+docker build -t amplify-ai:production --target amplify-ai-production .
+```
+
+### Step 3: Transfer Project Files
+
+Move the exported project into the Amplify instance:
+
+**Option A: Git Repository (Recommended)**
+
+1. Push the project to a Git repository
+2. In the Amplify chat, use "Clone from GitHub" to import the repository
+3. The project appears in the workbench with full file access
+
+**Option B: File Upload**
+
+1. Export the project as a ZIP file
+2. In the Amplify chat, use "Import Folder" to upload the ZIP
+3. Files are unpacked into the workbench
+
+**Option C: Direct File Copy**
+
+If running Amplify with volume mounts:
+
+```bash
+# Copy project files directly
+docker cp ./project-files/. amplify-ai:/app/project-files/
+```
+
+### Step 4: Configure Environment Variables
+
+Ensure the Docker instance has the necessary API keys:
+
+```bash
+# Create .env.local with your keys
+cat > .env.local << 'EOF'
+OPENAI_API_KEY=sk-your-key
+ANTHROPIC_API_KEY=sk-ant-your-key
+GOOGLE_GENERATIVE_AI_API_KEY=your-key
+EOF
+
+# Pass to Docker
+docker run -p 5173:5173 --env-file .env.local amplify-ai:production
+```
+
+### Step 5: Verify the Migration
+
+1. Open `http://localhost:5173` in your browser
+2. Load the imported project
+3. Verify all files are present and intact
+4. Run the dev server in the WebContainer terminal
+5. Check the preview loads correctly
+
+## Handling Project-Specific Dependencies
+
+### npm Packages
+
+The WebContainer's `node_modules` are in-memory and not exported. You need to reinstall:
+
+```bash
+# In the WebContainer terminal after migration
+npm install
+```
+
+Or if the project uses pnpm:
+
+```bash
+pnpm install
+```
+
+### Environment Variables
+
+Project-specific `.env` files need to be recreated:
+
+1. Export any `.env` files from the original workbench
+2. Add them to the migrated project
+3. Ensure environment masking in CodeMirror still works (security feature)
+
+### Configuration Files
+
+Check that all configuration files are present:
+- `package.json` — Dependencies and scripts
+- `tsconfig.json` — TypeScript configuration
+- `vite.config.ts` — Vite build configuration
+- `.env` / `.env.local` — Environment variables
+- Any framework-specific config (Next.js, Remix, etc.)
+
+## Chat History Migration
+
+Chat history is stored in IndexedDB (browser-side). To preserve it:
+
+1. Use the **Export Chat** feature to download chat history as JSON
+2. In the new browser session, use **Import Chat** to restore the history
+3. Alternatively, vector store entries (project context) are also exported/imported via the Memory tab
+
+## Vector Store Migration
+
+Project context and user profile entries can be migrated:
+
+1. Open Settings → Memory → Export
+2. Download the vector store data as JSON
+3. In the new session, use Settings → Memory → Import
+4. All context entries are restored with their original IDs and timestamps
+
+## Common Migration Issues
+
+| Issue | Solution |
+|-------|----------|
+| Missing files after export | Check the ZIP contents; some hidden files may not be included |
+| npm install fails | Ensure package.json is complete; check for native binary dependencies |
+| Preview not working | Verify the dev server starts; check port configuration |
+| Chat history lost | Use Export/Import chat feature before migrating |
+| Vector context lost | Export/import via Memory tab |
+
+## Next Steps
+
+- [Migrate to Custom Server](/docs/migration/workbench-to-custom) — Non-Docker deployment migration
+- [Docker Deployment](/docs/self-hosting/docker) — Docker setup reference
+- [Troubleshooting](/docs/advanced/troubleshooting) — Common issues

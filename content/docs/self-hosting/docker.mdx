@@ -1,0 +1,259 @@
+---
+title: Docker Deployment
+description: Deploy Amplify using Docker — development and production containers, Docker Compose profiles, and prebuilt images.
+---
+
+# Docker Deployment
+
+Docker is the recommended method for self-hosting Amplify. The project includes a multi-stage Dockerfile with development and production targets, plus a Docker Compose file with three deployment profiles.
+
+## Quick Start
+
+The fastest way to get Amplify running in Docker:
+
+```bash
+# Pull the prebuilt image
+docker pull ghcr.io/amplify/amplify:latest
+
+# Run with your API keys
+docker run -it -p 5173:5173 \
+  --env-file .env.local \
+  --add-host=host.docker.internal:host-gateway \
+  ghcr.io/amplify:latest
+```
+
+Open `http://localhost:5173` in your browser.
+
+## Building from Source
+
+### Production Build
+
+```bash
+# Build the production image
+docker build -t amplify-ai:production \
+  --target amplify-ai-production .
+
+# Run the production container
+docker run -it -d --name amplify-ai \
+  -p 5173:5173 \
+  --env-file .env.local \
+  --add-host=host.docker.internal:host-gateway \
+  amplify-ai:production
+```
+
+### Development Build
+
+```bash
+# Build the development image
+docker build -t amplify-ai:development \
+  --target development .
+
+# Run with live source mounting
+docker run -it -p 5173:5173 \
+  --env-file .env.local \
+  --add-host=host.docker.internal:host-gateway \
+  -v $(pwd):/app \
+  amplify-ai:development
+```
+
+## Docker Compose Profiles
+
+The `docker-compose.yaml` defines three profiles for different use cases:
+
+### Production Profile
+
+```bash
+docker compose --profile production up
+```
+
+- Uses the production build target
+- No volume mounts (container is self-contained)
+- Optimized for performance and minimal image size
+- Includes health checks and curl for diagnostics
+- Production dependencies only (dev deps pruned)
+
+### Development Profile
+
+```bash
+docker compose --profile development up
+```
+
+- Uses the development build target
+- Mounts the source directory for live editing
+- Includes HMR support with WebSocket configuration
+- Preserves node_modules inside the container
+- Polling-based file watching (`CHOKIDAR_USEPOLLING=true`)
+
+### Prebuilt Profile
+
+```bash
+docker compose --profile prebuilt up
+```
+
+- Uses the prebuilt image from GitHub Container Registry
+- No build step required (fastest deployment)
+- Default configuration with minimal env vars
+- Ideal for quick evaluation and testing
+
+## Dockerfile Stages
+
+The Dockerfile uses a multi-stage build for efficiency:
+
+| Stage | Purpose | Base Image |
+|-------|---------|-----------|
+| `build` | Install deps and build the Remix app | `node:22-bookworm-slim` |
+| `prod-deps` | Prune to production dependencies only | Inherits from `build` |
+| `amplify-ai-production` | Final production runtime | Inherits from `prod-deps` |
+| `development` | Development runtime with source mount | Inherits from `build` |
+
+### Build-Time Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_PUBLIC_APP_URL` | — | Public URL for Remix/Vite (for Coolify deployment) |
+| `VITE_LOG_LEVEL` | `debug` | Client-side log level |
+| `DEFAULT_NUM_CTX` | — | Default Ollama context window |
+
+### Runtime Configuration
+
+Production image sets:
+- `NODE_ENV=production`
+- `PORT=5173`
+- `HOST=0.0.0.0`
+- `RUNNING_IN_DOCKER=true`
+- `WRANGLER_SEND_METRICS=false`
+
+API keys are provided at runtime via `docker run -e` or `--env-file`, not baked into the image.
+
+## Environment Configuration
+
+Create a `.env.local` file with your API keys:
+
+```bash
+# Required: at least one provider
+OPENAI_API_KEY=sk-your-key
+ANTHROPIC_API_KEY=sk-ant-your-key
+
+# Optional: additional providers
+GOOGLE_GENERATIVE_AI_API_KEY=your-key
+GROQ_API_KEY=gsk_your-key
+DEEPSEEK_API_KEY=your-key
+
+# Optional: local providers (use host.docker.internal)
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+
+# Optional: runtime settings
+DEFAULT_NUM_CTX=32768
+VITE_LOG_LEVEL=debug
+```
+
+## Local Provider Access
+
+When running in Docker, Amplify automatically rewires `localhost` and `127.0.0.1` URLs to `host.docker.internal` when `RUNNING_IN_DOCKER=true`. This allows the container to reach Ollama, LM Studio, and other local providers running on the host machine.
+
+If automatic rewiring doesn't work, set the URLs explicitly:
+
+```bash
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+```
+
+Ensure `--add-host=host.docker.internal:host-gateway` is included in your `docker run` command.
+
+## Health Checks
+
+The production image includes a built-in health check:
+
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
+  CMD curl -fsS http://localhost:5173/ || exit 1
+```
+
+This verifies the application is responding on port 5173. Parameters:
+- **Interval** — Check every 10 seconds
+- **Timeout** — 3 seconds per check
+- **Start period** — 5 seconds grace period during startup
+- **Retries** — 5 consecutive failures before marking unhealthy
+
+## Reverse Proxy Configuration
+
+When using a reverse proxy (nginx, Caddy, Traefik) in front of Amplify:
+
+### Required Headers
+
+WebContainers require Cross-Origin headers:
+
+```
+Cross-Origin-Embedder-Policy: credentialless
+Cross-Origin-Opener-Policy: same-origin
+```
+
+### Nginx Configuration
+
+```nginx
+server {
+    listen 80;
+    server_name amplify.example.com;
+
+    location / {
+        proxy_pass http://localhost:5173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        
+        # Required for WebContainers
+        add_header Cross-Origin-Embedder-Policy "credentialless" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+    }
+}
+```
+
+### Caddy Configuration
+
+```
+amplify.example.com {
+    reverse_proxy localhost:5173
+    
+    header Cross-Origin-Embedder-Policy "credentialless"
+    header Cross-Origin-Opener-Policy "same-origin"
+}
+```
+
+## Coolify Deployment
+
+Amplify works with Coolify (a self-hosting platform similar to Heroku):
+
+1. Create a new application in Coolify
+2. Set the Dockerfile path and build target
+3. Pass `VITE_PUBLIC_APP_URL` as a build argument
+4. Configure environment variables for API keys
+5. Deploy via Coolify's Docker builder
+
+The Dockerfile's `ARG VITE_PUBLIC_APP_URL` accepts the public URL at build time, allowing Coolify to inject the correct URL.
+
+## Persistent Storage
+
+Docker containers are ephemeral by default. For persistent data:
+
+- **Chat history** — Stored in IndexedDB (browser-side, not in the container)
+- **Settings** — Stored in localStorage (browser-side)
+- **Vector store** — Stored in IndexedDB (browser-side)
+
+Since all persistent data lives in the browser, the Docker container itself doesn't need persistent volumes for user data. The container only needs to serve the application.
+
+If you want to persist server-side data (e.g., custom MCP server state), add volume mounts as needed.
+
+## Troubleshooting Docker
+
+| Issue | Solution |
+|-------|----------|
+| Container won't start | Check logs with `docker logs amplify-ai` |
+| Can't reach localhost services | Use `host.docker.internal` URLs |
+| Health check failing | Ensure curl is installed and port 5173 is accessible |
+| HMR not working in dev | Check `VITE_HMR_PROTOCOL=ws` and polling settings |
+| Build failures | Ensure Node.js 22 base image and sufficient memory |
+
+## Next Steps
+
+- [Cloudflare Deployment](/docs/self-hosting/cloudflare) — Cloudflare Pages deployment
+- [Native Deployment](/docs/self-hosting/native) — Direct Node.js deployment
+- [Troubleshooting](/docs/advanced/troubleshooting) — Common issues and solutions

@@ -1,0 +1,144 @@
+---
+title: Provider Overview
+description: How Amplify manages 22+ LLM providers through the Vercel AI SDK v7 provider registry — registration, model discovery, and routing.
+---
+
+# Provider Overview
+
+Amplify supports **22+ LLM providers** through a unified provider registry built on the Vercel AI SDK v7. This architecture allows you to switch between providers and models seamlessly while maintaining consistent tool support and streaming behavior.
+
+## Provider Categories
+
+Amplify divides providers into two categories:
+
+### Cloud Providers (19)
+
+Cloud providers require an API key and connect to remote LLM services:
+
+| Provider | SDK | Key Variable |
+|----------|-----|-------------|
+| OpenAI | `@ai-sdk/openai` | `OPENAI_API_KEY` |
+| Anthropic | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY` |
+| Google | `@ai-sdk/google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| DeepSeek | `@ai-sdk/deepseek` | `DEEPSEEK_API_KEY` |
+| Groq | `@ai-sdk/openai` | `GROQ_API_KEY` |
+| xAI | `@ai-sdk/openai` | `XAI_API_KEY` |
+| Mistral | `@ai-sdk/mistral` | `MISTRAL_API_KEY` |
+| Cohere | `@ai-sdk/cohere` | `COHERE_API_KEY` |
+| OpenRouter | `@openrouter/ai-sdk-provider` | `OPEN_ROUTER_API_KEY` |
+| Together | `@ai-sdk/openai` | `TOGETHER_API_KEY` |
+| Fireworks | `@ai-sdk/fireworks` | `FIREWORKS_API_KEY` |
+| HuggingFace | `@ai-sdk/openai` | `HuggingFace_API_KEY` |
+| Hyperbolic | `@ai-sdk/openai` | `HYPERBOLIC_API_KEY` |
+| Cerebras | `@ai-sdk/cerebras` | `CEREBRAS_API_KEY` |
+| Perplexity | `@ai-sdk/openai` | `PERPLEXITY_API_KEY` |
+| GitHub Models | `@ai-sdk/openai` | `GITHUB_API_KEY` |
+| Moonshot | `@ai-sdk/openai` | `MOONSHOT_API_KEY` |
+| Amazon Bedrock | `@ai-sdk/amazon-bedrock` | `AWS_BEDROCK_CONFIG` |
+| Z.ai | `@ai-sdk/openai` | `ZAI_API_KEY` |
+
+### Local Providers (3)
+
+Local providers run on your machine and use configurable base URLs:
+
+| Provider | Base URL Variable | Default URL |
+|----------|-------------------|-------------|
+| Ollama | `OLLAMA_API_BASE_URL` | `http://localhost:11434` |
+| LM Studio | `LMSTUDIO_API_BASE_URL` | `http://localhost:1234` |
+| OpenAI-like | `OPENAI_LIKE_API_BASE_URL` | — |
+
+## Provider Registration
+
+All providers are registered at startup through the `LLMManager` singleton:
+
+1. The `registry.ts` file exports all provider classes
+2. Each class extends `BaseProvider` (the abstract base)
+3. `LLMManager._registerProvidersFromDirectory()` iterates over all exports
+4. Classes that extend `BaseProvider` are instantiated and registered
+5. Provider names are used as keys in the `_providers` Map
+
+### BaseProvider Contract
+
+Every provider must implement:
+
+- `name` — Unique provider identifier string
+- `staticModels` — Array of well-known model definitions
+- `config` — API key name, base URL key, and defaults
+- `getModelInstance()` — Creates a Vercel AI SDK LanguageModel
+
+Optional methods:
+- `getDynamicModels()` — Fetches live model catalog from the provider
+- `getApiKeyLink` — URL where users can obtain an API key
+- `labelForGetApiKey` — Human-readable label for the link
+
+## Model Discovery
+
+Models are discovered through two mechanisms:
+
+### Static Models
+
+Every provider defines a `staticModels` array of well-known, stable models. These are always available regardless of API connectivity and serve as fallbacks when dynamic discovery fails.
+
+### Dynamic Models
+
+Providers that support dynamic discovery fetch their model catalog from the provider's API at runtime. This is triggered when the user opens the model selector.
+
+Dynamic discovery:
+1. Uses the configured API key to authenticate
+2. Fetches `/v1/models` (or provider-specific endpoint)
+3. Maps response to `ModelInfo` format
+4. Caches results with a `cacheId` based on the API key
+5. Has a 5-second timeout to prevent hanging
+6. Falls back to static models on failure
+
+## Model Selection
+
+When a user selects a model:
+
+1. The provider name and model ID are sent with the chat request
+2. `LLMManager` resolves the provider from the registry
+3. The provider's `getModelInstance()` creates a Vercel AI SDK `LanguageModel`
+4. API keys and base URLs are resolved from environment variables and client settings
+5. The model instance is used for the streaming chat response
+
+## Configuring Providers
+
+### Via Environment Variables
+
+Server-side API keys are configured via environment variables (`.env.local` or Docker env):
+
+```bash
+OPENAI_API_KEY=sk-your-key
+ANTHROPIC_API_KEY=sk-ant-your-key
+```
+
+### Via Settings Panel
+
+Client-side API keys are configured in the Settings panel and stored in localStorage:
+1. Open Settings → Providers → Cloud Providers tab
+2. Enter your API key for each provider
+3. Click "Test Connection" to verify connectivity
+4. Keys are sent with every `/api/chat` request
+
+### Custom Base URLs
+
+Local providers and OpenAI-like providers support custom base URLs:
+1. Open Settings → Providers → Local Providers tab
+2. Set the base URL for Ollama, LM Studio, or OpenAI-like
+3. URLs pointing to `localhost` are auto-rewritten for Docker
+
+## Adding Custom Providers
+
+You can add custom OpenAI-compatible providers via the "Add Provider" popup:
+1. Click the "+" button in the provider settings
+2. Enter a custom name, base URL, and API key
+3. Models are discovered dynamically from the custom endpoint
+4. The provider appears in the model selector
+
+See [Adding Providers](/docs/extending/adding-providers) for details on implementing new provider classes.
+
+## Next Steps
+
+- [Cloud Providers](/docs/providers/cloud-providers) — Detailed setup for each cloud provider
+- [Local Providers](/docs/providers/local-providers) — Ollama, LM Studio, and OpenAI-like setup
+- [Rate Limits](/docs/providers/rate-limits) — Per-provider rate limit configuration

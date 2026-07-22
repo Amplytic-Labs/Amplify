@@ -1,0 +1,249 @@
+---
+title: Adding Skills
+description: How to create and register custom skills in Amplify — domain-specific knowledge contexts that inject guidance into AI workers.
+---
+
+# Adding Skills
+
+Skills are Amplify's mechanism for injecting domain-specific knowledge into the AI's context. When the planning system or direct chat invokes a skill, it returns a structured `SkillContext` that provides architectural guidance, implementation rules, and code standards.
+
+## What Are Skills?
+
+A skill is a bundle of domain expertise that the AI can reference during task execution. Skills are NOT code generators or templates — they are **knowledge contexts** that help the AI produce better results by providing:
+
+- Architectural notes and recommendations
+- Hard implementation rules
+- Common pitfalls to avoid
+- Recommended APIs and patterns
+- Code formatting and naming conventions
+- Suggested tool invocations
+
+## Skill Structure
+
+Each skill is defined by a `SKILL.md` file in its directory. The skill loader (`SkillLoader`) reads these files and converts them into `SkillContext` objects.
+
+### SKILL.md Format
+
+A skill definition file contains structured sections:
+
+```markdown
+# Skill: React Best Practices
+
+## Purpose
+Provides guidance on React component development following modern best practices.
+
+## Architecture Notes
+- Use functional components with hooks
+- Follow the container/presentational pattern
+- Keep components small and focused
+- Use React.memo for performance optimization
+
+## Implementation Rules
+- Always use TypeScript for new components
+- Use named exports, not default exports
+- Avoid inline styles; use CSS modules or Tailwind
+- Handle loading, error, and success states in every component
+
+## Common Pitfalls
+- Don't useEffect for derived state (use useMemo)
+- Don't pass setters as props (use callback handlers)
+- Don't nest conditional rendering (extract sub-components)
+- Don't use index as key in lists
+
+## Recommended APIs
+- useState for local state
+- useReducer for complex state
+- useContext for shared state
+- useQuery (React Query) for server state
+
+## Code Standards
+- PascalCase for component names
+- camelCase for handler functions
+- ONE_BUSINESS_LOGIC_PER_FILE pattern
+- Extract custom hooks for reusable logic
+
+## References
+- React docs: https://react.dev
+- TypeScript React cheatsheet
+- Airbnb React style guide
+
+## Suggested Tools
+- read_file:src/components/ to understand existing patterns
+- grep_search:pattern="useState" to find state usage patterns
+```
+
+### SkillContext Interface
+
+When a skill is invoked, it produces a `SkillContext` object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `skillId` | string | The skill's identifier |
+| `label` | string | Human-readable name |
+| `purpose` | string | What this skill provides guidance on |
+| `architectureNotes` | string array | Architectural recommendations |
+| `implementationRules` | string array | Hard rules to follow |
+| `commonPitfalls` | string array | Pitfalls to avoid |
+| `recommendedApis` | string array | Recommended patterns/libraries |
+| `codeStandards` | string array | Formatting/naming conventions |
+| `references` | string array | Documentation links |
+| `suggestedTools` | string array | Tools the worker should invoke |
+
+## Creating a New Skill
+
+### Step 1: Create the Skill Directory
+
+Skills are stored in two locations:
+
+- **Design skills** — `design/skills/your-skill/SKILL.md` (for design-focused contexts)
+- **App skills** — `app/lib/skills/your-skill/SKILL.md` (for development-focused contexts)
+
+```bash
+# Create the skill directory
+mkdir -p app/lib/skills/my-skill
+```
+
+### Step 2: Write the SKILL.md
+
+Create the skill definition file:
+
+```markdown
+# Skill: My Domain Expertise
+
+## Purpose
+Provides guidance on building applications in [your domain].
+
+## Architecture Notes
+- [Your architectural recommendation 1]
+- [Your architectural recommendation 2]
+
+## Implementation Rules
+- [Hard rule 1]
+- [Hard rule 2]
+
+## Common Pitfalls
+- [Pitfall 1]
+- [Pitfall 2]
+
+## Recommended APIs
+- [API/library 1]
+- [API/library 2]
+
+## Code Standards
+- [Standard 1]
+- [Standard 2]
+
+## References
+- [Reference link 1]
+- [Reference link 2]
+
+## Suggested Tools
+- read_file:src/[relevant path]
+- grep_search:pattern="[relevant pattern]"
+```
+
+### Step 3: Register the Skill
+
+Skills are loaded by the `SkillLoader` service. The loader discovers skills by scanning the skill directories:
+
+```typescript
+// In SkillLoader
+async loadSkill(skillId: string): Promise<SkillContext | null> {
+  // Reads SKILL.md from the skill directory
+  // Parses into SkillContext structure
+  // Returns the parsed context
+}
+```
+
+To make your skill discoverable:
+1. Place the `SKILL.md` in the correct directory
+2. Add the skill ID to the project's skill configuration
+3. The planning system will reference it when relevant
+
+### Step 4: Configure Skill Availability
+
+Skills can be configured per-project in the Settings panel or via the project skills store:
+
+```typescript
+// In projectSkills store
+projectSkillsStore.set({
+  availableSkills: ['my-skill', 'react-best-practices', 'api-integration'],
+  enabledSkills: ['my-skill'],
+});
+```
+
+Only **enabled** skills are loaded into the AI's context.
+
+## Existing Skills
+
+Amplify includes several built-in skills:
+
+| Skill | Directory | Purpose |
+|-------|-----------|---------|
+| React Best Practices | `app/lib/skills/react-best-practices/` | React component development |
+| API Integration | `app/lib/skills/api-integration/` | API design and integration patterns |
+| Frontend Design | `app/lib/skills/frontend-design/` | UI/UX design system guidance |
+| DOCX Generation | `app/lib/skills/docx/` | Document generation patterns |
+| HTML Page | `design/skills/html-page/` | Single-page HTML development |
+| React Native | `design/skills/react-native-component/` | Mobile component development |
+| React Component | `design/skills/react-component/` | Web component patterns |
+| Webapp Builder | `design/skills/webapp-builder/` | Full webapp architecture |
+| Appwrite | `design/skills/appwrite/` | Appwrite backend integration |
+| Supabase | `design/skills/supabase-backend/` | Supabase backend patterns |
+| Mobile App Dev | `design/skills/mobile-app-development/` | Mobile app architecture |
+
+## Skill Marketplace
+
+Amplify includes a **Skill Marketplace** (`SkillMarketplace.tsx`) where users can:
+- Browse available skills
+- Enable/disable skills per project
+- View skill descriptions and purposes
+- Search for skills by category
+
+## How Skills Are Invoked
+
+### In Direct Chat
+
+When a skill is enabled for the current project, its context is automatically injected into the system prompt before the first message. The AI receives the skill's guidance as a labeled section.
+
+### In Planning Mode
+
+The planning system is more selective:
+1. The planner AI decides which skills are relevant for each PlanPoint
+2. Only those skills are loaded (keeping worker context lean)
+3. Skills are invoked BEFORE the worker starts
+4. The skill's output becomes part of the worker's context
+
+This selective loading prevents context bloat when a plan has many steps that don't all need the same expertise.
+
+## Skill Best Practices
+
+### Keep Skills Focused
+
+Each skill should cover a single domain. Avoid creating overly broad skills that try to cover everything — they dilute the guidance and consume too many tokens.
+
+### Use Concrete Rules
+
+Implementation rules should be actionable:
+- "Always use TypeScript" ✓
+- "Follow best practices" ✗ (too vague)
+
+### Include Pitfalls
+
+Common pitfalls are the most valuable part of a skill. They prevent the AI from making mistakes that are frequent in your domain.
+
+### Suggest Tools
+
+Tool suggestions help the worker gather the right context before starting:
+- `read_file:src/services/AuthService.ts` — Read existing patterns
+- `grep_search:pattern="useState"` — Find state usage
+
+### Keep It Concise
+
+Skills consume tokens in the AI's context window. Keep each section to 5-10 items maximum. Longer skills may be truncated to fit the budget.
+
+## Next Steps
+
+- [Adding Tools](/docs/extending/adding-tools) — Creating MCP server tools
+- [Planning System](/docs/features/planning) — How skills integrate with planning
+- [Memory System](/docs/features/memory) — Vector store context

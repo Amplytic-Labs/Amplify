@@ -1,0 +1,185 @@
+---
+title: Local Providers
+description: Setup guide for local LLM providers — Ollama, LM Studio, and OpenAI-compatible servers with configurable base URLs.
+---
+
+# Local Providers
+
+Amplify supports three local provider categories for running LLMs on your own hardware. Local providers have no rate limits and use configurable base URLs, making them ideal for privacy-sensitive work or unlimited usage.
+
+## Ollama
+
+Ollama is the most popular local LLM runtime. It runs models on your GPU/CPU and provides an OpenAI-compatible API.
+
+### Setup
+
+1. **Install Ollama** — Download from https://ollama.com/download
+2. **Pull a model** — Run `ollama pull llama3.1` or any supported model
+3. **Start the server** — Ollama runs automatically on `http://localhost:11434`
+
+### Configuration
+
+| Property | Value |
+|----------|-------|
+| Base URL Key | `OLLAMA_API_BASE_URL` |
+| Default URL | `http://localhost:11434` |
+| API Key | Not required (optional) |
+| Download Link | https://ollama.com/download |
+| Icon | `i-ph:cloud-arrow-down` |
+
+Ollama uses the `ollama-ai-provider` package (not the standard OpenAI SDK) for proper Ollama-specific features like context window configuration.
+
+### Context Window
+
+The `DEFAULT_NUM_CTX` environment variable controls the default context window for Ollama models:
+
+```bash
+DEFAULT_NUM_CTX=32768  # Default: 32K context
+```
+
+If not set, the default is 32768 tokens. You can override this per-request.
+
+### Docker Considerations
+
+When running Amplify in Docker, the Ollama base URL must point to the host machine:
+
+```bash
+# In .env.local for Docker
+OLLAMA_API_BASE_URL=http://host.docker.internal:11434
+```
+
+Amplify automatically rewires `localhost` URLs to `host.docker.internal` when `RUNNING_IN_DOCKER=true`.
+
+### Model Discovery
+
+Ollama has **no static models** — all models are discovered dynamically from the running Ollama server. When you open the model selector, Amplify fetches the list of pulled models from Ollama's `/api/tags` endpoint.
+
+### Health Monitoring
+
+The `LocalModelHealthMonitor` service checks Ollama connectivity:
+- Pings the Ollama server periodically
+- Shows a green/red status indicator in the UI
+- Reports whether specific models are loaded and ready
+
+## LM Studio
+
+LM Studio provides a GUI for running local models with an OpenAI-compatible API endpoint.
+
+### Setup
+
+1. **Install LM Studio** — Download from https://lmstudio.ai/
+2. **Download a model** — Search and download models within the LM Studio app
+3. **Start the local server** — Click "Start Local Server" in LM Studio
+4. **Default port** — LM Studio runs on `http://localhost:1234`
+
+### Configuration
+
+| Property | Value |
+|----------|-------|
+| Base URL Key | `LMSTUDIO_API_BASE_URL` |
+| Default URL | `http://localhost:1234` |
+| API Key | Not required (optional) |
+| Download Link | https://lmstudio.ai/ |
+| Icon | `i-ph:cloud-arrow-down` |
+
+LM Studio uses the standard `@ai-sdk/openai` SDK because it provides an OpenAI-compatible API.
+
+### Model Discovery
+
+Like Ollama, LM Studio has **no static models**. Models are discovered dynamically from the local server's `/v1/models` endpoint.
+
+### Docker Considerations
+
+Same rewiring applies:
+```bash
+LMSTUDIO_API_BASE_URL=http://host.docker.internal:1234
+```
+
+## OpenAI-like (Custom Compatible Servers)
+
+The OpenAI-like provider is a generic category for any server that implements the OpenAI API format. This includes:
+
+- vLLM servers
+- LocalAI instances
+- Text Generation Inference (TGI) servers
+- Any custom OpenAI-compatible endpoint
+
+### Setup
+
+1. Deploy or start your OpenAI-compatible server
+2. Note the base URL (e.g., `http://my-server:8000/v1`)
+3. Configure the base URL and optional API key in Amplify
+
+### Configuration
+
+| Property | Value |
+|----------|-------|
+| Base URL Key | `OPENAI_LIKE_API_BASE_URL` |
+| API Key Key | `OPENAI_LIKE_API_KEY` |
+| Models Key | `OPENAI_LIKE_API_MODELS` |
+| API Key | Optional (depends on server) |
+
+The OpenAI-like provider is the most flexible — you can connect to any server that exposes the `/v1/chat/completions` and `/v1/models` endpoints.
+
+### Model Discovery
+
+Models are discovered dynamically from the server's `/v1/models` endpoint. If the server doesn't provide a models endpoint, you can manually specify model IDs via the `OPENAI_LIKE_API_MODELS` environment variable.
+
+### Adding Custom Providers in the UI
+
+You can add custom OpenAI-compatible providers through the Settings panel:
+1. Click the "+" button in the provider settings
+2. Enter a custom name (e.g., "My vLLM Server")
+3. Enter the base URL
+4. Enter the API key (if required)
+5. Click "Test Connection" to verify
+
+Custom providers appear in the model selector alongside the built-in providers.
+
+## Local Provider Health Monitoring
+
+The `useLocalModelHealth` hook provides real-time health monitoring for local providers:
+
+### Features
+
+- **Connectivity check** — Periodic ping to verify the server is reachable
+- **Model availability** — Lists which models are currently loaded
+- **Status badges** — Green/red indicators in the provider list
+- **Auto-refresh** — Health status updates automatically every 30 seconds
+
+### Status Dashboard
+
+The `StatusDashboard` component in the Settings panel shows:
+- Server uptime and connectivity
+- Available models and their sizes
+- GPU/CPU utilization (if the server provides this data)
+- Last health check timestamp
+
+## URL Configuration Flexibility
+
+All three local providers support URL overrides at multiple levels:
+
+1. **Environment variable** — Set the default base URL via env vars
+2. **Settings panel** — Override the base URL in the UI
+3. **Docker auto-rewiring** — `localhost` URLs are rewritten when running in Docker
+
+This hierarchy means you can:
+- Set a default URL in `.env.local`
+- Override it temporarily in the Settings panel
+- Run in Docker without changing any configuration (auto-rewiring handles it)
+
+## Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| Ollama not detected | Ensure Ollama is running on port 11434 |
+| LM Studio models not showing | Start the local server in LM Studio first |
+| Docker can't reach local models | Use `host.docker.internal` instead of `localhost` |
+| Custom server not responding | Verify the server exposes `/v1/models` endpoint |
+| Context window too small | Set `DEFAULT_NUM_CTX` to a larger value for Ollama |
+
+## Next Steps
+
+- [Cloud Providers](/docs/providers/cloud-providers) — Cloud provider setup
+- [Rate Limits](/docs/providers/rate-limits) — Rate limit configuration (local = unlimited)
+- [Adding Providers](/docs/extending/adding-providers) — Implementing new providers

@@ -1,0 +1,237 @@
+---
+title: Model Context Protocol (MCP)
+description: Connect Amplify to external tools and data sources through MCP servers — stdio, SSE, and Streamable HTTP transports.
+---
+
+# Model Context Protocol (MCP)
+
+The **Model Context Protocol (MCP)** is a standardized protocol for connecting AI systems to external tools and data sources. Amplify implements the MCP client specification, allowing you to connect any MCP-compatible server to your workspace.
+
+## Supported Transport Types
+
+Amplify supports all three MCP transport types:
+
+### Stdio Transport
+
+Stdio servers run as local processes that communicate through standard input/output streams. This is the most common transport for local MCP servers.
+
+**Configuration:**
+- `command` — The executable to run (e.g., `npx`, `python`)
+- `args` — Command-line arguments
+- `cwd` — Working directory (optional)
+- `env` — Custom environment variables for the process
+
+**Example:**
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"],
+  "env": {}
+}
+```
+
+### SSE Transport
+
+SSE (Server-Sent Events) servers run as remote HTTP services that communicate through a persistent SSE connection for server-to-client messages and HTTP POST for client-to-server messages.
+
+**Configuration:**
+- `url` — The server endpoint URL
+- `headers` — Custom HTTP headers (e.g., authentication)
+
+**Example:**
+```json
+{
+  "type": "sse",
+  "url": "https://api.example.com/mcp/sse",
+  "headers": {"Authorization": "Bearer your-token"}
+}
+```
+
+### Streamable HTTP Transport
+
+Streamable HTTP is the newest MCP transport type, supporting both regular HTTP requests and optional SSE streaming for notifications. It uses a single endpoint URL for all communication.
+
+**Configuration:**
+- `url` — The server endpoint URL
+- `headers` — Custom HTTP headers (optional)
+
+**Example:**
+```json
+{
+  "type": "streamable-http",
+  "url": "https://api.example.com/mcp"
+}
+```
+
+## MCP Service Architecture
+
+The MCP service in Amplify (`mcpService.ts`) orchestrates all MCP interactions:
+
+### Connection Lifecycle
+
+1. **Configuration** — MCP servers are configured in the Settings panel or via the API
+2. **Connection** — When a chat session starts, configured servers are connected
+3. **Discovery** — The service discovers available tools from each connected server
+4. **Tool Registration** — MCP tool definitions are added to the system prompt alongside native tools
+5. **Execution** — When the LLM invokes an MCP tool, the service routes it to the appropriate server
+6. **Result** — Tool results are returned to the LLM for the next response turn
+7. **Cleanup** — When the chat ends, stdio server processes are terminated
+
+### Tool Execution Flow
+
+When the AI invokes an MCP tool:
+
+1. The tool name identifies which MCP server owns the tool
+2. The service routes the call to that server's client instance
+3. The client sends the tool call arguments to the server
+4. The server executes the tool and returns the result
+5. The result is formatted and added to the streaming response
+6. The LLM receives the result and continues its response
+
+## Configuring MCP Servers
+
+### Via Settings Panel
+
+1. Open Settings → MCP tab
+2. Click "Add Server" to add a new MCP server
+3. Select the transport type (stdio, SSE, or streamable-http)
+4. Enter the configuration (command/URL, arguments, headers)
+5. Click "Check Connection" to verify connectivity
+6. Available tools from the server appear in the status list
+
+### Via API
+
+You can also configure MCP servers programmatically:
+
+```bash
+# Check MCP server connectivity
+curl -X POST http://localhost:5173/api/mcp-check \
+  -H "Content-Type: application/json" \
+  -d '{"serverName": "filesystem", "config": {...}}'
+
+# Update MCP configuration
+curl -X POST http://localhost:5173/api/mcp-update-config \
+  -H "Content-Type: application/json" \
+  -d '{"mcpServers": {...}}'
+```
+
+## Popular MCP Servers
+
+These MCP servers are commonly used with Amplify:
+
+### Filesystem Server
+
+Provides read/write access to local files:
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/project"]
+}
+```
+
+### GitHub Server
+
+Provides GitHub API integration (repos, issues, PRs, etc.):
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-github"],
+  "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "your-token"}
+}
+```
+
+### PostgreSQL Server
+
+Provides database query capabilities:
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+}
+```
+
+### Brave Search Server
+
+Provides web search capabilities:
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+  "env": {"BRAVE_API_KEY": "your-key"}
+}
+```
+
+### Puppeteer Server
+
+Provides browser automation:
+
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+}
+```
+
+## MCP Status Monitoring
+
+Each MCP server shows its connection status in the Settings panel:
+
+| Status | Description |
+|--------|-------------|
+| Connected | Server is reachable and tools are available |
+| Disconnected | Server cannot be reached |
+| Error | Server connection failed with an error |
+| Pending | Connection attempt in progress |
+
+The `McpStatusBadge` component shows real-time status, and the `McpServerList` provides a full overview of all configured servers.
+
+## MCP and Native Tools
+
+MCP tools and native tools coexist in the same chat session:
+
+- **Native tools** (read_file, create_file, etc.) are always available and operate on the project file system
+- **MCP tools** connect to external services and are only available when the corresponding server is connected
+- Both appear in the system prompt's tool definitions
+- The LLM decides which tool to use based on the task
+
+## Security Considerations
+
+- **Stdio servers** run as local processes on your machine — ensure you trust the command being executed
+- **SSE/streamable-http servers** connect to remote endpoints — verify the URL and authentication
+- **Tool approval** — Some MCP tool invocations require user confirmation before execution
+- **Environment variables** — MCP server environments can include sensitive tokens; store them securely
+
+## MCP Store
+
+The MCP configuration is stored in the `mcpStore` (Nanostore atom) and persisted to localStorage:
+
+- Server configurations are stored as JSON
+- Connection status is tracked per server
+- Tool lists are cached for quick access
+- Changes are reflected immediately in the chat system prompt
+
+## Troubleshooting MCP
+
+| Issue | Solution |
+|-------|----------|
+| Server won't connect | Check the command/URL and network connectivity |
+| Tools not appearing | Verify the server supports tool discovery |
+| Stdio process not starting | Ensure the command is executable and args are correct |
+| SSE connection drops | Check the remote server's uptime and authentication |
+| Docker can't reach stdio servers | Stdio servers run inside the Amplify process; SSE needs network access |
+
+## Next Steps
+
+- [Vector DB](/docs/integrations/vector-db) — Orama vector database
+- [Native Tools](/docs/features/native-tools) — Built-in file operations
+- [Adding Tools](/docs/extending/adding-tools) — Creating custom MCP servers

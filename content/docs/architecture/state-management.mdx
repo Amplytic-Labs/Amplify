@@ -1,0 +1,186 @@
+---
+title: State Management
+description: How Amplify uses Zustand, Nanostores, and IndexedDB for reactive client-side state management with persistent storage.
+---
+
+# State Management
+
+Amplify uses a dual state management approach with **Zustand** for complex interconnected stores and **Nanostores** for lightweight atomic values. All persistent data is stored in **IndexedDB** for chat history and vector search, and **localStorage** for settings and configuration.
+
+## Store Architecture
+
+### Zustand Stores
+
+Zustand is used for stores that need complex interdependencies, middleware, and large state trees:
+
+| Store | File | Purpose |
+|-------|------|---------|
+| `chatStore` | `stores/chat.ts` | Current chat messages, streaming state, tool invocations |
+| `workbenchStore` | `stores/workbench.ts` | Editor state, terminal, preview, file tree, action alerts |
+| `editorStore` | `stores/editor.ts` | CodeMirror editor instances, selected file, diff view |
+| `filesStore` | `stores/files.ts` | File map (the authoritative browser-side filesystem) |
+| `settingsStore` | `stores/settings.ts` | Provider configurations, feature flags, tab visibility |
+| `projectStore` | `persistence/project-store/index.ts` | Project metadata, selected project context |
+
+### Nanostore Atoms
+
+Nanostores are used for simpler, atomic values that need reactive updates without complex dependencies:
+
+| Store | File | Purpose |
+|-------|------|---------|
+| `themeStore` | `stores/theme.ts` | Current theme (light/dark/system) |
+| `sidebarStore` | `stores/sidebar.ts` | Sidebar visibility and state |
+| `streamingStore` | `stores/streaming.ts` | Current streaming state (is streaming, abort controller) |
+| `rateLimitStore` | `stores/rate-limit.ts` | Per-provider rate limit configuration |
+| `mcpStore` | `stores/mcp.ts` | MCP server configurations and status |
+| `profileStore` | `stores/profile.ts` | User profile data |
+| `previewStore` | `stores/previews.ts` | Preview URL and status |
+| `terminalStore` | `stores/terminal.ts` | Terminal instances and output |
+
+## Persistence Layer
+
+### IndexedDB
+
+IndexedDB is the primary persistence mechanism for large, structured data:
+
+| Database | Purpose | Key Structure |
+|----------|---------|---------------|
+| Chat History | Past conversations and messages | Chat ID → Messages |
+| Project Store | Project metadata, files, descriptions | Project ID → Data |
+| Vector Store (Orama) | Full-text search indices for context | BM25-ranked entries |
+| Plan Store | Task plans, checkpoints, sub-chats | Plan ID → Plan data |
+
+The persistence layer in `app/lib/persistence/` provides:
+- `db.ts` — Dexie/IndexedDB database initialization
+- `chats.ts` — Chat CRUD operations
+- `project-store/index.ts` — Project metadata management
+- `localStorage.ts` — Settings and configuration persistence
+- `memoryStore.ts` — In-memory cache for fast reads
+
+### localStorage
+
+localStorage is used for smaller configuration data that needs synchronous access:
+
+- Provider API keys (encrypted in transit, stored locally)
+- Rate limit configurations per provider
+- MCP server configuration JSON
+- Theme preference
+- Feature flag toggles
+- Custom provider settings
+
+## Reactive Data Flow
+
+The state management system follows a unidirectional data flow pattern:
+
+```
+User Action → Store Method → State Update → React Component → UI Render
+                                    ↓
+                            Persistence Layer
+                           (IndexedDB / localStorage)
+```
+
+### Chat State Flow
+
+1. User types a message → `chatStore.sendMessage()`
+2. Streaming begins → `streamingStore.setStreaming(true)`
+3. LLM responds → `chatStore.addAssistantMessage()`
+4. Tool invoked → `chatStore.addToolInvocation()`
+5. Mutation detected → `workbenchStore.applyMutation()`
+6. Files update → `filesStore.updateFile()`
+7. WebContainer writes → Preview refreshes
+8. Stream completes → `streamingStore.setStreaming(false)`
+
+### Workbench State Flow
+
+The workbench is the central hub for all development activity:
+
+1. File selected → `editorStore.setSelectedFile()`
+2. CodeMirror instance created → `editorStore.addEditorInstance()`
+3. File content changes → `filesStore.updateFileContent()`
+4. Terminal command → `terminalStore.addCommand()`
+5. Preview URL changes → `previewStore.setUrl()`
+6. Action alert raised → `workbenchStore.setActionAlert()`
+
+## WebContainer Integration
+
+The file store and WebContainer are tightly integrated. When files change in the store, they are automatically written to the WebContainer:
+
+```
+filesStore.updateFile(path, content)
+  → webcontainer.fs.writeFile(path, content)
+  → WebContainer re-runs preview if needed
+  → previewStore updates URL
+```
+
+The WebContainer boots on first project load with these settings:
+- `coep: 'credentialless'` — Required for Cross-Origin Embedder Policy
+- `workdirName: 'project'` — Working directory name
+- `forwardPreviewErrors: true` — Enables error forwarding from preview iframes
+
+## Store Synchronization
+
+Because Amplify operates across server and client boundaries, store data must be synchronized:
+
+### Server → Client
+
+- LLM streaming responses are sent via SSE
+- Tool results (including mutation signals) arrive as part of the stream
+- Model lists are fetched from `/api/models` and `/api/models/$provider`
+
+### Client → Server
+
+- File maps are sent with every `/api/chat` request
+- Rate limit configurations are included in the request payload
+- MCP tool definitions are collected from connected servers and sent as context
+
+### Cross-Tab Synchronization
+
+When running in multiple browser tabs, IndexedDB changes are propagated through the `storage` event listener. Each tab reacts to changes made by other tabs to maintain consistency.
+
+## Custom Hooks
+
+Amplify provides several custom React hooks that bridge stores to components:
+
+| Hook | Purpose |
+|------|---------|
+| `useChatHistory` | Load and manage chat history from IndexedDB |
+| `useSettings` | Access and update provider settings |
+| `useFeatures` | Check feature flag status |
+| `useVectorContext` | Search vector store for relevant context |
+| `useProjectContext` | Load project metadata and files |
+| `useConnectionStatus` | Track provider and MCP connectivity |
+| `useLocalProviders` | Manage local provider health monitoring |
+| `useLocalModelHealth` | Check if local models (Ollama, LM Studio) are reachable |
+| `useShortcuts` | Register keyboard shortcuts |
+| `useStickToBottom` | Auto-scroll chat to latest message |
+
+## Memory and Context System
+
+The vector store system provides two persistent context layers:
+
+### User Profile Store
+
+Stores long-term user preferences and patterns across all projects:
+- Tech stack preferences
+- Coding style
+- Communication patterns
+- Domain knowledge
+- Project preferences
+
+### Project Context Store
+
+Stores project-specific context entries that persist across sessions:
+- Requirements and decisions
+- Error patterns and fixes
+- Architecture notes
+- File context and conversation summaries
+- Tool usage patterns
+- Flow definitions and screen connections
+
+Both stores use Orama with BM25 ranking for relevance-based retrieval. When a new chat starts, relevant entries are automatically injected into the system prompt to provide continuity.
+
+## Next Steps
+
+- [LLM Pipeline](/docs/architecture/llm-pipeline) — How providers and streaming work
+- [Memory System](/docs/features/memory) — Detailed vector store documentation
+- [Workbench](/docs/features/workbench) — Interactive development environment
