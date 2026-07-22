@@ -294,6 +294,9 @@ export class AmplifyShell {
     // tried to strip ANSI codes from the match, but embedded ANSI sequences
     // between URL characters prevented the regex from matching at all.
     const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+    // Also strip OSC (Operating System Command) sequences and other control chars
+    const oscRegex = /\x1b\][^\x07]*\x07/g;
+    // Expo URL regex — matches both exp:// and *.boltexpo.dev formats
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
     while (true) {
@@ -309,22 +312,25 @@ export class AmplifyShell {
 
       buffer += value || '';
 
-      // Strip ANSI escape codes from buffer before URL matching
-      const cleanBuffer = buffer.replace(ansiRegex, '');
+      // Strip ANSI escape codes AND OSC sequences from buffer before URL matching.
+      // We also strip other common terminal noise characters.
+      const cleanBuffer = buffer
+        .replace(ansiRegex, '')
+        .replace(oscRegex, '')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, ''); // Strip control chars except \n, \r, \t
 
       const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
 
       if (expoUrlMatch) {
-        // Remove trailing non-printable characters from the matched URL
-        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]+$/g, '');
+        // Remove any remaining non-printable characters from the matched URL
+        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
         expoUrlAtom.set(cleanUrl);
-        // Trim the original buffer to avoid re-matching the same URL
-        // Use the original buffer (with ANSI) for trimming so we don't lose
-        // positioning context
-        buffer = buffer.slice(buffer.length > cleanBuffer.length ? buffer.indexOf(expoUrlMatch[1].charAt(0)) + expoUrlMatch[1].length : expoUrlMatch[1].length);
+        // Clear the buffer after a successful match — the Expo URL is emitted
+        // once per project start, so we don't need to retain old data.
+        buffer = '';
       }
 
-      if (buffer.length > 2048) {
+      if (buffer.length > 4096) {
         buffer = buffer.slice(-2048);
       }
     }
@@ -683,6 +689,8 @@ export class AmplifyShell {
     // ANSI escape code regex — strip BEFORE URL matching so embedded ANSI
     // sequences between URL characters don't break the match.
     const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+    // Also strip OSC sequences
+    const oscRegex = /\x1b\][^\x07]*\x07/g;
     // Regex for Expo URL
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
@@ -697,19 +705,22 @@ export class AmplifyShell {
       fullOutput += text;
       buffer += text; // <-- Accumulate in buffer
 
-      // Strip ANSI escape codes from buffer before URL matching
-      const cleanBuffer = buffer.replace(ansiRegex, '');
+      // Strip ANSI escape codes AND OSC sequences from buffer before URL matching.
+      const cleanBuffer = buffer
+        .replace(ansiRegex, '')
+        .replace(oscRegex, '')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
 
       // Extract Expo URL from cleaned buffer and set store
       const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
 
       if (expoUrlMatch) {
-        // Remove trailing non-printable characters from the matched URL
-        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]+$/g, '');
+        // Remove any remaining non-printable characters from the matched URL
+        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
         expoUrlAtom.set(cleanUrl);
 
-        // Remove everything up to and including the URL from the buffer to avoid duplicate matches
-        buffer = buffer.slice(buffer.length > cleanBuffer.length ? buffer.indexOf(expoUrlMatch[1].charAt(0)) + expoUrlMatch[1].length : expoUrlMatch[1].length);
+        // Clear buffer after successful match to avoid re-matching
+        buffer = '';
       }
 
       // Check if command completion signal with exit code
