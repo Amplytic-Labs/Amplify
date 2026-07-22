@@ -289,6 +289,11 @@ export class AmplifyShell {
 
     const reader = stream.getReader();
     let buffer = '';
+    // ANSI escape code regex — strip these BEFORE URL matching so they don't
+    // break the URL regex. The previous approach matched the URL first and then
+    // tried to strip ANSI codes from the match, but embedded ANSI sequences
+    // between URL characters prevented the regex from matching at all.
+    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
     while (true) {
@@ -304,14 +309,19 @@ export class AmplifyShell {
 
       buffer += value || '';
 
-      const expoUrlMatch = buffer.match(expoUrlRegex);
+      // Strip ANSI escape codes from buffer before URL matching
+      const cleanBuffer = buffer.replace(ansiRegex, '');
+
+      const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
 
       if (expoUrlMatch) {
-        const cleanUrl = expoUrlMatch[1]
-          .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
-          .replace(/[^\x20-\x7E]+$/g, '');
+        // Remove trailing non-printable characters from the matched URL
+        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]+$/g, '');
         expoUrlAtom.set(cleanUrl);
-        buffer = buffer.slice(buffer.indexOf(expoUrlMatch[1]) + expoUrlMatch[1].length);
+        // Trim the original buffer to avoid re-matching the same URL
+        // Use the original buffer (with ANSI) for trimming so we don't lose
+        // positioning context
+        buffer = buffer.slice(buffer.length > cleanBuffer.length ? buffer.indexOf(expoUrlMatch[1].charAt(0)) + expoUrlMatch[1].length : expoUrlMatch[1].length);
       }
 
       if (buffer.length > 2048) {
@@ -670,6 +680,9 @@ export class AmplifyShell {
 
     const tappedStream = this.#outputStream;
 
+    // ANSI escape code regex — strip BEFORE URL matching so embedded ANSI
+    // sequences between URL characters don't break the match.
+    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
     // Regex for Expo URL
     const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
 
@@ -684,18 +697,19 @@ export class AmplifyShell {
       fullOutput += text;
       buffer += text; // <-- Accumulate in buffer
 
-      // Extract Expo URL from buffer and set store
-      const expoUrlMatch = buffer.match(expoUrlRegex);
+      // Strip ANSI escape codes from buffer before URL matching
+      const cleanBuffer = buffer.replace(ansiRegex, '');
+
+      // Extract Expo URL from cleaned buffer and set store
+      const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
 
       if (expoUrlMatch) {
-        // Remove any trailing ANSI escape codes or non-printable characters
-        const cleanUrl = expoUrlMatch[1]
-          .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
-          .replace(/[^\x20-\x7E]+$/g, '');
+        // Remove trailing non-printable characters from the matched URL
+        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]+$/g, '');
         expoUrlAtom.set(cleanUrl);
 
         // Remove everything up to and including the URL from the buffer to avoid duplicate matches
-        buffer = buffer.slice(buffer.indexOf(expoUrlMatch[1]) + expoUrlMatch[1].length);
+        buffer = buffer.slice(buffer.length > cleanBuffer.length ? buffer.indexOf(expoUrlMatch[1].charAt(0)) + expoUrlMatch[1].length : expoUrlMatch[1].length);
       }
 
       // Check if command completion signal with exit code

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import useViewport from '~/lib/hooks';
 import { useStore } from '@nanostores/react';
 import { ClientOnly } from 'remix-utils/client-only';
@@ -16,6 +16,9 @@ import SvgGradientText from '~/components/ui/SVGgradient';
 import { MobileWorkbenchTabBar } from '~/components/ui/MobileWorkbenchTabBar';
 import { findRenderableFiles } from '~/lib/renderable/registry';
 import { SidebarTrigger } from '~/components/ui/shadcn/sidebar';
+import { expoUrlAtom } from '~/lib/stores/qrCodeStore';
+import { isExpoQrModalOpenAtom } from '~/lib/stores/previewHeader';
+import { ExpoQrModal } from '~/components/workbench/ExpoQrModal';
 
 const CodeIcon = ({ className }: { className?: string }) => (
   <svg
@@ -66,11 +69,13 @@ export function Header() {
   const chat = useStore(chatStore);
   const showWorkbench = useStore(workbenchStore.showWorkbench);
   const sidebarOpen = useStore(sidebarStore);
+  const expoUrl = useStore(expoUrlAtom);
 
   const selectedView = useStore(workbenchStore.currentView);
   const fileHistory = useStore(workbenchStore.fileHistory);
   const workbenchLeftPosition = useStore(workbenchStore.workbenchLeftPosition);
   const files = useStore(workbenchStore.files);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
 
   // Only show Render tab when at least one renderable file exists
   const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
@@ -104,7 +109,7 @@ export function Header() {
       {/* Mobile Layout */}
       <div className={classNames('lg:hidden flex items-center justify-between w-full')}>
         {showWorkbench ? (
-          // Workbench open: Back | [Tab Bar] | Deploy
+          // Workbench open: Back | [Tab Bar + Expo QR] | Deploy
           <>
             <button
               onClick={() => workbenchStore.showWorkbench.set(false)}
@@ -115,14 +120,24 @@ export function Header() {
             </button>
 
             {/* Centering wrapper — lets the pill bar stay compact (content width) and be centred */}
-            <div className="flex-1 flex justify-center  min-w-0 m">
+            <div className="flex-1 flex justify-center items-center min-w-0 gap-2">
               <MobileWorkbenchTabBar selected={selectedView} onSelect={setSelectedView} />
+              {/* Expo QR button beside mobile slider */}
+              {expoUrl && (
+                <button
+                  onClick={() => setQrModalOpen(true)}
+                  className="flex items-center justify-center p-1.5 rounded-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors"
+                  title="Show Expo QR"
+                >
+                  <div className="i-ph:qr-code w-4 h-4" />
+                </button>
+              )}
             </div>
 
             <DeployButton />
           </>
         ) : (
-          // Chat view: SidebarTrigger + Logo + Title | Preview button
+          // Chat view: SidebarTrigger + Title | Expo QR + Preview button
           <>
             <div className="flex items-center gap-2 min-w-0">
               <SidebarTrigger />
@@ -134,17 +149,34 @@ export function Header() {
                 <ClientOnly>{() => <ChatDescription />}</ClientOnly>
               </div>
             </div>
-            {chat.started && (
-              <button
-                onClick={() => workbenchStore.showWorkbench.set(true)}
-                className="ml-2 shrink-0 px-3 py-1.5 text-sm bg-accent-500 text-white rounded-md hover:bg-accent-600 transition-colors"
-              >
-                Preview
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Expo QR button in mobile chat view */}
+              {expoUrl && chat.started && (
+                <button
+                  onClick={() => setQrModalOpen(true)}
+                  className="flex items-center justify-center p-1.5 rounded-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors"
+                  title="Show Expo QR"
+                >
+                  <div className="i-ph:qr-code w-4 h-4" />
+                </button>
+              )}
+              {chat.started && (
+                <button
+                  onClick={() => workbenchStore.showWorkbench.set(true)}
+                  className="ml-1 shrink-0 px-3 py-1.5 text-sm bg-accent-500 text-white rounded-md hover:bg-accent-600 transition-colors"
+                >
+                  Preview
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
+
+      {/* Mobile Expo QR Modal */}
+      {expoUrl && qrModalOpen && (
+        <ExpoQrModal open={qrModalOpen} onClose={() => setQrModalOpen(false)} />
+      )}
 
       {/* Desktop Layout */}
       <div className={classNames('hidden lg:flex items-center justify-between w-full')}>
@@ -186,7 +218,19 @@ export function Header() {
                 <div className="fixed  hidden md:flex items-center " style={{ left: workbenchLeftPosition }}>
                   <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
 
+                  {/* PreviewHeader always shown beside slider on desktop when workbench is open */}
                   {showWorkbench && selectedView === 'preview' && <PreviewHeader />}
+
+                  {/* Expo QR button beside slider on desktop — visible regardless of view */}
+                  {expoUrl && selectedView !== 'preview' && (
+                    <button
+                      onClick={() => isExpoQrModalOpenAtom.set(true)}
+                      className="flex items-center justify-center p-1.5 rounded-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors ml-1"
+                      title="Show Expo QR"
+                    >
+                      <div className="i-ph:qr-code w-5 h-5" />
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="hidden md:block">

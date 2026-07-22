@@ -474,8 +474,15 @@ export const Workbench = memo(
      * becomes true before the chatStarted state has caught up via
      * the sync effect. Without this, the panel opens but the
      * Workbench returns null for one frame, causing a flash.
+     *
+     * On mobile, we also require showWorkbench to be true. On mobile
+     * screens, chat and workspace cannot coexist, so when showWorkbench
+     * is false, we completely unmount the Workbench instead of hiding
+     * it with an animation. This prevents CSS/layout interactions
+     * (e.g., sidebar Dialog overlay) from causing the hidden workbench
+     * to briefly appear in view.
      */
-    const shouldRender = chatStarted || showWorkbench;
+    const shouldRender = isSmallViewport ? showWorkbench : chatStarted || showWorkbench;
 
     /*
      * When the workspace is open but no files are loaded yet (e.g.
@@ -510,11 +517,6 @@ export const Workbench = memo(
           <div
             className={classNames(
               'z-0 h-full w-full lg:rounded-2xl border border-amplify-elements-borderColor overflow-hidden',
-              {
-                'transition-[left,width] duration-200 amplify-ease-cubic-bezier': isSmallViewport,
-                'left-0': showWorkbench && isSmallViewport,
-                'left-[100%]': !showWorkbench && isSmallViewport,
-              },
             )}
           >
             <div className="h-full ">
