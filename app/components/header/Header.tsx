@@ -150,8 +150,8 @@ export function Header() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Expo QR button in mobile chat view */}
-              {expoUrl && chat.started && (
+              {/* Expo QR button — only when workspace has files AND expo project detected */}
+              {expoUrl && Object.keys(files).length > 0 && (
                 <button
                   onClick={() => setQrModalOpen(true)}
                   className="flex items-center justify-center p-1.5 rounded-md bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors"
@@ -160,7 +160,8 @@ export function Header() {
                   <div className="i-ph:qr-code w-4 h-4" />
                 </button>
               )}
-              {chat.started && (
+              {/* Preview button — only when workspace has files (not just any started chat) */}
+              {Object.keys(files).length > 0 && (
                 <button
                   onClick={() => workbenchStore.showWorkbench.set(true)}
                   className="ml-1 shrink-0 px-3 py-1.5 text-sm bg-accent-500 text-white rounded-md hover:bg-accent-600 transition-colors"

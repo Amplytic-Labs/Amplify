@@ -484,12 +484,20 @@ export const Workbench = memo(
     const shouldRender = chatStarted || showWorkbench;
 
     /*
-     * When the workspace is open but no files are loaded yet (e.g.
-     * just opened an empty project chat or files are still being
-     * restored from the database), show a loading placeholder
-     * instead of a blank editor. (hasFiles is computed above, near
-     * showVeil, so it's available for the veil gate too.)
+     * Mobile hiding: When showWorkbench is false on mobile, the workbench
+     * must be completely off-screen and non-interactive, but STILL MOUNTED
+     * so terminal/WebContainer/dev server keep running.
+     *
+     * We use CSS-only hiding that cannot be disrupted by React re-renders
+     * or stacking context changes (e.g. sidebar Dialog overlay):
+     *   1) Inline style transform:translateX(100%) — synchronous, off-screen
+     *   2) visibility:hidden + pointer-events:none — bulletproof fallback
+     *
+     * When showWorkbench is true on mobile, we remove CSS hiding and let
+     * framer-motion animate the slide-in. On desktop (lg:), none applied.
      */
+    const isMobileHidden = !showWorkbench && isSmallViewport;
+
     return (
       shouldRender && (
         <motion.div
@@ -497,30 +505,11 @@ export const Workbench = memo(
           initial="closed"
           animate={showWorkbench ? 'open' : 'closed'}
           variants={isSmallViewport ? mobileWorkbenchVariants : undefined}
+          style={isMobileHidden ? { transform: 'translateX(100%)' } : undefined}
           className={classNames(
             'z-workbench lg:pb-4 lg:pr-4 absolute inset-0',
-            /*
-             * Mobile containment: On mobile screens, chat and workspace cannot
-             * coexist on screen, so when showWorkbench is false we must ensure
-             * the workbench is completely invisible and non-interactive — but
-             * still MOUNTED in the DOM so the terminal/WebContainer/dev server
-             * keep running.
-             *
-             * We use two independent hiding mechanisms:
-             * 1) framer-motion x:'100%' — handles the smooth slide animation
-             * 2) CSS visibility:hidden + pointer-events:none — bulletproof
-             *    fallback that ensures the workbench cannot be seen or clicked
-             *    even if framer-motion's animation state is disrupted by
-             *    React re-renders (e.g., sidebar Dialog overlay opening).
-             *
-             * When showWorkbench becomes true on mobile, we remove the CSS
-             * hiding before framer-motion animates to the open position,
-             * so the user sees the smooth slide-in.
-             *
-             * On desktop (lg:), these are never applied.
-             */
             {
-              'invisible pointer-events-none lg:visible lg:pointer-events-auto': !showWorkbench && isSmallViewport,
+              'invisible pointer-events-none lg:visible lg:pointer-events-auto': isMobileHidden,
             },
           )}
         >

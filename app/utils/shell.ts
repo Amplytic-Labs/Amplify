@@ -110,7 +110,7 @@ export class AmplifyShell {
    */
   #onDataDisposable: { dispose: () => void } | undefined;
   #terminalPipeController: AbortController | undefined;
-  #expoUrlAbort: AbortController | undefined;
+
   #initializedOnce = false;
 
   /*
@@ -151,8 +151,6 @@ export class AmplifyShell {
     this.#terminalPipeController?.abort();
     this.#terminalPipeController = undefined;
 
-    this.#expoUrlAbort?.abort();
-    this.#expoUrlAbort = undefined;
 
     try {
       this.#process?.kill();
@@ -181,13 +179,13 @@ export class AmplifyShell {
     this.#webcontainer = webcontainer;
     this.#terminal = terminal;
 
-    // Use all three streams from tee: one for terminal, one for command execution, one for Expo URL detection
-    const { process, commandStream, expoUrlStream } = await this.newAmplifyShellProcess(webcontainer, terminal);
+    // Use streams from tee: one for terminal (consumed inline), one for command execution
+    // Expo URL detection is now done inline in the terminal writer — no separate stream
+    const { process, commandStream } = await this.newAmplifyShellProcess(webcontainer, terminal);
     this.#process = process;
     this.#outputStream = commandStream.getReader();
 
-    // Start background Expo URL watcher immediately
-    this._watchExpoUrlInBackground(expoUrlStream);
+    // No need for _watchExpoUrlInBackground — Expo URLs are detected inline in terminal writer
 
     await this.waitTillOscCode('interactive');
     this.#initialized?.();
@@ -236,12 +234,28 @@ export class AmplifyShell {
     const input = process.input.getWriter();
     this.#shellInputStream = input;
 
-    // Tee the output so we can have three independent readers
+    // Tee the output so we can have two independent readers
+    // Only a SINGLE tee is used now — triple-tee caused a blocking problem
+    // where streamC (commandStream) was only read during executeCommand,
+    // which blocked data flow to streamD (expoUrlStream) via the second tee.
+    // Expo URL detection is now done inline in the terminal writer below.
     const [streamA, streamB] = process.output.tee();
-    const [streamC, streamD] = streamB.tee();
 
     const jshReady = withResolvers<void>();
     let isInteractive = false;
+
+    /*
+     * Expo URL detection: We track a buffer of terminal output and
+     * match Expo URLs (exp:// and *.boltexpo.dev) inline in the terminal
+     * writer. This is more reliable than a separate stream because the
+     * terminal writer is ALWAYS consuming data — it never blocks.
+     * The previous approach used a triple-tee (streamD) which broke
+     * because streamC wasn't continuously consumed, blocking the tee.
+     */
+    let expoUrlBuffer = '';
+    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+    const oscRegex = /\x1b\][^\x07]*\x07/g;
 
     /*
      * Use an AbortController so #teardown() can cancel this pipe without
@@ -261,6 +275,23 @@ export class AmplifyShell {
           }
 
           terminal.write(data);
+
+          // Detect Expo URLs inline — always runs since terminal writer is always consuming
+          expoUrlBuffer += data || '';
+          // Strip ANSI + OSC + control chars before URL matching
+          const cleanBuffer = expoUrlBuffer
+            .replace(ansiRegex, '')
+            .replace(oscRegex, '')
+            .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
+          const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
+          if (expoUrlMatch) {
+            const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
+            expoUrlAtom.set(cleanUrl);
+            expoUrlBuffer = ''; // Clear after match — URL is emitted once per start
+          }
+          if (expoUrlBuffer.length > 4096) {
+            expoUrlBuffer = expoUrlBuffer.slice(-2048);
+          }
         },
       }),
       { signal: this.#terminalPipeController.signal },
@@ -279,62 +310,18 @@ export class AmplifyShell {
 
     await jshReady.promise;
 
-    // Return all streams for use in init
-    return { process, terminalStream: streamA, commandStream: streamC, expoUrlStream: streamD };
+    // Return streams for use in init — no expoUrlStream needed now
+    return { process, terminalStream: streamA, commandStream: streamB };
   }
 
-  // Dedicated background watcher for Expo URL
-  private async _watchExpoUrlInBackground(stream: ReadableStream<string>) {
-    this.#expoUrlAbort = new AbortController();
-
-    const reader = stream.getReader();
-    let buffer = '';
-    // ANSI escape code regex — strip these BEFORE URL matching so they don't
-    // break the URL regex. The previous approach matched the URL first and then
-    // tried to strip ANSI codes from the match, but embedded ANSI sequences
-    // between URL characters prevented the regex from matching at all.
-    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
-    // Also strip OSC (Operating System Command) sequences and other control chars
-    const oscRegex = /\x1b\][^\x07]*\x07/g;
-    // Expo URL regex — matches both exp:// and *.boltexpo.dev formats
-    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
-
-    while (true) {
-      if (this.#expoUrlAbort?.signal.aborted) {
-        break;
-      }
-
-      const { value, done } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      buffer += value || '';
-
-      // Strip ANSI escape codes AND OSC sequences from buffer before URL matching.
-      // We also strip other common terminal noise characters.
-      const cleanBuffer = buffer
-        .replace(ansiRegex, '')
-        .replace(oscRegex, '')
-        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, ''); // Strip control chars except \n, \r, \t
-
-      const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
-
-      if (expoUrlMatch) {
-        // Remove any remaining non-printable characters from the matched URL
-        const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
-        expoUrlAtom.set(cleanUrl);
-        // Clear the buffer after a successful match — the Expo URL is emitted
-        // once per project start, so we don't need to retain old data.
-        buffer = '';
-      }
-
-      if (buffer.length > 4096) {
-        buffer = buffer.slice(-2048);
-      }
-    }
-  }
+  // Expo URL detection is now done inline in the terminal writer (streamA)
+  // in newAmplifyShellProcess(). This method is no longer needed because
+  // the triple-tee approach caused a blocking problem where streamC
+  // (commandStream) wasn't continuously consumed, blocking data flow
+  // to the expoUrlStream via the second tee.
+  //
+  // The inline approach is more reliable since the terminal writer is
+  // ALWAYS consuming data — it never blocks.
 
   get terminal() {
     return this.#terminal;
