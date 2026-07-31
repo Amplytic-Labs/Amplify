@@ -208,7 +208,7 @@ export function ProjectMemoryPanel({ projectId, embedded = false, onChange }: Pr
         aria-expanded={!collapsed}
         aria-label="Toggle project memory panel"
       >
-        <Brain size={16} className="text-purple-500 shrink-0" />
+        <Brain size={16} className="text-blue-500 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium truncate">{project.name}</span>

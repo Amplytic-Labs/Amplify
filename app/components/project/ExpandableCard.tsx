@@ -85,14 +85,14 @@ export function ExpandableCard({
       className={classNames(
         'relative rounded-2xl overflow-hidden border border-dashed transition-colors',
         isSelected
-          ? 'border-purple-500/60 bg-purple-500/[0.04]'
+          ? 'border-blue-500/60 bg-blue-500/[0.04]'
           : 'border-sidebar-border/70 bg-sidebar/60 hover:bg-sidebar/80',
       )}
       style={{ borderWidth: 1 }}
     >
       {/* Selection accent ring */}
       {isSelected && (
-        <div className="pointer-events-none absolute inset-0 ring-1 ring-purple-500/40 rounded-2xl z-20" />
+        <div className="pointer-events-none absolute inset-0 ring-1 ring-blue-500/40 rounded-2xl z-20" />
       )}
 
       {/* Kebab menu — top-right, above the hero */}
@@ -190,7 +190,7 @@ export function ExpandableCard({
           onClick={toggleExpand}
           className={classNames(
             'shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors',
-            isExpanded ? 'bg-purple-500/15 text-purple-500' : 'text-muted-foreground hover:bg-muted/60',
+            isExpanded ? 'bg-blue-500/15 text-blue-500' : 'text-muted-foreground hover:bg-muted/60',
           )}
           aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
           aria-expanded={isExpanded}

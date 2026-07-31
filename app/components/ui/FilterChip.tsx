@@ -45,7 +45,7 @@ export function FilterChip({ label, value, onRemove, active = false, icon, class
       className={classNames(
         'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all',
         active
-          ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
           : 'bg-amplify-elements-background-depth-2 dark:bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary dark:text-amplify-elements-textSecondary-dark border border-amplify-elements-borderColor dark:border-amplify-elements-borderColor-dark',
         onRemove && 'pr-1',
         className,
@@ -62,7 +62,7 @@ export function FilterChip({ label, value, onRemove, active = false, icon, class
           <span
             className={
               active
-                ? 'text-purple-700 dark:text-purple-300 font-semibold'
+                ? 'text-blue-700 dark:text-blue-300 font-semibold'
                 : 'text-amplify-elements-textPrimary dark:text-amplify-elements-textPrimary-dark'
             }
           >
@@ -79,7 +79,7 @@ export function FilterChip({ label, value, onRemove, active = false, icon, class
           className={classNames(
             'ml-1 p-0.5 rounded-full hover:bg-amplify-elements-background-depth-3 dark:hover:bg-amplify-elements-background-depth-4 transition-colors',
             active
-              ? 'text-purple-600 dark:text-purple-400'
+              ? 'text-blue-600 dark:text-blue-400'
               : 'text-amplify-elements-textTertiary dark:text-amplify-elements-textTertiary-dark',
           )}
           aria-label={`Remove ${label} filter`}

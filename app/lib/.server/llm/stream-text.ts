@@ -7,7 +7,7 @@ import {
 } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, STARTER_TEMPLATES, WORK_DIR } from '~/utils/constants';
 import type { IProviderSetting } from '~/types/model';
 import { PromptLibrary } from '~/lib/common/prompt-library';
 import { allowedHTMLElements } from '~/utils/markdown';
@@ -865,16 +865,21 @@ export async function streamText(props: {
         },
       },
       get_skill: {
-        description: 'Gets the instructions for a specific skill',
+        description: 'Gets the instructions for a specific skill. Pass the skill name as the "name" parameter.',
         parameters: z.object({
-          name: z.string().describe('The name of the skill folder'),
+          name: z.string().describe('The name of the skill (e.g., "webapp-builder", "react-components")'),
+          skill: z.string().optional().describe('Alternative parameter name for the skill name (deprecated, use "name" instead)'),
         }),
-        execute: async ({ name }: { name: string }) => {
+        execute: async ({ name, skill }: { name: string; skill?: string }) => {
           try {
+            const skillName = (name || skill || '').toLowerCase();
+            if (!skillName) {
+              return 'Error: No skill name provided. Use the "name" parameter with the skill ID.';
+            }
             const loader = SkillLoader.getInstance();
-            const content = await loader.getSkillContent(name.toLowerCase());
+            const content = await loader.getSkillContent(skillName);
 
-            return content || `Skill "${name}" not found. Use list_skills to see available skills.`;
+            return content || `Skill "${skillName}" not found. Use list_skills to see available skills.`;
           } catch (e: any) {
             return { error: e.message };
           }
@@ -901,14 +906,20 @@ export async function streamText(props: {
                   .describe(
                     'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
                   ),
+                template: z.string().optional().describe('Alternative parameter name for the template name (deprecated, use "templateName" instead)'),
                 title: z.string().optional().describe('A title for the imported files artifact'),
               }),
-              execute: async ({ templateName, title }: { templateName: string; title?: string }) => {
+              execute: async ({ templateName, template, title }: { templateName: string; template?: string; title?: string }) => {
                 try {
-                  const result = await getTemplates(templateName, title);
+                  const resolvedTemplateName = templateName || template || '';
+                  if (!resolvedTemplateName) {
+                    return { error: 'No template name provided. Use the "templateName" parameter with a valid template name.' };
+                  }
+                  const result = await getTemplates(resolvedTemplateName, title);
 
                   if (!result) {
-                    return { error: `Template "${templateName}" not found.` };
+                    const availableTemplates = STARTER_TEMPLATES.map((t: any) => t.name).join(', ');
+                    return { error: `Template "${resolvedTemplateName}" not found. Available templates: ${availableTemplates}` };
                   }
 
                   if (props.dataStream) {

@@ -175,7 +175,7 @@ export const PlanApprovalDialog = memo(
           <div className="p-6 bg-white dark:bg-gray-950 relative z-10 flex flex-col max-h-[85vh]">
             {/* Header */}
             <DialogTitle className="flex items-center gap-2.5">
-              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white">
+              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-400 text-white">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M9 11l3 3L22 4" />
                   <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
@@ -221,8 +221,8 @@ export const PlanApprovalDialog = memo(
               {planning ? (
                 <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
                   <div className="relative w-10 h-10 mb-4">
-                    <div className="absolute inset-0 rounded-full border-2 border-purple-200 dark:border-fuchsia-500/20" />
-                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-500 dark:border-t-fuchsia-400 animate-spin" />
+                    <div className="absolute inset-0 rounded-full border-2 border-blue-200 dark:border-blue-400/20" />
+                    <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 dark:border-t-fuchsia-400 animate-spin" />
                   </div>
                   <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Generating detailed plan…</div>
                   <div className="text-[11px] text-gray-500 dark:text-gray-500 mt-1.5 max-w-xs leading-relaxed">
@@ -262,7 +262,7 @@ export const PlanApprovalDialog = memo(
                           onClick={() => hasDetails && !isEditing && toggleStepExpand(index)}
                         >
                           {/* Step number — purple gradient */}
-                          <div className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white text-xs font-bold shadow-sm shadow-purple-500/20">
+                          <div className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-400 text-white text-xs font-bold shadow-sm shadow-blue-500/20">
                             {index + 1}
                           </div>
 
@@ -273,7 +273,7 @@ export const PlanApprovalDialog = memo(
                                   type="text"
                                   value={point.title}
                                   onChange={(e) => handlePointTitleChange(index, e.target.value)}
-                                  className="w-full text-sm font-medium bg-transparent border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                  className="w-full text-sm font-medium bg-transparent border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                                   placeholder="Step title"
                                   onClick={(e) => e.stopPropagation()}
                                 />
@@ -281,7 +281,7 @@ export const PlanApprovalDialog = memo(
                                   value={point.description}
                                   onChange={(e) => handlePointDescriptionChange(index, e.target.value)}
                                   rows={2}
-                                  className="w-full text-xs bg-transparent border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
+                                  className="w-full text-xs bg-transparent border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
                                   placeholder="Step description"
                                   onClick={(e) => e.stopPropagation()}
                                 />
@@ -292,7 +292,7 @@ export const PlanApprovalDialog = memo(
                                   {point.title}
                                 </div>
                                 {point.goal && (
-                                  <p className="text-[11px] text-purple-500 dark:text-fuchsia-400 italic leading-snug">
+                                  <p className="text-[11px] text-blue-500 dark:text-blue-400 italic leading-snug">
                                     {point.goal}
                                   </p>
                                 )}
@@ -306,7 +306,7 @@ export const PlanApprovalDialog = memo(
                                     {point.requiredSkills.map((skill) => (
                                       <span
                                         key={skill}
-                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-purple-500/10 dark:bg-fuchsia-500/15 text-purple-600 dark:text-fuchsia-300 border border-purple-500/20 dark:border-fuchsia-500/25"
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-500/10 dark:bg-blue-400/15 text-blue-600 dark:text-blue-300 border border-blue-500/20 dark:border-blue-400/25"
                                       >
                                         <svg width="7" height="7" viewBox="0 0 24 24" fill="currentColor">
                                           <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z" />
@@ -471,14 +471,14 @@ export const PlanApprovalDialog = memo(
 
             {/* Planner notes (shown after enrichment) */}
             {!planning && signal?.plannerNotes && (
-              <div className="mt-3 px-3 py-2 rounded-lg bg-purple-50 dark:bg-fuchsia-500/10 border border-purple-200 dark:border-fuchsia-500/20">
-                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-purple-600 dark:text-fuchsia-300 uppercase tracking-wide">
+              <div className="mt-3 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-400/10 border border-blue-200 dark:border-blue-400/20">
+                <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-600 dark:text-blue-300 uppercase tracking-wide">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z" />
                   </svg>
                   Planner Notes
                 </div>
-                <p className="text-[11px] text-purple-700 dark:text-fuchsia-200 mt-1 leading-relaxed">
+                <p className="text-[11px] text-blue-700 dark:text-blue-200 mt-1 leading-relaxed">
                   {signal.plannerNotes}
                 </p>
               </div>

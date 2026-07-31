@@ -851,7 +851,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 handleSearchChange(e);
               }
             }}
-            className="w-full bg-sidebar border border-sidebar-border rounded-[8px] pl-9 pr-3 py-[7px] text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="w-full bg-sidebar border border-sidebar-border rounded-[8px] pl-9 pr-3 py-[7px] text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           />
         </div>
 
@@ -900,7 +900,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   'bg-sidebar w-full h-[32px] flex items-center gap-[11px] rounded-[8px] px-[9px] transition-colors',
                   isProjectsActive && 'bg-sidebar-accent',
                   isNormalChatsActive && 'bg-sidebar-accent',
-                  isProjectChatsActive && 'bg-purple-500/10 ring-1 ring-purple-500/30',
+                  isProjectChatsActive && 'bg-blue-500/10 ring-1 ring-blue-500/30',
                 )}
               >
                 <Icon
@@ -910,7 +910,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                     isProjectsActive || isNormalChatsActive
                       ? 'text-sidebar-foreground'
                       : isProjectChatsActive
-                        ? 'text-purple-500'
+                        ? 'text-blue-500'
                         : 'text-muted-foreground',
                   )}
                 />
@@ -920,7 +920,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                     isProjectsActive || isNormalChatsActive
                       ? 'text-sidebar-foreground'
                       : isProjectChatsActive
-                        ? 'text-purple-600 dark:text-purple-400'
+                        ? 'text-blue-600 dark:text-blue-400'
                         : 'text-sidebar-foreground/80',
                   )}
                 >
@@ -1166,13 +1166,13 @@ function SelectedProjectChatsList({
         <span>All chats</span>
       </button>
 
-      <div className="rounded-lg border border-purple-500/30 bg-gradient-to-br from-purple-500/[0.04] to-fuchsia-500/[0.02] overflow-hidden overflow-x-hidden mb-[6px]">
+      <div className="rounded-lg border border-blue-500/30 bg-gradient-to-br from-blue-500/[0.04] to-blue-500/[0.02] overflow-hidden overflow-x-hidden mb-[6px]">
         <div className="flex items-center gap-2 px-[10px] py-[8px]">
           <div
-            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] ring-1 ring-purple-500/20"
+            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] ring-1 ring-blue-500/20"
             style={{ background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(217, 70, 239, 0.08))' }}
           >
-            <span className="text-purple-500">{project.icon || <Folder size={13} />}</span>
+            <span className="text-blue-500">{project.icon || <Folder size={13} />}</span>
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-medium text-sidebar-foreground truncate">{project.name}</div>
@@ -1185,7 +1185,7 @@ function SelectedProjectChatsList({
               {project.startCommand && (
                 <>
                   <span className="shrink-0">·</span>
-                  <span className="text-purple-500/80 font-mono truncate min-w-0">{project.startCommand}</span>
+                  <span className="text-blue-500/80 font-mono truncate min-w-0">{project.startCommand}</span>
                 </>
               )}
               {isAutoStarted && (
@@ -1212,7 +1212,7 @@ function SelectedProjectChatsList({
       <button
         type="button"
         onClick={onNewChat}
-        className="w-full flex items-center gap-2 px-[10px] py-[7px] mb-[4px] rounded-md text-[12px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors border border-purple-500/20 bg-purple-500/5"
+        className="w-full flex items-center gap-2 px-[10px] py-[7px] mb-[4px] rounded-md text-[12px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 transition-colors border border-blue-500/20 bg-blue-500/5"
         aria-label="New chat in this project"
         title="Start a new chat in this project"
       >
@@ -1227,9 +1227,9 @@ function SelectedProjectChatsList({
         // Better empty state — icon + descriptive copy + CTA
         <div className="px-[8px] py-[16px] flex flex-col items-center justify-center gap-2 text-center">
           <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 blur-md rounded-full" />
-            <div className="relative w-10 h-10 rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20 flex items-center justify-center">
-              <MessageSquarePlus size={18} className="text-purple-500" />
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-blue-400/10 blur-md rounded-full" />
+            <div className="relative w-10 h-10 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 flex items-center justify-center">
+              <MessageSquarePlus size={18} className="text-blue-500" />
             </div>
           </div>
           <div className="space-y-0.5">
@@ -1241,7 +1241,7 @@ function SelectedProjectChatsList({
           <button
             type="button"
             onClick={onNewChat}
-            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/15 border border-purple-500/20 transition-colors"
+            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/20 transition-colors"
             title="Start your first chat in this project"
           >
             <Plus size={11} className="shrink-0" />
@@ -1346,7 +1346,7 @@ function ProjectManagementDialogs({ state, onClose, onConfirmRename, onConfirmDe
                   }
                 }}
                 autoFocus
-                className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 placeholder="Project name"
               />
               <div className="flex justify-end gap-3 mt-6">
@@ -1491,7 +1491,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
         <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-1 min-w-0">
           <input
             type="text"
-            className="flex-1 min-w-0 bg-sidebar border border-sidebar-border rounded px-2 py-0.5 text-[13px] text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="flex-1 min-w-0 bg-sidebar border border-sidebar-border rounded px-2 py-0.5 text-[13px] text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
             autoFocus
             value={currentDescription}
             onChange={handleChange}
@@ -1500,7 +1500,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
           />
           <button
             type="submit"
-            className="p-1 rounded bg-sidebar-accent text-muted-foreground hover:text-purple-500 hover:bg-sidebar-accent transition-colors shrink-0"
+            className="p-1 rounded bg-sidebar-accent text-muted-foreground hover:text-blue-500 hover:bg-sidebar-accent transition-colors shrink-0"
           >
             <Check size={12} />
           </button>

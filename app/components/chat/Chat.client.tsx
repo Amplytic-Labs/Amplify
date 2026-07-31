@@ -2353,6 +2353,7 @@ export const ChatImpl = memo(
           data={undefined}
           chatMode={chatMode}
           setChatMode={setChatMode}
+          isProjectChat={projectContinuation}
           append={append}
           reload={reload}
           designScheme={designScheme}

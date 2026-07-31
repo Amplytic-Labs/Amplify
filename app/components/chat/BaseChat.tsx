@@ -91,6 +91,7 @@ interface BaseChatProps {
   data?: JSONValue[] | undefined;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
+  isProjectChat?: boolean;
   append?: (message: UIMessage) => void;
   /** Regenerate the last assistant answer (v7: also known as onRegenerate). */
   reload?: () => void;
@@ -148,6 +149,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       data,
       chatMode,
       setChatMode,
+      isProjectChat,
       append,
       reload,
       designScheme,
@@ -483,6 +485,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     messages={messages}
                     chatMode={chatMode}
                     setChatMode={setChatMode}
+                    isProjectChat={isProjectChat}
                   />
                 </div>
               </StickToBottom>
@@ -640,6 +643,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           messages={messages}
                           chatMode={chatMode}
                           setChatMode={setChatMode}
+                          isProjectChat={isProjectChat}
                         />
                       </div>
                     </StickToBottom>

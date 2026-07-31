@@ -63,7 +63,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #0d9fff;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -211,8 +211,8 @@
    * inline throughout ChatBox.tsx / SendButton.tsx so the popup matches
    * the rest of the chat UI.
    */
-  --amplify-elements-focus: oklch(0.6171 0.1375 39.0427);
-  --amplify-elements-focus-hover: color-mix(in srgb, oklch(0.6171 0.1375 39.0427), black 10%);
+  --amplify-elements-focus: #0d9fff;
+  --amplify-elements-focus-hover: color-mix(in srgb, #0d9fff, black 10%);
   --amplify-elements-focus-foreground: oklch(0.985 0 0);
 
   --amplify-terminal-background: var(--amplify-elements-terminals-background);
@@ -246,7 +246,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.145 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
+  --primary: #0d9fff;
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
@@ -378,8 +378,8 @@
    * have a visible background in dark mode too. See light-theme comment
    * for the full story.
    */
-  --amplify-elements-focus: oklch(0.6171 0.1375 39.0427);
-  --amplify-elements-focus-hover: color-mix(in srgb, oklch(0.6171 0.1375 39.0427), white 10%);
+  --amplify-elements-focus: #0d9fff;
+  --amplify-elements-focus-hover: color-mix(in srgb, #0d9fff, white 10%);
   --amplify-elements-focus-foreground: oklch(0.985 0 0);
 
   --amplify-terminal-background: var(--amplify-elements-terminals-background);

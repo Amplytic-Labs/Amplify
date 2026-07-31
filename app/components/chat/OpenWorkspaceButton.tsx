@@ -96,8 +96,8 @@ export function OpenWorkspaceButton() {
         title="Open Workspace"
         className={classNames(
           'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-xs font-medium',
-          'bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20',
-          'border border-purple-500/30 transition-colors',
+          'bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20',
+          'border border-blue-500/30 transition-colors',
           'disabled:opacity-60 disabled:cursor-wait',
         )}
       >

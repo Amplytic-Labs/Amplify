@@ -205,7 +205,7 @@ export const EditorPanel = memo(
                             aria-label="Open Project Memory"
                             title="Project Memory"
                           >
-                            <Brain size={14} className="text-purple-500" />
+                            <Brain size={14} className="text-blue-500" />
                           </PanelHeaderButton>
                           <PanelHeaderButton
                             onClick={() => setHistoryOpen(true)}
@@ -213,7 +213,7 @@ export const EditorPanel = memo(
                             aria-label="Open Project History"
                             title="Project History"
                           >
-                            <HistoryIcon size={14} className="text-purple-500" />
+                            <HistoryIcon size={14} className="text-blue-500" />
                           </PanelHeaderButton>
                         </div>
                       )}

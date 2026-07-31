@@ -77,6 +77,7 @@ interface ChatBoxProps {
   messages?: any[];
   chatMode?: 'discuss' | 'build';
   setChatMode?: ((mode: 'discuss' | 'build') => void) | undefined;
+  isProjectChat?: boolean;
 }
 
 /**
@@ -1506,7 +1507,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {SUGGESTED_DEFAULTS[rateLimitProviderName] && (
                         <button
                           onClick={() => resetRateLimit(rateLimitProviderName)}
-                          className="text-[9px] bg-amplify-elements-background-depth-2 text-amplify-elements-textTertiary hover:text-accent-500 hover:bg-amplify-elements-background-depth-3 transition-colors uppercase tracking-wider font-semibold px-2 py-1 rounded-md"
+                          className="text-[9px] bg-amplify-elements-background-depth-2 text-amplify-elements-textTertiary hover:text-accent-500 hover:bg-amplify-elements-background-depth-3 transition-colors uppercase tracking-wider font-semibold px-2 py-1 rounded-md border border-amplify-elements-borderColor"
                           title="Reset to suggested defaults for this provider"
                         >
                           Reset
@@ -1725,6 +1726,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   <ChatModeToggle
                     isAgentMode={props.chatMode === 'build'}
                     onToggle={(isAgent) => props.setChatMode?.(isAgent ? 'build' : 'discuss')}
+                    disabled={props.isProjectChat}
                   />
                 )}
                 <div className="relative">

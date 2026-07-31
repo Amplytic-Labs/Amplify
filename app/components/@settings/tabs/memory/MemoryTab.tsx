@@ -54,12 +54,12 @@ export default function MemoryTab() {
           {memories.map((memory) => (
             <div
               key={memory.id}
-              className="flex items-center justify-between p-4 bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm group hover:border-purple-500/30 transition-all"
+              className="flex items-center justify-between p-4 bg-white dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm group hover:border-blue-500/30 transition-all"
             >
               <div className="flex-1 pr-4">
                 <div className="flex items-center gap-2 mb-1">
                   {memory.category && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded">
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
                       {memory.category}
                     </span>
                   )}

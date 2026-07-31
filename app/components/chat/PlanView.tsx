@@ -240,8 +240,8 @@ function SkillChips({ skills }: { skills?: string[] }) {
         <div key={skill} className="group relative">
           <span
             className="pv-chip-hover inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium
-              bg-purple-500/10 text-purple-400 border border-purple-500/20
-              dark:bg-fuchsia-500/15 dark:text-fuchsia-300 dark:border-fuchsia-500/25
+              bg-blue-500/10 text-blue-400 border border-blue-500/20
+              dark:bg-blue-400/15 dark:text-blue-300 dark:border-blue-400/25
               transition-all duration-200 cursor-default"
           >
             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

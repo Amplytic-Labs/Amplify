@@ -9,6 +9,7 @@ import { sidebarStore } from '~/lib/stores/sidebar';
 import { classNames } from '~/utils/classNames';
 import { HeaderActionButtonsContent } from './HeaderActionButtons.client';
 import { ChatDescription } from '~/lib/persistence/ChatDescription.client';
+import { description as descriptionStore } from '~/lib/persistence';
 import { MotionDropdown } from '~/components/ui/MotionDropdown';
 import { DeployButton } from '~/components/deploy/DeployButton';
 import { PreviewHeader } from '~/components/workbench/PreviewHeader';
@@ -70,12 +71,16 @@ export function Header() {
   const showWorkbench = useStore(workbenchStore.showWorkbench);
   const sidebarOpen = useStore(sidebarStore);
   const expoUrl = useStore(expoUrlAtom);
+  const chatDescription = useStore(descriptionStore);
 
   const selectedView = useStore(workbenchStore.currentView);
   const fileHistory = useStore(workbenchStore.fileHistory);
   const workbenchLeftPosition = useStore(workbenchStore.workbenchLeftPosition);
   const files = useStore(workbenchStore.files);
   const [qrModalOpen, setQrModalOpen] = useState(false);
+
+  const hasChatDescription = !!chatDescription;
+  const showSeparator = chat.started && Object.keys(files).length > 0 && hasChatDescription;
 
   // Only show Render tab when at least one renderable file exists
   const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
@@ -184,7 +189,7 @@ export function Header() {
         <div className="flex items-center gap-2 z-logo text-amplify-elements-textPrimary cursor-pointer">
           <div className="text-2xl font-semibold text-accent flex items-center">
             <SidebarTrigger />
-            {chat.started && Object.keys(files).length > 0 && (
+            {showSeparator ? (
               <>
                 <div
                   data-orientation="vertical"
@@ -207,15 +212,14 @@ export function Header() {
                   <HeaderActionButtonsContent />
                 </MotionDropdown>
               </>
-            )}
-            {!chat.started || Object.keys(files).length === 0 ? (
+            ) : (
               <div
                 className="flex-1 pr-4 top-5 truncate text-lg text-amplify-elements-textPrimary flex items-center justify-center"
                 style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
               >
                 <ClientOnly>{() => <ChatDescription />}</ClientOnly>
               </div>
-            ) : null}
+            )}
             {/* Slider positioned fixed to align with workbench left edge (desktop only) */}
             {showWorkbench &&
               (workbenchLeftPosition !== null ? (
