@@ -768,6 +768,98 @@ export class WorkbenchStore {
     }
   }
 
+  /**
+   * Rename a file or folder
+   * @param oldPath Current path of the file/folder
+   * @param newPath New path for the file/folder
+   * @returns true if successful, false otherwise
+   */
+  async renameFile(oldPath: string, newPath: string): Promise<boolean> {
+    try {
+      const files = this.files.get();
+      const entry = files[oldPath];
+
+      if (!entry) {
+        console.error('File/folder not found:', oldPath);
+        return false;
+      }
+
+      const isFolder = entry.type === 'folder';
+      const currentDocument = this.currentDocument.get();
+      const isCurrentFile = currentDocument?.filePath === oldPath;
+
+      if (isFolder) {
+        // For folders, we need to move all contents
+        const success = await this.#filesStore.renameFolder(oldPath, newPath);
+
+        if (success) {
+          // Update unsaved files list
+          const unsavedFiles = this.unsavedFiles.get();
+          const newUnsavedFiles = new Set<string>();
+
+          for (const file of unsavedFiles) {
+            if (file.startsWith(oldPath + '/')) {
+              // Update path for files inside the renamed folder
+              const relativePath = file.slice(oldPath.length + 1);
+              newUnsavedFiles.add(newPath + '/' + relativePath);
+            } else if (file !== oldPath) {
+              newUnsavedFiles.add(file);
+            }
+          }
+
+          this.unsavedFiles.set(newUnsavedFiles);
+
+          // Update current document if it was inside the renamed folder
+          if (currentDocument?.filePath?.startsWith(oldPath + '/')) {
+            const relativePath = currentDocument.filePath.slice(oldPath.length + 1);
+            this.setSelectedFile(newPath + '/' + relativePath);
+          }
+        }
+
+        return success;
+      } else {
+        // For files, read content, create new file, delete old
+        const content = await this.#filesStore.readFile(oldPath);
+
+        if (content === undefined) {
+          console.error('Could not read file:', oldPath);
+          return false;
+        }
+
+        // Create new file with the content
+        const createSuccess = await this.#filesStore.createFile(newPath, content);
+
+        if (!createSuccess) {
+          return false;
+        }
+
+        // Delete old file
+        const deleteSuccess = await this.#filesStore.deleteFile(oldPath);
+
+        if (deleteSuccess) {
+          // Update unsaved files tracking
+          const newUnsavedFiles = new Set(this.unsavedFiles.get());
+
+          if (newUnsavedFiles.has(oldPath)) {
+            newUnsavedFiles.delete(oldPath);
+            newUnsavedFiles.add(newPath);
+            this.unsavedFiles.set(newUnsavedFiles);
+          }
+
+          // Update selected file if this was the active file
+          if (isCurrentFile) {
+            this.setSelectedFile(newPath);
+          }
+        }
+
+        return deleteSuccess;
+      }
+    } catch (error) {
+      console.error('Failed to rename file/folder:', error);
+      throw error;
+    }
+  }
+
   abortAllActions() {
     // TODO: what do we wanna do and how do we wanna recover from this?
   }

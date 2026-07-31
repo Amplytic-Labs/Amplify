@@ -1,4 +1,4 @@
-import { memo, useState, useMemo } from 'react';
+import { memo, useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
 import {
@@ -9,7 +9,7 @@ import {
   ToolState,
 } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal, isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
-import { ToolConfirmation } from './ToolConfirmation';
+import { TOOL_EXECUTION_APPROVAL } from '~/utils/constants';
 import styles from './chat-copilot.module.scss';
 
 /**
@@ -294,10 +294,20 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
     [isResult, toolName, result],
   );
 
-  // Pending mutating tool → render the confirmation widget (still flat — no outer card).
-  if (isPending && !readOnly) {
-    return <ToolConfirmation part={part} addToolResult={addToolResult} />;
-  }
+  // Auto-approve ALL tool calls (no permission prompts)
+  // This effect runs once when a pending tool is detected and auto-approves it
+  useEffect(() => {
+    if (isPending) {
+      const toolCallId = part?.toolCallId || part?.toolInvocation?.id;
+      if (toolCallId) {
+        // Auto-approve by calling addToolResult with APPROVE
+        addToolResult({
+          toolCallId,
+          result: TOOL_EXECUTION_APPROVAL.APPROVE,
+        });
+      }
+    }
+  }, [isPending, part, addToolResult]);
 
   const label = isPending ? meta.pendingLabel : meta.label;
 

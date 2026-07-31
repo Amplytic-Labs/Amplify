@@ -10,6 +10,7 @@ import type { ProviderInfo } from '~/types/model';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
+import { ChatModeToggle } from './ChatModeToggle';
 import { customProvidersStore } from '~/lib/stores/custom-providers';
 import { useStore } from '@nanostores/react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
@@ -74,6 +75,8 @@ interface ChatBoxProps {
   selectedElement?: ElementInfo | null;
   setSelectedElement?: ((element: ElementInfo | null) => void) | undefined;
   messages?: any[];
+  chatMode?: 'discuss' | 'build';
+  setChatMode?: ((mode: 'discuss' | 'build') => void) | undefined;
 }
 
 /**
@@ -724,7 +727,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="overflow-hidden"
             >
-              <div className="flex flex-wrap gap-2.5 p-3.5 border border-b-0 border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 rounded-t-[20px]">
+              <div className="flex flex-wrap gap-2.5 p-3.5 bg-transparent rounded-t-[20px]">
                 {props.uploadedFiles.map((file, index) => (
                   <motion.div
                     key={index}
@@ -1503,7 +1506,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       {SUGGESTED_DEFAULTS[rateLimitProviderName] && (
                         <button
                           onClick={() => resetRateLimit(rateLimitProviderName)}
-                          className="text-[9px] text-amplify-elements-textTertiary hover:text-accent-500 transition-colors uppercase tracking-wider font-semibold"
+                          className="text-[9px] bg-amplify-elements-background-depth-2 text-amplify-elements-textTertiary hover:text-accent-500 hover:bg-amplify-elements-background-depth-3 transition-colors uppercase tracking-wider font-semibold px-2 py-1 rounded-md"
                           title="Reset to suggested defaults for this provider"
                         >
                           Reset
@@ -1716,13 +1719,21 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
               {/* Settings button — opens the provider/model settings popup
                   (API key + model configuration). Replaces the old standalone
                   API-key button; the key input now lives inside this popup. */}
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setIsOpen(false);
-                    setIsProviderOverlayOpen(false);
-                    setIsSettingsPopupOpen(!isSettingsPopupOpen);
-                  }}
+              <div className="flex items-center gap-1.5">
+                {/* Chat Mode / Agent Mode toggle */}
+                {props.setChatMode && (
+                  <ChatModeToggle
+                    isAgentMode={props.chatMode === 'build'}
+                    onToggle={(isAgent) => props.setChatMode?.(isAgent ? 'build' : 'discuss')}
+                  />
+                )}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      setIsProviderOverlayOpen(false);
+                      setIsSettingsPopupOpen(!isSettingsPopupOpen);
+                    }}
                   className={classNames(
                     'flex items-center justify-center h-8 w-8 rounded-lg border transition-all active:scale-[0.98] outline-none',
                     isSettingsPopupOpen
@@ -1735,6 +1746,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                 >
                   <IconifyIcon icon="lucide:sliders-horizontal" width="16" height="16" />
                 </button>
+              </div>
               </div>
             </div>
 

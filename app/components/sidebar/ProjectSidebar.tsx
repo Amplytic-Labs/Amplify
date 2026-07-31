@@ -325,12 +325,35 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       }
     }
 
-    // Create a new empty chat linked to the project.
+    // Try to load existing chats for this project first (to avoid creating empty chats)
     if (!db) {
       return;
     }
 
     try {
+      // Get all chats and find the latest one for this project
+      const allChats = await getAll(db);
+      const projectChats = allChats.filter(
+        (chat) => chat.metadata?.projectId === project.id || projectStore.getProjectByChat(chat.id)?.id === project.id
+      );
+
+      // Sort by createdAt descending to get the most recent chat
+      const sortedChats = projectChats.sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      // If we have existing chats, navigate to the latest one
+      if (sortedChats.length > 0) {
+        const latestChat = sortedChats[0];
+        loadEntries();
+        window.location.href = `/${project.id}/${latestChat.urlId}`;
+        toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
+        return;
+      }
+
+      // No existing chats - create a new one
       const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
         projectId: project.id,
         projectInitiated: true,

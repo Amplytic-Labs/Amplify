@@ -287,6 +287,7 @@ function FileContextMenu({
 }: FolderContextMenuProps & { fullPath: string }) {
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const depth = useMemo(() => fullPath.split('/').length, [fullPath]);
   const fileName = useMemo(() => path.basename(fullPath), [fullPath]);
@@ -400,6 +401,43 @@ function FileContextMenu({
     } catch (error) {
       toast.error(`Error deleting ${isFolder ? 'folder' : 'file'}`);
       logger.error(error);
+    }
+  };
+
+  // Handler for renaming a file or folder
+  const handleRename = async (newName: string) => {
+    if (!newName.trim()) {
+      toast.error('Name cannot be empty');
+      return;
+    }
+
+    // Prevent path traversal
+    if (newName.includes('/') || newName.includes('\\') || newName.includes('..')) {
+      toast.error('Invalid name');
+      return;
+    }
+
+    try {
+      const newPath = path.join(path.dirname(fullPath), newName.trim());
+      
+      if (newPath === fullPath) {
+        setIsRenaming(false);
+        return;
+      }
+
+      const success = await workbenchStore.renameFile(fullPath, newPath);
+
+      if (success) {
+        toast.success(`${isFolder ? 'Folder' : 'File'} renamed successfully`);
+      } else {
+        toast.error(`Failed to rename ${isFolder ? 'folder' : 'file'}`);
+      }
+
+      setIsRenaming(false);
+    } catch (error) {
+      toast.error(`Error renaming ${isFolder ? 'folder' : 'file'}`);
+      logger.error(error);
+      setIsRenaming(false);
     }
   };
 
@@ -519,6 +557,12 @@ function FileContextMenu({
               </ContextMenuItem>
             </ContextMenu.Group>
             <ContextMenu.Group className="p-1">
+              <ContextMenuItem onSelect={() => setIsRenaming(true)}>
+                <div className="flex items-center gap-2">
+                  <div className="i-ph:text-t" />
+                  Rename
+                </div>
+              </ContextMenuItem>
               <ContextMenuItem onSelect={onCopyPath}>Copy path</ContextMenuItem>
               <ContextMenuItem onSelect={onCopyRelativePath}>Copy relative path</ContextMenuItem>
             </ContextMenu.Group>
@@ -582,6 +626,15 @@ function FileContextMenu({
           placeholder="Enter folder name..."
           onSubmit={handleCreateFolder}
           onCancel={() => setIsCreatingFolder(false)}
+        />
+      )}
+      {isRenaming && (
+        <InlineInput
+          depth={depth}
+          placeholder={fileName}
+          initialValue={fileName}
+          onSubmit={handleRename}
+          onCancel={() => setIsRenaming(false)}
         />
       )}
     </>

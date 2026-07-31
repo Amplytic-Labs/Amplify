@@ -184,35 +184,38 @@ export function Header() {
         <div className="flex items-center gap-2 z-logo text-amplify-elements-textPrimary cursor-pointer">
           <div className="text-2xl font-semibold text-accent flex items-center">
             <SidebarTrigger />
-            <div
-              data-orientation="vertical"
-              role="none"
-              data-slot="separator"
-              className="shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px mr-2 data-[orientation=vertical]:h-4"
-            />
-            {chat.started && Object.keys(files).length > 0 ? (
-              <MotionDropdown
-                align="center"
-                trigger={
-                  <div
-                    className="flex-1 pr-4 truncate text-[16px] text-amplify-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center gap-1.5"
-                    style={{ fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
-                  >
-                    <ClientOnly>{() => <ChatDescription />}</ClientOnly>
-                    <div className="i-ph:caret-down-bold text-[16px] opacity-100 relative top-0.7" />
-                  </div>
-                }
-              >
-                <HeaderActionButtonsContent />
-              </MotionDropdown>
-            ) : (
+            {chat.started && Object.keys(files).length > 0 && (
+              <>
+                <div
+                  data-orientation="vertical"
+                  role="none"
+                  data-slot="separator"
+                  className="shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px mr-2 data-[orientation=vertical]:h-4"
+                />
+                <MotionDropdown
+                  align="center"
+                  trigger={
+                    <div
+                      className="flex-1 pr-4 truncate text-[16px] text-amplify-elements-textPrimary cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center gap-1.5"
+                      style={{ fontFamily: "'Geist', sans-serif", fontWeight: 400 }}
+                    >
+                      <ClientOnly>{() => <ChatDescription />}</ClientOnly>
+                      <div className="i-ph:caret-down-bold text-[16px] opacity-100 relative top-0.7" />
+                    </div>
+                  }
+                >
+                  <HeaderActionButtonsContent />
+                </MotionDropdown>
+              </>
+            )}
+            {!chat.started || Object.keys(files).length === 0 ? (
               <div
                 className="flex-1 pr-4 top-5 truncate text-lg text-amplify-elements-textPrimary flex items-center justify-center"
                 style={{ fontFamily: "'Almarai', sans-serif", fontWeight: 400 }}
               >
                 <ClientOnly>{() => <ChatDescription />}</ClientOnly>
               </div>
-            )}
+            ) : null}
             {/* Slider positioned fixed to align with workbench left edge (desktop only) */}
             {showWorkbench &&
               (workbenchLeftPosition !== null ? (
