@@ -1,8 +1,11 @@
-import { useState } from 'react';
 import { useStore } from '@nanostores/react';
-import { themeStore, toggleTheme } from '~/lib/stores/theme';
+import { themeStore, toggleTheme, type Theme } from '~/lib/stores/theme';
 
-const MoonIcon = ({ size = 18 }) => (
+interface MoonIconProps {
+  size?: number;
+}
+
+const MoonIcon = ({ size = 18 }: MoonIconProps) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     width={size}
@@ -18,7 +21,11 @@ const MoonIcon = ({ size = 18 }) => (
   </svg>
 );
 
-const SunIcon = ({ size = 18 }) => (
+interface SunIconProps {
+  size?: number;
+}
+
+const SunIcon = ({ size = 18 }: SunIconProps) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     width={size}
@@ -35,7 +42,12 @@ const SunIcon = ({ size = 18 }) => (
   </svg>
 );
 
-export default function ThemeToggle({ defaultTheme = 'dark', onChange }) {
+interface ThemeToggleProps {
+  defaultTheme?: Theme;
+  onChange?: (theme: Theme) => void;
+}
+
+export default function ThemeToggle({ defaultTheme = 'dark', onChange }: ThemeToggleProps) {
   const theme = useStore(themeStore);
   const isDark = theme === 'dark';
 
