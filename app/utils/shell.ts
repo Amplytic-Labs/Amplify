@@ -58,11 +58,80 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
     }),
   );
 
+  /*
+   * Track the current process so we can kill it on Ctrl+C.
+   * WebContainer's jsh shell does NOT reliably propagate SIGINT to
+   * child processes when it receives \x03 — the user sees a fresh
+   * prompt but the old process (e.g. a dev server) keeps running.
+   *
+   * We work around this by killing the jsh process itself (which
+   * also kills all its children) and then respawning a new one.
+   */
+  let currentProcess: WebContainerProcess | undefined = process;
+  let currentInput: WritableStreamDefaultWriter<string> | undefined = input;
+
   terminal.onData((data) => {
     // console.log('terminal onData', { data, isInteractive });
 
     if (isInteractive) {
-      input.write(data);
+      /*
+       * Detect Ctrl+C (\x03) from user input.
+       *
+       * The standard jsh behaviour is to show a new prompt, but
+       * child processes are often NOT killed — they keep running
+       * in the background. We fix this by killing the jsh process
+       * (which terminates all its children) and respawning a new
+       * shell so the user gets a clean terminal.
+       */
+      if (data === '\x03') {
+        try {
+          currentProcess?.kill();
+        } catch {
+          /* process may already be dead */
+        }
+        currentProcess = undefined;
+        currentInput = undefined;
+        isInteractive = false;
+
+        // Respawn a new jsh process
+        webcontainer
+          .spawn('/bin/jsh', ['--osc', ...args], {
+            terminal: {
+              cols: terminal.cols ?? 80,
+              rows: terminal.rows ?? 15,
+            },
+          })
+          .then((newProc) => {
+            currentProcess = newProc;
+            const newInput = newProc.input.getWriter();
+            currentInput = newInput;
+
+            newProc.output.pipeTo(
+              new WritableStream({
+                write(d: string) {
+                  if (!isInteractive) {
+                    const [, osc] = d.match(/\x1b\]654;([^\x07]+)\x07/) || [];
+
+                    if (osc === 'interactive') {
+                      isInteractive = true;
+                    }
+                  }
+
+                  terminal.write(d);
+                },
+              }),
+            );
+          })
+          .catch(() => {
+            /* respawn failed — user will see a dead terminal */
+          });
+
+        return; // Don't write \x03 to the now-dead process
+      }
+
+      if (currentInput) {
+        currentInput.write(data);
+      }
 
       // Capture terminal input for debugging
       try {
@@ -345,9 +414,28 @@ export class AmplifyShell {
      * Capture the disposable so #teardown() can remove this listener.
      * Without this, every reset layers a new onData listener on the same
      * XTerm instance and keystrokes get echoed N+1 times.
+     *
+     * Ctrl+C handling: WebContainer's jsh does NOT reliably propagate
+     * SIGINT to child processes. When the user presses Ctrl+C, the
+     * shell shows a new prompt but the old process (e.g. dev server)
+     * keeps running. We fix this by:
+     *   1. Killing detached processes (dev servers) explicitly
+     *   2. Resetting the execution state
+     *   3. Killing the jsh process itself (which kills all its children)
+     *   4. Respawning a new jsh process
      */
     this.#onDataDisposable = terminal.onData((data) => {
       if (isInteractive) {
+        if (data === '\x03') {
+          /*
+           * User pressed Ctrl+C — kill everything and respawn.
+           * We don't forward the \x03 to the (about-to-be-killed) process.
+           */
+          this.#handleUserInterrupt();
+
+          return;
+        }
+
         input.write(data);
       }
     });
@@ -355,6 +443,68 @@ export class AmplifyShell {
     await jshReady.promise;
 
     return { process };
+  }
+
+  /**
+   * Handle Ctrl+C from the user: kill detached processes, reset execution
+   * state, kill the jsh process (which terminates all its children), and
+   * respawn a fresh shell.
+   */
+  #handleUserInterrupt() {
+    // 1. Kill detached processes (dev servers started via spawnDetached)
+    for (const proc of this.#detachedProcesses) {
+      try {
+        proc.kill();
+      } catch {
+        /* process may already be dead */
+      }
+    }
+    this.#detachedProcesses = [];
+
+    // 2. Reset execution state so the AI knows the command was interrupted
+    this.executionState.set({
+      sessionId: '',
+      active: false,
+      abort: undefined,
+    });
+
+    // 3. Kill the jsh process + all its children, then respawn
+    if (this.#webcontainer && this.#terminal) {
+      try {
+        this.#process?.kill();
+      } catch {
+        /* process may already be dead */
+      }
+      this.#process = undefined;
+      this.#shellInputStream = undefined;
+      this.#oscQueue = [];
+      this.#oscResolve = undefined;
+      this.#outputAccumulator = '';
+      this.#onDataDisposable?.dispose();
+      this.#onDataDisposable = undefined;
+      this.#terminalPipeController?.abort();
+      this.#terminalPipeController = undefined;
+
+      // Clear the terminal visually
+      try {
+        this.#terminal.clear?.();
+      } catch {
+        /* ignore */
+      }
+
+      // Allow re-init
+      this.#initializedOnce = false;
+
+      // Create a new ready promise
+      this.#readyPromise = new Promise((resolve) => {
+        this.#initialized = resolve;
+      });
+
+      // Respawn asynchronously
+      this.init(this.#webcontainer, this.#terminal).catch(() => {
+        /* respawn failed — user will see an empty terminal */
+      });
+    }
   }
 
   get terminal() {
