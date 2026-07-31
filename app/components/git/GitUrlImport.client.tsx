@@ -8,7 +8,7 @@ import { useGit } from '~/lib/hooks/useGit';
 import { useChatHistory } from '~/lib/persistence';
 import { detectProjectCommands } from '~/utils/projectCommands';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import type { FileMap } from '~/lib/stores/files';
 import { WORK_DIR, chatNameForRepo } from '~/utils/constants';
 

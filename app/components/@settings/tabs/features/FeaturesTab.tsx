@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Switch } from '~/components/ui/Switch';
 import { useSettings } from '~/lib/hooks/useSettings';
 import { classNames } from '~/utils/classNames';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { PromptLibrary } from '~/lib/common/prompt-library';
 
 interface FeatureToggle {

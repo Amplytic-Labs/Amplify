@@ -9,19 +9,14 @@ import { useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ClientOnly } from 'remix-utils/client-only';
-import { cssTransition, ToastContainer } from 'react-toastify';
+import { ToastProvider } from '~/components/ui/toast/ToastProvider';
 import { TextSelectionToolbar } from '~/components/ui/TextSelectionToolbar';
 
-import reactToastifyStyles from 'react-toastify/dist/ReactToastify.css?url';
+// react-toastify CSS removed — replaced with premium iPhone-style toast stack
 import globalStyles from './styles/index.scss?url';
 import xtermStyles from '@xterm/xterm/css/xterm.css?url';
 
 import 'virtual:uno.css';
-
-const toastAnimation = cssTransition({
-  enter: 'animated fadeInRight',
-  exit: 'animated fadeOutRight',
-});
 
 export const links: LinksFunction = () => [
   {
@@ -29,7 +24,7 @@ export const links: LinksFunction = () => [
     href: '/Amplify.png',
     type: 'image/svg+xml',
   },
-  { rel: 'stylesheet', href: reactToastifyStyles },
+  // react-toastify CSS removed
   { rel: 'stylesheet', href: tailwindReset },
   { rel: 'stylesheet', href: globalStyles },
   { rel: 'stylesheet', href: xtermStyles },
@@ -87,31 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <>
       <ClientOnly>{() => <DndProvider backend={HTML5Backend}>{children}</DndProvider>}</ClientOnly>
       <ClientOnly>{() => <TextSelectionToolbar />}</ClientOnly>
-      <ToastContainer
-        closeButton={({ closeToast }) => {
-          return (
-            <button className="Toastify__close-button" onClick={closeToast}>
-              <div className="i-ph:x text-lg" />
-            </button>
-          );
-        }}
-        icon={({ type }) => {
-          switch (type) {
-            case 'success': {
-              return <div className="i-ph:check-bold text-amplify-elements-icon-success text-2xl" />;
-            }
-            case 'error': {
-              return <div className="i-ph:warning-circle-bold text-amplify-elements-icon-error text-2xl" />;
-            }
-          }
-
-          return undefined;
-        }}
-        position="bottom-right"
-        pauseOnFocusLoss
-        transition={toastAnimation}
-        autoClose={3000}
-      />
+      <ToastProvider />
       <ScrollRestoration />
       <Scripts />
     </>

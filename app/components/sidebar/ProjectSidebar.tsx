@@ -19,7 +19,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useParams, useNavigate } from '@remix-run/react';
 import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';

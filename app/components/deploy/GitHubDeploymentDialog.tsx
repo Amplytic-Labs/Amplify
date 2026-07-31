@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { motion } from 'framer-motion';
 import { Octokit } from '@octokit/rest';
 import { classNames } from '~/utils/classNames';

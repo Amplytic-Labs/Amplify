@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useStore } from '@nanostores/react';
 import { classNames } from '~/utils/classNames';
 import { Button } from '~/components/ui/Button';

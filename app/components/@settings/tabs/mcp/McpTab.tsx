@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { classNames } from '~/utils/classNames';
 import type { MCPConfig } from '~/lib/services/mcpService';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useMCPStore } from '~/lib/stores/mcp';
 import McpServerList from '~/components/@settings/tabs/mcp/McpServerList';
 

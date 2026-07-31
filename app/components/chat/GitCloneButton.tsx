@@ -2,7 +2,7 @@ import ignore from 'ignore';
 import { useGit } from '~/lib/hooks/useGit';
 import { detectProjectCommands } from '~/utils/projectCommands';
 import { useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
 
 import { classNames } from '~/utils/classNames';

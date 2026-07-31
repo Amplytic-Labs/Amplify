@@ -24,7 +24,7 @@
  * switch to the init terminal tab, but not in the chat).
  */
 
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import type { Project } from './project-store';
 import { projectStore } from './project-store';
 import { workbenchStore } from '~/lib/stores/workbench';

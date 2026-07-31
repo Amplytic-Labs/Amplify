@@ -1,66 +1,66 @@
 import { useCallback } from 'react';
-import { toast as toastify } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 
-// Configure standard toast settings
-export const configuredToast = {
-  success: (message: string, options = {}) => toastify.success(message, { autoClose: 3000, ...options }),
-  error: (message: string, options = {}) => toastify.error(message, { autoClose: 3000, ...options }),
-  info: (message: string, options = {}) => toastify.info(message, { autoClose: 3000, ...options }),
-  warning: (message: string, options = {}) => toastify.warning(message, { autoClose: 3000, ...options }),
-  loading: (message: string, options = {}) => toastify.loading(message, { autoClose: 3000, ...options }),
-};
-
-// Export the original toast for cases where specific configuration is needed
-export { toastify as toast };
+/*
+ * useToast hook — drop-in replacement for the old react-toastify wrapper.
+ *
+ * Provides the same API as the old hook: { toast, success, error, info, warning }.
+ * Under the hood it delegates to the new premium iPhone-style toast stack.
+ */
 
 interface ToastOptions {
   type?: 'success' | 'error' | 'info' | 'warning';
   duration?: number;
+  autoClose?: number | false;
+  toastId?: string;
+  description?: string;
 }
 
 export function useToast() {
-  const toast = useCallback((message: string, options: ToastOptions = {}) => {
-    const { type = 'info', duration = 3000 } = options;
-
-    toastify[type](message, {
-      position: 'bottom-right',
-      autoClose: duration,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-      progress: undefined,
-      theme: 'dark',
-    });
+  const toastFn = useCallback((message: string, options: ToastOptions = {}) => {
+    const { type = 'info', duration, autoClose, ...rest } = options;
+    toast[type](message, { autoClose: autoClose ?? duration ?? 3000, ...rest });
   }, []);
 
   const success = useCallback(
     (message: string, options: Omit<ToastOptions, 'type'> = {}) => {
-      toast(message, { ...options, type: 'success' });
+      toastFn(message, { ...options, type: 'success' });
     },
-    [toast],
+    [toastFn],
   );
 
   const error = useCallback(
     (message: string, options: Omit<ToastOptions, 'type'> = {}) => {
-      toast(message, { ...options, type: 'error' });
+      toastFn(message, { ...options, type: 'error' });
     },
-    [toast],
+    [toastFn],
   );
 
   const info = useCallback(
     (message: string, options: Omit<ToastOptions, 'type'> = {}) => {
-      toast(message, { ...options, type: 'info' });
+      toastFn(message, { ...options, type: 'info' });
     },
-    [toast],
+    [toastFn],
   );
 
   const warning = useCallback(
     (message: string, options: Omit<ToastOptions, 'type'> = {}) => {
-      toast(message, { ...options, type: 'warning' });
+      toastFn(message, { ...options, type: 'warning' });
     },
-    [toast],
+    [toastFn],
   );
 
-  return { toast, success, error, info, warning };
+  return { toast: toastFn, success, error, info, warning };
 }
+
+// Also export the configured toast object for direct import (backward compat)
+export const configuredToast = {
+  success: (message: string, options = {}) => toast.success(message, { autoClose: 3000, ...options }),
+  error: (message: string, options = {}) => toast.error(message, { autoClose: 3000, ...options }),
+  info: (message: string, options = {}) => toast.info(message, { autoClose: 3000, ...options }),
+  warning: (message: string, options = {}) => toast.warning(message, { autoClose: 3000, ...options }),
+  loading: (message: string, options = {}) => toast.loading(message, { autoClose: 3000, ...options }),
+};
+
+// Re-export the toast object for direct use
+export { toast };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useStore } from '@nanostores/react';
 import { logStore } from '~/lib/stores/logs';
 import {

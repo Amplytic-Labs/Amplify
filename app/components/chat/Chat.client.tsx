@@ -15,7 +15,7 @@ import {
 import { useAnimate } from 'framer-motion';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';

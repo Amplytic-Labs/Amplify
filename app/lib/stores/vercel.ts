@@ -1,7 +1,7 @@
 import { atom } from 'nanostores';
 import type { VercelConnection } from '~/types/vercel';
 import { logStore } from './logs';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 
 // Auto-connect using environment variable
 const envToken = import.meta.env?.VITE_VERCEL_ACCESS_TOKEN;

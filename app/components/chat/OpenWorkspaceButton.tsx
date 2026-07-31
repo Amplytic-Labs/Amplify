@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { PanelsTopLeft, Loader2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { Tooltip } from '~/components/ui/Tooltip';
 import { classNames } from '~/utils/classNames';
 import { chatId, description, chatMetadata, db } from '~/lib/persistence/useChatHistory';

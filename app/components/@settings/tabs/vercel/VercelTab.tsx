@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useStore } from '@nanostores/react';
 import { logStore } from '~/lib/stores/logs';
 import type { VercelUserResponse } from '~/types/vercel';

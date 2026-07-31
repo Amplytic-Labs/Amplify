@@ -6,7 +6,7 @@ import { UserMessage } from './UserMessage';
 import { useLocation } from '@remix-run/react';
 import { db, chatId } from '~/lib/persistence/useChatHistory';
 import { forkChat } from '~/lib/persistence/db';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import type { ForwardedRef } from 'react';
 import type { ProviderInfo } from '~/types/model';
 

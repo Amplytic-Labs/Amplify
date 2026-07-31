@@ -6,7 +6,7 @@ import * as ContextMenu from '@radix-ui/react-context-menu';
 import type { FileHistory } from '~/types/actions';
 import { diffLines, type Change } from 'diff';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { getFileTypeIconClass } from './file-icon-map';
 import { path } from '~/utils/path';
 

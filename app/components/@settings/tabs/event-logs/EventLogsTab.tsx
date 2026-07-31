@@ -7,7 +7,7 @@ import { classNames } from '~/utils/classNames';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Dialog, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import { jsPDF } from 'jspdf';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 
 interface SelectOption {
   value: string;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { memoryStore, type Memory } from '~/lib/persistence/memoryStore';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { classNames } from '~/utils/classNames';
 
 export default function MemoryTab() {

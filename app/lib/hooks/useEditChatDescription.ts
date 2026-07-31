@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react';
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import {
   chatId as chatIdStore,
   db,

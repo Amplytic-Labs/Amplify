@@ -2,7 +2,7 @@ import { useSearchParams, useMatches } from '@remix-run/react';
 import { useState, useEffect, useCallback } from 'react';
 import { atom } from 'nanostores';
 import { generateId, type JSONValue, type UIMessage } from 'ai';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { logStore } from '~/lib/stores/logs';
 import {

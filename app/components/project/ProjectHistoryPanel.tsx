@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { History, RotateCcw, GitCommit, Clock, MessageSquare } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { Button } from '~/components/ui/Button';
 import { Badge } from '~/components/ui/Badge';
 import { Dialog, DialogButton, DialogDescription, DialogTitle } from '~/components/ui/Dialog';
