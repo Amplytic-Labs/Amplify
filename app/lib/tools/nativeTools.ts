@@ -541,7 +541,72 @@ export function buildNativeTools(): Record<string, any> {
             lastError = `DuckDuckGo API returned ${ddgResp.status} ${ddgResp.statusText}`;
           }
 
-          // Fallback: try fetching the query as a URL via the existing web fetch utility
+          // Fallback 1: Wikipedia search API.
+          //
+          // DDG's Instant Answer API only returns results for entity-style queries
+          // (famous people, places, concepts with Wikipedia abstracts). For natural-
+          // language questions ("who won the 2026 fifa world cup") it returns an
+          // empty placeholder. The Wikipedia search API fills that gap — it does a
+          // full-text search across all English Wikipedia articles and returns
+          // titles + snippets + page URLs. Free, no API key, reliable.
+          //
+          // IMPORTANT: Wikimedia's API policy REQUIRES a descriptive User-Agent
+          // header. Without it, requests are aggressively rate-limited (HTTP 429)
+          // or blocked. See https://meta.wikimedia.org/wiki/User-Agent_policy.
+          try {
+            const wikiUrl =
+              `https://en.wikipedia.org/w/api.php?action=query&list=search` +
+              `&srsearch=${encodeURIComponent(query)}&format=json&srlimit=${limit}&srprop=snippet`;
+            const wikiResp = await fetchFn(wikiUrl, {
+              headers: {
+                Accept: 'application/json',
+                'User-Agent': 'Amplify-WebSearch/1.0 (https://github.com/imtia33/Open_Claude)',
+              },
+            });
+
+            if (wikiResp.ok) {
+              // Guard against non-JSON responses (e.g. Wikimedia's HTML error page
+              // on rate-limit) — calling .json() on those would throw and get
+              // caught by the outer catch, masking the real cause.
+              const contentType = wikiResp.headers.get('content-type') || '';
+              if (!contentType.includes('application/json')) {
+                lastError = `Wikipedia API returned non-JSON response (content-type: ${contentType || 'unknown'})`;
+              } else {
+                const wikiData: any = await wikiResp.json();
+                const wikiResults: Array<{ title: string; url: string; snippet: string }> = (wikiData?.query?.search || [])
+                  .map((item: any) => {
+                    // Strip <span class="searchmatch"> highlights from the snippet.
+                    const snippet = String(item.snippet || '').replace(/<[^>]+>/g, '');
+                    const title = String(item.title || '');
+                    const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+                    return { title, url, snippet };
+                  });
+
+                if (wikiResults.length > 0) {
+                  sawSuccessfulSource = true;
+                  const lines = wikiResults
+                    .slice(0, limit)
+                    .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet.slice(0, 300)}`);
+                  return `Web search results for "${query}" (via Wikipedia):\n\n${lines.join('\n\n')}`;
+                }
+
+                // Wikipedia responded OK with JSON but had zero hits.
+                sawSuccessfulSource = true;
+              }
+            } else {
+              lastError = `Wikipedia API returned ${wikiResp.status} ${wikiResp.statusText}`;
+            }
+          } catch (wikiErr: any) {
+            lastError = wikiErr?.message || 'Wikipedia search request failed';
+          }
+
+          // Fallback 2: try fetching the query as a URL via the existing web fetch utility.
+          //
+          // This path is unreliable — Google blocks automated requests with a
+          // "enable JavaScript" page, and other search engines have similar bot
+          // detection. We keep it as a last resort but guard against the common
+          // junk-HTML case (Google's noscript redirect page) so we don't return
+          // 2KB of useless markup as "results".
           try {
             const base = ctx.apiBaseUrl || '';
             const fallbackResp = await fetchFn(`${base}/api/web-search`, {
@@ -551,15 +616,23 @@ export function buildNativeTools(): Record<string, any> {
             });
 
             if (fallbackResp.ok) {
-              sawSuccessfulSource = true;
               const fallbackData: any = await fallbackResp.json();
               const fallbackContent = fallbackData?.content || fallbackData?.text || '';
 
-              if (fallbackContent) {
+              // Junk-HTML detection: Google's bot-block page contains "enablejs"
+              // and "noscript" markers. If we see them, treat as no content rather
+              // than returning garbage to the LLM.
+              const looksLikeJunk =
+                fallbackContent.length > 0 &&
+                (/\/httpservice\/retry\/enablejs/.test(fallbackContent) ||
+                  /<noscript>/.test(fallbackContent) && /enable ?js/i.test(fallbackContent));
+
+              if (fallbackContent && !looksLikeJunk) {
+                sawSuccessfulSource = true;
                 return `Web search results for "${query}" (via page fetch):\n\n${fallbackContent.slice(0, 2000)}`;
               }
 
-              // Fallback responded OK but had no extractable content.
+              // Fallback responded OK but content was empty or junk.
             } else {
               lastError = `Fallback search returned ${fallbackResp.status} ${fallbackResp.statusText}`;
             }
