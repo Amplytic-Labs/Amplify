@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import { classNames } from '~/utils/classNames';
 import {
@@ -299,6 +299,13 @@ interface ToolCallsListProps {
 const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResult }: ToolCallsListProps) => {
   const [expanded, setExpanded] = useState<{ [id: string]: boolean }>({});
 
+  // Dedup guard for auto-approval. Multiple effects (here, in ToolProgress.tsx,
+  // and in Chat.client.tsx) can fire in parallel for the same pending toolCallId.
+  // Without this guard, addToolResult gets called multiple times for the same id,
+  // which causes the AI SDK to emit duplicate state transitions and the chat ends
+  // up rendering the message twice — especially noticeable when a tool fails.
+  const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
   // OS detection for shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
@@ -313,10 +320,15 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
     );
 
     for (const inv of pending) {
-      addToolResult({
-        toolCallId: getToolCallId(inv),
-        result: TOOL_EXECUTION_APPROVAL.APPROVE,
-      });
+      const id = getToolCallId(inv);
+
+      if (id && !autoApprovedToolCallIdsRef.current.has(id)) {
+        autoApprovedToolCallIdsRef.current.add(id);
+        addToolResult({
+          toolCallId: id,
+          result: TOOL_EXECUTION_APPROVAL.APPROVE,
+        });
+      }
     }
   }, [toolInvocations, addToolResult]);
 

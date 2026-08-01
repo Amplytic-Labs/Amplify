@@ -307,10 +307,33 @@ export function buildNativeTools(): Record<string, any> {
         path: z.string().describe('Absolute or workspace-relative path of the directory to list'),
       }),
       execute: async ({ path }: { path: string }, ctx: NativeToolContext = {}) => {
-        const entries = listEntriesInDir(ctx.files, path);
+        const rel = normalizePath(path);
+        const entries = listEntriesInDir(ctx.files, rel);
 
         if (entries.length === 0) {
-          return `Directory is empty or does not exist: ${path}`;
+          // Distinguish "directory does not exist" (error) from "directory is empty" (success).
+          // A directory "exists" if any file key lives under its prefix; otherwise it's a bad path.
+          if (!ctx.files) {
+            return `Directory not found: ${path}`;
+          }
+
+          const prefix = rel === '' ? '' : `${rel}/`;
+          const dirExists = Object.keys(ctx.files).some((key) => {
+            let relKey = key;
+
+            if (relKey.startsWith(WORK_DIR + '/')) {
+              relKey = relKey.slice(WORK_DIR.length + 1);
+            }
+
+            return relKey.startsWith(prefix) && relKey !== prefix;
+          });
+
+          if (!dirExists) {
+            return `Directory not found: ${path}. Use list_dir with "." to see the workspace root.`;
+          }
+
+          // The directory exists but genuinely has no entries — that's a successful empty result.
+          return `Directory is empty: ${normalizePath(path)}`;
         }
 
         const lines = entries.map((e) => `${e.type === 'folder' ? '[dir] ' : '      '}${e.name}`);
@@ -454,6 +477,13 @@ export function buildNativeTools(): Record<string, any> {
         maxResults: z.number().optional().default(5).describe('Maximum number of results to return (default 5)'),
       }),
       execute: async ({ query, maxResults }: { query: string; maxResults?: number }, ctx: NativeToolContext = {}) => {
+        // Track whether at least one source responded successfully (2xx). If so, a zero-result
+        // response is a genuine "no hits" — NOT a failure. Only if every source fails do we
+        // surface an error. This lets the UI (and the LLM) distinguish empty results from
+        // actual network/API failures.
+        let sawSuccessfulSource = false;
+        let lastError: string | null = null;
+
         try {
           const fetchFn = ctx.fetch || fetch;
           const limit = maxResults ?? 5;
@@ -465,6 +495,7 @@ export function buildNativeTools(): Record<string, any> {
           });
 
           if (ddgResp.ok) {
+            sawSuccessfulSource = true;
             const data: any = await ddgResp.json();
             const results: Array<{ title: string; url: string; snippet: string }> = [];
 
@@ -504,6 +535,10 @@ export function buildNativeTools(): Record<string, any> {
 
               return `Web search results for "${query}":\n\n${lines.join('\n\n')}`;
             }
+
+            // DDG responded OK but had zero hits — fall through to the fallback.
+          } else {
+            lastError = `DuckDuckGo API returned ${ddgResp.status} ${ddgResp.statusText}`;
           }
 
           // Fallback: try fetching the query as a URL via the existing web fetch utility
@@ -516,18 +551,30 @@ export function buildNativeTools(): Record<string, any> {
             });
 
             if (fallbackResp.ok) {
+              sawSuccessfulSource = true;
               const fallbackData: any = await fallbackResp.json();
               const fallbackContent = fallbackData?.content || fallbackData?.text || '';
 
               if (fallbackContent) {
                 return `Web search results for "${query}" (via page fetch):\n\n${fallbackContent.slice(0, 2000)}`;
               }
+
+              // Fallback responded OK but had no extractable content.
+            } else {
+              lastError = `Fallback search returned ${fallbackResp.status} ${fallbackResp.statusText}`;
             }
-          } catch {
-            // Fallback also failed, fall through
+          } catch (fallbackErr: any) {
+            lastError = fallbackErr?.message || 'Fallback search request failed';
           }
 
-          return `No web results found for: ${query}`;
+          // If at least one source responded successfully, this is a genuine "zero results"
+          // (the search ran fine, just found nothing) — NOT a failure.
+          if (sawSuccessfulSource) {
+            return `No web results found for: ${query}. The search completed successfully but returned zero hits.`;
+          }
+
+          // Every source failed — surface as a real error so the UI shows it as failed.
+          return `Web search error: ${lastError || 'all search sources failed'}`;
         } catch (e: any) {
           logger.error('web_search failed', e);
           return `Web search error: ${e.message}`;

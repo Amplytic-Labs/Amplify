@@ -157,6 +157,7 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
     typeof result === 'string' &&
     (result.startsWith('Error:') ||
       result.startsWith('File not found') ||
+      result.startsWith('Directory not found') ||
       result.startsWith('Edit failed') ||
       result.startsWith('Cannot edit') ||
       result.startsWith('File already exists') ||

@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useEffect } from 'react';
+import { memo, useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
 import {
@@ -147,6 +147,11 @@ function summarizeArgs(toolName: string, args: any): string {
  * Result classifier. Copilot shows an error icon (codicon-error, red) for
  * failed tool calls. We inspect the result string for known error prefixes
  * emitted by nativeTools.ts.
+ *
+ * IMPORTANT: "no results" is NOT an error. A search that completes
+ * successfully but finds nothing (empty dir, zero grep matches, zero web
+ * hits) is a SUCCESS — the tool did its job. Only actual failures
+ * (file not found, bad pattern, network error, API error) are errors.
  */
 type ResultStatus = 'success' | 'error' | 'unknown';
 
@@ -167,6 +172,7 @@ export function classifyResult(result: any): ResultStatus {
   const errorPrefixes = [
     'Error:',
     'File not found',
+    'Directory not found',
     'Edit failed',
     'Cannot edit',
     'File already exists',
@@ -174,10 +180,6 @@ export function classifyResult(result: any): ResultStatus {
     'Invalid pattern',
     'Web search failed',
     'Web search error',
-    'Directory is empty',
-    'No files matched',
-    'No matches for pattern',
-    'No web results',
   ];
 
   return errorPrefixes.some((p) => result.startsWith(p)) ? 'error' : 'success';
@@ -295,12 +297,22 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
   );
 
   // Auto-approve ALL tool calls (no permission prompts)
-  // This effect runs once when a pending tool is detected and auto-approves it
+  // This effect runs once when a pending tool is detected and auto-approves it.
+  //
+  // Dedup guard: without this, the same toolCallId can be auto-approved multiple
+  // times (this effect, the one in ToolInvocations.tsx, and the one in
+  // Chat.client.tsx all fire in parallel for the same pending tool). Repeated
+  // addToolResult calls for the same id cause the AI SDK to emit duplicate
+  // state transitions, which surfaces as a duplicated message in the chat.
+  // We track approved ids in a ref so each id is approved exactly once.
+  const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (isPending) {
       const toolCallId = part?.toolCallId || part?.toolInvocation?.id;
-      if (toolCallId) {
-        // Auto-approve by calling addToolResult with APPROVE
+
+      if (toolCallId && !autoApprovedToolCallIdsRef.current.has(toolCallId)) {
+        autoApprovedToolCallIdsRef.current.add(toolCallId);
         addToolResult({
           toolCallId,
           result: TOOL_EXECUTION_APPROVAL.APPROVE,
