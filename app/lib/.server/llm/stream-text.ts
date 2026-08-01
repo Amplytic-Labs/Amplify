@@ -379,6 +379,114 @@ export async function streamText(props: {
       modificationTagName: MODIFICATIONS_TAG_NAME,
     });
 
+  /*
+   * ONE-SHOT CHAT NAMING (token-efficient method).
+   *
+   * On the FIRST user turn of a brand-new chat (i.e. there are NO prior
+   * assistant messages in the conversation), PREPEND a short instruction
+   * asking the model to output `<chatname>name</chatname>` as the very
+   * first token of its response. The client extracts the name from that
+   * tag and uses it as the chat / project title — NO separate AI call,
+   * NO extra round-trip.
+   *
+   * CRITICAL — PLACEMENT:
+   *   This instruction is PREPENDED to the system prompt (not appended).
+   *   When it was at the END of a 5-10k token system prompt, many models
+   *   ignored it and never emitted the tag — causing the chat to fall
+   *   back to the user's first message as the title, then to
+   *   "New Conversation". Models pay the most attention to the FIRST
+   *   tokens of a prompt, so putting it at the top makes compliance
+   *   dramatically more reliable.
+   *
+   * The instruction is SILENT on every subsequent turn:
+   *   - It is only prepended when `isFirstMessage` is true (no assistant
+   *     messages yet), so it costs zero tokens on turn 2+.
+   *   - The `<chatname>` tag the model emits is stripped from prior
+   *     assistant messages (see `stripChatName` above) before they are
+   *     re-sent, so the model never "sees" its own previous chatname.
+   */
+  const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
+
+  if (isFirstMessage && chatMode === 'build') {
+    systemPrompt = `<chat_naming>
+  CRITICAL — This is the FIRST message of a new conversation. Your
+  response MUST begin with a single line of the form:
+
+      <chatname>a short 2-6 word title for this chat</chatname>
+
+  This tag MUST be the VERY FIRST thing you output — before any
+  reasoning, before any thought block, before any tool calls, before
+  any markdown. The runtime extracts this tag to name the chat in the
+  sidebar; if you don't emit it, the chat stays unnamed.
+
+  Rules for the title:
+  - 2 to 6 words, no quotes, no trailing punctuation.
+  - Title Case (capitalize major words).
+  - Capture the core intent of the user's request.
+  - If the user's message is a bare greeting ("hi", "hello", "hey"),
+    use "New Conversation".
+  - Output the tag ONCE, at the very start of your response, then
+    continue with your normal answer.
+  - Do NOT mention the tag or the title to the user.
+  - Do NOT output this tag again in any future message.
+
+  CORRECT:
+      <chatname>Build React Dashboard</chatname>
+      Sure — let's scaffold...
+
+  WRONG (tag inside reasoning):
+      <thought>The user wants a dashboard. I should output
+      <chatname>Build Dashboard</chatname></thought>
+      <chatname>Build React Dashboard</chatname>
+      Sure...
+
+  WRONG (tag omitted):
+      Sure, let's build that dashboard...
+</chat_naming>
+
+${systemPrompt}`;
+
+  }
+
+  /*
+   * CURRENT DATE — injected on every request so the AI knows what "today"
+   * is. Without this, the AI hallucinates dates (e.g. claims a 2024 release
+   * is "recent" when it's actually 2026) and conflicts with web_search
+   * results that contain the real current date. The AI must defer to web
+   * search results for any time-sensitive fact.
+   */
+  const now = new Date();
+  const dateString = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  const timeString = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+
+  systemPrompt = `<current_datetime>
+  Today's date: ${dateString}
+  Current time (UTC): ${timeString}
+
+  CRITICAL — Your training data has a cutoff date and is STALE for anything
+  time-sensitive (library versions, release dates, recent events, current
+  prices, API changes). When a user asks about anything that could have
+  changed since your training cutoff:
+    1. Use \`web_search\` to get the CURRENT information.
+    2. PRIORITIZE web search results over your internal knowledge — your
+       internal knowledge may be outdated by months or years.
+    3. If web search results conflict with what you "remember", trust the
+       web search results (they are more recent).
+    4. Always cite the source URL when providing time-sensitive information.
+</current_datetime>
+
+${systemPrompt}`;
+
   if (chatMode === 'build' && contextFiles && contextOptimization) {
     /*
      * List only the PATHS of the context files — NOT their full contents.
@@ -510,74 +618,6 @@ export async function streamText(props: {
   - Do NOT re-explain the project setup, re-run install, or re-inject 
     templates unless the user explicitly asks for it.
 </project_continuation>
-    `;
-  }
-
-  /*
-   * ONE-SHOT CHAT NAMING (token-efficient method).
-   *
-   * On the FIRST user turn of a brand-new chat (i.e. there are NO prior
-   * assistant messages in the conversation), append a short instruction
-   * asking the model to prepend `<chatname>name</chatname>` to its
-   * response. The client extracts the name from that tag and uses it as
-   * the chat / project title — NO separate AI call, NO extra round-trip.
-   *
-   * The instruction is SILENT on every subsequent turn:
-   *   - It is only appended when `isFirstMessage` is true (no assistant
-   *     messages yet), so it costs zero tokens on turn 2+.
-   *   - The `<chatname>` tag the model emits is stripped from prior
-   *     assistant messages (see `stripChatName` above) before they are
-   *     re-sent, so the model never "sees" its own previous chatname.
-   *
-   * This replaces the old `/api/chat-title` endpoint which made a whole
-   * second LLM call just to name the chat.
-   */
-  const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
-
-  if (isFirstMessage && chatMode === 'build') {
-    systemPrompt = `${systemPrompt}
-
-<chat_naming>
-  This is the FIRST message of a new conversation. Before your actual
-  answer, output a single line of the form:
-
-      <chatname>a short 2-6 word title for this chat</chatname>
-
-  Rules for the title:
-  - 2 to 6 words, no quotes, no trailing punctuation.
-  - Title Case (capitalize major words).
-  - Capture the core intent of the user's request.
-  - If the user's message is a bare greeting ("hi", "hello"), use
-    "New Conversation".
-  - Output the tag ONCE, at the very start of your response, then
-    continue with your normal answer (markdown / artifacts / tool calls).
-  - Do NOT mention the tag or the title to the user in your answer text.
-  - Do NOT output this tag again in any future message — only this first
-    response.
-
-  CRITICAL — DO NOT reason, think, or deliberate about this naming
-  instruction inside your thinking / reasoning / <thought> channel.
-  The <chatname> tag must appear as the very FIRST token of your VISIBLE
-  answer — never inside a reasoning block, never as a thought, never
-  after a deliberation step. Reasoning about the naming instruction has
-  been observed to (a) delay the tag until after a long thought block,
-  causing the chat sidebar to fall back to the user's first message as
-  the title, and (b) leak fragments like "I should output
-  <chatname>New Conversation</chatname>" into the visible thinking
-  trace, which is broken and confusing.
-
-  Correct shape:
-      <chatname>Build React Dashboard</chatname>
-      <thought>...</thought>
-      Sure — let's scaffold...
-
-  Wrong shape (DO NOT DO THIS):
-      <thought>The user said hi. According to <chat_naming> I should
-      output <chatname>New Conversation</chatname>. Let me reply
-      politely.</thought>
-      <chatname>New Conversation</chatname>
-      Hi there!
-</chat_naming>
     `;
   }
 

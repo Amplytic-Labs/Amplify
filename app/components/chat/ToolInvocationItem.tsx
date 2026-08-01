@@ -173,7 +173,11 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
       result.startsWith('oldString') ||
       result.startsWith('Invalid pattern') ||
       result.startsWith('Web search failed') ||
-      result.startsWith('Web search error'));
+      result.startsWith('Web search error') ||
+      result.startsWith('User fact storage is not available') ||
+      result.startsWith('User context search is not available') ||
+      result.startsWith('Project context search is not available') ||
+      result.startsWith('Project context storage is not available'));
 
   return (
     <div className={classNames('flex flex-col gap-1', !grouped && 'my-2')}>

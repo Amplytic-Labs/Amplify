@@ -12,6 +12,7 @@ import { cubicEasingFn } from '~/utils/easings';
 import { logger } from '~/utils/logger';
 import { themeStore, type Theme } from '~/lib/stores/theme';
 import { useStore } from '@nanostores/react';
+import { isClientSideTool } from '~/lib/tools/clientSideTools';
 import type { ToolCallAnnotation } from '~/types/context';
 import {
   getToolNameFromPart,
@@ -310,14 +311,36 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
   // ───────────────────────────────────────────────────────────────
-  // Auto-approval: every tool runs automatically EXCEPT execute_plan,
-  // which is the only tool that requires explicit user approval
-  // (the user approves the full enriched plan in PlanApprovalDialog).
+  // Auto-approval: every tool runs automatically EXCEPT:
+  //   - execute_plan (user approves the full enriched plan in
+  //     PlanApprovalDialog)
+  //   - client-side tools (store_user_fact, search_user_context, etc.)
+  //     These are executed CLIENT-SIDE by Chat.client.tsx because they
+  //     use IndexedDB which is browser-only. If we send APPROVE here,
+  //     the server would run their execute function server-side, which
+  //     returns "not available on the server" — so we MUST skip them
+  //     and let the client-side effect handle them.
   // ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const pending = toolInvocations.filter(
-      (inv) => ToolState.isCall(getToolState(inv)) && getToolNameFromPart(inv) !== 'execute_plan',
-    );
+    const pending = toolInvocations.filter((inv) => {
+      if (!ToolState.isCall(getToolState(inv))) {
+        return false;
+      }
+
+      const toolName = getToolNameFromPart(inv);
+
+      // Skip execute_plan — handled by PlanApprovalDialog
+      if (toolName === 'execute_plan') {
+        return false;
+      }
+
+      // Skip client-side tools — handled by Chat.client.tsx
+      if (isClientSideTool(toolName)) {
+        return false;
+      }
+
+      return true;
+    });
 
     for (const inv of pending) {
       const id = getToolCallId(inv);

@@ -21,6 +21,7 @@ import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
+import { isClientSideTool, executeClientSideTool } from '~/lib/tools/clientSideTools';
 import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER,
@@ -1244,6 +1245,95 @@ export const ChatImpl = memo(
             output: TOOL_EXECUTION_APPROVAL.APPROVE,
             state: 'output-available',
           });
+        }
+      }
+    }, [messages, addToolResult]);
+
+    /*
+     * ───────────────────────────────────────────────────────────────────
+     * CLIENT-SIDE TOOL EXECUTION (vector-store tools)
+     *
+     * Tools like `store_user_fact`, `search_user_context`,
+     * `search_project_context`, and `store_project_context` use IndexedDB
+     * (Orama) which is browser-only. Their server-side `execute` functions
+     * return "not available on the server" because `typeof window ===
+     * 'undefined'` on the server.
+     *
+     * Here we intercept those tool calls and execute them CLIENT-SIDE,
+     * sending the actual result (not APPROVE) back via `addToolResult`.
+     * The server's `processToolInvocations` sees a non-APPROVE output and
+     * passes it through unchanged.
+     *
+     * This effect MUST run before (or instead of) the auto-approve in
+     * ToolInvocations.tsx, which would otherwise send APPROVE and trigger
+     * the server-side execute (which fails). We use a shared dedup guard
+     * (autoApprovedToolCallIdsRef) so the same toolCallId is never handled
+     * by both paths.
+     * ───────────────────────────────────────────────────────────────────
+     */
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!isToolPart(p)) {
+            continue;
+          }
+
+          const inv = {
+            toolName: getToolNameFromPart(p),
+            toolCallId: getToolCallId(p),
+            state: getToolState(p),
+            input: (p as any).input,
+          };
+
+          // Only handle 'input-available' (pending) tool calls.
+          if (!ToolState.isCall(inv.state)) {
+            continue;
+          }
+
+          // Only handle client-side tools (store_user_fact, etc.)
+          if (!isClientSideTool(inv.toolName)) {
+            continue;
+          }
+
+          // Dedup guard — never handle the same toolCallId twice.
+          if (autoApprovedToolCallIdsRef.current.has(inv.toolCallId)) {
+            continue;
+          }
+
+          autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+
+          logger.debug(`[client-tool] executing ${inv.toolName} (${inv.toolCallId})`);
+
+          // Execute asynchronously and send the result back.
+          (async () => {
+            try {
+              const result = await executeClientSideTool(inv.toolName, inv.input || {});
+
+              addToolResult({
+                tool: inv.toolName,
+                toolCallId: inv.toolCallId,
+                output: result,
+                state: 'output-available',
+              });
+            } catch (e: any) {
+              addToolResult({
+                tool: inv.toolName,
+                toolCallId: inv.toolCallId,
+                output: `Error executing ${inv.toolName}: ${e.message}`,
+                state: 'output-available',
+              });
+            }
+          })();
         }
       }
     }, [messages, addToolResult]);

@@ -383,7 +383,8 @@ ${projectContext || 'No project context available.'}
     - Use \`web_search\` + \`fetch_webpage\` to read official documentation before implementing new features or solving complex technical problems.
     - If a user provides a link, use \`fetch_webpage\` directly on that URL.
     - You can perform multiple sequential fetches to navigate through documentation or gather information from multiple sources.
-    - Prioritize information retrieved via these tools over your internal memory when accuracy is critical or when dealing with rapidly evolving technologies.
+    - PRIORITIZE information retrieved via these tools over your internal memory when accuracy is critical or when dealing with rapidly evolving technologies.
+    - CRITICAL: Your internal knowledge has a training cutoff and may be MONTHS or YEARS out of date. For anything time-sensitive (library versions, release dates, API changes, current events, pricing), ALWAYS use \`web_search\` and trust the results over what you "remember". If your internal knowledge conflicts with web search results, the web search results are more recent and more accurate.
     - CRITICAL: When you provide information based on tool results (especially web search), you MUST provide inline references to the sources. This is MANDATORY for transparency and verification.
     - Use the format: \`[Source Name](url)\` immediately at the end of the sentence or phrase containing the information.
     - Example: "The current price of Bitcoin is approximately $63,104.41 USD [CoinMarketCap](https://example.com/bitcoin-price)."

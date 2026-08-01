@@ -9,6 +9,7 @@ import {
   ToolState,
 } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal, isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
+import { isClientSideTool } from '~/lib/tools/clientSideTools';
 import { TOOL_EXECUTION_APPROVAL } from '~/utils/constants';
 import styles from './chat-copilot.module.scss';
 
@@ -194,6 +195,10 @@ export function classifyResult(result: any): ResultStatus {
     'Invalid pattern',
     'Web search failed',
     'Web search error',
+    'User fact storage is not available',
+    'User context search is not available',
+    'Project context search is not available',
+    'Project context storage is not available',
   ];
 
   return errorPrefixes.some((p) => result.startsWith(p)) ? 'error' : 'success';
@@ -324,6 +329,18 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
   useEffect(() => {
     if (isPending) {
       const toolCallId = part?.toolCallId || part?.toolInvocation?.id;
+      const toolName = getToolNameFromPart(part);
+
+      /*
+       * Skip client-side tools (store_user_fact, search_user_context, etc.).
+       * These are executed CLIENT-SIDE by Chat.client.tsx because they use
+       * IndexedDB. If we send APPROVE here, the server would run their
+       * execute function server-side, which returns "not available on the
+       * server" — causing the AI to retry and duplicate messages.
+       */
+      if (toolName && isClientSideTool(toolName)) {
+        return;
+      }
 
       if (toolCallId && !autoApprovedToolCallIdsRef.current.has(toolCallId)) {
         autoApprovedToolCallIdsRef.current.add(toolCallId);
