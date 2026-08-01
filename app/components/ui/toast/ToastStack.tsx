@@ -195,17 +195,6 @@ export function ToastStack({ toasts, onDismiss, maxVisible = 5 }: ToastStackProp
             );
           })}
         </AnimatePresence>
-
-        {/* Empty state */}
-        {visibleToasts.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-white/60 text-xs py-4 px-6 border border-white/5 rounded-[22px] bg-black/30 backdrop-blur-md"
-          >
-            No active notifications
-          </motion.div>
-        )}
       </div>
     </div>
   );
