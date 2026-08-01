@@ -1545,6 +1545,16 @@ export const ChatImpl = memo(
                 projectContext: currentProjectContext || '',
                 apiKeys,
                 files: workbenchStore.files.get(),
+
+                /*
+                 * Pass modelConfig so the server can translate the unified
+                 * thinking/reasoning config into per-provider providerOptions
+                 * for ALL providers (Anthropic, Google, OpenAI, xAI, Mistral,
+                 * DeepSeek, etc.). Without this, buildThinkingProviderOptions()
+                 * returns {} and NO thinking/reasoning is ever enabled on the
+                 * API — regardless of which provider is selected.
+                 */
+                modelConfig: getWireConfig(),
               }),
             });
 
@@ -1557,10 +1567,11 @@ export const ChatImpl = memo(
               throw new Error('Sub-chat response body is null — streaming not supported');
             }
 
-            // Read the data stream and extract text parts
+            // Read the data stream and extract text + reasoning parts
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
+            let reasoningContent = '';
             const toolInvocations: any[] = [];
             let buffer = '';
 
@@ -1587,6 +1598,27 @@ export const ChatImpl = memo(
 
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
+                  } else if (parsed.type === 'reasoning') {
+                    /*
+                     * Reasoning/thinking tokens from ANY provider:
+                     *   - Anthropic: extended thinking (budgetTokens / adaptive)
+                     *   - Google Gemini: includeThoughts
+                     *   - OpenAI o-series: reasoningSummary
+                     *   - DeepSeek: automatic reasoning_content
+                     *   - xAI / Mistral: reasoning_effort
+                     * The AI SDK normalises all of these into type='reasoning'
+                     * parts when sendReasoning:true is set on the server.
+                     */
+                    const delta = parsed.text || parsed.textDelta || '';
+
+                    if (delta) {
+                      reasoningContent += delta;
+                    } else if (parsed.details && Array.isArray(parsed.details)) {
+                      // Anthropic-style reasoning with details array
+                      for (const detail of parsed.details) {
+                        reasoningContent += detail.text || '';
+                      }
+                    }
                   }
                 } catch {
                   // Skip malformed lines
@@ -1598,6 +1630,7 @@ export const ChatImpl = memo(
               id: crypto.randomUUID(),
               role: 'assistant' as const,
               content: fullContent || 'No response generated.',
+              reasoning: reasoningContent || undefined,
               toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
             };
           },
@@ -1839,6 +1872,12 @@ export const ChatImpl = memo(
                 projectContext: currentProjectContext || '',
                 apiKeys,
                 files: workbenchStore.files.get(),
+
+                /*
+                 * Pass modelConfig for ALL providers — same fix as the
+                 * executePlan callLLM above.
+                 */
+                modelConfig: getWireConfig(),
               }),
             });
 
@@ -1854,6 +1893,7 @@ export const ChatImpl = memo(
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
+            let reasoningContent = '';
             let buffer = '';
 
             while (true) {
@@ -1878,6 +1918,20 @@ export const ChatImpl = memo(
 
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
+                  } else if (parsed.type === 'reasoning') {
+                    /*
+                     * Reasoning/thinking tokens from ANY provider —
+                     * same handler as the executePlan callLLM above.
+                     */
+                    const delta = parsed.text || parsed.textDelta || '';
+
+                    if (delta) {
+                      reasoningContent += delta;
+                    } else if (parsed.details && Array.isArray(parsed.details)) {
+                      for (const detail of parsed.details) {
+                        reasoningContent += detail.text || '';
+                      }
+                    }
                   }
                 } catch {
                   // Skip malformed lines
@@ -1889,6 +1943,7 @@ export const ChatImpl = memo(
               id: crypto.randomUUID(),
               role: 'assistant' as const,
               content: fullContent || 'No response generated.',
+              reasoning: reasoningContent || undefined,
             };
           },
           runShellCommand: async (cmd) => {

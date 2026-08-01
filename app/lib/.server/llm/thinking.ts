@@ -157,6 +157,43 @@ function isOpenAIReasoningModel(modelId: string): boolean {
 }
 
 /**
+ * Generic reasoning model detection for ANY OpenAI-compatible provider.
+ * Matches model names that commonly support reasoning_effort even when
+ * hosted through non-OpenAI providers (Groq, GitHub Models, HuggingFace,
+ * Hyperbolic, Moonshot, Z.AI, OpenRouter, etc.).
+ *
+ * This ensures dynamically-added models with thinking capability are
+ * covered even if their provider wasn't explicitly listed above.
+ */
+function isGenericReasoningModel(modelId: string): boolean {
+  // Generic reasoning model detection for ANY OpenAI-compatible provider.
+  // Matches model names that commonly support reasoning_effort even when
+  // hosted through non-OpenAI providers (Groq, GitHub Models, HuggingFace,
+  // Hyperbolic, Moonshot, Z.AI, OpenRouter, etc.).
+  // This ensures dynamically-added models with thinking capability are
+  // covered even if their provider wasn't explicitly listed above.
+  return /^(o1|o3|o4|gpt-5|deepseek-r|deepseek-reasoner|qwq|kimi-thinking|grok-3|grok-4\.[3-9]|grok-4\.20|magistral|gemma-.*-thinking|llama-.*-thinking|phi-.*-reasoning|qwen.*think)/i.test(modelId);
+}
+
+/**
+ * OpenAI-compatible providers that use createOpenAI() from @ai-sdk/openai
+ * and therefore read providerOptions.openai.*. Any of these could host
+ * reasoning models dynamically.
+ */
+const OPENAI_COMPATIBLE_PROVIDERS = new Set([
+  'Groq',
+  'GitHub',
+  'HuggingFace',
+  'Hyperbolic',
+  'OpenRouter',
+  'OpenAILike',
+  'LMStudio',
+  'Ollama',
+  'Moonshot',
+  'ZAI',
+]);
+
+/**
  * xAI Grok 3 / 3 mini / 3 fast — support reasoning_effort.
  * Original Grok 4 does NOT — only grok-4.3+ does.
  */
@@ -356,6 +393,23 @@ export function buildThinkingProviderOptions(
    * underlying model; the upstream API ignores unknown providerOptions keys.
    */
 
+  /*
+   * GENERIC FALLBACK for any OpenAI-compatible provider (Groq, GitHub Models,
+   * HuggingFace, Hyperbolic, OpenRouter, LMStudio, Ollama, Moonshot, Z.AI, etc.)
+   * that hosts reasoning models dynamically. These providers all use
+   * createOpenAI() from @ai-sdk/openai, so providerOptions.openai.* is read.
+   *
+   * We detect reasoning models by their name pattern and apply reasoningEffort
+   * just like we do for the native OpenAI/xAI providers. This ensures that
+   * newly-added models with thinking capability work immediately without
+   * needing to add explicit provider-specific code.
+   */
+  if (OPENAI_COMPATIBLE_PROVIDERS.has(providerName) && isGenericReasoningModel(modelId)) {
+    opts.openai = {
+      reasoningEffort: config.effort,
+    };
+  }
+
   return opts;
 }
 
@@ -382,6 +436,13 @@ export function supportsThinkingConfig(providerName: string, modelId: string): b
   }
 
   if (providerName === 'Mistral' && (isMistralMagistralModel(modelId) || isMistralAdjustableModel(modelId))) {
+    return true;
+  }
+
+  /*
+   * Generic fallback: any OpenAI-compatible provider hosting a reasoning model.
+   */
+  if (OPENAI_COMPATIBLE_PROVIDERS.has(providerName) && isGenericReasoningModel(modelId)) {
     return true;
   }
 
