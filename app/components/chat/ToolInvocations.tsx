@@ -13,6 +13,7 @@ import { logger } from '~/utils/logger';
 import { themeStore, type Theme } from '~/lib/stores/theme';
 import { useStore } from '@nanostores/react';
 import { isClientSideTool } from '~/lib/tools/clientSideTools';
+import { tryClaimToolCallApproval } from '~/lib/chat/tool-approval-dedup';
 import type { ToolCallAnnotation } from '~/types/context';
 import {
   getToolNameFromPart,
@@ -300,11 +301,21 @@ interface ToolCallsListProps {
 const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResult }: ToolCallsListProps) => {
   const [expanded, setExpanded] = useState<{ [id: string]: boolean }>({});
 
-  // Dedup guard for auto-approval. Multiple effects (here, in ToolProgress.tsx,
-  // and in Chat.client.tsx) can fire in parallel for the same pending toolCallId.
-  // Without this guard, addToolResult gets called multiple times for the same id,
-  // which causes the AI SDK to emit duplicate state transitions and the chat ends
-  // up rendering the message twice — especially noticeable when a tool fails.
+  /*
+   * Dedup guard for auto-approval. This component, ToolProgress.tsx, AND
+   * Chat.client.tsx ALL have auto-approve effects that can fire in parallel
+   * for the same pending toolCallId.
+   *
+   * We use a MODULE-LEVEL shared Set (tool-approval-dedup.ts) so that once
+   * ANY component claims a toolCallId, the others skip. This is the
+   * PERMANENT fix for message duplication on tool error — without it, 2-3
+   * `addToolResult` calls per toolCallId cause the AI SDK to send multiple
+   * follow-up requests, each appending a new step (reasoning + text) to
+   * the same assistant message.
+   *
+   * The local ref is kept as a secondary guard for same-component
+   * re-renders (cheaper than the module Set lookup for the common case).
+   */
   const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
 
   // OS detection for shortcut display
@@ -345,13 +356,27 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
     for (const inv of pending) {
       const id = getToolCallId(inv);
 
-      if (id && !autoApprovedToolCallIdsRef.current.has(id)) {
-        autoApprovedToolCallIdsRef.current.add(id);
-        addToolResult({
-          toolCallId: id,
-          result: TOOL_EXECUTION_APPROVAL.APPROVE,
-        });
+      if (!id) {
+        continue;
       }
+
+      // Local dedup (same-component re-renders).
+      if (autoApprovedToolCallIdsRef.current.has(id)) {
+        continue;
+      }
+
+      // SHARED dedup (across all components — see tool-approval-dedup.ts).
+      // If Chat.client.tsx or ToolProgress.tsx already claimed this
+      // toolCallId, skip. This is the permanent fix for duplication.
+      if (!tryClaimToolCallApproval(id)) {
+        continue;
+      }
+
+      autoApprovedToolCallIdsRef.current.add(id);
+      addToolResult({
+        toolCallId: id,
+        result: TOOL_EXECUTION_APPROVAL.APPROVE,
+      });
     }
   }, [toolInvocations, addToolResult]);
 

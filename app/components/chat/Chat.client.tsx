@@ -22,6 +22,7 @@ import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
 import { isClientSideTool, executeClientSideTool } from '~/lib/tools/clientSideTools';
+import { tryClaimToolCallApproval, resetToolCallApprovals } from '~/lib/chat/tool-approval-dedup';
 import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER,
@@ -942,6 +943,11 @@ export const ChatImpl = memo(
      * ChatImpl remounts (due to chatKey change), but refs may retain
      * stale IDs from the previous chat if React reuses the fiber.
      * Clearing them ensures no cross-chat state bleeding.
+     *
+     * Also resets the MODULE-LEVEL shared dedup guard
+     * (tool-approval-dedup.ts) so toolCallIds from the previous chat
+     * don't linger. toolCallIds are UUIDs so this is mostly defensive,
+     * but it keeps memory bounded.
      */
     useEffect(() => {
       processedMutationToolCallIdsRef.current = new Set();
@@ -950,6 +956,7 @@ export const ChatImpl = memo(
       workspaceReadyRef.current = true;
       workspaceFileCountRef.current = 0;
       workspaceStabilizeTimerRef.current = 0;
+      resetToolCallApprovals();
     }, []);
 
     useEffect(() => {
@@ -1219,6 +1226,30 @@ export const ChatImpl = memo(
             continue;
           }
 
+          /*
+           * SHARED DEDUP GUARD (tool-approval-dedup.ts).
+           * This is the PERMANENT fix for message duplication on tool
+           * error. Without it, three parallel effects (here,
+           * ToolInvocations.tsx, ToolProgress.tsx) each fire
+           * `addToolResult` for the same toolCallId — causing the AI
+           * SDK to send 2-3 follow-up /api/chat requests, each
+           * appending a new step (reasoning + text) to the SAME
+           * assistant message. The user sees duplicated thought blocks
+           * and duplicated message text.
+           *
+           * `tryClaimToolCallApproval` atomically checks-and-claims the
+           * toolCallId at the MODULE level. If another component already
+           * claimed it, we skip. This guarantees exactly ONE
+           * `addToolResult` call per toolCallId across the entire app.
+           *
+           * The local `autoApprovedToolCallIdsRef` is kept as a
+           * secondary guard for same-component re-renders (cheaper than
+           * the module-level Set lookup for the common case).
+           */
+          if (!tryClaimToolCallApproval(inv.toolCallId)) {
+            continue;
+          }
+
           autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
 
           /*
@@ -1305,8 +1336,15 @@ export const ChatImpl = memo(
             continue;
           }
 
-          // Dedup guard — never handle the same toolCallId twice.
+          // Local dedup guard (same-component re-renders).
           if (autoApprovedToolCallIdsRef.current.has(inv.toolCallId)) {
+            continue;
+          }
+
+          // SHARED dedup guard (across all components — see tool-approval-dedup.ts).
+          // Prevents ToolInvocations.tsx and ToolProgress.tsx from also firing
+          // addToolResult for this toolCallId, which would cause message duplication.
+          if (!tryClaimToolCallApproval(inv.toolCallId)) {
             continue;
           }
 
