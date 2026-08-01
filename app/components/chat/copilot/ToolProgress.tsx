@@ -28,6 +28,7 @@ interface ToolMeta {
 
 const TOOL_META: Record<string, ToolMeta> = {
   web_search: { label: 'Searched the web', pendingLabel: 'Searching the web' },
+  fetch_webpage: { label: 'Read web page', pendingLabel: 'Reading web page' },
   read_file: { label: 'Read file', pendingLabel: 'Reading file' },
   list_dir: { label: 'Listed directory', pendingLabel: 'Listing directory' },
   find_files: { label: 'Found files', pendingLabel: 'Finding files' },
@@ -64,6 +65,11 @@ export function getMeta(toolName: string): ToolMeta {
  */
 export function getToolIcon(toolName: string): string {
   const lower = (toolName || '').toLowerCase();
+
+  // Web tools get a globe icon regardless of whether they include "search".
+  if (lower === 'fetch_webpage' || lower === 'web_search' || lower === 'websearch') {
+    return 'i-ph:globe';
+  }
 
   if (
     lower.includes('search') ||
@@ -131,6 +137,14 @@ function summarizeArgs(toolName: string, args: any): string {
         return args.pattern || '';
       case 'web_search':
         return args.query || '';
+      case 'fetch_webpage':
+        // Show just the host + path for brevity
+        try {
+          const u = new URL(args.url);
+          return u.host + u.pathname.slice(0, 40);
+        } catch {
+          return args.url || '';
+        }
       case 'run_in_terminal':
         return args.command || '';
       case 'execute_plan':

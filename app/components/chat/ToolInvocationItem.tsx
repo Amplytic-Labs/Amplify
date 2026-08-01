@@ -17,6 +17,7 @@ import { parseFileMutationSignal, isFileMutationSignal } from '~/lib/tools/nativ
 const TOOL_FRIENDLY_NAMES: Record<string, string> = {
   // Native tools
   web_search: 'Searched the web',
+  fetch_webpage: 'Read web page',
   read_file: 'Read file',
   list_dir: 'Listed directory',
   find_files: 'Found files',
@@ -33,6 +34,7 @@ const TOOL_FRIENDLY_NAMES: Record<string, string> = {
 
 const TOOL_ICONS: Record<string, string> = {
   web_search: 'i-ph:globe',
+  fetch_webpage: 'i-ph:globe',
   read_file: 'i-ph:file-text',
   list_dir: 'i-ph:folder-open',
   find_files: 'i-ph:list-magnifying-glass',
@@ -67,6 +69,13 @@ function summarizeArgs(toolName: string, args: any): string {
         return args.pattern || '';
       case 'web_search':
         return args.query || '';
+      case 'fetch_webpage':
+        try {
+          const u = new URL(args.url);
+          return u.host + u.pathname.slice(0, 40);
+        } catch {
+          return args.url || '';
+        }
       case 'create_file':
         return args.filePath || '';
       case 'replace_string_in_file':
