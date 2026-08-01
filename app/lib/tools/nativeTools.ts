@@ -479,38 +479,39 @@ export function buildNativeTools(): Record<string, any> {
         maxResults: z.number().optional().default(5).describe('Maximum number of results to return (default 5)'),
       }),
       execute: async ({ query, maxResults }: { query: string; maxResults?: number }, ctx: NativeToolContext = {}) => {
-        // ─── Source strategy ───────────────────────────────────────────────
-        // We try three sources in order, stopping at the first one that returns
-        // actual results:
+        // ─── Fallback chain ─────────────────────────────────────────────────
+        // Sources are tried in order. We STOP at the first source that returns
+        // actual results — sources after it are NEVER contacted. We only fall
+        // through to the next source when the current one returns ZERO results
+        // or fails outright (network/HTTP error, anti-bot challenge, non-JSON
+        // response, etc.).
         //
-        //   1. DuckDuckGo HTML (PRIMARY) — real web search across the open web.
+        //   1. DuckDuckGo HTML (PRIMARY)  — real web search across the open web.
         //      Covers recent release notes, vendor docs, npm versions, blog posts,
         //      changelogs, forum threads — everything Wikipedia misses. No API key,
-        //      reliable with a proper User-Agent (tested: 5/5 successful hits in a row).
+        //      reliable with a proper User-Agent.
         //
         //   2. Wikipedia search API (FALLBACK) — full-text search across English
         //      Wikipedia. Good for encyclopedic topics (people, places, concepts).
-        //      DDG HTML usually covers these too, so this is mostly a safety net.
         //
-        //   3. DuckDuckGo Instant Answer API (LAST RESORT) — only returns results
-        //      for entity-style queries with a Wikipedia abstract. Kept for the
-        //      rare case where both HTML search and Wikipedia return nothing but
-        //      DDG IA happens to have an instant answer.
+        //   3. DuckDuckGo Instant Answer (LAST RESORT) — entity-style queries
+        //      with a Wikipedia abstract. Rarely useful, kept as a safety net.
         //
-        // We track `sawSuccessfulSource` to distinguish "search ran fine but found
-        // zero hits" (success, just empty) from "every source failed" (real error).
-        let sawSuccessfulSource = false;
-        let lastError: string | null = null;
+        // `sawSuccessfulSource` distinguishes "search ran fine but found zero
+        // hits" (success, just empty) from "every source failed" (real error).
+        const fetchFn = ctx.fetch || fetch;
+        const limit = maxResults ?? 5;
 
-        try {
-          const fetchFn = ctx.fetch || fetch;
-          const limit = maxResults ?? 5;
-          const results: Array<{ title: string; url: string; snippet: string }> = [];
+        type SearchResult = { title: string; url: string; snippet: string };
+        type SourceOutcome =
+          | { status: 'ok'; results: SearchResult[] }
+          | { status: 'error'; error: string };
 
-          // ─── Source 1: DuckDuckGo HTML search ───────────────────────────
-          // Parses the result__a (link) and result__snippet (snippet) classes from
-          // https://html.duckduckgo.com/html/. DDG wraps result URLs in a redirect
-          // (//duckduckgo.com/l/?uddg=ENCODED) so we extract the real URL.
+        // ─── Source 1: DuckDuckGo HTML search ─────────────────────────────
+        // Parses result__a (link) + result__snippet (snippet) from
+        // https://html.duckduckgo.com/html/. DDG wraps result URLs in a redirect
+        // (//duckduckgo.com/l/?uddg=ENCODED) so we unwrap to the real URL.
+        const searchDdgHtml = async (): Promise<SourceOutcome> => {
           try {
             const ddgHtmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
             const ddgResp = await fetchFn(ddgHtmlUrl, {
@@ -522,53 +523,51 @@ export function buildNativeTools(): Record<string, any> {
               },
             });
 
-            if (ddgResp.ok) {
-              sawSuccessfulSource = true;
-              const html = await ddgResp.text();
+            if (!ddgResp.ok) {
+              return { status: 'error', error: `DuckDuckGo HTML returned ${ddgResp.status} ${ddgResp.statusText}` };
+            }
 
-              // Detect DDG's anti-bot challenge page (rare with a good UA, but possible).
-              const isChallenge = html.includes('anomaly.js') || html.includes('challenge-form');
+            const html = await ddgResp.text();
 
-              if (!isChallenge) {
-                const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-                const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-                const links = [...html.matchAll(linkRe)];
-                const snips = [...html.matchAll(snipRe)];
+            // Detect DDG's anti-bot challenge page. Treat as a failure so we
+            // fall through to the next source instead of silently swallowing it.
+            const isChallenge = html.includes('anomaly.js') || html.includes('challenge-form');
+            if (isChallenge) {
+              return { status: 'error', error: 'DuckDuckGo HTML returned an anti-bot challenge page' };
+            }
 
-                for (let i = 0; i < links.length && results.length < limit; i++) {
-                  let url = links[i][1];
-                  // Unwrap DDG's redirect: //duckduckgo.com/l/?uddg=ENCODED&rut=...
-                  const uddgMatch = url.match(/uddg=([^&]+)/);
+            const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+            const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+            const links = [...html.matchAll(linkRe)];
+            const snips = [...html.matchAll(snipRe)];
 
-                  if (uddgMatch) {
-                    try {
-                      url = decodeURIComponent(uddgMatch[1]);
-                    } catch {
-                      // leave url as-is if decode fails
-                    }
-                  }
-                  const title = links[i][2].replace(/<[^>]+>/g, '').trim();
-                  const snippet = (snips[i]?.[1] || '').replace(/<[^>]+>/g, '').trim();
-
-                  if (title && url) {
-                    results.push({ title, url, snippet: snippet.slice(0, 300) });
-                  }
+            const results: SearchResult[] = [];
+            for (let i = 0; i < links.length && results.length < limit; i++) {
+              let url = links[i][1];
+              const uddgMatch = url.match(/uddg=([^&]+)/);
+              if (uddgMatch) {
+                try {
+                  url = decodeURIComponent(uddgMatch[1]);
+                } catch {
+                  // leave url as-is if decode fails
                 }
               }
-            } else {
-              lastError = `DuckDuckGo HTML returned ${ddgResp.status} ${ddgResp.statusText}`;
+              const title = links[i][2].replace(/<[^>]+>/g, '').trim();
+              const snippet = (snips[i]?.[1] || '').replace(/<[^>]+>/g, '').trim();
+              if (title && url) {
+                results.push({ title, url, snippet: snippet.slice(0, 300) });
+              }
             }
-          } catch (ddgErr: any) {
-            lastError = ddgErr?.message || 'DuckDuckGo HTML request failed';
-          }
 
-          if (results.length > 0) {
-            const lines = results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`);
-            return `Web search results for "${query}":\n\n${lines.join('\n\n')}`;
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'DuckDuckGo HTML request failed' };
           }
+        };
 
-          // ─── Source 2: Wikipedia search API ─────────────────────────────
-          // Covers encyclopedic topics. Requires a User-Agent per Wikimedia policy.
+        // ─── Source 2: Wikipedia search API ───────────────────────────────
+        // Requires a descriptive User-Agent per Wikimedia policy (else 429).
+        const searchWikipedia = async (): Promise<SourceOutcome> => {
           try {
             const wikiUrl =
               `https://en.wikipedia.org/w/api.php?action=query&list=search` +
@@ -580,90 +579,115 @@ export function buildNativeTools(): Record<string, any> {
               },
             });
 
-            if (wikiResp.ok) {
-              // Guard against non-JSON responses (Wikimedia's HTML error page on rate-limit).
-              const contentType = wikiResp.headers.get('content-type') || '';
-
-              if (!contentType.includes('application/json')) {
-                lastError = `Wikipedia API returned non-JSON response (content-type: ${contentType || 'unknown'})`;
-              } else {
-                const wikiData: any = await wikiResp.json();
-                const wikiResults: Array<{ title: string; url: string; snippet: string }> = (wikiData?.query?.search || [])
-                  .map((item: any) => {
-                    const snippet = String(item.snippet || '').replace(/<[^>]+>/g, '');
-                    const title = String(item.title || '');
-                    const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
-                    return { title, url, snippet };
-                  });
-
-                sawSuccessfulSource = true;
-
-                if (wikiResults.length > 0) {
-                  const lines = wikiResults
-                    .slice(0, limit)
-                    .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet.slice(0, 300)}`);
-                  return `Web search results for "${query}" (via Wikipedia):\n\n${lines.join('\n\n')}`;
-                }
-              }
-            } else {
-              lastError = `Wikipedia API returned ${wikiResp.status} ${wikiResp.statusText}`;
+            if (!wikiResp.ok) {
+              return { status: 'error', error: `Wikipedia API returned ${wikiResp.status} ${wikiResp.statusText}` };
             }
-          } catch (wikiErr: any) {
-            lastError = wikiErr?.message || 'Wikipedia search request failed';
-          }
 
-          // ─── Source 3: DuckDuckGo Instant Answer API (last resort) ──────
-          // Only returns results for entity-style queries with a Wikipedia abstract.
+            // Guard against non-JSON responses (Wikimedia's HTML error page on rate-limit).
+            const contentType = wikiResp.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              return {
+                status: 'error',
+                error: `Wikipedia API returned non-JSON response (content-type: ${contentType || 'unknown'})`,
+              };
+            }
+
+            const wikiData: any = await wikiResp.json();
+            const results: SearchResult[] = (wikiData?.query?.search || []).map((item: any) => {
+              const snippet = String(item.snippet || '').replace(/<[^>]+>/g, '');
+              const title = String(item.title || '');
+              const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+              return { title, url, snippet };
+            });
+
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'Wikipedia search request failed' };
+          }
+        };
+
+        // ─── Source 3: DuckDuckGo Instant Answer API ─────────────────────
+        // Only returns results for entity-style queries with a Wikipedia abstract.
+        const searchDdgIa = async (): Promise<SourceOutcome> => {
           try {
             const ddgIaUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
             const ddgIaResp = await fetchFn(ddgIaUrl, { headers: { Accept: 'application/json' } });
 
-            if (ddgIaResp.ok) {
-              sawSuccessfulSource = true;
-              const data: any = await ddgIaResp.json();
-              const iaResults: Array<{ title: string; url: string; snippet: string }> = [];
+            if (!ddgIaResp.ok) {
+              return { status: 'error', error: `DuckDuckGo IA returned ${ddgIaResp.status} ${ddgIaResp.statusText}` };
+            }
 
-              if (data.AbstractText) {
-                iaResults.push({
-                  title: data.AbstractSource || 'DuckDuckGo',
-                  url: data.AbstractURL || '',
-                  snippet: data.AbstractText,
-                });
-              }
+            const data: any = await ddgIaResp.json();
+            const results: SearchResult[] = [];
 
-              if (Array.isArray(data.RelatedTopics)) {
-                for (const topic of data.RelatedTopics) {
-                  if (iaResults.length >= limit) break;
-                  if (topic.Text && topic.FirstURL) {
-                    iaResults.push({
-                      title: topic.Text.split(' - ')[0] || 'Related',
-                      url: topic.FirstURL,
-                      snippet: topic.Text,
-                    });
-                  }
+            if (data.AbstractText) {
+              results.push({
+                title: data.AbstractSource || 'DuckDuckGo',
+                url: data.AbstractURL || '',
+                snippet: data.AbstractText,
+              });
+            }
+
+            if (Array.isArray(data.RelatedTopics)) {
+              for (const topic of data.RelatedTopics) {
+                if (results.length >= limit) break;
+                if (topic.Text && topic.FirstURL) {
+                  results.push({
+                    title: topic.Text.split(' - ')[0] || 'Related',
+                    url: topic.FirstURL,
+                    snippet: topic.Text,
+                  });
                 }
               }
-
-              if (iaResults.length > 0) {
-                const lines = iaResults
-                  .slice(0, limit)
-                  .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet.slice(0, 300)}`);
-                return `Web search results for "${query}" (via DuckDuckGo Instant Answer):\n\n${lines.join('\n\n')}`;
-              }
-            } else {
-              lastError = `DuckDuckGo IA returned ${ddgIaResp.status} ${ddgIaResp.statusText}`;
             }
-          } catch (ddgIaErr: any) {
-            lastError = ddgIaErr?.message || 'DuckDuckGo IA request failed';
+
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'DuckDuckGo IA request failed' };
+          }
+        };
+
+        // ─── Run the fallback chain ───────────────────────────────────────
+        // First source that returns ≥1 result wins. Sources after it are never
+        // contacted. We only advance when the current source returns 0 results
+        // OR fails outright.
+        const sources: Array<{ name: string; search: () => Promise<SourceOutcome> }> = [
+          { name: 'DuckDuckGo HTML', search: searchDdgHtml },
+          { name: 'Wikipedia', search: searchWikipedia },
+          { name: 'DuckDuckGo Instant Answer', search: searchDdgIa },
+        ];
+
+        let sawSuccessfulSource = false;
+        let lastError: string | null = null;
+
+        try {
+          for (const source of sources) {
+            const outcome = await source.search();
+
+            // Failed → record error and fall through to the next source.
+            if (outcome.status === 'error') {
+              lastError = outcome.error;
+              continue;
+            }
+
+            // Source responded successfully (even if it found 0 results).
+            sawSuccessfulSource = true;
+
+            // Got actual results → return immediately. Sources after this
+            // one are NEVER contacted.
+            if (outcome.results.length > 0) {
+              const lines = outcome.results
+                .slice(0, limit)
+                .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`);
+              return `Web search results for "${query}" (via ${source.name}):\n\n${lines.join('\n\n')}`;
+            }
+            // Source returned 0 results → fall through to next source.
           }
 
-          // If at least one source responded successfully, this is a genuine "zero results"
-          // (the search ran fine, just found nothing) — NOT a failure.
+          // All sources exhausted.
           if (sawSuccessfulSource) {
             return `No web results found for: ${query}. The search completed successfully but returned zero hits.`;
           }
-
-          // Every source failed — surface as a real error so the UI shows it as failed.
           return `Web search error: ${lastError || 'all search sources failed'}`;
         } catch (e: any) {
           logger.error('web_search failed', e);
