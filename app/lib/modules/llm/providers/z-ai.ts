@@ -4,6 +4,7 @@ import type { LanguageModel } from 'ai';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { createOpenAI } from '@ai-sdk/openai';
 import crypto from 'node:crypto';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 /**
  * Custom fetch wrapper for z.ai that transparently retries transient
@@ -251,6 +252,7 @@ export default class ZaiProvider extends BaseProvider {
           provider: this.name,
           maxTokenAllowed: contextWindow,
           maxCompletionTokens,
+          capabilities: detectModelCapabilities(this.name, m.id),
         };
       });
     } catch (error) {

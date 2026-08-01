@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { LanguageModel } from 'ai';
 import type { IProviderSetting } from '~/types/model';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class AnthropicProvider extends BaseProvider {
   name = 'Anthropic';
@@ -41,6 +42,7 @@ export default class AnthropicProvider extends BaseProvider {
       provider: 'Anthropic',
       maxTokenAllowed: 200000,
       maxCompletionTokens: 32000,
+      capabilities: { thinking: 'budget' },
     },
   ];
 
@@ -107,6 +109,7 @@ export default class AnthropicProvider extends BaseProvider {
         provider: this.name,
         maxTokenAllowed: contextWindow,
         maxCompletionTokens,
+        capabilities: detectModelCapabilities(this.name, m.id),
       };
     });
   }

@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 interface OpenRouterModel {
   name: string;
@@ -76,6 +77,7 @@ export default class OpenRouterProvider extends BaseProvider {
             label: `${m.name} - in:$${(m.pricing.prompt * 1_000_000).toFixed(2)} out:$${(m.pricing.completion * 1_000_000).toFixed(2)} - context ${finalContext >= 1000000 ? Math.floor(finalContext / 1000000) + 'M' : Math.floor(finalContext / 1000) + 'k'}`,
             provider: this.name,
             maxTokenAllowed: finalContext,
+            capabilities: detectModelCapabilities(this.name, m.id),
           };
         });
     } catch (error) {

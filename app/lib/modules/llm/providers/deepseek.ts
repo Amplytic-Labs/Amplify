@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createDeepSeek } from '@ai-sdk/deepseek';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class DeepseekProvider extends BaseProvider {
   name = 'Deepseek';
@@ -33,6 +34,7 @@ export default class DeepseekProvider extends BaseProvider {
       provider: 'Deepseek',
       maxTokenAllowed: 8000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'automatic' },
     },
     {
       name: 'deepseek-v3.2',
@@ -93,6 +95,7 @@ export default class DeepseekProvider extends BaseProvider {
             provider: this.name,
             maxTokenAllowed: 64000, // Default, adjust per model if available
             maxCompletionTokens: 8192,
+            capabilities: detectModelCapabilities(this.name, m.id),
           })) || [];
 
       return dynamicModels;

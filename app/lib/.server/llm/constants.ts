@@ -31,14 +31,21 @@ export const PROVIDER_COMPLETION_LIMITS: Record<string, number> = {
 };
 
 /*
- * Reasoning models that require maxCompletionTokens instead of maxTokens
- * These models use internal reasoning tokens and have different API parameter requirements
+ * Reasoning models that require maxCompletionTokens instead of maxTokens.
+ * These models use internal reasoning tokens and have different API parameter requirements.
+ *
+ * Now uses ModelCapabilities when available, falling back to name-based
+ * detection for backwards compatibility.
  */
-export function isReasoningModel(modelName: string): boolean {
-  const result = /^(o1|o3|gpt-5|gemini-2\.5|gemini-3|deepseek-r|qwen.*think|kimi-thinking|gemma)/i.test(modelName);
+export function isReasoningModel(modelName: string, capabilities?: import('~/lib/modules/llm/types').ModelCapabilities): boolean {
+  // Use capabilities if available (preferred path)
+  if (capabilities?.thinking) {
+    return true;
+  }
 
-  // DEBUG: Test regex matching
-  console.log(`REGEX TEST: "${modelName}" matches reasoning pattern: ${result}`);
+  // Fallback: name-based detection for backwards compatibility
+  // (e.g., when capabilities are not yet populated)
+  const result = /^(o1|o3|o4|gpt-5|gemini-2\.5|gemini-3|deepseek-r|qwen.*think|qwq|kimi-thinking)/i.test(modelName);
 
   return result;
 }

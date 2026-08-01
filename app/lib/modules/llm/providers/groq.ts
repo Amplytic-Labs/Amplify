@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class GroqProvider extends BaseProvider {
   name = 'Groq';
@@ -70,6 +71,7 @@ export default class GroqProvider extends BaseProvider {
       provider: this.name,
       maxTokenAllowed: Math.min(m.context_window || 8192, 16384),
       maxCompletionTokens: 8192,
+      capabilities: detectModelCapabilities(this.name, m.id),
     }));
   }
 

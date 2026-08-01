@@ -4,6 +4,7 @@ import type { IProviderSetting } from '~/types/model';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 import { logger } from '~/utils/logger';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class LMStudioProvider extends BaseProvider {
   name = 'LMStudio';
@@ -63,6 +64,7 @@ export default class LMStudioProvider extends BaseProvider {
         label: model.id,
         provider: this.name,
         maxTokenAllowed: 8000,
+        capabilities: detectModelCapabilities(this.name, model.id),
       }));
     } catch (error) {
       if (error instanceof DOMException && error.name === 'TimeoutError') {

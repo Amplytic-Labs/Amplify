@@ -211,7 +211,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
       logger.info(`Generating response Provider: ${provider.name}, Model: ${modelDetails.name}`);
 
       // DEBUG: Log reasoning model detection
-      const isReasoning = isReasoningModel(modelDetails.name);
+      const isReasoning = isReasoningModel(modelDetails.name, modelDetails.capabilities);
       logger.info(`DEBUG: Model "${modelDetails.name}" detected as reasoning model: ${isReasoning}`);
 
       // Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models
@@ -247,8 +247,8 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
        * per-provider options for ALL providers (Anthropic, Google, OpenAI,
        * xAI, Mistral, DeepSeek, etc.).
        */
-      const thinkingOpts = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig);
-      const hasThinking = supportsThinkingConfig(provider.name, modelDetails.name) && Object.keys(thinkingOpts).length > 0;
+      const thinkingOpts = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig, modelDetails.capabilities);
+      const hasThinking = supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities) && Object.keys(thinkingOpts).length > 0;
 
       if (hasThinking) {
         logger.info(

@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createFireworks } from '@ai-sdk/fireworks';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class FireworksProvider extends BaseProvider {
   name = 'Fireworks';
@@ -109,6 +110,7 @@ export default class FireworksProvider extends BaseProvider {
             label: `${m.id} (Dynamic)`,
             provider: this.name,
             maxTokenAllowed: m.context_length || 128000,
+            capabilities: detectModelCapabilities(this.name, `accounts/fireworks/models/${m.id}`),
           })) || [];
 
       return dynamicModels;

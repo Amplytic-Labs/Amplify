@@ -2075,59 +2075,18 @@ function getThinkingControlState(
   providerName: string,
   model: ModelInfo,
 ): 'toggle+budget' | 'toggle+effort' | 'effort-only' | 'toggle-only' | 'on-and-locked' | 'off-and-locked' {
-  const name = (model.name || '').toLowerCase();
-  const label = (model.label || '').toLowerCase();
-
-  // DeepSeek Reasoner — always reasons, no toggle, no budget.
-  if (providerName === 'Deepseek' && (name.includes('reasoner') || label.includes('reasoner'))) {
-    return 'on-and-locked';
-  }
-
-  // OpenAI o-series + GPT-5 — effort-only (low/medium/high).
-  if (
-    providerName === 'OpenAI' &&
-    (name.startsWith('o1') || name.startsWith('o3') || name.startsWith('o4') || name.startsWith('gpt-5'))
-  ) {
-    return 'effort-only';
-  }
-
-  // xAI Grok 3/4 — effort-only.
-  if (providerName === 'xAI' && (name.includes('grok-3') || name.includes('grok-4'))) {
-    return 'effort-only';
-  }
-
-  /*
-   * Mistral Magistral — effort-only (high/none per SDK, but we expose low/medium/high
-   * and the translator maps low/medium → none/high appropriately).
-   */
-  if (providerName === 'Mistral' && name.includes('magistral')) {
-    return 'effort-only';
-  }
-
-  // Google Gemini 3.x — toggle + EFFORT (uses thinkingLevel, not budget).
-  if (providerName === 'Google' && /gemini-3[.-]/.test(name)) {
-    return 'toggle+effort';
-  }
-
-  // Google Gemini 2.5 — toggle + token budget.
-  if (providerName === 'Google' && name.includes('gemini-2.5')) {
-    return 'toggle+budget';
-  }
-
-  // Anthropic Claude 3.7 / Opus 4 / Sonnet 4 — toggle + token budget.
-  if (
-    providerName === 'Anthropic' &&
-    (name.includes('claude-3-7') ||
-      name.includes('claude-opus-4') ||
-      name.includes('claude-sonnet-4') ||
-      name.includes('claude-3.7'))
-  ) {
-    return 'toggle+budget';
-  }
-
-  // DeepSeek Chat (V3) — no thinking.
-  if (providerName === 'Deepseek' && name.includes('chat')) {
-    return 'off-and-locked';
+  // Use ModelCapabilities if available (populated at model-fetch time)
+  if (model.capabilities?.thinking) {
+    switch (model.capabilities.thinking) {
+      case 'budget':
+        return 'toggle+budget';
+      case 'effort':
+        return 'effort-only';
+      case 'adaptive':
+        return 'toggle-only';
+      case 'automatic':
+        return 'on-and-locked';
+    }
   }
 
   // Default — no reasoning.

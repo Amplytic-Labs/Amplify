@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class OpenAIProvider extends BaseProvider {
   name = 'OpenAI';
@@ -44,10 +45,11 @@ export default class OpenAIProvider extends BaseProvider {
       provider: 'OpenAI',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 32000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
     },
 
     // o1-mini: 128k context, 65k output limit (reasoning model)
-    { name: 'o1-mini', label: 'o1-mini', provider: 'OpenAI', maxTokenAllowed: 128000, maxCompletionTokens: 65000 },
+    { name: 'o1-mini', label: 'o1-mini', provider: 'OpenAI', maxTokenAllowed: 128000, maxCompletionTokens: 65000, capabilities: { thinking: 'effort', reasoningEffort: true } },
   ];
 
   async getDynamicModels(
@@ -132,6 +134,7 @@ export default class OpenAIProvider extends BaseProvider {
          */
         maxTokenAllowed: contextWindow,
         maxCompletionTokens,
+        capabilities: detectModelCapabilities(this.name, m.id),
       };
     });
   }

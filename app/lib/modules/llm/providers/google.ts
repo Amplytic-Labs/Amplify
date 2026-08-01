@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class GoogleProvider extends BaseProvider {
   name = 'Google';
@@ -19,6 +20,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'budget' },
     },
     {
       name: 'gemini-2.5-flash-lite',
@@ -26,6 +28,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'budget' },
     },
     {
       name: 'gemini-3-flash',
@@ -33,6 +36,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemini-3.1-flash-lite',
@@ -40,6 +44,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemini-3.5-flash',
@@ -47,6 +52,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemma-4-26b-a4b-it',
@@ -165,6 +171,7 @@ export default class GoogleProvider extends BaseProvider {
         provider: this.name,
         maxTokenAllowed: finalContext,
         maxCompletionTokens: completionTokens,
+        capabilities: detectModelCapabilities(this.name, modelName),
       };
     });
   }

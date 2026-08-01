@@ -625,7 +625,7 @@ ${systemPrompt}`;
   logger.info(`Sending llm call to ${provider.name} with model ${modelDetails.name}`);
 
   // Log reasoning model detection and token parameters
-  const isReasoning = isReasoningModel(modelDetails.name);
+  const isReasoning = isReasoningModel(modelDetails.name, modelDetails.capabilities);
   logger.info(
     `Model "${modelDetails.name}" is reasoning model: ${isReasoning}, using ${isReasoning ? 'maxCompletionTokens' : 'maxTokens'}: ${safeMaxTokens}`,
   );
@@ -764,9 +764,9 @@ ${systemPrompt}`;
    *
    * See ./thinking.ts for the full per-provider breakdown.
    */
-  const thinkingProviderOptions = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig);
+  const thinkingProviderOptions = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig, modelDetails.capabilities);
 
-  const hasThinkingOpts = supportsThinkingConfig(provider.name, modelDetails.name);
+  const hasThinkingOpts = supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities);
 
   if (hasThinkingOpts) {
     logger.info(

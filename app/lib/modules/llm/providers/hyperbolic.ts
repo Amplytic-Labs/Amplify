@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class HyperbolicProvider extends BaseProvider {
   name = 'Hyperbolic';
@@ -78,6 +79,7 @@ export default class HyperbolicProvider extends BaseProvider {
       label: `${m.id} - context ${m.context_length ? Math.floor(m.context_length / 1000) + 'k' : 'N/A'}`,
       provider: this.name,
       maxTokenAllowed: m.context_length || 8000,
+      capabilities: detectModelCapabilities(this.name, m.id),
     }));
   }
 

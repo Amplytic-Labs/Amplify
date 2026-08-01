@@ -4,6 +4,7 @@ import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { createOllama } from 'ollama-ai-provider';
 import { logger } from '~/utils/logger';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 interface OllamaModelDetails {
   parent_model: string;
@@ -90,6 +91,7 @@ export default class OllamaProvider extends BaseProvider {
         label: `${model.name} (${model.details.parameter_size})`,
         provider: this.name,
         maxTokenAllowed: 8000,
+        capabilities: detectModelCapabilities(this.name, model.name),
       }));
     } catch (error) {
       if (error instanceof DOMException && error.name === 'TimeoutError') {

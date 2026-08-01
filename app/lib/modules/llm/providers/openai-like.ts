@@ -3,6 +3,7 @@ import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
 import type { LanguageModel } from 'ai';
 import { logger } from '~/utils/logger';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 interface OpenAIModelsResponse {
   data: Array<{ id: string }>;
@@ -56,6 +57,7 @@ export default class OpenAILikeProvider extends BaseProvider {
         label: model.id,
         provider: this.name,
         maxTokenAllowed: 8000,
+        capabilities: detectModelCapabilities(this.name, model.id),
       }));
     } catch (error) {
       logger.info(`${this.name}: Could not fetch /models endpoint, checking fallback env`, error);
@@ -111,6 +113,7 @@ export default class OpenAILikeProvider extends BaseProvider {
           label,
           provider: this.name,
           maxTokenAllowed: limit,
+          capabilities: detectModelCapabilities(this.name, modelName),
         });
       }
 
