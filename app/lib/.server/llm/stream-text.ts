@@ -407,8 +407,8 @@ export async function streamText(props: {
    */
   const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
 
-  if (isFirstMessage && chatMode === 'build') {
-    systemPrompt = `<chat_naming>
+  const chatNamingInstruction = isFirstMessage
+    ? `<chat_naming>
   CRITICAL — This is the FIRST message of a new conversation. Your
   response MUST begin with a single line of the form:
 
@@ -442,10 +442,11 @@ export async function streamText(props: {
 
   WRONG (tag omitted):
       Sure, let's build that dashboard...
-</chat_naming>
+</chat_naming>\n\n`
+    : '';
 
-${systemPrompt}`;
-
+  if (chatNamingInstruction && chatMode === 'build') {
+    systemPrompt = chatNamingInstruction + systemPrompt;
   }
 
   /*
@@ -790,7 +791,7 @@ ${systemPrompt}`;
 
   const streamParams = {
     model: modelInstance,
-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
+    system: chatMode === 'build' ? systemPrompt : chatNamingInstruction + discussPrompt(),
     ...effectiveTokenParams,
     messages: await convertToModelMessages(processedMessages as any),
     ...filteredOptions,

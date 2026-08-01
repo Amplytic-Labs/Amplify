@@ -1061,6 +1061,7 @@ export function useChatHistory() {
             currentDesc === 'Untitled Project' ||
             currentDesc === 'New project chat' ||
             currentDesc === 'New Conversation' ||
+            currentDesc === 'New chat' ||
             currentDesc === 'Imported Project' ||
             /^Start with .+ Template$/.test(currentDesc) ||
             /^Git Project:/i.test(currentDesc) ||
@@ -1119,46 +1120,19 @@ export function useChatHistory() {
            * immediately while the AI's first response (containing the
            * `<chatname>` tag) is still streaming. This is replaced as
            * soon as the `<chatname>` tag arrives (above). If the model
-           * never emits the tag, this truncated user text remains as a
-           * reasonable fallback name.
+           * never emits the tag, 'New chat' remains as a reasonable fallback name.
            */
-          const firstUserMessage = messages.find((m) => m.role === 'user');
+          description.set('New chat');
 
-          if (firstUserMessage) {
-            let rawContent: any;
-
-            if (Array.isArray(firstUserMessage.parts)) {
-              rawContent = firstUserMessage.parts;
-            } else {
-              rawContent = (firstUserMessage as any).content;
-            }
-
-            let userText: string =
-              typeof rawContent === 'string'
-                ? rawContent
-                : Array.isArray(rawContent)
-                  ? rawContent
-                      .filter((p: any) => p.type === 'text')
-                      .map((p: any) => p.text)
-                      .join(' ')
-                  : '';
-
-            userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
-
-            const provisionalTitle =
-              userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '') || 'New Conversation';
-            description.set(provisionalTitle);
-
-            await setMessages(
-              db,
-              finalChatId,
-              [...archivedMessages, ...messages],
-              _finalUrlId,
-              description.get(),
-              undefined,
-              chatMetadata.get(),
-            );
-          }
+          await setMessages(
+            db,
+            finalChatId,
+            [...archivedMessages, ...messages],
+            _finalUrlId,
+            description.get(),
+            undefined,
+            chatMetadata.get(),
+          );
         }
       }
 
