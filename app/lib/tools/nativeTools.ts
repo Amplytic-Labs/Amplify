@@ -258,6 +258,31 @@ export function parseFileMutationSignal(value: string): FileMutationSignal | nul
  *
  * The execute function reads `files` from the second argument (the tool-call
  * context). The MCP service is responsible for passing `files` through.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * ERROR-REPORTING CONVENTION (READ THIS BEFORE ADDING A TOOL)
+ * ──────────────────────────────────────────────────────────────────────────
+ * Tool execute() functions return a STRING (the AI SDK feeds it back to the
+ * model and the UI displays it). To classify results as success vs. error
+ * WITHOUT hardcoding every error message, the UI (`classifyResult` in
+ * ToolProgress.tsx and `isError` in ToolInvocationItem.tsx) uses ONE rule:
+ *
+ *   A result is an error IFF its string starts with `Error:`.
+ *
+ * Implications for tool authors:
+ *   1. GENUINE failures (bad input, file missing, network error, parse
+ *      failure, conflict, etc.) MUST be returned as `Error: <description>`.
+ *      The UI will render a red ✗ icon next to it.
+ *   2. "No results" cases (empty dir, zero grep matches, zero web hits, no
+ *      workspace loaded, etc.) are NOT errors — they are successes with
+ *      empty data. Return a plain message like `No matches for pattern: X`
+ *      or `No workspace is currently open. ...`. The UI shows a green ✓.
+ *   3. Hint / guidance messages (e.g. "Use list_dir with '.' to see the
+ *      workspace root.") are also successes — they tell the model how to
+ *      proceed, not that something broke.
+ *
+ * Following this convention means new tools automatically get correct UI
+ * classification without touching the classifier.
  */
 export function buildNativeTools(): Record<string, any> {
   return {
@@ -279,11 +304,11 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, filePath);
 
         if (!file) {
-          return `File not found: ${filePath}. Use list_dir to inspect the workspace first.`;
+          return `Error: File not found: ${filePath}. Use list_dir to inspect the workspace first.`;
         }
 
         if (file.isBinary) {
-          return `File is binary and cannot be displayed as text: ${filePath}`;
+          return `Error: File is binary and cannot be displayed as text: ${filePath}`;
         }
 
         const lines = file.content.split('\n');
@@ -311,10 +336,13 @@ export function buildNativeTools(): Record<string, any> {
         const entries = listEntriesInDir(ctx.files, rel);
 
         if (entries.length === 0) {
-          // Distinguish "directory does not exist" (error) from "directory is empty" (success).
-          // A directory "exists" if any file key lives under its prefix; otherwise it's a bad path.
-          if (!ctx.files) {
-            return `Directory not found: ${path}`;
+          // Distinguish "no workspace loaded" (not an error — just nothing to list) from
+          // "directory does not exist in the workspace" (real error — bad path).
+          //
+          // Per the file-level convention: only `Error:`-prefixed strings are errors.
+          // No-workspace and empty-dir are successes-with-empty-data.
+          if (!ctx.files || Object.keys(ctx.files).length === 0) {
+            return `No workspace is currently open. Open a workspace to list its contents.`;
           }
 
           const prefix = rel === '' ? '' : `${rel}/`;
@@ -329,7 +357,7 @@ export function buildNativeTools(): Record<string, any> {
           });
 
           if (!dirExists) {
-            return `Directory not found: ${path}. Use list_dir with "." to see the workspace root.`;
+            return `Error: Directory not found: ${path}. Use list_dir with "." to see the workspace root.`;
           }
 
           // The directory exists but genuinely has no entries — that's a successful empty result.
@@ -418,7 +446,7 @@ export function buildNativeTools(): Record<string, any> {
             ? new RegExp(pattern, caseSensitive ? '' : 'i')
             : new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? '' : 'i');
         } catch (e: any) {
-          return `Invalid pattern: ${e.message}`;
+          return `Error: Invalid pattern: ${e.message}`;
         }
 
         const globRe = includePattern ? globToRegex(includePattern) : null;
@@ -688,10 +716,10 @@ export function buildNativeTools(): Record<string, any> {
           if (sawSuccessfulSource) {
             return `No web results found for: ${query}. The search completed successfully but returned zero hits.`;
           }
-          return `Web search error: ${lastError || 'all search sources failed'}`;
+          return `Error: Web search failed: ${lastError || 'all search sources failed'}`;
         } catch (e: any) {
           logger.error('web_search failed', e);
-          return `Web search error: ${e.message}`;
+          return `Error: Web search failed: ${e.message}`;
         }
       },
     },
@@ -721,13 +749,13 @@ export function buildNativeTools(): Record<string, any> {
 
           if (!resp.ok) {
             const errBody: any = await resp.json().catch(() => ({}));
-            return `Fetch failed: ${errBody?.error || resp.status + ' ' + resp.statusText}`;
+            return `Error: Fetch failed: ${errBody?.error || resp.status + ' ' + resp.statusText}`;
           }
 
           const data: any = await resp.json();
 
           if (data?.error) {
-            return `Fetch failed: ${data.error}`;
+            return `Error: Fetch failed: ${data.error}`;
           }
 
           const page = data?.data || data;
@@ -742,7 +770,7 @@ export function buildNativeTools(): Record<string, any> {
           return `Title: ${title}\nURL: ${sourceUrl}\n\n${content}`;
         } catch (e: any) {
           logger.error('fetch_webpage failed', e);
-          return `Fetch failed: ${e.message}`;
+          return `Error: Fetch failed: ${e.message}`;
         }
       },
     },
@@ -768,21 +796,21 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, rel);
 
         if (!file) {
-          return `File not found: ${filePath}. Use list_dir or find_files to locate the file.`;
+          return `Error: File not found: ${filePath}. Use list_dir or find_files to locate the file.`;
         }
 
         if (file.isBinary) {
-          return `Cannot edit binary file: ${filePath}`;
+          return `Error: Cannot edit binary file: ${filePath}`;
         }
 
         const occurrences = file.content.split(oldString).length - 1;
 
         if (occurrences === 0) {
-          return `oldString not found in ${rel}. Make sure you copied the exact text including whitespace and indentation.`;
+          return `Error: oldString not found in ${rel}. Make sure you copied the exact text including whitespace and indentation.`;
         }
 
         if (occurrences > 1) {
-          return `oldString matched ${occurrences} times in ${rel}. Add more surrounding context so the match is unique.`;
+          return `Error: oldString matched ${occurrences} times in ${rel}. Add more surrounding context so the match is unique.`;
         }
 
         const signal: FileMutationSignal = {
@@ -820,11 +848,11 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, rel);
 
         if (!file) {
-          return `File not found: ${filePath}.`;
+          return `Error: File not found: ${filePath}.`;
         }
 
         if (file.isBinary) {
-          return `Cannot edit binary file: ${filePath}.`;
+          return `Error: Cannot edit binary file: ${filePath}.`;
         }
 
         /*
@@ -835,11 +863,11 @@ export function buildNativeTools(): Record<string, any> {
           const occ = file.content.split(e.oldString).length - 1;
 
           if (occ === 0) {
-            return `Edit #${i + 1} failed: oldString not found in ${rel}.`;
+            return `Error: Edit #${i + 1} failed: oldString not found in ${rel}.`;
           }
 
           if (occ > 1) {
-            return `Edit #${i + 1} failed: oldString matched ${occ} times in ${rel}. Add more surrounding context.`;
+            return `Error: Edit #${i + 1} failed: oldString matched ${occ} times in ${rel}. Add more surrounding context.`;
           }
         }
 
@@ -866,7 +894,7 @@ export function buildNativeTools(): Record<string, any> {
         const existing = getFileFromMap(ctx.files, rel);
 
         if (existing) {
-          return `File already exists: ${rel}. Use replace_string_in_file to edit it, or delete it first.`;
+          return `Error: File already exists: ${rel}. Use replace_string_in_file to edit it, or delete it first.`;
         }
 
         const signal: FileMutationSignal = {

@@ -160,13 +160,22 @@ function summarizeArgs(toolName: string, args: any): string {
 
 /**
  * Result classifier. Copilot shows an error icon (codicon-error, red) for
- * failed tool calls. We inspect the result string for known error prefixes
- * emitted by nativeTools.ts.
+ * failed tool calls.
  *
- * IMPORTANT: "no results" is NOT an error. A search that completes
- * successfully but finds nothing (empty dir, zero grep matches, zero web
- * hits) is a SUCCESS — the tool did its job. Only actual failures
- * (file not found, bad pattern, network error, API error) are errors.
+ * SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
+ *   A tool result is an error IFF its string starts with `Error:`.
+ *
+ * Everything else — including "No results", "Directory is empty",
+ * "No workspace is currently open", "No matches for pattern", "No web
+ * results found", "User fact storage is not available", hint/guidance
+ * messages — is a SUCCESS. The tool ran fine; it just had nothing to
+ * return or it politely told the model how to proceed.
+ *
+ * This rule is PERMANENT: new tools that follow the convention get correct
+ * UI classification without any edits here. No more per-tool prefix lists.
+ *
+ * The only non-string special case is the file-mutation signal (JSON
+ * blob consumed by the workspace), which is always a success.
  */
 type ResultStatus = 'success' | 'error' | 'unknown';
 
@@ -184,24 +193,9 @@ export function classifyResult(result: any): ResultStatus {
     return 'success';
   }
 
-  const errorPrefixes = [
-    'Error:',
-    'File not found',
-    'Directory not found',
-    'Edit failed',
-    'Cannot edit',
-    'File already exists',
-    'oldString',
-    'Invalid pattern',
-    'Web search failed',
-    'Web search error',
-    'User fact storage is not available',
-    'User context search is not available',
-    'Project context search is not available',
-    'Project context storage is not available',
-  ];
-
-  return errorPrefixes.some((p) => result.startsWith(p)) ? 'error' : 'success';
+  // Single rule: anything prefixed with `Error:` is an error. Everything else
+  // (including "No results", "Not available", hint messages) is a success.
+  return result.startsWith('Error:') ? 'error' : 'success';
 }
 
 /**

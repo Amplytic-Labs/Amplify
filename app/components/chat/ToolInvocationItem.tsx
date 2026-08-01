@@ -162,22 +162,11 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
   const toggleDetails = () => setShowDetails(!showDetails);
 
   const isResult = ToolState.isResult(state);
-  const isError =
-    typeof result === 'string' &&
-    (result.startsWith('Error:') ||
-      result.startsWith('File not found') ||
-      result.startsWith('Directory not found') ||
-      result.startsWith('Edit failed') ||
-      result.startsWith('Cannot edit') ||
-      result.startsWith('File already exists') ||
-      result.startsWith('oldString') ||
-      result.startsWith('Invalid pattern') ||
-      result.startsWith('Web search failed') ||
-      result.startsWith('Web search error') ||
-      result.startsWith('User fact storage is not available') ||
-      result.startsWith('User context search is not available') ||
-      result.startsWith('Project context search is not available') ||
-      result.startsWith('Project context storage is not available'));
+  // SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
+  // a tool result is an error IFF its string starts with `Error:`. Everything
+  // else (no results, empty, not available, hint messages) is a success.
+  // New tools that follow the convention get correct UI without edits here.
+  const isError = typeof result === 'string' && result.startsWith('Error:');
 
   return (
     <div className={classNames('flex flex-col gap-1', !grouped && 'my-2')}>
