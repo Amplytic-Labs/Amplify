@@ -1157,7 +1157,15 @@ ${systemPrompt}`;
                   }
 
                   if (props.dataStream) {
+                    /*
+                     * AI SDK v7 requires a "text-start" chunk before any "text-delta"
+                     * chunks for a given text part ID. Without it, the client-side
+                     * stream processor throws:
+                     *   "Received text-delta for missing text part with ID 'template'"
+                     */
+                    props.dataStream.write({ type: 'text-start', id: 'template' });
                     props.dataStream.write({ type: 'text-delta', id: 'template', delta: result.assistantMessage });
+                    props.dataStream.write({ type: 'text-end', id: 'template' });
                   }
 
                   return {

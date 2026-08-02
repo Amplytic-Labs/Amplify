@@ -1,10 +1,17 @@
 import { useStore } from '@nanostores/react';
-import { computed } from 'nanostores';
+import { computed, map } from 'nanostores';
 import { memo, useMemo } from 'react';
 import type { ActionState } from '~/lib/runtime/action-runner';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
 import { TraceTree, type TraceItem, type TreeItemStatus, type TreeItemType, type TreeItemIcon } from './TraceTree';
+
+/**
+ * Stable fallback MapStore used when the artifact hasn't been registered yet.
+ * Defined at module scope so it persists across renders and never triggers
+ * unnecessary recomputation in the `computed` store.
+ */
+const emptyActionsMap = map<Record<string, never>>({});
 
 interface ArtifactProps {
   messageId: string;
@@ -16,11 +23,14 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   const artifact = artifacts[artifactId];
 
   const actions = useStore(
-    computed(artifact.runner.actions, (actions) => {
-      return Object.values(actions).filter((action) => {
-        return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
-      });
-    }),
+    computed(
+      artifact?.runner.actions ?? emptyActionsMap,
+      (actions) => {
+        return Object.values(actions).filter((action) => {
+          return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
+        });
+      },
+    ),
   );
 
   /* ---- Build TraceTree items for files and commands ---- */
@@ -78,6 +88,10 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
 
     return { fileItems: files, commandItems: commands, fileSummary: fileText, commandSummary: cmdText };
   }, [actions]);
+
+  if (!artifact) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col mb-4">
