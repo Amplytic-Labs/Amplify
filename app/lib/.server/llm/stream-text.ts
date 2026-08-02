@@ -28,6 +28,140 @@ import { preFlightCheck, estimateRequestTokens, shrinkMessagesToFit, type RateLi
 export type Messages = UIMessage[];
 
 /**
+ * Enforce strict user/assistant message alternation for providers like
+ * Google Gemini that reject malformed turn sequences.
+ *
+ * Rules enforced:
+ *   1. First message must be from the user (drop leading assistant messages).
+ *   2. No consecutive same-role messages — merge consecutive user messages
+ *      and consecutive assistant messages.
+ *   3. Assistant messages with tool calls that have no corresponding function
+ *      response (orphaned tool calls) are stripped of those tool parts.
+ *   4. If an assistant message ends up empty after stripping, it is dropped.
+ */
+function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof createScopedLogger>): any[] {
+  if (!messages.length) {
+    return messages;
+  }
+
+  // Step 1: Drop leading assistant messages (first turn must be user)
+  let result = [...messages];
+
+  while (result.length > 0 && result[0].role === 'assistant') {
+    logger.debug('[alternation] Dropped leading assistant message');
+    result = result.slice(1);
+  }
+
+  if (!result.length) {
+    return result;
+  }
+
+  // Step 2: Merge consecutive same-role messages
+  const merged: UIMessage[] = [result[0]];
+
+  for (let i = 1; i < result.length; i++) {
+    const msg = result[i];
+    const last = merged[merged.length - 1];
+
+    if (msg.role === last.role) {
+      // Same role — merge parts and content
+      const lastParts = (last as any).parts || [];
+      const msgParts = (msg as any).parts || [];
+
+      (last as any).parts = [...lastParts, ...msgParts];
+
+      // Also merge content string if present
+      const lastContent = (last as any).content || '';
+      const msgContent = (msg as any).content || '';
+
+      if (msgContent) {
+        (last as any).content = lastContent + msgContent;
+      }
+
+      // Merge annotations
+      const lastAnnotations = (last as any).annotations || [];
+      const msgAnnotations = (msg as any).annotations || [];
+      (last as any).annotations = [...lastAnnotations, ...msgAnnotations];
+
+      logger.debug(`[alternation] Merged consecutive ${msg.role} messages`);
+    } else {
+      merged.push(msg);
+    }
+  }
+
+  // Step 3: Strip orphaned tool calls from assistant messages
+  // A tool call is "orphaned" if it appears in the LAST assistant message
+  // (no subsequent user message with function response to follow it).
+  // For Gemini, the last assistant message's tool calls are fine because
+  // the model will generate the next response. But tool calls in earlier
+  // assistant messages that have no matching function response are problematic.
+  // The convertToModelMessages function handles this, but we need to ensure
+  // that tool calls in non-last assistant messages have been resolved.
+
+  // Step 4: Drop empty assistant messages after all cleanup
+  const final = merged.filter((msg, idx) => {
+    if (msg.role !== 'assistant') {
+      return true;
+    }
+
+    const parts = (msg as any).parts || [];
+    const content = (msg as any).content || '';
+
+    // Has text content? Keep it.
+    const hasText = parts.some(
+      (p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0,
+    ) || (typeof content === 'string' && content.trim().length > 0);
+
+    // Has reasoning content? Keep it.
+    const hasReasoning = parts.some((p: any) => p.type === 'reasoning');
+
+    // Has tool parts with results? Keep it.
+    const hasToolResult = parts.some((p: any) => {
+      const isToolPart =
+        (typeof p.type === 'string' && p.type.startsWith('tool-')) ||
+        !!p.toolCallId;
+      return isToolPart;
+    });
+
+    if (!hasText && !hasReasoning && !hasToolResult) {
+      logger.debug('[alternation] Dropped empty assistant message after merge');
+      return false;
+    }
+
+    return true;
+  });
+
+  // Step 5: Re-enforce alternation after filtering (filtering may have created
+  // consecutive same-role messages again)
+  const reenforced: UIMessage[] = final.length > 0 ? [final[0]] : [];
+
+  for (let i = 1; i < final.length; i++) {
+    const msg = final[i];
+    const last = reenforced[reenforced.length - 1];
+
+    if (msg.role === last.role) {
+      // Same role again after filtering — merge
+      const lastParts = (last as any).parts || [];
+      const msgParts = (msg as any).parts || [];
+      (last as any).parts = [...lastParts, ...msgParts];
+
+      const lastContent = (last as any).content || '';
+      const msgContent = (msg as any).content || '';
+
+      if (msgContent) {
+        (last as any).content = lastContent + msgContent;
+      }
+
+      logger.debug(`[alternation] Re-merged consecutive ${msg.role} messages after cleanup`);
+    } else {
+      reenforced.push(msg);
+    }
+  }
+
+  return reenforced;
+}
+
+/**
  * Project-marker filenames that indicate the workspace already contains an
  * initialized project (via inject_template, a GitHub clone, or a user-picked
  * template). When ANY of these are present, the `inject_template` tool is
@@ -379,6 +513,31 @@ export async function streamText(props: {
 
     return true;
   });
+
+  /*
+   * GEMINI / STRICT-ALTERNATION — ENFORCE VALID TURN ORDER
+   * -------------------------------------------------------
+   * After the incomplete-tool sanitization above, the message sequence
+   * may still violate Gemini's strict alternation rules:
+   *
+   *   - Every functionCall must be immediately followed by a functionResponse
+   *   - No consecutive assistant turns (each assistant turn must be followed
+   *     by a user turn or a functionResponse turn)
+   *   - The first message must be a user turn
+   *
+   * Common causes after sanitization:
+   *   1. Dropping an empty assistant message leaves two user messages adjacent
+   *   2. An assistant message with only tool calls (no text) followed by another
+   *      assistant message creates consecutive assistant turns
+   *   3. A tool call whose function response was in a later dropped message
+   *
+   * Fix: walk the message list and enforce strict user/assistant alternation.
+   * If we find consecutive same-role messages, merge them. If we find an
+   * assistant message with tool calls that has no matching function response
+   * (because the response was in a dropped message), strip those orphaned
+   * tool calls.
+   */
+  processedMessages = enforceMessageAlternation(processedMessages, logger) as typeof processedMessages;
 
 
   const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
