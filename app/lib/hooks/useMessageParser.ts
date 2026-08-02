@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { EnhancedStreamingMessageParser } from '~/lib/runtime/enhanced-message-parser';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { createScopedLogger } from '~/utils/logger';
@@ -68,9 +68,27 @@ const extractTextContent = (message: UIMessage) => {
 
 export function useMessageParser() {
   const [parsedMessages, setParsedMessages] = useState<{ [key: number]: string }>({});
+  const lastChatModeRef = useRef<'discuss' | 'build' | undefined>(undefined);
 
   const parseMessages = useCallback((messages: UIMessage[], isLoading: boolean, chatMode?: 'discuss' | 'build') => {
     let reset = false;
+
+    /*
+     * RACE CONDITION FIX: When the chatMode changes, the parser must be
+     * reset and all messages re-parsed from scratch. Without this, the
+     * first message(s) get parsed with the default 'build' mode (which
+     * auto-wraps bash code blocks as artifacts), and the mode switch
+     * arrives too late — the parser is stateful and only processes NEW
+     * content from its internal position cursor, so it never re-visits
+     * the already-parsed content.
+     */
+    if (chatMode !== lastChatModeRef.current) {
+      logger.debug(`[parser] Chat mode changed: ${lastChatModeRef.current} → ${chatMode}, resetting parser`);
+      lastChatModeRef.current = chatMode;
+      reset = true;
+      messageParser.reset();
+      setParsedMessages({}); // Clear all parsed content so it gets re-parsed
+    }
 
     if (import.meta.env.DEV && !isLoading) {
       reset = true;
