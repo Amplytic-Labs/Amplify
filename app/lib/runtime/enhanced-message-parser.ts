@@ -11,6 +11,7 @@ const logger = createScopedLogger('EnhancedMessageParser');
 export class EnhancedStreamingMessageParser extends StreamingMessageParser {
   private _processedCodeBlocks = new Map<string, Set<string>>();
   private _artifactCounter = 0;
+  private _chatMode: 'discuss' | 'build' = 'build';
 
   // Optimized command pattern lookup
   private _commandPatternMap = new Map<string, RegExp>([
@@ -32,9 +33,32 @@ export class EnhancedStreamingMessageParser extends StreamingMessageParser {
     super(options);
   }
 
+  /**
+   * Set the current chat mode. In discuss mode, the enhanced parser
+   * skips auto-wrapping code blocks and shell commands as artifacts —
+   * the AI is just explaining things, not executing commands. The base
+   * parser still handles proper <amplifyArtifact> tags if the AI emits
+   * them explicitly (which only happens in build mode).
+   */
+  setChatMode(mode: 'discuss' | 'build') {
+    this._chatMode = mode;
+  }
+
   parse(messageId: string, input: string): string {
     // First try the normal parsing
     let output = super.parse(messageId, input);
+
+    /*
+     * In discuss mode, skip the enhanced code-block/shell-command
+     * auto-wrapping entirely. The AI is explaining things, not executing
+     * commands — a ```bash code block in a discussion should render as
+     * normal markdown, not get wrapped in an <amplifyArtifact> shell
+     * action. The base parser still handles explicit <amplifyArtifact>
+     * tags if the AI emits them (which only happens in build mode).
+     */
+    if (this._chatMode === 'discuss') {
+      return output;
+    }
 
     // If no artifacts were detected, check for code blocks that should be files
     if (!this._hasDetectedArtifacts(input)) {

@@ -69,13 +69,21 @@ const extractTextContent = (message: UIMessage) => {
 export function useMessageParser() {
   const [parsedMessages, setParsedMessages] = useState<{ [key: number]: string }>({});
 
-  const parseMessages = useCallback((messages: UIMessage[], isLoading: boolean) => {
+  const parseMessages = useCallback((messages: UIMessage[], isLoading: boolean, chatMode?: 'discuss' | 'build') => {
     let reset = false;
 
     if (import.meta.env.DEV && !isLoading) {
       reset = true;
       messageParser.reset();
     }
+
+    /*
+     * Sync the chat mode to the parser so it knows whether to
+     * auto-wrap code blocks as artifacts (build mode) or leave
+     * them as plain markdown (discuss mode). Default to 'build'
+     * for backward compatibility if no mode is passed.
+     */
+    messageParser.setChatMode(chatMode || 'build');
 
     for (const [index, message] of messages.entries()) {
       if (message.role === 'assistant' || message.role === 'user') {
