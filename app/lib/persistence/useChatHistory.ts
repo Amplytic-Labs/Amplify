@@ -877,6 +877,19 @@ export function useChatHistory() {
 
             const currentMetadata = chatMetadata.get() || {};
             chatMetadata.set({ ...currentMetadata, projectId: project.id });
+
+            /*
+             * Update the browser URL from /chat/{urlId} to /{projectId}/{urlId}.
+             * navigateChat reads loadedProjectId (which was just set above)
+             * to construct the correct project-scoped URL. Without this,
+             * the URL stays at /chat/{urlId} even though the chat is now
+             * a project chat, causing a mismatch on page reload.
+             */
+            const currentUrlId = urlId || chatId.get();
+
+            if (currentUrlId) {
+              navigateChat(currentUrlId);
+            }
           } catch (e) {
             console.warn('[ChatHistory] Failed to auto-promote chat to project:', e);
           }

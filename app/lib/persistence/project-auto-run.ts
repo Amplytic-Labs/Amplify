@@ -66,10 +66,33 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
    */
   const shell = workbenchStore.initTerminal;
 
-  try {
-    await shell.ready();
-  } catch {
-    console.warn('[auto-run] Init shell not ready — deferring auto-setup.');
+  /*
+   * Wait for the init terminal to become ready with retries.
+   * The terminal is attached by TerminalTabs.tsx when it mounts, but
+   * the WebContainer may not have booted yet when inject_template
+   * triggers auto-setup. Retry up to 30 seconds (every 500ms) so the
+   * setup reliably runs once the terminal is available.
+   */
+  const MAX_RETRIES = 60;
+  const RETRY_INTERVAL_MS = 500;
+  let shellReady = false;
+
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      await shell.ready();
+      shellReady = true;
+      break;
+    } catch {
+      if (i === 0) {
+        console.warn('[auto-run] Init shell not ready — retrying...');
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, RETRY_INTERVAL_MS));
+    }
+  }
+
+  if (!shellReady) {
+    console.error('[auto-run] Init shell never became ready after 30s — giving up.');
     workbenchStore.projectAutoStarted.set(false);
 
     return;
