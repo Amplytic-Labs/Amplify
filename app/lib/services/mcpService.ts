@@ -172,32 +172,7 @@ export class MCPService {
        */
       ...buildNativeTools(),
 
-      update_user_memory: {
-        description: "Updates or adds a fact about the user to the AI's long-term memory.",
-        parameters: z.object({
-          content: z.string().describe('The fact to remember about the user'),
-          category: z.string().optional().describe('Optional category for the memory'),
-        }),
-        execute: async ({ content, category }: { content: string; category?: string }) => {
-          const memory = memoryStore.addMemory(content, category);
-          return `Memory stored: ${memory.content} (ID: ${memory.id})`;
-        },
-      },
-      read_user_memory: {
-        description: 'Retrieves stored facts about the user. Can be filtered by a query.',
-        parameters: z.object({
-          query: z.string().optional().describe('Optional query to filter memories'),
-        }),
-        execute: async ({ query }: { query?: string }) => {
-          const memories = query ? memoryStore.searchMemories(query) : memoryStore.getMemories();
 
-          if (memories.length === 0) {
-            return 'No memories found.';
-          }
-
-          return memories.map((m) => `[${m.timestamp}] ${m.category ? `(${m.category}) ` : ''}${m.content}`).join('\n');
-        },
-      },
       search_user_context: {
         description:
           'Searches the user profile vector store for relevant context about the user. Use this to recall user preferences, tech stack, coding style, etc. NOTE: This tool is only available in the browser context.',
@@ -724,6 +699,7 @@ export class MCPService {
     messages: UIMessage[],
     writer: UIMessageStreamWriter,
     files?: NativeFileMap,
+    apiBaseUrl?: string,
   ): Promise<UIMessage[]> {
     const lastMessage = messages[messages.length - 1];
     const parts = lastMessage.parts;
@@ -813,6 +789,7 @@ export class MCPService {
               files: liveFiles,
               toolCallId,
               messages: await convertToModelMessages(messages),
+              apiBaseUrl,
             };
             result = await toolInstance.execute(toolArgs, toolContext);
 

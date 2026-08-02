@@ -171,7 +171,11 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         let summary: string | undefined = undefined;
         let messageSliceId = 0;
 
-        const processedMessages = await mcpService.processToolInvocations(messages as UIMessage[], writer, files);
+        // Derive the server origin so fetch_webpage can call /api/web-search with an absolute URL.
+        // Node's fetch (undici) does not support relative URLs — this was the cause of
+        // "Failed to parse URL from /api/web-search".
+        const apiBaseUrl = new URL(request.url).origin;
+        const processedMessages = await mcpService.processToolInvocations(messages as UIMessage[], writer, files, apiBaseUrl);
 
         /*
          * Context-length-based summarization gate.

@@ -289,18 +289,7 @@ export async function streamText(props: {
             const truncatedResult =
               result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
 
-            /*
-             * Rebuild the part with the truncated output. Keep the FLAT v7
-             * shape (`output` directly on the part) as the primary form;
-             * also mirror it onto the legacy `toolInvocation.result` for
-             * any consumer still expecting the nested v4 shape.
-             *
-             * Cast through `any` again because the `isToolUIPart` type guard
-             * narrows `partAny` to `ToolUIPart | DynamicToolUIPart`, which
-             * doesn't include the legacy `toolInvocation` field. We need to
-             * access it conditionally for backward compatibility with old
-             * persisted v4 messages.
-             */
+
             const legacy: any = partAny as any;
             const updatedPart: any = { ...partAny, output: truncatedResult };
 
@@ -318,6 +307,79 @@ export async function streamText(props: {
 
     return newMessage;
   });
+
+  /*
+   * GEMINI / STRICT-ALTERNATION SANITIZATION
+   * ------------------------------------------
+   * Google Gemini (and some other providers) require that every function-call
+   * part in an assistant turn is IMMEDIATELY followed by a function-response
+   * turn. Tool parts that are still in `input-available` or `input-streaming`
+   * state have NOT received a result yet — they are incomplete. If we send
+   * them to the API, Gemini rejects with:
+   *
+   *   "Please ensure that function call turn comes immediately after a user
+   *    turn or after a function response turn."
+   *
+   * This happens when:
+   *   1. A tool call failed (error thrown before the result was persisted).
+   *   2. The user submitted a new message before the previous tool resolved.
+   *   3. A client-side tool (search_user_context, store_user_fact) ran on the
+   *      browser but its result wasn't yet flushed back to the SDK.
+   *
+   * Fix: strip all tool parts whose state is NOT a terminal result state
+   * ('output-available', 'output-error', 'output-denied', legacy 'result').
+   * If stripping leaves an assistant message with no meaningful content,
+   * drop that message entirely.
+   */
+  const TERMINAL_TOOL_STATES = new Set(['output-available', 'output-error', 'output-denied', 'result']);
+
+  processedMessages = processedMessages.filter((message) => {
+    if (message.role !== 'assistant') {
+      return true;
+    }
+
+    if (!Array.isArray((message as any).parts)) {
+      return true;
+    }
+
+    // Strip incomplete tool parts in-place
+    const cleanedParts = (message as any).parts.filter((part: any) => {
+      const isToolPart =
+        (typeof part.type === 'string' && part.type.startsWith('tool-')) ||
+        !!part.toolCallId;
+
+      if (!isToolPart) {
+        return true; // keep non-tool parts (text, reasoning, etc.)
+      }
+
+      const state: string = part.state || part.toolInvocation?.state || '';
+
+      // Keep only tool parts that have a terminal result
+      return TERMINAL_TOOL_STATES.has(state);
+    });
+
+    // Check if the message still has any meaningful content after stripping
+    const hasText = cleanedParts.some(
+      (p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0,
+    );
+    const hasToolResult = cleanedParts.some((p: any) => {
+      const isToolPart =
+        (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
+      return isToolPart;
+    });
+
+    if (!hasText && !hasToolResult) {
+      // Nothing left — drop the entire message to avoid an empty assistant turn
+      logger.debug('[sanitize] Dropped empty assistant message (all tool parts were incomplete)');
+      return false;
+    }
+
+    // Update the parts in-place
+    (message as any).parts = cleanedParts;
+
+    return true;
+  });
+
 
   const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
   const staticModels = LLMManager.getInstance().getStaticModelListFromProvider(provider);
@@ -379,32 +441,6 @@ export async function streamText(props: {
       modificationTagName: MODIFICATIONS_TAG_NAME,
     });
 
-  /*
-   * ONE-SHOT CHAT NAMING (token-efficient method).
-   *
-   * On the FIRST user turn of a brand-new chat (i.e. there are NO prior
-   * assistant messages in the conversation), PREPEND a short instruction
-   * asking the model to output `<chatname>name</chatname>` as the very
-   * first token of its response. The client extracts the name from that
-   * tag and uses it as the chat / project title — NO separate AI call,
-   * NO extra round-trip.
-   *
-   * CRITICAL — PLACEMENT:
-   *   This instruction is PREPENDED to the system prompt (not appended).
-   *   When it was at the END of a 5-10k token system prompt, many models
-   *   ignored it and never emitted the tag — causing the chat to fall
-   *   back to the user's first message as the title, then to
-   *   "New Conversation". Models pay the most attention to the FIRST
-   *   tokens of a prompt, so putting it at the top makes compliance
-   *   dramatically more reliable.
-   *
-   * The instruction is SILENT on every subsequent turn:
-   *   - It is only prepended when `isFirstMessage` is true (no assistant
-   *     messages yet), so it costs zero tokens on turn 2+.
-   *   - The `<chatname>` tag the model emits is stripped from prior
-   *     assistant messages (see `stripChatName` above) before they are
-   *     re-sent, so the model never "sees" its own previous chatname.
-   */
   const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
 
   const chatNamingInstruction = isFirstMessage
@@ -423,8 +459,6 @@ export async function streamText(props: {
   - 2 to 6 words, no quotes, no trailing punctuation.
   - Title Case (capitalize major words).
   - Capture the core intent of the user's request.
-  - If the user's message is a bare greeting ("hi", "hello", "hey"),
-    use "New Conversation".
   - Output the tag ONCE, at the very start of your response, then
     continue with your normal answer.
   - Do NOT mention the tag or the title to the user.

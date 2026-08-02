@@ -4,6 +4,7 @@ import { classNames } from '~/utils/classNames';
 import { AssistantMessage } from './AssistantMessage';
 import { UserMessage } from './UserMessage';
 import { useLocation } from '@remix-run/react';
+import { useMemo } from 'react';
 import { db, chatId } from '~/lib/persistence/useChatHistory';
 import { forkChat } from '~/lib/persistence/db';
 import { toast } from '~/components/ui/toast';
@@ -67,10 +68,62 @@ export const Messages = memo(
       }
     }, []);
 
+    const groupedMessages = useMemo(() => {
+      const result: UIMessage[] = [];
+      for (const msg of messages) {
+        if (msg.role === 'assistant' && result.length > 0) {
+          const last = result[result.length - 1];
+          if (last.role === 'assistant') {
+            // Merge parts, deduplicating identical text parts from retries
+            const mergedParts = [...(last.parts || [])];
+            for (const part of (msg.parts || [])) {
+              if (part.type === 'text') {
+                // Check if we already have this exact text part
+                const isDuplicate = mergedParts.some(p => p.type === 'text' && p.text.trim() === part.text.trim());
+                if (isDuplicate && part.text.trim() !== '') {
+                  continue;
+                }
+              }
+              mergedParts.push(part);
+            }
+            
+            // Merge content (fallback for older SDKs), avoiding duplicate appending
+            let mergedContent = last.content || '';
+            const newContent = msg.content || '';
+            if (newContent) {
+              if (!mergedContent.trim().endsWith(newContent.trim())) {
+                mergedContent = mergedContent + newContent;
+              }
+            }
+            
+            // Merge annotations
+            const lastAnnotations = (last as any).annotations || [];
+            const msgAnnotations = (msg as any).annotations || [];
+            const mergedAnnotations = [...lastAnnotations, ...msgAnnotations];
+
+            result[result.length - 1] = {
+              ...last,
+              id: msg.id, // Use the latest ID for rewind/fork
+              parts: mergedParts,
+              content: mergedContent,
+              annotations: mergedAnnotations,
+            } as UIMessage;
+            continue;
+          }
+        }
+        // Deep copy parts to avoid mutating the original message array
+        result.push({ 
+          ...msg, 
+          parts: msg.parts ? [...msg.parts] : undefined 
+        } as UIMessage);
+      }
+      return result;
+    }, [messages]);
+
     return (
       <div id={id} className={props.className} ref={ref}>
-        {messages.length > 0
-          ? messages.map((message, index) => {
+        {groupedMessages.length > 0
+          ? groupedMessages.map((message, index) => {
               const { role, id: messageId, parts } = message;
               // Extract text content from parts (UIMessage v7) or fallback to content (legacy)
               const content = Array.isArray(parts)
@@ -104,14 +157,14 @@ export const Messages = memo(
                         onRewind={handleRewind}
                         onFork={handleFork}
                         append={props.append}
-                        onRegenerate={!isUserMessage && index === messages.length - 1 ? props.onRegenerate : undefined}
+                        onRegenerate={!isUserMessage && index === groupedMessages.length - 1 ? props.onRegenerate : undefined}
                         chatMode={props.chatMode}
                         setChatMode={props.setChatMode}
                         model={props.model}
                         provider={props.provider}
                         parts={parts as any}
                         addToolResult={props.addToolResult}
-                        isStreaming={isStreaming && index === messages.length - 1}
+                        isStreaming={isStreaming && index === groupedMessages.length - 1}
                       />
                     )}
                   </div>
