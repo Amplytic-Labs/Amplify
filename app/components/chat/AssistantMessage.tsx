@@ -131,6 +131,36 @@ export const AssistantMessage = memo(
     const thoughtStreaming = useMemo(() => isThoughtStreaming(visibleContent), [visibleContent]);
 
     /*
+     * Native reasoning + tool-invocation parts from the AI SDK. These are
+     * interleaved with the `<thought>`-tag text inside the panel.
+     *
+     * v7 note: tool parts have `type: 'tool-<name>'` / `'dynamic-tool'`
+     * (NOT the v4 literal `'tool-invocation'`). We use the shared
+     * `isToolPart` helper which accepts both v7 and legacy v4 shapes so
+     * old persisted messages still render.
+     */
+    const reasoningAndToolParts = useMemo(() => {
+      if (!parts) {
+        return undefined;
+      }
+
+      const filtered = parts.filter((p) => p.type === 'reasoning' || isToolPart(p));
+
+      return filtered.length > 0 ? filtered : undefined;
+    }, [parts]);
+
+    /*
+     * FIX: When native reasoning parts exist (parts[].type === 'reasoning')
+     * AND the answerText is empty, the model put its entire user-facing
+     * response in the native reasoning channel. The <thought> tag parser
+     * stripped everything, leaving no answer text. In this case, use the
+     * full visibleContent as the answer — the ThoughtsPanel already
+     * renders the reasoning from the native parts, so the text parts
+     * should contain the actual answer, not more reasoning.
+     */
+    const hasNativeReasoning = reasoningAndToolParts?.some((p) => p.type === 'reasoning') ?? false;
+
+    /*
      * SEVER the template-injected artifact trace-tree from the chat while
      * keeping AI-created artifact trace trees visible.
      *
@@ -157,14 +187,23 @@ export const AssistantMessage = memo(
     const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
 
     const answerText = useMemo(() => {
-      const stripped = stripAmplifyArtifacts(rawAnswerText);
+      /*
+       * If native reasoning parts exist and answerText is empty, the model
+       * used its native reasoning channel for thinking. The <thought> tag
+       * parser may have stripped the entire response. Use the full visible
+       * content as the answer instead — the ThoughtsPanel already handles
+       * the reasoning display from the native parts.
+       */
+      const effectiveRaw = !rawAnswerText && hasNativeReasoning ? visibleContent : rawAnswerText;
+
+      const stripped = stripAmplifyArtifacts(effectiveRaw);
 
       if (isTemplateInjection) {
         return stripArtifactDivs(stripped);
       }
 
       return stripped;
-    }, [rawAnswerText, isTemplateInjection]);
+    }, [rawAnswerText, hasNativeReasoning, visibleContent, isTemplateInjection]);
 
     /*
      * Extract a `<docxartifact>…</docxartifact>` block (if present) from the
@@ -260,25 +299,6 @@ export const AssistantMessage = memo(
       | { type: 'usage'; value?: { completionTokens?: number; promptTokens?: number; totalTokens?: number } }
       | undefined;
     const usage = usageAnnotation?.value;
-
-    /**
-     * Native reasoning + tool-invocation parts from the AI SDK. These are
-     * interleaved with the `<thought>`-tag text inside the panel.
-     *
-     * v7 note: tool parts have `type: 'tool-<name>'` / `'dynamic-tool'`
-     * (NOT the v4 literal `'tool-invocation'`). We use the shared
-     * `isToolPart` helper which accepts both v7 and legacy v4 shapes so
-     * old persisted messages still render.
-     */
-    const reasoningAndToolParts = useMemo(() => {
-      if (!parts) {
-        return undefined;
-      }
-
-      const filtered = parts.filter((p) => p.type === 'reasoning' || isToolPart(p));
-
-      return filtered.length > 0 ? filtered : undefined;
-    }, [parts]);
 
     const hasPanelContent = hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
 
