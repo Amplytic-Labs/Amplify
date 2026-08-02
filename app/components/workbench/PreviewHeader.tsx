@@ -457,18 +457,25 @@ export const PreviewHeader = memo(() => {
                         />
                       </IconWithTooltip>
                     </motion.div>
+                    {expoUrl && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10, scale: 0.8 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: -10, scale: 0.8 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex items-center"
+                      >
+                        <IconWithTooltip id="qr" tooltip="Show QR" hoveredIcon={hoveredIcon} setHoveredIcon={setHoveredIcon}>
+                          <div
+                            className="i-ph:qr-code w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
+                            onClick={() => isExpoQrModalOpenAtom.set(true)}
+                          />
+                        </IconWithTooltip>
+                      </motion.div>
+                    )}
                   </>
                 )}
               </AnimatePresence>
-
-              {expoUrl && (
-                <IconWithTooltip id="qr" tooltip="Show QR" hoveredIcon={hoveredIcon} setHoveredIcon={setHoveredIcon}>
-                  <div
-                    className="i-ph:qr-code w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
-                    onClick={() => isExpoQrModalOpenAtom.set(true)}
-                  />
-                </IconWithTooltip>
-              )}
 
               <IconWithTooltip
                 id="inspector"

@@ -895,8 +895,12 @@ export function useChatHistory() {
              * to construct the correct project-scoped URL. Without this,
              * the URL stays at /chat/{urlId} even though the chat is now
              * a project chat, causing a mismatch on page reload.
+             *
+             * Use _urlId (the local variable) instead of the urlId React
+             * state, because setUrlId is async (React batches updates) and
+             * the state may not have updated yet at this point.
              */
-            const currentUrlId = urlId || chatId.get();
+            const currentUrlId = _urlId || chatId.get();
 
             if (currentUrlId) {
               navigateChat(currentUrlId);
@@ -963,6 +967,43 @@ export function useChatHistory() {
             }
           } catch (e) {
             console.warn('[ChatHistory] Re-detect project commands failed:', e);
+          }
+        }
+      }
+
+      /*
+       * ── Ensure URL reflects project state ────────────────────────────
+       *
+       * If the chat belongs to a project but the URL is still /chat/{id}
+       * (no project segment), update the URL silently. This handles the
+       * case where the promotion block's navigateChat was called with a
+       * stale urlId (undefined React state), or where the promotion
+       * happened in a previous storeMessageHistory call but the URL
+       * wasn't updated for some reason.
+       *
+       * Uses window.history.replaceState (not a navigation) so the AI
+       * response is not interrupted.
+       */
+      if (firstArtifact) {
+        const currentId = chatId.get();
+        const projectForUrl = currentId ? projectStore.getProjectByChat(currentId) : undefined;
+
+        if (projectForUrl) {
+          const currentPathname = window.location.pathname;
+          const expectedProjectId = workbenchStore.loadedProjectId.get();
+
+          if (
+            expectedProjectId &&
+            expectedProjectId !== '<none>' &&
+            !currentPathname.includes(expectedProjectId)
+          ) {
+            const urlIdForUpdate = _urlId || currentId;
+
+            if (urlIdForUpdate) {
+              const newUrl = new URL(window.location.href);
+              newUrl.pathname = `/${expectedProjectId}/${urlIdForUpdate}`;
+              window.history.replaceState({}, '', newUrl);
+            }
           }
         }
       }

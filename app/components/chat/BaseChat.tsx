@@ -385,7 +385,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 className={classNames('pt-2 px-2 sm:px-0 relative', {
                   'h-full flex flex-col chat-scrollbar-hide': chatStarted,
                 })}
-                resize="smooth"
+                resize="instant"
                 initial="smooth"
               >
                 <StickToBottom.Content className="flex flex-col gap-4 relative ">
@@ -541,7 +541,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       className={classNames('pt-6 px-2 sm:px-6 relative', {
                         'h-full flex flex-col chat-scrollbar-hide': chatStarted,
                       })}
-                      resize="smooth"
+                      resize="instant"
                       initial="smooth"
                     >
                       <StickToBottom.Content className="flex flex-col gap-4 relative ">
