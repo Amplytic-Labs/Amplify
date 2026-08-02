@@ -98,10 +98,9 @@ const processSampledMessages = createSampler(
     isLoading: boolean;
     parseMessages: (messages: UIMessage[], isLoading: boolean, chatMode?: 'discuss' | 'build') => void;
     storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
-    chatMode?: 'discuss' | 'build';
   }) => {
-    const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory, chatMode } = options;
-    parseMessages(messages, isLoading, chatMode);
+    const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory } = options;
+    parseMessages(messages, isLoading);
 
     if ((messages?.length ?? 0) > (initialMessages?.length ?? 0)) {
       storeMessageHistory(messages).catch((error) => toast.error(error.message));
@@ -567,10 +566,9 @@ export const ChatImpl = memo(
           isLoading,
           parseMessages,
           storeMessageHistory,
-          chatMode,
         });
       }
-    }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory, chatMode]);
+    }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory]);
 
     // Debug: Log messages state changes to trace AI message flow
     useEffect(() => {
