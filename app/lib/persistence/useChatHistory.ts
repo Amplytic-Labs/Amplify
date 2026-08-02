@@ -836,8 +836,19 @@ export function useChatHistory() {
 
               workbenchStore.loadedProjectId.set(project.id);
 
+              /*
+               * IMPORTANT: Get the FRESH project from the store, not the
+               * stale `project` variable from promoteChatToProject.
+               * setProjectCommands() updates the project IN the store, but
+               * the local `project` variable is a snapshot from BEFORE
+               * commands were set. Passing the stale object to
+               * runProjectAutoSetup causes it to exit early because
+               * project.setupCommand / project.startCommand are undefined.
+               */
+              const freshProject = projectStore.getProject(project.id) || project;
+
               if (!workbenchStore.projectAutoStarted.get()) {
-                runProjectAutoSetup(project).catch((e) =>
+                runProjectAutoSetup(freshProject).catch((e) =>
                   console.warn('[ChatHistory] Auto setup failed on promote:', e),
                 );
               }
@@ -892,6 +903,66 @@ export function useChatHistory() {
             }
           } catch (e) {
             console.warn('[ChatHistory] Failed to auto-promote chat to project:', e);
+          }
+        }
+      }
+
+      /*
+       * ── Re-detect project commands if missing ────────────────────────
+       *
+       * For inject_template projects, the first call to detectProjectCommands
+       * may run before all files are written to the file store (e.g. package.json
+       * hasn't arrived yet). This block re-detects commands on every
+       * storeMessageHistory call if the project still doesn't have them.
+       * Once commands are set, setProjectCommands won't overwrite them
+       * (unless overwrite=true), so this is a no-op after the first success.
+       */
+      if (firstArtifact) {
+        const currentId = chatId.get();
+        const existingProject = currentId ? projectStore.getProjectByChat(currentId) : undefined;
+
+        if (existingProject && !existingProject.setupCommand && !existingProject.startCommand) {
+          try {
+            const currentFiles = workbenchStore.files.get();
+            const fileList = Object.entries(currentFiles)
+              .filter(([, v]) => v?.type === 'file')
+              .map(([path, v]) => ({ path, content: (v as any)?.content ?? '' }));
+
+            if (fileList.length > 0) {
+              const detected = await detectProjectCommands(fileList);
+
+              if (detected && (detected.setupCommand || detected.startCommand)) {
+                projectStore.setProjectCommands(existingProject.id, {
+                  type: detected.type,
+                  setupCommand: detected.setupCommand,
+                  startCommand: detected.startCommand,
+                  followupMessage: detected.followupMessage,
+                });
+
+                console.log(
+                  '[ChatHistory] Re-detected commands for project:',
+                  existingProject.id,
+                  'setup=',
+                  detected.setupCommand,
+                  'start=',
+                  detected.startCommand,
+                );
+
+                /*
+                 * Trigger auto-setup now that commands exist. Get the
+                 * fresh project from the store (with commands set).
+                 */
+                const freshProject = projectStore.getProject(existingProject.id);
+
+                if (freshProject && !workbenchStore.projectAutoStarted.get()) {
+                  runProjectAutoSetup(freshProject).catch((e) =>
+                    console.warn('[ChatHistory] Auto setup failed on re-detect:', e),
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[ChatHistory] Re-detect project commands failed:', e);
           }
         }
       }

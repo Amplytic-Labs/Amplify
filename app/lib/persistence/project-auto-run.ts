@@ -72,6 +72,12 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
    * the WebContainer may not have booted yet when inject_template
    * triggers auto-setup. Retry up to 30 seconds (every 500ms) so the
    * setup reliably runs once the terminal is available.
+   *
+   * IMPORTANT: shell.ready() returns a Promise that never rejects — it
+   * stays pending until init() is called. We use Promise.race with a
+   * timeout so the retry loop can actually progress if the shell isn't
+   * ready yet. Without the timeout, await shell.ready() would hang
+   * forever on the first iteration and the catch block would never run.
    */
   const MAX_RETRIES = 60;
   const RETRY_INTERVAL_MS = 500;
@@ -79,15 +85,18 @@ export async function runProjectAutoSetup(project: Project): Promise<void> {
 
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      await shell.ready();
+      await Promise.race([
+        shell.ready(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Shell ready timeout')), RETRY_INTERVAL_MS),
+        ),
+      ]);
       shellReady = true;
       break;
     } catch {
       if (i === 0) {
         console.warn('[auto-run] Init shell not ready — retrying...');
       }
-
-      await new Promise((resolve) => setTimeout(resolve, RETRY_INTERVAL_MS));
     }
   }
 

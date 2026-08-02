@@ -612,11 +612,41 @@ export class AmplifyShell {
       // Pipe the process output to the terminal so the user sees dev server output.
       const terminal = this.#terminal;
 
+      /*
+       * Expo URL detection buffer + regex — same logic as in
+       * newAmplifyShellProcess's output pipe. Without this, Expo URLs
+       * produced by `npm start` (which calls `expo start`) are never
+       * detected because spawnDetached bypasses the jsh output pipe
+       * that normally handles Expo URL detection.
+       */
+      let expoUrlBuffer = '';
+      const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+      const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+      const oscTerminalRegex = /\x1b\][^\x07]*\x07/g;
+
       proc.output
         .pipeTo(
           new WritableStream({
             write(data) {
               terminal.write(data);
+
+              // --- Expo URL detection ---
+              expoUrlBuffer += data || '';
+              const cleanBuffer = expoUrlBuffer
+                .replace(ansiRegex, '')
+                .replace(oscTerminalRegex, '')
+                .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
+              const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
+
+              if (expoUrlMatch) {
+                const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
+                expoUrlAtom.set(cleanUrl);
+                expoUrlBuffer = ''; // Clear after match
+              }
+
+              if (expoUrlBuffer.length > 4096) {
+                expoUrlBuffer = expoUrlBuffer.slice(-2048);
+              }
             },
           }),
         )
