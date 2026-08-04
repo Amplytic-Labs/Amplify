@@ -20,7 +20,7 @@ import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 import { InlineToolRow } from './copilot/InlineToolRow';
 import { TextSegment } from './copilot/TextSegment';
-import { splitPartsIntoSegments, hasChainSegment, collectAllToolParts } from '~/lib/chat/chain-segments';
+import { splitPartsIntoSegments, hasChainSegment, collectAllToolParts, getActiveChainLabel } from '~/lib/chat/chain-segments';
 
 interface AssistantMessageProps {
   content: string;
@@ -485,11 +485,16 @@ export const AssistantMessage = memo(
          *   Walks `segments` in stream order. Each segment renders in its
          *   correct position relative to the others:
          *
-         *     chain  → <ThoughtsPanel> ("Thought for Ns" collapsible)
-         *              Only rendered when the segment has reasoning parts.
-         *              Tools-only segments do NOT get a panel.
-         *     tools  → flat list of <InlineToolRow> rows
-         *              [tool-type-icon] [ToolProgress row] — NO card, NO
+         *     chain  → <ThoughtsPanel> ("Thought for Ns" / "Completed with N steps"
+         *              / tool-name-while-streaming collapsible). Renders for ANY
+         *              consecutive non-text run (tools-only OR tools+reasoning OR
+         *              reasoning-only) — UNLESS the run is sandwiched between
+         *              two text segments, in which case it becomes `tools`.
+         *              While streaming, the header shows the current tool's
+         *              pending label (e.g. "Searching the web") via activeLabel,
+         *              or "Thinking…" if only reasoning is streaming.
+         *     tools  → flat list of <InlineToolRow> rows. ONLY used for runs
+         *              sandwiched between two text segments. NO card, NO
          *              "Thought for Ns" header. Same visual as a tool step
          *              inside the chain, just without the chain line.
          *     text   → <TextSegment> (per-segment typewriter + Markdown)
@@ -658,7 +663,18 @@ const SegmentRenderer = memo(
              * `hasThoughts` is false, so there's no `<thought>`-tag text
              * to feed the panel. Reasoning comes from native `reasoning`
              * parts in `seg.parts`.
+             *
+             * `activeLabel` — when this segment is the LAST one and the
+             * message is still streaming, compute a context-aware label
+             * (e.g. "Searching the web" if a tool is pending, "Thinking…"
+             * if only reasoning is streaming). This replaces the generic
+             * "Thinking…" placeholder so the user sees WHAT is happening.
+             * Intermediate (already-completed) segments don't need an
+             * active label — they show "Completed with N steps".
              */
+            const segmentIsStreaming = isLast ? Boolean(isStreaming) : false;
+            const activeLabel = getActiveChainLabel(seg, segmentIsStreaming) ?? undefined;
+
             return (
               <ThoughtsPanel
                 key={`seg-${idx}`}
@@ -668,6 +684,7 @@ const SegmentRenderer = memo(
                 parts={seg.parts}
                 isStreaming={isLast ? isStreaming : false}
                 addToolResult={addToolResult}
+                activeLabel={activeLabel}
               />
             );
           }

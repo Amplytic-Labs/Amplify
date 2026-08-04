@@ -37,6 +37,20 @@ interface ThinkingBoxProps {
    */
   thinkingDone?: boolean;
 
+  /**
+   * OVERRIDE for the streaming label. When provided AND the panel is active
+   * (streaming), this string is shown INSTEAD of the default "Thinking…".
+   *
+   * Use case: when a specific tool is currently running, the caller passes
+   * that tool's pending label (e.g. "Searching the web", "Editing file") so
+   * the user sees WHAT is happening, not just that something is happening.
+   * When null/undefined, falls back to "Thinking…".
+   *
+   * Only consulted while streaming — when streaming ends, the label
+   * switches to "Completed with N steps" regardless of this prop.
+   */
+  activeLabel?: string;
+
   /** The panel content (reasoning text + tool invocations). */
   children: ReactNode;
 }
@@ -67,7 +81,7 @@ interface ThinkingBoxProps {
  *   - User can always expand/collapse by clicking the header.
  */
 export const ThinkingBox = memo(
-  ({ isActive, duration, thoughtStreaming, stepCount = 0, hasReasoning = false, children }: ThinkingBoxProps) => {
+  ({ isActive, duration, thoughtStreaming, stepCount = 0, hasReasoning = false, activeLabel, children }: ThinkingBoxProps) => {
     const [isOpen, setIsOpen] = useState(false);
     const startTimeRef = useRef<number | null>(null);
     const hasEverStreamedRef = useRef(false);
@@ -116,7 +130,9 @@ export const ThinkingBox = memo(
      * Label logic — REPLACES the old "Thought process" placeholder.
      *
      *   1. While streaming (isActive OR thoughtStreaming):
-     *        → "Thinking…" (shimmer-animated by ShinyText)
+     *        → `activeLabel` if provided (e.g. "Searching the web" when a
+     *          specific tool is running), ELSE "Thinking…" (shimmer-animated
+     *          by ShinyText).
      *   2. When streaming has ended AND the panel actually had reasoning
      *      (i.e. real reasoning tokens, not just tool calls):
      *        → "Completed with N steps"  (N = reasoning + tool steps)
@@ -133,19 +149,15 @@ export const ThinkingBox = memo(
      *          label — non-streaming models shouldn't claim they thought.
      *
      * The user-facing rule:
-     *   - Reasoning tokens being streamed  →  "Thinking…"
-     *   - Reasoning ended                  →  "Completed with N steps"
-     *   - No reasoning at all              →  no label (panel may still
-     *                                        show tools, but no header text)
-     *
-     * `hasReasoning` is tracked so we can later differentiate the label
-     * (e.g. "Thought for Ns" when there was reasoning vs "Ran N tools"
-     * when there wasn't) — for now both paths collapse to
-     * "Completed with N steps" since that's what the user asked for.
+     *   - Tool running               →  tool's pending label ("Searching…")
+     *   - Reasoning tokens streaming →  "Thinking…"
+     *   - Reasoning ended            →  "Completed with N steps"
+     *   - No reasoning at all        →  no label (panel may still
+     *                                   show tools, but no header text)
      */
     const label =
       isActive || thoughtStreaming
-        ? 'Thinking…'
+        ? (activeLabel ?? 'Thinking…')
         : stepCount > 0
           ? `Completed with ${stepCount} step${stepCount === 1 ? '' : 's'}`
           : effectiveDuration !== undefined

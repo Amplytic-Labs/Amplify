@@ -42,6 +42,16 @@ interface ThoughtsPanelProps {
 
   /** Required so tool approval can call back into the chat runner. */
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
+
+  /**
+   * Override for the streaming label. When provided AND the panel is
+   * streaming, shows this string INSTEAD of "Thinking…". Use to surface
+   * the current tool's pending label (e.g. "Searching the web").
+   *
+   * Computed by the caller via `getActiveChainLabel()` — the panel itself
+   * stays agnostic of how the label is derived.
+   */
+  activeLabel?: string;
 }
 
 /**
@@ -72,6 +82,7 @@ export const ThoughtsPanel = memo(
     parts,
     isStreaming = false,
     addToolResult,
+    activeLabel,
   }: ThoughtsPanelProps) => {
     const isActive = isStreaming || thoughtStreaming;
 
@@ -224,6 +235,7 @@ export const ThoughtsPanel = memo(
         stepCount={stepCount}
         hasReasoning={hasReasoning}
         thinkingDone={thinkingDone}
+        activeLabel={activeLabel}
       >
         {steps.map((step) => {
           if (step.kind === 'reasoning') {
