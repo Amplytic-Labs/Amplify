@@ -263,7 +263,7 @@ export const ChatImpl = memo(
      *
      * Using DefaultChatTransport with NATIVE `body` option - NO CUSTOM FETCH!
      * The SDK handles merging body data with messages automatically.
-     * This is identical to how bolt.diy v4 used `useChat({ body: {...} })`
+     * This is identical to how the legacy bolt.diy v4 used `useChat({ body: {...} })`
      * but adapted for v7's transport-based architecture.
      *
      * The `body` here can be either a static object OR a function. We use
@@ -2327,7 +2327,7 @@ export const ChatImpl = memo(
      * 2. UI shows chat area before AI response arrives
      * 3. Background transitions to transparent state
      *
-     * Matches bolt.diy pattern but with synchronous state update for reliability.
+     * Matches the legacy bolt.diy pattern but with synchronous state update for reliability.
      */
     const runAnimation = async () => {
       // Only run if not already started

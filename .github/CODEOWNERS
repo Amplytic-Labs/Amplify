@@ -1,29 +1,29 @@
-# Code Owners for bolt.diy
-# These users/teams will automatically be requested for review when files are modified
+# Code Owners for Amplify
+# These users will automatically be requested for review when files are modified
 
-# Global ownership - repository maintainers
-* @stackblitz-labs/bolt-maintainers
+# Global ownership - repository maintainer
+* @imtia33
 
 # GitHub workflows and CI/CD configuration - require maintainer review
-/.github/ @stackblitz-labs/bolt-maintainers
-/package.json @stackblitz-labs/bolt-maintainers
-/pnpm-lock.yaml @stackblitz-labs/bolt-maintainers
+/.github/ @imtia33
+/package.json @imtia33
+/pnpm-lock.yaml @imtia33
 
 # Security-sensitive configurations - require maintainer review
-/.env* @stackblitz-labs/bolt-maintainers
-/wrangler.toml @stackblitz-labs/bolt-maintainers  
-/Dockerfile @stackblitz-labs/bolt-maintainers
-/docker-compose.yaml @stackblitz-labs/bolt-maintainers
+/.env* @imtia33
+/wrangler.toml @imtia33
+/Dockerfile @imtia33
+/docker-compose.yaml @imtia33
 
 # Core application architecture - require maintainer review
-/app/lib/.server/ @stackblitz-labs/bolt-maintainers
-/app/routes/api.* @stackblitz-labs/bolt-maintainers
+/app/lib/.server/ @imtia33
+/app/routes/api.* @imtia33
 
 # Build and deployment configuration - require maintainer review
-/vite*.config.ts @stackblitz-labs/bolt-maintainers
-/tsconfig.json @stackblitz-labs/bolt-maintainers
-/uno.config.ts @stackblitz-labs/bolt-maintainers
-/eslint.config.mjs @stackblitz-labs/bolt-maintainers
+/vite*.config.ts @imtia33
+/tsconfig.json @imtia33
+/uno.config.ts @imtia33
+/eslint.config.mjs @imtia33
 
 # Documentation (optional review)
 /*.md
