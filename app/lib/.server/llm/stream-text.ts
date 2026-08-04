@@ -7,7 +7,14 @@ import {
 } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, STARTER_TEMPLATES, WORK_DIR } from '~/utils/constants';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  MODIFICATIONS_TAG_NAME,
+  PROVIDER_LIST,
+  STARTER_TEMPLATES,
+  WORK_DIR,
+} from '~/utils/constants';
 import type { IProviderSetting } from '~/types/model';
 import { PromptLibrary } from '~/lib/common/prompt-library';
 import { allowedHTMLElements } from '~/utils/markdown';
@@ -89,14 +96,16 @@ function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof cr
     }
   }
 
-  // Step 3: Strip orphaned tool calls from assistant messages
-  // A tool call is "orphaned" if it appears in the LAST assistant message
-  // (no subsequent user message with function response to follow it).
-  // For Gemini, the last assistant message's tool calls are fine because
-  // the model will generate the next response. But tool calls in earlier
-  // assistant messages that have no matching function response are problematic.
-  // The convertToModelMessages function handles this, but we need to ensure
-  // that tool calls in non-last assistant messages have been resolved.
+  /*
+   * Step 3: Strip orphaned tool calls from assistant messages
+   * A tool call is "orphaned" if it appears in the LAST assistant message
+   * (no subsequent user message with function response to follow it).
+   * For Gemini, the last assistant message's tool calls are fine because
+   * the model will generate the next response. But tool calls in earlier
+   * assistant messages that have no matching function response are problematic.
+   * The convertToModelMessages function handles this, but we need to ensure
+   * that tool calls in non-last assistant messages have been resolved.
+   */
 
   // Step 4: Drop empty assistant messages after all cleanup
   const final = merged.filter((msg, idx) => {
@@ -108,18 +117,16 @@ function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof cr
     const content = (msg as any).content || '';
 
     // Has text content? Keep it.
-    const hasText = parts.some(
-      (p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0,
-    ) || (typeof content === 'string' && content.trim().length > 0);
+    const hasText =
+      parts.some((p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0) ||
+      (typeof content === 'string' && content.trim().length > 0);
 
     // Has reasoning content? Keep it.
     const hasReasoning = parts.some((p: any) => p.type === 'reasoning');
 
     // Has tool parts with results? Keep it.
     const hasToolResult = parts.some((p: any) => {
-      const isToolPart =
-        (typeof p.type === 'string' && p.type.startsWith('tool-')) ||
-        !!p.toolCallId;
+      const isToolPart = (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
       return isToolPart;
     });
 
@@ -131,8 +138,10 @@ function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof cr
     return true;
   });
 
-  // Step 5: Re-enforce alternation after filtering (filtering may have created
-  // consecutive same-role messages again)
+  /*
+   * Step 5: Re-enforce alternation after filtering (filtering may have created
+   * consecutive same-role messages again)
+   */
   const reenforced: UIMessage[] = final.length > 0 ? [final[0]] : [];
 
   for (let i = 1; i < final.length; i++) {
@@ -423,7 +432,6 @@ export async function streamText(props: {
             const truncatedResult =
               result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
 
-
             const legacy: any = partAny as any;
             const updatedPart: any = { ...partAny, output: truncatedResult };
 
@@ -478,9 +486,7 @@ export async function streamText(props: {
 
     // Strip incomplete tool parts in-place
     const cleanedParts = (message as any).parts.filter((part: any) => {
-      const isToolPart =
-        (typeof part.type === 'string' && part.type.startsWith('tool-')) ||
-        !!part.toolCallId;
+      const isToolPart = (typeof part.type === 'string' && part.type.startsWith('tool-')) || !!part.toolCallId;
 
       if (!isToolPart) {
         return true; // keep non-tool parts (text, reasoning, etc.)
@@ -497,8 +503,7 @@ export async function streamText(props: {
       (p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0,
     );
     const hasToolResult = cleanedParts.some((p: any) => {
-      const isToolPart =
-        (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
+      const isToolPart = (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
       return isToolPart;
     });
 
@@ -538,7 +543,6 @@ export async function streamText(props: {
    * tool calls.
    */
   processedMessages = enforceMessageAlternation(processedMessages, logger) as typeof processedMessages;
-
 
   const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
   const staticModels = LLMManager.getInstance().getStaticModelListFromProvider(provider);
@@ -957,7 +961,12 @@ ${systemPrompt}`;
    *
    * See ./thinking.ts for the full per-provider breakdown.
    */
-  const thinkingProviderOptions = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig, modelDetails.capabilities);
+  const thinkingProviderOptions = buildThinkingProviderOptions(
+    provider.name,
+    modelDetails.name,
+    modelConfig,
+    modelDetails.capabilities,
+  );
 
   const hasThinkingOpts = supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities);
 
@@ -1102,14 +1111,19 @@ ${systemPrompt}`;
         description: 'Gets the instructions for a specific skill. Pass the skill name as the "name" parameter.',
         parameters: z.object({
           name: z.string().describe('The name of the skill (e.g., "webapp-builder", "react-components")'),
-          skill: z.string().optional().describe('Alternative parameter name for the skill name (deprecated, use "name" instead)'),
+          skill: z
+            .string()
+            .optional()
+            .describe('Alternative parameter name for the skill name (deprecated, use "name" instead)'),
         }),
         execute: async ({ name, skill }: { name: string; skill?: string }) => {
           try {
             const skillName = (name || skill || '').toLowerCase();
+
             if (!skillName) {
               return 'Error: No skill name provided. Use the "name" parameter with the skill ID.';
             }
+
             const loader = SkillLoader.getInstance();
             const content = await loader.getSkillContent(skillName);
 
@@ -1140,57 +1154,140 @@ ${systemPrompt}`;
                   .describe(
                     'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
                   ),
-                template: z.string().optional().describe('Alternative parameter name for the template name (deprecated, use "templateName" instead)'),
+                template: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Alternative parameter name for the template name (deprecated, use "templateName" instead)',
+                  ),
                 title: z.string().optional().describe('A title for the imported files artifact'),
               }),
-              execute: async ({ templateName, template, title }: { templateName: string; template?: string; title?: string }) => {
+              execute: async ({
+                templateName,
+                template,
+                title,
+              }: {
+                templateName: string;
+                template?: string;
+                title?: string;
+              }) => {
                 try {
                   const resolvedTemplateName = templateName || template || '';
+
                   if (!resolvedTemplateName) {
-                    return { error: 'No template name provided. Use the "templateName" parameter with a valid template name.' };
+                    return {
+                      error: 'No template name provided. Use the "templateName" parameter with a valid template name.',
+                    };
                   }
+
                   const result = await getTemplates(resolvedTemplateName, title);
 
                   if (!result) {
                     const availableTemplates = STARTER_TEMPLATES.map((t: any) => t.name).join(', ');
-                    return { error: `Template "${resolvedTemplateName}" not found. Available templates: ${availableTemplates}` };
+                    return {
+                      error: `Template "${resolvedTemplateName}" not found. Available templates: ${availableTemplates}`,
+                    };
                   }
 
+                  /*
+                   * NEW PARALLEL-WRITE PIPELINE
+                   * -----------------------------------
+                   * Previously this function streamed an <amplifyArtifact> XML
+                   * blob via dataStream.write() and returned immediately. The
+                   * client parsed the XML and wrote files SEQUENTIALLY via
+                   * ActionRunner.#currentExecutionPromise, taking ~200s for
+                   * 400 files. The tool also returned success BEFORE files
+                   * were written, causing the AI to call read_file on
+                   * non-existent files.
+                   *
+                   * New flow:
+                   *   1. Generate a loadId.
+                   *   2. Register the load (file list + Promise) in the
+                   *      template-load-registry.
+                   *   3. Return a tool result containing the loadId + summary.
+                   *   4. The client sees the loadId, fetches the file list
+                   *      from /api/template-files?loadId=X, writes them in
+                   *      parallel via writeFilesParallel, then POSTs
+                   *      /api/template-loaded with the progress.
+                   *   5. waitForTemplateLoad() resolves when the client
+                   *      signals completion (or rejects on 120s timeout).
+                   *   6. This execute function returns the REAL result
+                   *      (success or partial failure) only after files are
+                   *      confirmed written — the AI can safely proceed.
+                   *
+                   * The <amplifyArtifact> XML is no longer streamed. The
+                   * existing message-parser path remains for backwards-
+                   * compat with already-persisted messages, but new
+                   * inject_template calls use this direct pipeline.
+                   */
+                  const { generateId } = await import('ai');
+                  const loadId = `tpl-${generateId()}`;
+                  const { waitForTemplateLoad } = await import('~/lib/utils/template-load-registry');
+
+                  const files = result.files.map((f) => ({ path: f.path, content: f.content }));
+
+                  const loadPromise = waitForTemplateLoad(loadId, files, 120_000);
+
+                  /*
+                   * Write a small text annotation so the user sees a hint
+                   * that the template is being injected. This is NOT a UI
+                   * progress indicator (per the user's request) — it's a
+                   * one-line status message that's already part of the
+                   * existing chat UX. The client's ThoughtsPanel will show
+                   * "Used inject_template" with a shimmer while pending.
+                   */
                   if (props.dataStream) {
-                    /*
-                     * AI SDK v7 requires a "text-start" chunk before any "text-delta"
-                     * chunks for a given text part ID. Without it, the client-side
-                     * stream processor throws:
-                     *   "Received text-delta for missing text part with ID 'template'"
-                     */
                     props.dataStream.write({ type: 'text-start', id: 'template' });
-                    props.dataStream.write({ type: 'text-delta', id: 'template', delta: result.assistantMessage });
+                    props.dataStream.write({
+                      type: 'text-delta',
+                      id: 'template',
+                      delta: `\n[Loading template "${resolvedTemplateName}" — ${files.length} files]\n`,
+                    });
                     props.dataStream.write({ type: 'text-end', id: 'template' });
+                  }
+
+                  let progress;
+
+                  try {
+                    progress = await loadPromise;
+                  } catch {
+                    /*
+                     * Timeout — the client didn't signal completion in 120s.
+                     * Return a partial-success result with a warning so the
+                     * AI can continue (it'll likely retry or use list_dir).
+                     */
+                    return {
+                      summary: result.summary,
+                      userMessage: result.userMessage,
+                      loadId,
+                      warning: `Template load timed out after 120s. ${files.length} files were supposed to be written but completion was not confirmed. Use list_dir to check the workspace state before reading or modifying files.`,
+                    };
+                  }
+
+                  /*
+                   * Build the result based on the actual write progress.
+                   * If all files succeeded, return the normal success result.
+                   * If some failed, include the failures in the result so
+                   * the AI is aware.
+                   */
+                  if (progress.failed.length === 0) {
+                    return {
+                      summary: result.summary,
+                      userMessage: result.userMessage,
+                      loadId,
+                      filesWritten: progress.done,
+                      filesTotal: progress.total,
+                    };
                   }
 
                   return {
                     summary: result.summary,
                     userMessage: result.userMessage,
-
-                    /*
-                     * IMPORTANT: the template's <amplifyArtifact> XML is
-                     * streamed above and parsed/written to the WebContainer
-                     * by the client message parser ASYNCHRONOUSLY. This tool
-                     * result is returned to the model BEFORE all files are
-                     * committed to the workspace.
-                     *
-                     * The client-side readiness gate delays auto-approval of
-                     * read-only tools and the application of file mutations
-                     * until the file count has stabilized, so by the time a
-                     * subsequent read_file / list_dir / mutate call is
-                     * permitted to execute, the files will exist.
-                     *
-                     * Do NOT immediately attempt to read or modify files
-                     * that were just injected — they may not be written yet.
-                     * If you must verify, prefer list_dir first.
-                     */
-                    warning:
-                      'Template files are being written to the workspace asynchronously. Wait for the workspace to finish loading before reading or modifying files, otherwise operations may fail on non-existent files.',
+                    loadId,
+                    filesWritten: progress.done,
+                    filesTotal: progress.total,
+                    failedFiles: progress.failed,
+                    warning: `${progress.failed.length} file(s) failed to write: ${progress.failed.map((f) => f.path).join(', ')}. The workspace may be in a partial state — use list_dir to verify before proceeding.`,
                   };
                 } catch (e: any) {
                   return { error: e.message };

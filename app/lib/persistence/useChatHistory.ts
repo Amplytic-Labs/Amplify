@@ -27,6 +27,7 @@ import { projectStore } from './project-store';
 import { getProjectFiles, createProjectCommit } from './project-files';
 import { runProjectAutoSetup } from './project-auto-run';
 import { extractChatName } from '~/lib/chat/chatname';
+import { writeFilesParallel, fileMapToWriteTasks } from '~/lib/utils/parallel-file-writer';
 
 export interface ChatHistoryItem {
   id: string;
@@ -113,42 +114,42 @@ export function useChatHistory() {
   const restoreFileMap = useCallback(async (files: FileMap) => {
     const container = await webcontainer;
 
-    const entries = Object.entries(files);
+    /*
+     * Parallel file restoration — replaces the previous two sequential
+     * for-loops (one for mkdir, one for writeFile) that serialized every
+     * write and made large template loads take ~200s for 400 files.
+     *
+     * writeFilesParallel:
+     *   1. Dedupes parent dirs and mkdirs them in parallel (most templates
+     *      share a small set of parent dirs, so ~400 mkdirs collapse to ~10).
+     *   2. Writes files via a concurrency-limited worker pool (default 12
+     *      concurrent writes). WebContainer FS handles concurrent writes to
+     *      different paths via Comlink's non-queueing message dispatch.
+     *
+     * Errors are collected (not thrown) to match the previous behavior —
+     * individual file failures don't abort the whole restore. Failed files
+     * are logged so they're not silently lost.
+     */
+    const tasks = fileMapToWriteTasks(files, container.workdir);
 
-    for (const [rawKey, value] of entries) {
-      if (value?.type !== 'folder') {
-        continue;
-      }
-
-      let key = rawKey;
-
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
-      try {
-        await container.fs.mkdir(key, { recursive: true });
-      } catch {
-        /* ignore */
-      }
+    if (tasks.length === 0) {
+      return;
     }
 
-    for (const [rawKey, value] of entries) {
-      if (value?.type !== 'file') {
-        continue;
-      }
+    const progress = await writeFilesParallel(tasks, {
+      concurrency: 12,
+      onProgress: ({ done, total, failed }) => {
+        if (failed.length > 0 && done === total) {
+          console.warn(
+            `[restoreFileMap] ${failed.length}/${total} files failed to restore:`,
+            failed.map((f) => f.path).join(', '),
+          );
+        }
+      },
+    });
 
-      let key = rawKey;
-
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
-      try {
-        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } catch {
-        /* ignore */
-      }
+    if (progress.failed.length > 0) {
+      console.warn(`[restoreFileMap] ${progress.failed.length}/${progress.total} files failed:`, progress.failed);
     }
   }, []);
 
@@ -724,6 +725,7 @@ export function useChatHistory() {
       }
 
       const { firstArtifact } = workbenchStore;
+
       // AI SDK v7: annotations may be stored as custom data, use type assertion
       messages = messages.filter((m) => !(m as any).annotations?.includes('no-store'));
 
@@ -759,6 +761,7 @@ export function useChatHistory() {
           // AI SDK v7: extract content from parts or fallback to legacy content
           const msg = messages[i];
           let c: any;
+
           if (Array.isArray(msg.parts)) {
             c = msg.parts
               .filter((p: any) => p.type === 'text')
@@ -992,11 +995,7 @@ export function useChatHistory() {
           const currentPathname = window.location.pathname;
           const expectedProjectId = workbenchStore.loadedProjectId.get();
 
-          if (
-            expectedProjectId &&
-            expectedProjectId !== '<none>' &&
-            !currentPathname.includes(expectedProjectId)
-          ) {
+          if (expectedProjectId && expectedProjectId !== '<none>' && !currentPathname.includes(expectedProjectId)) {
             const urlIdForUpdate = _urlId || currentId;
 
             if (urlIdForUpdate) {
@@ -1140,7 +1139,7 @@ export function useChatHistory() {
            *   `<chatname>` tag is allowed to replace.
            */
           const firstUserMessage = messages.find((m) => m.role === 'user');
-          let provisionalTitleCandidates: string[] = [];
+          const provisionalTitleCandidates: string[] = [];
 
           if (firstUserMessage) {
             let rawContent: any;

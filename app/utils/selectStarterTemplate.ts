@@ -150,7 +150,15 @@ const getGitHubRepoContent = async (repoName: string): Promise<{ name: string; p
   return fetchRepoContents(repoName);
 };
 
-export async function getTemplates(templateName: string, title?: string) {
+export async function getTemplates(
+  templateName: string,
+  title?: string,
+): Promise<{
+  assistantMessage: string;
+  summary: string;
+  userMessage: string;
+  files: Array<{ name: string; path: string; content: string }>;
+} | null> {
   const template = STARTER_TEMPLATES.find((t) => t.name == templateName);
 
   if (!template) {
@@ -283,5 +291,17 @@ Now that the Template is imported, please continue with my original request.
     assistantMessage,
     summary: `Injected ${template.name} template. Files created: ${filesToImport.files.map((f) => f.path).join(', ')}`,
     userMessage,
+
+    /*
+     * Raw file list — used by inject_template.execute's new parallel-write
+     * path. The client writes these files directly to the WebContainer via
+     * writeFilesParallel, bypassing the legacy <amplifyArtifact> XML stream
+     * + ActionRunner serialize chain.
+     *
+     * The assistantMessage XML is still returned for backwards compat (any
+     * persisted messages from before this change still reference it), but
+     * the new execute path does NOT write it to the dataStream.
+     */
+    files: filesToImport.files.map((f) => ({ name: f.name, path: f.path, content: f.content })),
   };
 }
