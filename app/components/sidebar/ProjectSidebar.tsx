@@ -334,13 +334,14 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       // Get all chats and find the latest one for this project
       const allChats = await getAll(db);
       const projectChats = allChats.filter(
-        (chat) => chat.metadata?.projectId === project.id || projectStore.getProjectByChat(chat.id)?.id === project.id
+        (chat) => chat.metadata?.projectId === project.id || projectStore.getProjectByChat(chat.id)?.id === project.id,
       );
 
-      // Sort by createdAt descending to get the most recent chat
+      // Sort by timestamp descending to get the most recent chat
       const sortedChats = projectChats.sort((a, b) => {
-        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+
         return bTime - aTime;
       });
 
@@ -350,6 +351,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
         loadEntries();
         window.location.href = `/${project.id}/${latestChat.urlId}`;
         toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
+
         return;
       }
 
@@ -453,6 +455,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
          */
         .then((list) => list.filter((item) => item.urlId))
         .then((list) =>
+
           /*
            * Sort newest-first by timestamp so the most recent chat
            * appears at the top of the list immediately after creation.
@@ -959,6 +962,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 chats — either the selected project's chats, or personal chats.
               */}
               {selectedProject ? (
+
                 /*
                  * A project is selected → show the project's chats. Switching
                  * between these chats does NOT reload the workspace (handled in
@@ -986,6 +990,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   exportChat={exportChat}
                 />
               ) : (
+
                 /*
                  * No project selected → personal chats (binned by date).
                  */
@@ -1224,6 +1229,7 @@ function SelectedProjectChatsList({
       {loadingChats ? (
         <div className="px-[10px] py-[7px] text-[12px] text-muted-foreground">Loading chats…</div>
       ) : chats.length === 0 ? (
+
         // Better empty state — icon + descriptive copy + CTA
         <div className="px-[8px] py-[16px] flex flex-col items-center justify-center gap-2 text-center">
           <div className="relative">

@@ -12,8 +12,10 @@ import { getProjectScreenshot, type ProjectScreenshot } from '~/lib/persistence/
 export function useProjectScreenshot(projectId: string | undefined): ProjectScreenshot | undefined {
   const [shot, setShot] = useState<ProjectScreenshot | undefined>(undefined);
 
-  // Subscribe to the project store version so we re-read screenshotAt when it
-  // changes (the capture service bumps it after storing a new screenshot).
+  /*
+   * Subscribe to the project store version so we re-read screenshotAt when it
+   * changes (the capture service bumps it after storing a new screenshot).
+   */
   // @ts-expect-error — _versionStore is private but stable across releases.
   const version = useStore(projectStore._versionStore);
 
@@ -28,10 +30,14 @@ export function useProjectScreenshot(projectId: string | undefined): ProjectScre
 
     getProjectScreenshot(db, projectId)
       .then((s) => {
-        if (!cancelled) setShot(s);
+        if (!cancelled) {
+          setShot(s);
+        }
       })
       .catch(() => {
-        if (!cancelled) setShot(undefined);
+        if (!cancelled) {
+          setShot(undefined);
+        }
       });
 
     return () => {

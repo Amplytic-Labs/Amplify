@@ -263,9 +263,7 @@ const FileModifiedDropdown = memo(
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(filteredFiles.map(([filePath]) => filePath).join('\n'));
-                          toast('File list copied to clipboard', {
-                            icon: <div className="i-ph:check-circle text-accent-500" />,
-                          });
+                          toast.success('File list copied to clipboard');
                         }}
                         className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-1 hover:bg-amplify-elements-background-depth-3 transition-colors text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary"
                       >
@@ -313,10 +311,7 @@ export const Workbench = memo(
 
     const [isSyncing, setIsSyncing] = useState(false);
 
-    const hasFiles = useMemo(
-      () => Object.values(files).some((f) => f?.type === 'file'),
-      [files],
-    );
+    const hasFiles = useMemo(() => Object.values(files).some((f) => f?.type === 'file'), [files]);
 
     /*
      * A chat-generated `<docxartifact>` document. The Document view must be
@@ -345,8 +340,10 @@ export const Workbench = memo(
       workbenchStore.currentView.set(view);
     };
 
-    // Track workbench panel position for slider alignment (desktop only)
-    // Uses ResizeObserver instead of requestAnimationFrame loop for efficiency
+    /*
+     * Track workbench panel position for slider alignment (desktop only)
+     * Uses ResizeObserver instead of requestAnimationFrame loop for efficiency
+     */
     useEffect(() => {
       if (isSmallViewport || !showWorkbench) {
         workbenchStore.workbenchLeftPosition.set(null);
@@ -368,9 +365,11 @@ export const Workbench = memo(
       // Update on resize
       window.addEventListener('resize', updateWorkbenchPosition);
 
-      // Use ResizeObserver for efficient position tracking instead of
-      // a continuous requestAnimationFrame loop. The old RAF loop ran at
-      // ~60fps indefinitely, causing unnecessary React re-renders.
+      /*
+       * Use ResizeObserver for efficient position tracking instead of
+       * a continuous requestAnimationFrame loop. The old RAF loop ran at
+       * ~60fps indefinitely, causing unnecessary React re-renders.
+       */
       let resizeObserver: ResizeObserver | undefined;
       const workbenchElement = document.querySelector('[data-workbench-panel]');
 
@@ -401,8 +400,10 @@ export const Workbench = memo(
       const currentView = workbenchStore.currentView.get();
 
       if (hasRenderableFiles && !hasPreview) {
-        // Auto-switch to the Render tab when renderable files first appear
-        // (only if no preview is active, so preview takes priority).
+        /*
+         * Auto-switch to the Render tab when renderable files first appear
+         * (only if no preview is active, so preview takes priority).
+         */
         if (currentView === 'code') {
           setSelectedView('render');
         }
@@ -506,12 +507,9 @@ export const Workbench = memo(
           animate={showWorkbench ? 'open' : 'closed'}
           variants={isSmallViewport ? mobileWorkbenchVariants : undefined}
           style={isMobileHidden ? { transform: 'translateX(100%)' } : undefined}
-          className={classNames(
-            'z-workbench lg:pb-4 lg:pr-4 absolute inset-0',
-            {
-              'invisible pointer-events-none lg:visible lg:pointer-events-auto': isMobileHidden,
-            },
-          )}
+          className={classNames('z-workbench lg:pb-4 lg:pr-4 absolute inset-0', {
+            'invisible pointer-events-none lg:visible lg:pointer-events-auto': isMobileHidden,
+          })}
         >
           {' '}
           {showVeil && (
@@ -543,47 +541,47 @@ export const Workbench = memo(
                   </div>
                 )}
                 {(hasFiles || hasDocx) && (
-                <div className="relative flex-1 overflow-hidden">
-                  <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
-                    <EditorPanel
-                      editorDocument={currentDocument}
-                      isStreaming={isStreaming}
-                      selectedFile={selectedFile}
-                      files={files}
-                      unsavedFiles={unsavedFiles}
-                      fileHistory={fileHistory}
-                      onFileSelect={onFileSelect}
-                      onEditorScroll={onEditorScroll}
-                      onEditorChange={onEditorChange}
-                      onFileSave={onFileSave}
-                      onFileReset={onFileReset}
-                      onVersionSelect={(content) => {
-                        setComparisonContentState(content);
-                        workbenchStore.currentView.set('diff');
-                      }}
-                    />
-                  </View>
-                  <View
-                    initial={{ x: '100%' }}
-                    animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
-                  >
-                    <DiffView
-                      fileHistory={fileHistory}
-                      setFileHistory={(history) => workbenchStore.fileHistory.set(history)}
-                      comparisonContent={comparisonContentState || undefined}
-                      showWholeFile={Object.keys(fileHistory).length > 1}
-                    />
-                  </View>
-                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
-                    <Preview setSelectedElement={setSelectedElement} />
-                  </View>
-                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
-                    <RenderPanel />
-                  </View>
-                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'document' ? '0%' : '100%' }}>
-                    <DocxPreviewPanel />
-                  </View>
-                </div>
+                  <div className="relative flex-1 overflow-hidden">
+                    <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
+                      <EditorPanel
+                        editorDocument={currentDocument}
+                        isStreaming={isStreaming}
+                        selectedFile={selectedFile}
+                        files={files}
+                        unsavedFiles={unsavedFiles}
+                        fileHistory={fileHistory}
+                        onFileSelect={onFileSelect}
+                        onEditorScroll={onEditorScroll}
+                        onEditorChange={onEditorChange}
+                        onFileSave={onFileSave}
+                        onFileReset={onFileReset}
+                        onVersionSelect={(content) => {
+                          setComparisonContentState(content);
+                          workbenchStore.currentView.set('diff');
+                        }}
+                      />
+                    </View>
+                    <View
+                      initial={{ x: '100%' }}
+                      animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
+                    >
+                      <DiffView
+                        fileHistory={fileHistory}
+                        setFileHistory={(history) => workbenchStore.fileHistory.set(history)}
+                        comparisonContent={comparisonContentState || undefined}
+                        showWholeFile={Object.keys(fileHistory).length > 1}
+                      />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
+                      <Preview setSelectedElement={setSelectedElement} />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
+                      <RenderPanel />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'document' ? '0%' : '100%' }}>
+                      <DocxPreviewPanel />
+                    </View>
+                  </div>
                 )}
               </div>
             </div>

@@ -11,9 +11,9 @@ import type {
   ReasoningUIPart,
   ToolInvocationUIPart,
   SourceUIPart,
-  FileUIPart,
   StepStartUIPart,
 } from '@ai-sdk/ui-utils';
+import type { FileUIPart } from 'ai';
 
 interface UserMessageProps {
   content: string | Array<{ type: string; text?: string; image?: string }>;
@@ -25,8 +25,10 @@ interface UserMessageProps {
 export function UserMessage({ content, parts }: UserMessageProps) {
   const profile = useStore(profileStore);
 
-  // Extract images from parts - look for file parts with image mime types
-  // AI SDK v7: FileUIPart uses mediaType (not mimeType) and url (not data)
+  /*
+   * Extract images from parts - look for file parts with image mime types
+   * AI SDK v7: FileUIPart uses mediaType (not mimeType) and url (not data)
+   */
   const images =
     parts?.filter(
       (part): part is FileUIPart => part.type === 'file' && 'mediaType' in part && part.mediaType.startsWith('image/'),
@@ -63,8 +65,12 @@ export function UserMessage({ content, parts }: UserMessageProps) {
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((item, index) => (
-              <div key={index} className="relative rounded-lg border border-amplify-elements-borderColor/50 overflow-hidden shadow-sm bg-amplify-elements-background-depth-1">
+              <div
+                key={index}
+                className="relative rounded-lg border border-amplify-elements-borderColor/50 overflow-hidden shadow-sm bg-amplify-elements-background-depth-1"
+              >
                 <img
+
                   // AI SDK v7: FileUIPart.url is full data URL (data:mediaType;base64,data)
                   src={item.url}
                   alt={`Image ${index + 1}`}

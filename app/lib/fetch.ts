@@ -7,7 +7,11 @@ export async function request(url: string, init?: CommonRequest) {
 
     const agent = url.startsWith('https') ? new https.Agent({ rejectUnauthorized: false }) : undefined;
 
-    return nodeFetch.default(url, { ...init, agent });
+    /*
+     * node-fetch's `Agent` (from node:https) is structurally incompatible
+     * with the DOM `fetch` Agent type, but at runtime they're identical.
+     */
+    return nodeFetch.default(url, { ...init, agent } as any);
   }
 
   return fetch(url, init);

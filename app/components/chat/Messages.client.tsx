@@ -70,32 +70,28 @@ export const Messages = memo(
 
     const groupedMessages = useMemo(() => {
       const result: UIMessage[] = [];
+
       for (const msg of messages) {
         if (msg.role === 'assistant' && result.length > 0) {
           const last = result[result.length - 1];
+
           if (last.role === 'assistant') {
             // Merge parts, deduplicating identical text parts from retries
             const mergedParts = [...(last.parts || [])];
-            for (const part of (msg.parts || [])) {
+
+            for (const part of msg.parts || []) {
               if (part.type === 'text') {
                 // Check if we already have this exact text part
-                const isDuplicate = mergedParts.some(p => p.type === 'text' && p.text.trim() === part.text.trim());
+                const isDuplicate = mergedParts.some((p) => p.type === 'text' && p.text.trim() === part.text.trim());
+
                 if (isDuplicate && part.text.trim() !== '') {
                   continue;
                 }
               }
+
               mergedParts.push(part);
             }
-            
-            // Merge content (fallback for older SDKs), avoiding duplicate appending
-            let mergedContent = last.content || '';
-            const newContent = msg.content || '';
-            if (newContent) {
-              if (!mergedContent.trim().endsWith(newContent.trim())) {
-                mergedContent = mergedContent + newContent;
-              }
-            }
-            
+
             // Merge annotations
             const lastAnnotations = (last as any).annotations || [];
             const msgAnnotations = (msg as any).annotations || [];
@@ -105,18 +101,19 @@ export const Messages = memo(
               ...last,
               id: msg.id, // Use the latest ID for rewind/fork
               parts: mergedParts,
-              content: mergedContent,
               annotations: mergedAnnotations,
             } as UIMessage;
             continue;
           }
         }
+
         // Deep copy parts to avoid mutating the original message array
-        result.push({ 
-          ...msg, 
-          parts: msg.parts ? [...msg.parts] : undefined 
+        result.push({
+          ...msg,
+          parts: msg.parts ? [...msg.parts] : undefined,
         } as UIMessage);
       }
+
       return result;
     }, [messages]);
 
@@ -125,10 +122,15 @@ export const Messages = memo(
         {groupedMessages.length > 0
           ? groupedMessages.map((message, index) => {
               const { role, id: messageId, parts } = message;
+
               // Extract text content from parts (UIMessage v7) or fallback to content (legacy)
               const content = Array.isArray(parts)
-                ? parts.filter((p): p is { type: 'text'; text: string } => p.type === 'text').map(p => p.text).join('')
+                ? parts
+                    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+                    .map((p) => p.text)
+                    .join('')
                 : (message as any).content || '';
+
               // Get annotations - may be on the message directly or in parts
               const annotations = (message as any).annotations;
               const isUserMessage = role === 'user';
@@ -157,7 +159,9 @@ export const Messages = memo(
                         onRewind={handleRewind}
                         onFork={handleFork}
                         append={props.append}
-                        onRegenerate={!isUserMessage && index === groupedMessages.length - 1 ? props.onRegenerate : undefined}
+                        onRegenerate={
+                          !isUserMessage && index === groupedMessages.length - 1 ? props.onRegenerate : undefined
+                        }
                         chatMode={props.chatMode}
                         setChatMode={props.setChatMode}
                         model={props.model}

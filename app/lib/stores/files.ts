@@ -936,6 +936,7 @@ export class FilesStore {
       }
 
       const content = await webcontainer.fs.readFile(relativePath, 'utf-8');
+
       return content;
     } catch (error) {
       logger.error('Failed to read file\n\n', error);
@@ -965,17 +966,14 @@ export class FilesStore {
 
       // Update the files map - remove old entries and add new ones
       const allFiles = this.files.get();
-      const entriesToUpdate: Array<[string, { type: string; name: string }] | [string, undefined]> = [];
+      const entriesToUpdate: Array<[string, Dirent | undefined]> = [];
 
       for (const [filePath, dirent] of Object.entries(allFiles)) {
         if (filePath === oldPath || filePath.startsWith(oldPath + '/')) {
           if (filePath === oldPath) {
-            entriesToUpdate.push([filePath, { type: 'folder', name: path.basename(newPath) }]);
+            entriesToUpdate.push([filePath, { type: 'folder' }]);
           } else {
-            const relativeFilePath = filePath.slice(oldPath.length + 1);
-            const newFilePath = newPath + '/' + relativeFilePath;
-            const newDirent = dirent ? { ...dirent, name: path.basename(newFilePath) } : undefined;
-            entriesToUpdate.push([filePath, newDirent]);
+            entriesToUpdate.push([filePath, dirent]);
           }
         }
       }
@@ -986,6 +984,7 @@ export class FilesStore {
           this.files.setKey(newKey, newDirent);
           this.#size++;
         }
+
         this.files.setKey(oldKey, undefined);
         this.#size--;
       }
