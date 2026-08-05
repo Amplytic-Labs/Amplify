@@ -182,9 +182,11 @@ export function stripAmplifyArtifactsWithSummary(text: string): string {
 function summarizeArtifactBlock(block: string): string {
   const parts: string[] = [];
 
-  // File paths — collect all, but only list the first 40 in the summary line
-  // to avoid re-bloating the prompt for very large repos. The count is always
-  // accurate so the model knows how many files exist.
+  /*
+   * File paths — collect all, but only list the first 40 in the summary line
+   * to avoid re-bloating the prompt for very large repos. The count is always
+   * accurate so the model knows how many files exist.
+   */
   const filePaths: string[] = [];
   let m: RegExpExecArray | null;
   const fileRe = new RegExp(ACTION_FILE_RE);

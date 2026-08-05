@@ -45,9 +45,11 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
 
     // Serve from module-level cache if available (handles remounts)
     const cached = svgCache.get(chart);
+
     if (cached) {
       setSvg(cached);
       renderedChartRef.current = chart;
+
       return;
     }
 
@@ -58,6 +60,7 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
 
     const renderChart = async () => {
       isRenderingRef.current = true;
+
       try {
         const renderId = `mermaid-svg-${++renderCounter}`;
         const { svg: renderedSvg } = await mermaid.render(renderId, chart);
@@ -78,15 +81,14 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
 
   if (error) {
     return (
-      <div className="p-4 my-2 rounded-lg bg-red-100 text-red-700 border border-red-200 text-sm font-mono">
-        {error}
-      </div>
+      <div className="p-4 my-2 rounded-lg bg-red-100 text-red-700 border border-red-200 text-sm font-mono">{error}</div>
     );
   }
 
   return (
     <div
       className="flex justify-center my-4 overflow-auto"
+
       /*
        * minHeight while svg is loading prevents a layout shift that would
        * scroll the page. Once svg is populated the height is determined by
@@ -99,4 +101,3 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
 });
 
 Mermaid.displayName = 'Mermaid';
-

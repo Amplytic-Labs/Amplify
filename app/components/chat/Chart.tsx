@@ -56,15 +56,7 @@ interface ParsedChartConfig {
   options?: ChartOptions;
 }
 
-type ChartType =
-  | 'bar'
-  | 'line'
-  | 'pie'
-  | 'doughnut'
-  | 'scatter'
-  | 'bubble'
-  | 'radar'
-  | 'polarArea';
+type ChartType = 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'bubble' | 'radar' | 'polarArea';
 
 type ChartData = Record<string, unknown>;
 type ChartOptions = Record<string, unknown>;
@@ -76,9 +68,7 @@ interface ChartProps {
 
 export const Chart = memo(({ config }: ChartProps) => {
   // Initialise from cache immediately — prevents blank-flash on remount.
-  const [parsed, setParsed] = useState<ParsedChartConfig | null>(
-    () => configCache.get(config) ?? null,
-  );
+  const [parsed, setParsed] = useState<ParsedChartConfig | null>(() => configCache.get(config) ?? null);
   const [error, setError] = useState<string | null>(null);
 
   // Track whether we've already parsed this exact config in this instance.
@@ -97,6 +87,7 @@ export const Chart = memo(({ config }: ChartProps) => {
       setParsed(cached);
       setError(null);
       renderedConfigRef.current = config;
+
       return;
     }
 

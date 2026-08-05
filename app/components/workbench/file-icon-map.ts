@@ -10,13 +10,13 @@ const SPECIAL_FILES: Record<string, string> = {
   'vite.config.ts': 'i-vscode-icons:file-type-vite',
   'vite.config.js': 'i-vscode-icons:file-type-vite',
   'uno.config.ts': 'i-vscode-icons:file-type-unocss',
-  'Dockerfile': 'i-vscode-icons:file-type-docker',
+  Dockerfile: 'i-vscode-icons:file-type-docker',
   'docker-compose.yml': 'i-vscode-icons:file-type-docker',
   'docker-compose.yaml': 'i-vscode-icons:file-type-docker',
   '.gitignore': 'i-vscode-icons:file-type-git',
   '.env': 'i-vscode-icons:file-type-dotenv',
   'README.md': 'i-vscode-icons:file-type-markdown',
-  'LICENSE': 'i-vscode-icons:file-type-license',
+  LICENSE: 'i-vscode-icons:file-type-license',
   'pnpm-lock.yaml': 'i-vscode-icons:file-type-pnpm',
   'package-lock.json': 'i-vscode-icons:file-type-npm',
   'yarn.lock': 'i-vscode-icons:file-type-yarn',
@@ -160,8 +160,10 @@ export function getFileTypeIconClass(fileName: string): string {
 
   // 2. Check for extension match
   const dotIdx = fileName.lastIndexOf('.');
+
   if (dotIdx > 0) {
     const ext = fileName.slice(dotIdx + 1).toLowerCase();
+
     if (EXTENSION_MAP[ext]) {
       return EXTENSION_MAP[ext];
     }

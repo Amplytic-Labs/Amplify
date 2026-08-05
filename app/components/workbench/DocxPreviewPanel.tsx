@@ -42,8 +42,11 @@ export const DocxPreviewPanel = memo(() => {
   const markdown = docxState?.markdown || '';
   const isStreaming = docxState?.streaming ?? false;
   const theme = docxState?.theme ?? null;
-  // Serialised theme for change-detection in effect deps (avoids re-fetching
-  // when the theme object identity changes but content is identical).
+
+  /*
+   * Serialised theme for change-detection in effect deps (avoids re-fetching
+   * when the theme object identity changes but content is identical).
+   */
   const themeKey = JSON.stringify(theme);
 
   const [html, setHtml] = useState('');
@@ -67,7 +70,9 @@ export const DocxPreviewPanel = memo(() => {
   const collectAssets = useCallback((): DiagramAsset[] => {
     const container = hiddenRenderRef.current;
 
-    if (!container) return [];
+    if (!container) {
+      return [];
+    }
 
     const assets: DiagramAsset[] = [];
     let mermaidIdx = 0;
@@ -79,6 +84,7 @@ export const DocxPreviewPanel = memo(() => {
     mermaidSvgs.forEach((svg) => {
       const clone = svg.cloneNode(true) as SVGElement;
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
       const svgStr = new XMLSerializer().serializeToString(clone);
       assets.push({ id: `mermaid-${mermaidIdx++}`, type: 'mermaid', svg: svgStr });
     });
@@ -103,16 +109,21 @@ export const DocxPreviewPanel = memo(() => {
       if (!md.trim()) {
         setHtml('');
         setMeta(null);
+
         return;
       }
 
-      // Read the current theme fresh from the store on every call — the
-      // theme may have been updated since the last render (streaming ticks).
+      /*
+       * Read the current theme fresh from the store on every call — the
+       * theme may have been updated since the last render (streaming ticks).
+       */
       const currentTheme = docxArtifactStore.get()?.theme ?? null;
       const key = md + '\u0000' + JSON.stringify(currentTheme);
 
-      // Skip if nothing changed (avoid re-fetch on identical streaming ticks).
-      // Both markdown AND theme must match the last-fetched values.
+      /*
+       * Skip if nothing changed (avoid re-fetch on identical streaming ticks).
+       * Both markdown AND theme must match the last-fetched values.
+       */
       if (!force && key === lastFetchedKeyRef.current && assetsReadyRef.current) {
         return;
       }
@@ -160,14 +171,20 @@ export const DocxPreviewPanel = memo(() => {
       setError(null);
       assetsReadyRef.current = false;
       assetsRef.current = [];
+
       return;
     }
 
     assetsReadyRef.current = false;
 
     // Clear pending timers
-    if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
-    if (assetTimerRef.current) clearTimeout(assetTimerRef.current);
+    if (fetchTimerRef.current) {
+      clearTimeout(fetchTimerRef.current);
+    }
+
+    if (assetTimerRef.current) {
+      clearTimeout(assetTimerRef.current);
+    }
 
     // Wait for the off-screen render's mermaid/chart to finish, then fetch.
     assetTimerRef.current = setTimeout(() => {
@@ -177,7 +194,9 @@ export const DocxPreviewPanel = memo(() => {
     }, ASSET_RENDER_WAIT_MS);
 
     return () => {
-      if (assetTimerRef.current) clearTimeout(assetTimerRef.current);
+      if (assetTimerRef.current) {
+        clearTimeout(assetTimerRef.current);
+      }
     };
   }, [markdown, themeKey, collectAssets, fetchPreview]);
 
@@ -191,13 +210,17 @@ export const DocxPreviewPanel = memo(() => {
       }, PREVIEW_DEBOUNCE_MS);
 
       return () => {
-        if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
+        if (fetchTimerRef.current) {
+          clearTimeout(fetchTimerRef.current);
+        }
       };
     }
   }, [isStreaming, markdown, themeKey, collectAssets, fetchPreview]);
 
   const handleDownload = useCallback(async () => {
-    if (!markdown) return;
+    if (!markdown) {
+      return;
+    }
 
     setDownloading(true);
 
@@ -287,8 +310,8 @@ export const DocxPreviewPanel = memo(() => {
           )}
           {meta && !isStreaming && (
             <span className="hidden sm:inline text-[10px] text-amplify-elements-textTertiary font-mono">
-              {meta.paragraphs}p · {meta.tables}t · {meta.images}i
-              {meta.equations > 0 ? ` · ${meta.equations}eq` : ''} · {(meta.bytes / 1024).toFixed(0)}KB
+              {meta.paragraphs}p · {meta.tables}t · {meta.images}i{meta.equations > 0 ? ` · ${meta.equations}eq` : ''} ·{' '}
+              {(meta.bytes / 1024).toFixed(0)}KB
             </span>
           )}
         </div>

@@ -7,7 +7,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-amplify-elements-background text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2',
+        default:
+          'bg-amplify-elements-background text-amplify-elements-textPrimary hover:bg-amplify-elements-background-depth-2',
         destructive: 'bg-red-500 text-white hover:bg-red-600',
         outline:
           'border border-amplify-elements-borderColor bg-transparent hover:bg-amplify-elements-background-depth-2 hover:text-amplify-elements-textPrimary text-amplify-elements-textPrimary dark:border-amplify-elements-borderColorActive',

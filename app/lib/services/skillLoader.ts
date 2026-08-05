@@ -26,7 +26,10 @@ export interface DesignSystemEntry {
  */
 function parseFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return {};
+
+  if (!match) {
+    return {};
+  }
 
   const result: Record<string, string> = {};
   const lines = match[1].split('\n');
@@ -36,11 +39,13 @@ function parseFrontmatter(content: string): Record<string, string> {
   for (const line of lines) {
     // Check for key: value
     const kvMatch = line.match(/^(\w[\w-]*):\s*(.*)/);
+
     if (kvMatch && !line.startsWith(' ') && !line.startsWith('\t')) {
       // Save previous key
       if (currentKey) {
         result[currentKey] = currentValue.trim();
       }
+
       currentKey = kvMatch[1];
       currentValue = kvMatch[2];
 
@@ -75,6 +80,7 @@ export class SkillLoader {
     if (!SkillLoader._instance) {
       SkillLoader._instance = new SkillLoader();
     }
+
     return SkillLoader._instance;
   }
 
@@ -82,10 +88,13 @@ export class SkillLoader {
     try {
       // Load core skills
       await this._loadFromDirectory(this._skillsDir, false);
+
       // Load design/bundled skills (with YAML frontmatter support)
       await this._loadFromDirectory(this._designSkillsDir, false, true);
+
       // Load user skills
       await this._loadFromDirectory(this._userSkillsDir, true);
+
       // Load design systems index
       await this._loadDesignSystems();
 
@@ -98,6 +107,7 @@ export class SkillLoader {
   private async _loadFromDirectory(dir: string, isUserDir: boolean, useFrontmatter = false) {
     try {
       await fs.mkdir(dir, { recursive: true });
+
       const entries = await fs.readdir(dir, { withFileTypes: true });
 
       for (const entry of entries) {
@@ -123,9 +133,11 @@ export class SkillLoader {
             } catch {
               // No manifest.json — parse YAML frontmatter from SKILL.md
               const frontmatter = parseFrontmatter(content);
+
               if (frontmatter.name) {
                 skillName = frontmatter.name;
               }
+
               if (frontmatter.description) {
                 skillDescription = frontmatter.description;
               }
@@ -173,12 +185,16 @@ export class SkillLoader {
   private async _loadDesignSystems() {
     try {
       await fs.mkdir(this._designSystemsDir, { recursive: true });
+
       const entries = await fs.readdir(this._designSystemsDir, { withFileTypes: true });
 
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        if (!entry.isDirectory()) {
+          continue;
+        }
 
         const designPath = path.join(this._designSystemsDir, entry.name, 'DESIGN.md');
+
         try {
           const content = await fs.readFile(designPath, 'utf-8');
           const lines = content.split('\n');
@@ -221,6 +237,7 @@ export class SkillLoader {
 
     if (projectId) {
       const projectSkills = getProjectSkills(projectId);
+
       if (projectSkills.length > 0) {
         skills = skills.filter((s) => projectSkills.includes(s.id));
       }
@@ -236,6 +253,7 @@ export class SkillLoader {
 
     for (const skill of skills) {
       const skillInfoSize = (skill.id + skill.label + skill.description).length;
+
       if (currentChars + skillInfoSize <= tokenBudget * 4) {
         filteredSkills.push({ id: skill.id, label: skill.label, description: skill.description });
         currentChars += skillInfoSize;
@@ -250,12 +268,16 @@ export class SkillLoader {
   async getSkillContent(skillId: string): Promise<string | null> {
     const id = skillId.toLowerCase();
     const skill = this._skills.get(id);
+
     return skill ? skill.content : null;
   }
 
   getRelevantSkills(tokenBudget?: number): string {
     const skills = this.getSkills(tokenBudget);
-    if (skills.length === 0) return 'No specialized skills currently loaded.';
+
+    if (skills.length === 0) {
+      return 'No specialized skills currently loaded.';
+    }
 
     return skills.map((s) => `<skill name="${s.id}" description="${s.description}"/>`).join('\n');
   }
@@ -272,7 +294,11 @@ export class SkillLoader {
 
   async getDesignSystemContent(id: string): Promise<string | null> {
     const entry = this._designSystems.get(id);
-    if (!entry) return null;
+
+    if (!entry) {
+      return null;
+    }
+
     try {
       return await fs.readFile(entry.filePath, 'utf-8');
     } catch {
@@ -289,6 +315,7 @@ export class SkillLoader {
 
       // 1. Validate manifest first
       const manifestEntry = zipEntries.find((e) => e.entryName === 'manifest.json');
+
       if (!manifestEntry) {
         throw new Error('Invalid .skill bundle: manifest.json missing');
       }
@@ -298,6 +325,7 @@ export class SkillLoader {
 
       // 2. Check for SKILL.md
       const skillMdEntry = zipEntries.find((e) => e.entryName === 'SKILL.md');
+
       if (!skillMdEntry) {
         throw new Error('Invalid .skill bundle: SKILL.md missing');
       }
@@ -309,7 +337,9 @@ export class SkillLoader {
       zip.extractAllTo(skillDir, true);
 
       console.log(`Successfully installed skill: ${manifest.name}`);
-      await this.loadSkills(); // Reload registry
+      await this.loadSkills();
+
+      // Reload registry
       return manifest;
     } catch (error) {
       console.error(`Installation failed for ${bundlePath}:`, error);
@@ -319,6 +349,7 @@ export class SkillLoader {
 
   async uninstallSkill(skillId: string) {
     const skillPath = path.join(this._userSkillsDir, skillId);
+
     try {
       await fs.rm(skillPath, { recursive: true, force: true });
       this._skills.delete(skillId);

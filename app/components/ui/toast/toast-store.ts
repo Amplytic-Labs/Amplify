@@ -14,6 +14,7 @@ import type { ToastItem, ToastType } from '~/components/ui/toast/ToastStack';
  */
 
 let _nextId = 0;
+
 function nextId(): string {
   return `toast-${++_nextId}`;
 }
@@ -39,6 +40,7 @@ function addToast(type: ToastType, title: string, options?: ToastOptions): strin
 function dismissToast(id?: string) {
   if (id) {
     const current = toastList.get();
+
     if (current[id]) {
       const next = { ...current };
       delete next[id];
@@ -86,7 +88,8 @@ export const toast = Object.assign(
     error: (message: string, options?: ToastOptions) => addToast('error', message, options),
     info: (message: string, options?: ToastOptions) => addToast('info', message, options),
     warning: (message: string, options?: ToastOptions) => addToast('warning', message, options),
-    loading: (message: string, options?: ToastOptions) => addToast('loading', message, { ...options, autoClose: options?.autoClose ?? false }),
+    loading: (message: string, options?: ToastOptions) =>
+      addToast('loading', message, { ...options, autoClose: options?.autoClose ?? false }),
     dismiss: dismissToast,
     isActive: (id: string) => !!toastList.get()[id],
     TYPE: {

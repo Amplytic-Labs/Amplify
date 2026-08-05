@@ -321,17 +321,19 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
   // OS detection for shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
-  // ───────────────────────────────────────────────────────────────
-  // Auto-approval: every tool runs automatically EXCEPT:
-  //   - execute_plan (user approves the full enriched plan in
-  //     PlanApprovalDialog)
-  //   - client-side tools (store_user_fact, search_user_context, etc.)
-  //     These are executed CLIENT-SIDE by Chat.client.tsx because they
-  //     use IndexedDB which is browser-only. If we send APPROVE here,
-  //     the server would run their execute function server-side, which
-  //     returns "not available on the server" — so we MUST skip them
-  //     and let the client-side effect handle them.
-  // ───────────────────────────────────────────────────────────────
+  /*
+   * ───────────────────────────────────────────────────────────────
+   * Auto-approval: every tool runs automatically EXCEPT:
+   *   - execute_plan (user approves the full enriched plan in
+   *     PlanApprovalDialog)
+   *   - client-side tools (store_user_fact, search_user_context, etc.)
+   *     These are executed CLIENT-SIDE by Chat.client.tsx because they
+   *     use IndexedDB which is browser-only. If we send APPROVE here,
+   *     the server would run their execute function server-side, which
+   *     returns "not available on the server" — so we MUST skip them
+   *     and let the client-side effect handle them.
+   * ───────────────────────────────────────────────────────────────
+   */
   useEffect(() => {
     const pending = toolInvocations.filter((inv) => {
       if (!ToolState.isCall(getToolState(inv))) {
@@ -365,9 +367,11 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
         continue;
       }
 
-      // SHARED dedup (across all components — see tool-approval-dedup.ts).
-      // If Chat.client.tsx or ToolProgress.tsx already claimed this
-      // toolCallId, skip. This is the permanent fix for duplication.
+      /*
+       * SHARED dedup (across all components — see tool-approval-dedup.ts).
+       * If Chat.client.tsx or ToolProgress.tsx already claimed this
+       * toolCallId, skip. This is the permanent fix for duplication.
+       */
       if (!tryClaimToolCallApproval(id)) {
         continue;
       }
@@ -447,10 +451,12 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
           const toolCallId = getToolCallId(tool);
           const annotation = toolCallAnnotations.find((annotation) => annotation.toolCallId === toolCallId);
 
-          // Only execute_plan requires explicit user approval — it opens the
-          // PlanApprovalDialog after planner enrichment. All other tools
-          // auto-approve (see the useEffect above) and just show a "running"
-          // indicator while they execute.
+          /*
+           * Only execute_plan requires explicit user approval — it opens the
+           * PlanApprovalDialog after planner enrichment. All other tools
+           * auto-approve (see the useEffect above) and just show a "running"
+           * indicator while they execute.
+           */
           const needsApproval = toolName === 'execute_plan';
 
           return (

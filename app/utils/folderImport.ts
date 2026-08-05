@@ -37,11 +37,13 @@ export const createChatFromFolder = async (
   const filesMessage: UIMessage = {
     role: 'assistant',
     id: generateId(),
+
     // AI SDK v7: createdAt not part of UIMessage, using type assertion
-    ...( { createdAt: new Date() } as any),
-    parts: [{
-      type: 'text' as const,
-      text: `I've imported the contents of the "${folderName}" folder.${binaryFilesMessage}
+    ...({ createdAt: new Date() } as any),
+    parts: [
+      {
+        type: 'text' as const,
+        text: `I've imported the contents of the "${folderName}" folder.${binaryFilesMessage}
 
 <amplifyArtifact id="imported-files" title="Imported Files" type="bundled" >
 ${fileArtifacts
@@ -52,18 +54,22 @@ ${escapeAmplifyTags(file.content)}
   )
   .join('\n\n')}
 </amplifyArtifact>`,
-    }],
+      },
+    ],
   };
 
   const userMessage: UIMessage = {
     role: 'user',
     id: generateId(),
+
     // AI SDK v7: createdAt not part of UIMessage, using type assertion
-    ...( { createdAt: new Date() } as any),
-    parts: [{
-      type: 'text' as const,
-      text: `Import the "${folderName}" folder`,
-    }],
+    ...({ createdAt: new Date() } as any),
+    parts: [
+      {
+        type: 'text' as const,
+        text: `Import the "${folderName}" folder`,
+      },
+    ],
   };
 
   const messages = [userMessage, filesMessage];
@@ -72,10 +78,12 @@ ${escapeAmplifyTags(file.content)}
     messages.push({
       role: 'user',
       id: generateId(),
-      parts: [{
-        type: 'text' as const,
-        text: 'Setup the codebase and Start the application',
-      }],
+      parts: [
+        {
+          type: 'text' as const,
+          text: 'Setup the codebase and Start the application',
+        },
+      ],
     });
     messages.push(commandsMessage);
   }

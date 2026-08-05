@@ -236,6 +236,7 @@ export function TraceTree({
                         {(() => {
                           const icon = item.icon || (item.type === 'check' ? 'check' : 'dot');
                           const color = getIconColor(item.status);
+
                           switch (icon) {
                             case 'check':
                               return (
@@ -406,7 +407,10 @@ export function CircularProgress({
     let angle = 0;
 
     segments.forEach((seg) => {
-      if (seg.value <= 0) return;
+      if (seg.value <= 0) {
+        return;
+      }
+
       const segAngle = (seg.value / total) * available;
       const startAngle = angle + GAP_DEG / 2;
       const endAngle = angle + segAngle + GAP_DEG / 2;
@@ -441,6 +445,7 @@ function describeArc(cx: number, r: number, startAngle: number, endAngle: number
   const start = polarToXY(cx, cx, r, startAngle);
   const end = polarToXY(cx, cx, r, endAngle);
   const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+
   return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 }
 

@@ -106,8 +106,10 @@ export function stripChatName(content: string | undefined | null): string {
     const closeIdx = content.indexOf(CHATNAME_CLOSE, nameStart);
 
     if (closeIdx === -1) {
-      // Open tag with no closer (mid-stream): drop the open tag + the
-      // not-yet-finished name. We intentionally do NOT append it.
+      /*
+       * Open tag with no closer (mid-stream): drop the open tag + the
+       * not-yet-finished name. We intentionally do NOT append it.
+       */
       break;
     }
 

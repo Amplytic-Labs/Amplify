@@ -37,9 +37,11 @@ const DEFAULT_VERIFICATION_CHECKS: VerificationCheckType[] = ['lint', 'type_chec
 
 const EMPTY_DATA: PlanStoreData = { plans: [], chatToPlan: {}, projectPlans: {} };
 
-// ============================================================
-// IndexedDB helpers
-// ============================================================
+/*
+ * ============================================================
+ * IndexedDB helpers
+ * ============================================================
+ */
 
 /**
  * Opens (or creates) the plan IndexedDB database.
@@ -75,6 +77,7 @@ async function loadPlanDataFromIDB(): Promise<PlanStoreData> {
   if (typeof window === 'undefined') {
     return { ...EMPTY_DATA };
   }
+
   try {
     const db = await openPlanDB();
 
@@ -108,6 +111,7 @@ async function savePlanDataToIDB(data: PlanStoreData): Promise<void> {
   if (typeof window === 'undefined') {
     return;
   }
+
   try {
     const db = await openPlanDB();
 
@@ -145,8 +149,10 @@ export class PlanStore {
   private _initPromise: Promise<void> | null = null;
 
   private constructor() {
-    // Synchronous constructor — data is loaded lazily on first access.
-    // If we're on the server, we stay with empty data and skip IDB entirely.
+    /*
+     * Synchronous constructor — data is loaded lazily on first access.
+     * If we're on the server, we stay with empty data and skip IDB entirely.
+     */
   }
 
   /**
@@ -154,7 +160,10 @@ export class PlanStore {
    * Uses a promise-gate so concurrent callers share a single init.
    */
   private async ensureInit(): Promise<void> {
-    if (this._initialized) return;
+    if (this._initialized) {
+      return;
+    }
+
     if (this._initPromise) {
       await this._initPromise;
       return;
@@ -194,12 +203,15 @@ export class PlanStore {
     if (!PlanStore._instance) {
       PlanStore._instance = new PlanStore();
     }
+
     return PlanStore._instance;
   }
 
-  // ============================================================
-  // Plan CRUD
-  // ============================================================
+  /*
+   * ============================================================
+   * Plan CRUD
+   * ============================================================
+   */
 
   /**
    * M-5 fix: Async version of createPlan that ensures IDB data is loaded
@@ -276,8 +288,8 @@ export class PlanStore {
       order: index,
       dependencies: index > 0 ? [`pp_${planId}_${index - 1}`] : [],
       expectedFiles: point.expectedFiles,
-      verificationChecks:
-        point.verificationChecks ?? params.verificationChecks ?? DEFAULT_VERIFICATION_CHECKS,
+      verificationChecks: point.verificationChecks ?? params.verificationChecks ?? DEFAULT_VERIFICATION_CHECKS,
+
       // Initialize the mutable execution state — the runtime owns this.
       executionState: {
         status: 'pending' as const,
@@ -312,6 +324,7 @@ export class PlanStore {
     if (!this._data.projectPlans[params.projectId]) {
       this._data.projectPlans[params.projectId] = [];
     }
+
     this._data.projectPlans[params.projectId].push(planId);
 
     this.persist();
@@ -362,6 +375,7 @@ export class PlanStore {
     if (!this._data.projectPlans[params.projectId]) {
       this._data.projectPlans[params.projectId] = [];
     }
+
     this._data.projectPlans[params.projectId].push(planId);
 
     this.persist();
@@ -390,7 +404,11 @@ export class PlanStore {
    */
   getPlanByChat(chatId: string): Plan | undefined {
     const planId = this._data.chatToPlan[chatId];
-    if (!planId) return undefined;
+
+    if (!planId) {
+      return undefined;
+    }
+
     return this.getPlan(planId);
   }
 
@@ -399,9 +417,7 @@ export class PlanStore {
    */
   getPlansByProject(projectId: string): Plan[] {
     const planIds = this._data.projectPlans[projectId] ?? [];
-    return planIds
-      .map((id) => this.getPlan(id))
-      .filter((p): p is Plan => p !== undefined);
+    return planIds.map((id) => this.getPlan(id)).filter((p): p is Plan => p !== undefined);
   }
 
   /**
@@ -409,7 +425,10 @@ export class PlanStore {
    */
   updatePlanStatus(planId: string, status: PlanStatus): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     plan.status = status;
     plan.updatedAt = new Date().toISOString();
@@ -417,6 +436,7 @@ export class PlanStore {
     if (status === 'executing' && !plan.startedAt) {
       plan.startedAt = new Date().toISOString();
     }
+
     if (status === 'completed' || status === 'failed' || status === 'cancelled') {
       plan.completedAt = new Date().toISOString();
     }
@@ -429,10 +449,16 @@ export class PlanStore {
    */
   updatePlanPoint(planId: string, pointId: string, updates: Partial<PlanPoint>): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point) return;
+
+    if (!point) {
+      return;
+    }
 
     Object.assign(point, updates);
     plan.updatedAt = new Date().toISOString();
@@ -444,10 +470,16 @@ export class PlanStore {
    */
   addSubChat(planId: string, pointId: string, subChat: Omit<SubChat, 'id' | 'createdAt' | 'updatedAt'>): SubChat {
     const plan = this.getPlan(planId);
-    if (!plan) throw new Error(`Plan ${planId} not found`);
+
+    if (!plan) {
+      throw new Error(`Plan ${planId} not found`);
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point) throw new Error(`PlanPoint ${pointId} not found`);
+
+    if (!point) {
+      throw new Error(`PlanPoint ${pointId} not found`);
+    }
 
     const newSubChat: SubChat = {
       ...subChat,
@@ -465,17 +497,23 @@ export class PlanStore {
 
   /**
    * Adds a tool invocation record to a sub-chat.
-   * 
+   *
    * V7 MIGRATION: This stores invocations in the legacy toolInvocations array
    * for backward compatibility. In v7, tool invocations are typically in message.parts,
    * but we maintain this separate record for plan tracking/verification purposes.
    */
   addToolInvocation(planId: string, pointId: string, invocation: Omit<ToolInvocationRecord, 'timestamp'>): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point?.subChat) return;
+
+    if (!point?.subChat) {
+      return;
+    }
 
     // Ensure toolInvocations array exists (legacy format)
     if (!Array.isArray(point.subChat.toolInvocations)) {
@@ -497,10 +535,16 @@ export class PlanStore {
    */
   setVerificationResults(planId: string, pointId: string, results: VerificationResult[]): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point) return;
+
+    if (!point) {
+      return;
+    }
 
     point.verificationResults = results;
     plan.updatedAt = new Date().toISOString();
@@ -512,10 +556,16 @@ export class PlanStore {
    */
   addModifiedFile(planId: string, pointId: string, filePath: string): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point?.subChat) return;
+
+    if (!point?.subChat) {
+      return;
+    }
 
     if (!point.subChat.modifiedFiles.includes(filePath)) {
       point.subChat.modifiedFiles.push(filePath);
@@ -524,9 +574,11 @@ export class PlanStore {
     this.persist();
   }
 
-  // ============================================================
-  // Plan Execution Control
-  // ============================================================
+  /*
+   * ============================================================
+   * Plan Execution Control
+   * ============================================================
+   */
 
   /**
    * Cancels the currently executing plan.
@@ -538,6 +590,7 @@ export class PlanStore {
     }
 
     const plan = this.getPlan(planId);
+
     if (plan) {
       // Mark in-progress points as skipped
       plan.points
@@ -570,16 +623,15 @@ export class PlanStore {
    */
   getNextExecutablePoint(planId: string): PlanPoint | undefined {
     const plan = this.getPlan(planId);
-    if (!plan) return undefined;
 
-    const completedPoints = new Set(
-      plan.points.filter((p) => p.status === 'completed').map((p) => p.id),
-    );
+    if (!plan) {
+      return undefined;
+    }
+
+    const completedPoints = new Set(plan.points.filter((p) => p.status === 'completed').map((p) => p.id));
 
     return plan.points.find(
-      (point) =>
-        point.status === 'pending' &&
-        point.dependencies.every((depId) => completedPoints.has(depId)),
+      (point) => point.status === 'pending' && point.dependencies.every((depId) => completedPoints.has(depId)),
     );
   }
 
@@ -588,10 +640,14 @@ export class PlanStore {
    */
   deletePlan(planId: string): void {
     const plan = this.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     // Remove from project plans
     const projectPlans = this._data.projectPlans[plan.projectId];
+
     if (projectPlans) {
       this._data.projectPlans[plan.projectId] = projectPlans.filter((id) => id !== planId);
     }

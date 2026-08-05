@@ -47,10 +47,7 @@ export function isClientSideTool(toolName: string): boolean {
  * Mirrors the execute functions in mcpService.ts, but runs them in the
  * browser where IndexedDB is available.
  */
-export async function executeClientSideTool(
-  toolName: string,
-  args: any,
-): Promise<string> {
+export async function executeClientSideTool(toolName: string, args: any): Promise<string> {
   try {
     switch (toolName) {
       // ─── store_user_fact ──────────────────────────────────────────────
@@ -63,6 +60,7 @@ export async function executeClientSideTool(
           source: 'conversation',
           confidence: 0.8,
         });
+
         return `User fact stored successfully: "${content}" (category: ${category || 'general'})`;
       }
 
@@ -70,6 +68,7 @@ export async function executeClientSideTool(
       case 'search_user_context': {
         const { query } = args;
         await userProfileStore.initialize();
+
         const results = await userProfileStore.search(query, { limit: 5 });
 
         if (results.length === 0) {

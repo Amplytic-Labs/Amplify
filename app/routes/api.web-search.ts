@@ -75,9 +75,11 @@ async function fetchUrlWithFallback(url: string): Promise<Response> {
       throw err;
     }
 
-    // Dynamic import so the route doesn't break in Cloudflare Workers (where
-    // node:https is unavailable). The import will fail there, which is fine —
-    // Cloudflare's fetch doesn't have the headers-overflow issue anyway.
+    /*
+     * Dynamic import so the route doesn't break in Cloudflare Workers (where
+     * node:https is unavailable). The import will fail there, which is fine —
+     * Cloudflare's fetch doesn't have the headers-overflow issue anyway.
+     */
     const https = await import('node:https');
     const httpUrl = new URL(url);
 

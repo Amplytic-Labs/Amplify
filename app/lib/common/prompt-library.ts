@@ -48,7 +48,7 @@ export class PromptLibrary {
   }
 
   static getPropmtFromLibrary(promptId: string, options: PromptOptions) {
-    const prompt = this.library[promptId] || this.library['default'];
+    const prompt = this.library[promptId] || this.library.default;
     return prompt.get(options);
   }
 }

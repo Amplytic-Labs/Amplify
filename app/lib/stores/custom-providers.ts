@@ -29,15 +29,19 @@ import { atom } from 'nanostores';
 export interface CustomProvider {
   /** Stable UUID generated client-side. */
   id: string;
+
   /** User-chosen display name, e.g. "My OpenRouter". */
   name: string;
+
   /**
    * Base URL of the OpenAI-compatible endpoint. May or may not include
    * /v1 — the consumer normalises it.
    */
   baseUrl: string;
+
   /** Bearer token for the Authorization header. */
   apiKey: string;
+
   /** ISO timestamp of creation, for sorting / display. */
   createdAt: string;
 }

@@ -16,9 +16,7 @@ export async function runLintCheck(options: VerificationRunnerOptions): Promise<
 
   // Try running ESLint if available
   try {
-    const lintableFiles = options.modifiedFiles.filter((f) =>
-      /\.(js|jsx|ts|tsx|mjs|cjs)$/.test(f),
-    );
+    const lintableFiles = options.modifiedFiles.filter((f) => /\.(js|jsx|ts|tsx|mjs|cjs)$/.test(f));
 
     if (lintableFiles.length > 0) {
       // Check if eslint is available
@@ -33,6 +31,7 @@ export async function runLintCheck(options: VerificationRunnerOptions): Promise<
 
         try {
           const eslintOutput = JSON.parse(eslintResult.stdout || eslintResult.stderr);
+
           if (Array.isArray(eslintOutput)) {
             for (const fileResult of eslintOutput) {
               if (fileResult.messages && Array.isArray(fileResult.messages)) {
@@ -86,15 +85,17 @@ export async function runLintCheck(options: VerificationRunnerOptions): Promise<
  * - TODO/FIXME/HACK comments
  * - Unused imports (basic pattern match)
  */
-async function runBasicLintChecks(
-  options: VerificationRunnerOptions,
-  issues: VerificationIssue[],
-): Promise<void> {
+async function runBasicLintChecks(options: VerificationRunnerOptions, issues: VerificationIssue[]): Promise<void> {
   for (const filePath of options.modifiedFiles) {
-    if (!/\.(js|jsx|ts|tsx)$/.test(filePath)) continue;
+    if (!/\.(js|jsx|ts|tsx)$/.test(filePath)) {
+      continue;
+    }
 
     const content = await options.readFile(filePath);
-    if (!content) continue;
+
+    if (!content) {
+      continue;
+    }
 
     const lines = content.split('\n');
 

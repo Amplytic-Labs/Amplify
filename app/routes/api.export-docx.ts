@@ -22,15 +22,16 @@ export const action: ActionFunction = async ({ request }) => {
       return Response.json({ error: 'markdown is required' }, { status: 400 });
     }
 
-    // `theme` is optional and additive — omitting it (or passing an empty
-    // object) yields byte-identical output to the pre-theme implementation.
+    /*
+     * `theme` is optional and additive — omitting it (or passing an empty
+     * object) yields byte-identical output to the pre-theme implementation.
+     */
     const docxBuffer = await buildDocx(markdown, assets || [], { theme });
 
     return new Response(docxBuffer, {
       status: 200,
       headers: {
-        'Content-Type':
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'Content-Disposition': 'attachment; filename="document.docx"',
         'Content-Length': String(docxBuffer.byteLength),
       },

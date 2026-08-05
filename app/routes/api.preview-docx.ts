@@ -24,8 +24,10 @@ export const action: ActionFunction = async ({ request }) => {
 
     const t0 = Date.now();
 
-    // Collect math placeholders + their LaTeX as the docx is built.
-    // `theme` is forwarded so the live preview reflects the chosen colours.
+    /*
+     * Collect math placeholders + their LaTeX as the docx is built.
+     * `theme` is forwarded so the live preview reflects the chosen colours.
+     */
     const mathMap = new Map<string, { latex: string; display: boolean }>();
     const docxBuffer = await buildDocx(markdown, assets || [], {
       forPreview: true,
@@ -61,13 +63,17 @@ export const action: ActionFunction = async ({ request }) => {
 
     // ---- Post-process: math placeholders -> KaTeX HTML ----
     html = injectMath(html, mathMap);
+
     // ---- Post-process: list paragraphs -> real nested <ul>/<ol>/<li> ----
     html = fixLists(html);
+
     // ---- Post-process: move non-header table rows into <tbody> ----
     html = fixTables(html);
+
     // ---- Post-process: <br/> inside <pre> -> newlines ----
-    html = html.replace(/<pre>([\s\S]*?)<\/pre>/g, (_m, inner: string) =>
-      `<pre>${inner.replace(/<br\s*\/?>/g, '\n')}</pre>`,
+    html = html.replace(
+      /<pre>([\s\S]*?)<\/pre>/g,
+      (_m, inner: string) => `<pre>${inner.replace(/<br\s*\/?>/g, '\n')}</pre>`,
     );
 
     const count = (re: RegExp) => (html.match(re) || []).length;
@@ -95,11 +101,11 @@ export const action: ActionFunction = async ({ request }) => {
  * Replace every `@@MATH..._id@@` placeholder in the mammoth HTML with
  * KaTeX-rendered HTML.
  */
-function injectMath(
-  html: string,
-  mathMap: Map<string, { latex: string; display: boolean }>,
-): string {
-  if (mathMap.size === 0) return html;
+function injectMath(html: string, mathMap: Map<string, { latex: string; display: boolean }>): string {
+  if (mathMap.size === 0) {
+    return html;
+  }
+
   let out = html;
 
   for (const [placeholder, { latex, display }] of mathMap.entries()) {
@@ -136,6 +142,7 @@ function fixLists(html: string): string {
   const out: string[] = [];
 
   type Frame = { tag: 'ul' | 'ol'; depth: number };
+
   const stack: Frame[] = [];
   let liOpen = false;
 
@@ -149,10 +156,13 @@ function fixLists(html: string): string {
   const closeAll = () => {
     while (stack.length) {
       closeItem();
+
       const f = stack.pop()!;
       out.push(`</${f.tag}>`);
 
-      if (stack.length) liOpen = true;
+      if (stack.length) {
+        liOpen = true;
+      }
     }
   };
 
@@ -163,7 +173,10 @@ function fixLists(html: string): string {
   };
 
   for (const part of parts) {
-    if (!part) continue;
+    if (!part) {
+      continue;
+    }
+
     const m = part.match(/^<p\b[^>]*>([\s\S]*?)<\/p>$/);
 
     if (!m) {
@@ -185,10 +198,13 @@ function fixLists(html: string): string {
 
     while (stack.length && stack[stack.length - 1].depth > li.depth) {
       closeItem();
+
       const f = stack.pop()!;
       out.push(`</${f.tag}>`);
 
-      if (stack.length) liOpen = true;
+      if (stack.length) {
+        liOpen = true;
+      }
     }
 
     const top = stack.length ? stack[stack.length - 1] : null;
@@ -201,7 +217,10 @@ function fixLists(html: string): string {
         stack.pop();
         out.push(`</${top.tag}>`);
 
-        if (stack.length) liOpen = true;
+        if (stack.length) {
+          liOpen = true;
+        }
+
         openList(li.tag, li.depth);
       }
     } else {
@@ -213,6 +232,7 @@ function fixLists(html: string): string {
   }
 
   closeAll();
+
   return out.join('');
 }
 
@@ -242,7 +262,9 @@ function detectListItem(inner: string): ListItem | null {
 
   const ol0 = s.match(/^(\d+)\.\s{1,4}([\s\S]*)$/);
 
-  if (ol0) return { tag: 'ol', depth: 0, content: ol0[2].trim() };
+  if (ol0) {
+    return { tag: 'ol', depth: 0, content: ol0[2].trim() };
+  }
 
   const ol1 = s.match(/^([a-z])\.\s{1,4}([\s\S]*)$/i);
 
@@ -252,7 +274,9 @@ function detectListItem(inner: string): ListItem | null {
 
   const ol2 = s.match(/^([ivxlcdm]{1,5})\.\s{1,4}([\s\S]*)$/i);
 
-  if (ol2) return { tag: 'ol', depth: 2, content: ol2[2].trim() };
+  if (ol2) {
+    return { tag: 'ol', depth: 2, content: ol2[2].trim() };
+  }
 
   return null;
 }
@@ -261,7 +285,9 @@ function fixTables(html: string): string {
   return html.replace(/<table>([\s\S]*?)<\/table>/g, (_full, inner: string) => {
     const rows = inner.match(/<tr>[\s\S]*?<\/tr>/g) || [];
 
-    if (!rows.length) return `<table>${inner}</table>`;
+    if (!rows.length) {
+      return `<table>${inner}</table>`;
+    }
 
     const head = rows[0];
     const body = rows

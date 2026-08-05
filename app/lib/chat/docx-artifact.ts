@@ -48,16 +48,18 @@ const DOCX_CLOSE_TAG = '</docxartifact>';
  * correct because theme values (colours, font names, numbers) never contain
  * `}` characters.
  */
-const OPEN_TAG_RE =
-  /<docxartifact\b(?:\s+theme\s*=\s*\{\{([\s\S]*?)\}\}|\s+theme\s*=\s*\{([\s\S]*?)\})?\s*>/;
+const OPEN_TAG_RE = /<docxartifact\b(?:\s+theme\s*=\s*\{\{([\s\S]*?)\}\}|\s+theme\s*=\s*\{([\s\S]*?)\})?\s*>/;
 
 export interface DocxExtraction {
   /** The text with the `<docxartifact>` block removed (for chat rendering). */
   visibleText: string;
+
   /** The markdown extracted from inside the tag, or null if no tag present. */
   docxMarkdown: string | null;
+
   /** True while the closing tag hasn't arrived yet (still streaming). */
   streaming: boolean;
+
   /**
    * The theme parsed from the `theme={{...}}` attribute, or null if the tag
    * had no theme attribute (or the theme couldn't be parsed). This is a
@@ -90,8 +92,10 @@ export function extractDocxArtifact(text: string): DocxExtraction {
     return { visibleText: text, docxMarkdown: null, streaming: false, theme: null };
   }
 
-  // Try to match the full opening tag (with optional theme attribute).
-  // OPEN_TAG_RE has no `g` flag, so exec matches at the start of the slice.
+  /*
+   * Try to match the full opening tag (with optional theme attribute).
+   * OPEN_TAG_RE has no `g` flag, so exec matches at the start of the slice.
+   */
   const tagMatch = OPEN_TAG_RE.exec(text.slice(tagStart));
 
   if (!tagMatch) {
@@ -167,17 +171,24 @@ export function extractDocxArtifact(text: string): DocxExtraction {
 function tryParsePartialTheme(text: string): DocxTheme | null {
   const themeAttrIdx = text.indexOf('theme=');
 
-  if (themeAttrIdx === -1) return null;
+  if (themeAttrIdx === -1) {
+    return null;
+  }
 
   let afterEq = themeAttrIdx + 'theme='.length;
 
   // Skip whitespace between `=` and `{`.
-  while (afterEq < text.length && /\s/.test(text[afterEq])) afterEq++;
+  while (afterEq < text.length && /\s/.test(text[afterEq])) {
+    afterEq++;
+  }
 
-  if (afterEq >= text.length || text[afterEq] !== '{') return null;
+  if (afterEq >= text.length || text[afterEq] !== '{') {
+    return null;
+  }
 
   // Determine the object source — skip `{{` (double brace) or `{` (single).
   let src: string;
+
   if (text[afterEq + 1] === '{') {
     src = text.slice(afterEq + 2);
   } else {

@@ -15,11 +15,18 @@ export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
   const isMobile = useViewport(1024);
 
   const getExpoGoUrl = (url: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('exp://')) return url;
+    if (!url) {
+      return null;
+    }
+
+    if (url.startsWith('exp://')) {
+      return url;
+    }
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url.replace(/^https?:\/\//, 'exp://');
     }
+
     return url;
   };
 
@@ -29,18 +36,28 @@ export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
    * On iOS the universal link format is used: https://expo.go/--/to?...
    */
   const getExpoGoDeepLink = (url: string | null) => {
-    if (!url) return null;
-    const expUrl = getExpoGoUrl(url);
-    if (!expUrl) return null;
+    if (!url) {
+      return null;
+    }
 
-    // For iOS devices, use the universal link format that opens Expo Go
-    // For Android, the exp:// scheme works directly
+    const expUrl = getExpoGoUrl(url);
+
+    if (!expUrl) {
+      return null;
+    }
+
+    /*
+     * For iOS devices, use the universal link format that opens Expo Go
+     * For Android, the exp:// scheme works directly
+     */
     const encodedExpUrl = encodeURIComponent(expUrl);
+
     return `https://expo.go/--/to?exp=${encodedExpUrl}`;
   };
 
   const handleOpenInExpoGo = () => {
     const deepLink = getExpoGoDeepLink(expoUrl);
+
     if (deepLink) {
       window.open(deepLink, '_blank');
     }

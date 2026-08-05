@@ -57,19 +57,30 @@ interface ErrorEntry {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 let _uid = 0;
+
 function uid(): string {
   return `dbg-${++_uid}-${Date.now()}`;
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function timeDiff(a: string, b: string): string {
   const ms = new Date(b).getTime() - new Date(a).getTime();
-  if (ms < 1000) return `${ms}ms`;
+
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
@@ -100,18 +111,22 @@ function DebugStreamPage() {
   // Flush pending events when unpausing
   const flushPending = useCallback(() => {
     const p = pendingRef.current;
+
     if (p.requests.length > 0) {
       setRequests((prev) => [...prev, ...p.requests]);
       p.requests = [];
     }
+
     if (p.chunks.length > 0) {
       setChunks((prev) => [...prev, ...p.chunks]);
       p.chunks = [];
     }
+
     if (p.meta.length > 0) {
       setMeta((prev) => [...prev, ...p.meta]);
       p.meta = [];
     }
+
     if (p.errors.length > 0) {
       setErrors((prev) => [...prev, ...p.errors]);
       p.errors = [];
@@ -144,6 +159,7 @@ function DebugStreamPage() {
           const msg = typeof p === 'string' ? p : p.message;
           pendingRef.current.errors.push({ id: uid(), timestamp: evt.timestamp, message: msg });
         }
+
         return;
       }
 
@@ -200,10 +216,12 @@ function DebugStreamPage() {
     setPaused((prev) => {
       const next = !prev;
       pausedRef.current = next;
+
       if (!next) {
         // Flush pending events
         flushPending();
       }
+
       return next;
     });
   }, [flushPending]);

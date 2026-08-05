@@ -11,7 +11,10 @@ export function extractPropertiesFromMessage(message: any): {
 } {
   // UIMessage uses parts array; fall back to content for legacy messages
   const textContent = Array.isArray(message.parts)
-    ? message.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('')
+    ? message.parts
+        .filter((p: any) => p.type === 'text')
+        .map((p: any) => p.text)
+        .join('')
     : Array.isArray(message.content)
       ? message.content.find((item: any) => item.type === 'text')?.text || ''
       : message.content || '';
@@ -39,6 +42,7 @@ export function extractPropertiesFromMessage(message: any): {
             text: part.text?.replace(MODEL_REGEX, '').replace(PROVIDER_REGEX, ''),
           };
         }
+
         return part;
       })
     : Array.isArray(message.content)
@@ -49,6 +53,7 @@ export function extractPropertiesFromMessage(message: any): {
               text: item.text?.replace(MODEL_REGEX, '').replace(PROVIDER_REGEX, ''),
             };
           }
+
           return item;
         })
       : textContent.replace(MODEL_REGEX, '').replace(PROVIDER_REGEX, '');
@@ -66,6 +71,7 @@ export function simplifyBoltActions(input: string): string {
     if (_content.includes('boltAction') || _content.includes('amplifyAction')) {
       return `${openingTag}\n  [Workspace files listed in artifact collapsed]\n${closingTag}`;
     }
+
     return _0;
   });
 

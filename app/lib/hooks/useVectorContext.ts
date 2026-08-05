@@ -22,10 +22,13 @@ import { chatId } from '~/lib/persistence/useChatHistory';
 interface VectorContextResult {
   /** Formatted user context for system prompt injection */
   userContext: string;
+
   /** Formatted project context for system prompt injection */
   projectContext: string;
+
   /** Whether the vector stores are initialized and ready */
   isReady: boolean;
+
   /** The project ID if this is a project chat */
   projectId: string | null;
 }
@@ -47,12 +50,14 @@ export function useVectorContext(query: string): VectorContextResult {
     async function init() {
       try {
         await userProfileStore.initialize();
+
         if (!cancelled) {
           setIsReady(true);
           console.log('[useVectorContext] Vector stores initialized');
         }
       } catch (error) {
         console.warn('[useVectorContext] Failed to initialize vector stores:', error);
+
         // Still mark as ready so chat works without vector context
         if (!cancelled) {
           setIsReady(true);
@@ -72,6 +77,7 @@ export function useVectorContext(query: string): VectorContextResult {
     if (!query || !isReady) {
       setUserContext('');
       setProjectContext('');
+
       return;
     }
 
@@ -81,6 +87,7 @@ export function useVectorContext(query: string): VectorContextResult {
       try {
         // Query user profile vector store
         const userCtx = await userProfileStore.formatContextForPrompt(query, 500);
+
         if (!cancelled) {
           setUserContext(userCtx);
         }
@@ -93,11 +100,8 @@ export function useVectorContext(query: string): VectorContextResult {
           setProjectId(project.id);
 
           // Query project context vector store
-          const projCtx = await projectContextStore.formatContextForPrompt(
-            project.id,
-            query,
-            1000,
-          );
+          const projCtx = await projectContextStore.formatContextForPrompt(project.id, query, 1000);
+
           if (!cancelled) {
             setProjectContext(projCtx);
           }
@@ -131,11 +135,16 @@ export async function extractAndStoreUserFacts(userMessage: string, assistantMes
   // Simple heuristic: look for explicit user statements about preferences
   const preferencePatterns = [
     { pattern: /i (?:prefer|like|want|use|always use|never use) (\w[\w\s]{5,80})/i, category: 'preference' as const },
-    { pattern: /(?:use|using|with|in) (typescript|javascript|python|rust|go|java|react|vue|svelte|angular|next\.?js|express|fastify|prisma|drizzle|tailwind|scss|sass)/i, category: 'tech_stack' as const },
+    {
+      pattern:
+        /(?:use|using|with|in) (typescript|javascript|python|rust|go|java|react|vue|svelte|angular|next\.?js|express|fastify|prisma|drizzle|tailwind|scss|sass)/i,
+      category: 'tech_stack' as const,
+    },
   ];
 
   for (const { pattern, category } of preferencePatterns) {
     const match = userMessage.match(pattern);
+
     if (match) {
       const fact = match[0].trim();
       await userProfileStore.add({
@@ -159,7 +168,9 @@ export async function extractAndStoreProjectContext(
   type: any,
   files?: string[],
 ): Promise<void> {
-  if (!projId) return;
+  if (!projId) {
+    return;
+  }
 
   await projectContextStore.add(projId, {
     projectId: projId,

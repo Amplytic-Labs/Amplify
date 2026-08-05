@@ -19,19 +19,16 @@
 
 import type { SkillContext } from './types';
 
-// ============================================================
-// Section markers used to parse skill markdown into structured fields
-// ============================================================
+/*
+ * ============================================================
+ * Section markers used to parse skill markdown into structured fields
+ * ============================================================
+ */
 
 interface SectionPattern {
   field: keyof Pick<
     SkillContext,
-    | 'architectureNotes'
-    | 'implementationRules'
-    | 'commonPitfalls'
-    | 'recommendedApis'
-    | 'codeStandards'
-    | 'references'
+    'architectureNotes' | 'implementationRules' | 'commonPitfalls' | 'recommendedApis' | 'codeStandards' | 'references'
   >;
   patterns: RegExp[];
 }
@@ -48,19 +45,11 @@ const SECTION_PATTERNS: SectionPattern[] = [
   },
   {
     field: 'implementationRules',
-    patterns: [
-      /##\s*Guidelines[^#\n]*/i,
-      /##\s*Implementation[^#\n]*/i,
-      /##\s*Rules[^#\n]*/i,
-    ],
+    patterns: [/##\s*Guidelines[^#\n]*/i, /##\s*Implementation[^#\n]*/i, /##\s*Rules[^#\n]*/i],
   },
   {
     field: 'commonPitfalls',
-    patterns: [
-      /##\s*Pitfalls[^#\n]*/i,
-      /##\s*Common (?:Mistakes|Pitfalls)[^#\n]*/i,
-      /##\s*Anti-?Patterns[^#\n]*/i,
-    ],
+    patterns: [/##\s*Pitfalls[^#\n]*/i, /##\s*Common (?:Mistakes|Pitfalls)[^#\n]*/i, /##\s*Anti-?Patterns[^#\n]*/i],
   },
   {
     field: 'recommendedApis',
@@ -72,25 +61,19 @@ const SECTION_PATTERNS: SectionPattern[] = [
   },
   {
     field: 'codeStandards',
-    patterns: [
-      /##\s*Code Standards[^#\n]*/i,
-      /##\s*Coding (?:Style|Standards)[^#\n]*/i,
-      /##\s*Formatting[^#\n]*/i,
-    ],
+    patterns: [/##\s*Code Standards[^#\n]*/i, /##\s*Coding (?:Style|Standards)[^#\n]*/i, /##\s*Formatting[^#\n]*/i],
   },
   {
     field: 'references',
-    patterns: [
-      /##\s*References[^#\n]*/i,
-      /##\s*(?:Further )?Reading[^#\n]*/i,
-      /##\s*(?:External )?Links[^#\n]*/i,
-    ],
+    patterns: [/##\s*References[^#\n]*/i, /##\s*(?:Further )?Reading[^#\n]*/i, /##\s*(?:External )?Links[^#\n]*/i],
   },
 ];
 
-// ============================================================
-// Parsing helpers
-// ============================================================
+/*
+ * ============================================================
+ * Parsing helpers
+ * ============================================================
+ */
 
 /**
  * Extracts bullet points from a markdown section.
@@ -105,6 +88,7 @@ function extractBullets(sectionText: string): string[] {
 
     // Match bullet points: "- text" or "* text" or "• text"
     const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/);
+
     if (bulletMatch) {
       bullets.push(bulletMatch[1].trim());
       continue;
@@ -112,6 +96,7 @@ function extractBullets(sectionText: string): string[] {
 
     // Also match numbered items: "1. text"
     const numberedMatch = trimmed.match(/^\d+\.\s+(.+)/);
+
     if (numberedMatch) {
       bullets.push(numberedMatch[1].trim());
     }
@@ -124,10 +109,7 @@ function extractBullets(sectionText: string): string[] {
  * Finds the first matching section in the markdown for the given patterns
  * and returns its bullet points.
  */
-function extractSection(
-  markdown: string,
-  patterns: RegExp[],
-): string[] {
+function extractSection(markdown: string, patterns: RegExp[]): string[] {
   for (const pattern of patterns) {
     const match = markdown.match(pattern);
 
@@ -139,7 +121,7 @@ function extractSection(
 
       const sectionText = nextHeaderMatch
         ? afterHeader.slice(0, match[0].length + (nextHeaderMatch.index ?? 0))
-        : afterHeader
+        : afterHeader;
 
       const bullets = extractBullets(sectionText);
 
@@ -157,13 +139,17 @@ function extractSection(
  */
 function parseFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return {};
+
+  if (!match) {
+    return {};
+  }
 
   const result: Record<string, string> = {};
   const lines = match[1].split('\n');
 
   for (const line of lines) {
     const kvMatch = line.match(/^(\w[\w-]*):\s*(.*)/);
+
     if (kvMatch) {
       result[kvMatch[1]] = kvMatch[2].trim();
     }
@@ -172,9 +158,11 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
-// ============================================================
-// SkillContextBuilder
-// ============================================================
+/*
+ * ============================================================
+ * SkillContextBuilder
+ * ============================================================
+ */
 
 export interface RawSkillInput {
   /**
@@ -223,8 +211,10 @@ export class SkillContextBuilder {
       (context[field] as string[]).push(...bullets);
     }
 
-    // If nothing was parsed, put the full content into architectureNotes
-    // so the worker still gets the guidance.
+    /*
+     * If nothing was parsed, put the full content into architectureNotes
+     * so the worker still gets the guidance.
+     */
     const totalParsed =
       context.architectureNotes.length +
       context.implementationRules.length +
@@ -236,6 +226,7 @@ export class SkillContextBuilder {
     if (totalParsed === 0) {
       // Strip frontmatter and put the rest as a single note
       const body = raw.content.replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+
       if (body) {
         context.architectureNotes = [body.slice(0, 2000)];
       }
@@ -249,14 +240,9 @@ export class SkillContextBuilder {
    * Only the skills whose IDs are in `requiredSkillIds` are built —
    * the planner decides which skills are relevant.
    */
-  static buildMany(
-    skills: RawSkillInput[],
-    requiredSkillIds: string[],
-  ): SkillContext[] {
+  static buildMany(skills: RawSkillInput[], requiredSkillIds: string[]): SkillContext[] {
     const requiredSet = new Set(requiredSkillIds);
-    return skills
-      .filter((s) => requiredSet.has(s.id))
-      .map((s) => SkillContextBuilder.build(s));
+    return skills.filter((s) => requiredSet.has(s.id)).map((s) => SkillContextBuilder.build(s));
   }
 
   /**
@@ -288,8 +274,12 @@ export class SkillContextBuilder {
     ];
 
     for (const [title, items] of sections) {
-      if (items.length === 0) continue;
+      if (items.length === 0) {
+        continue;
+      }
+
       lines.push(`${title}:`);
+
       for (const item of items) {
         lines.push(`  - ${item}`);
       }
@@ -297,6 +287,7 @@ export class SkillContextBuilder {
 
     if (ctx.suggestedTools.length > 0) {
       lines.push('Suggested Tools:');
+
       for (const tool of ctx.suggestedTools) {
         lines.push(`  - ${tool}`);
       }
@@ -309,7 +300,10 @@ export class SkillContextBuilder {
    * Formats multiple SkillContexts into a combined block.
    */
   static formatManyForPrompt(contexts: SkillContext[]): string {
-    if (contexts.length === 0) return '';
+    if (contexts.length === 0) {
+      return '';
+    }
+
     return contexts.map((c) => SkillContextBuilder.formatForPrompt(c)).join('\n\n');
   }
 }

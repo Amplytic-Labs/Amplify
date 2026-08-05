@@ -146,6 +146,7 @@ export const ReasoningMarkdown = memo(
                   } else if (type === 'message' && append) {
                     append({
                       id: `quick-action-message-${Date.now()}`,
+
                       // AI SDK v7: use parts instead of content
                       parts: [
                         {
@@ -160,6 +161,7 @@ export const ReasoningMarkdown = memo(
                     setChatMode('build');
                     append({
                       id: `quick-action-implement-${Date.now()}`,
+
                       // AI SDK v7: use parts instead of content
                       parts: [
                         {
@@ -185,7 +187,11 @@ export const ReasoningMarkdown = memo(
             );
           }
 
-          return <button className="bg-transparent" {...props}>{children}</button>;
+          return (
+            <button className="bg-transparent" {...props}>
+              {children}
+            </button>
+          );
         },
       } satisfies Components;
     }, []);

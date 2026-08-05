@@ -30,16 +30,18 @@ type McpToolProps = {
 function extractParameters(toolSchema: Tool): { properties: Record<string, ParameterProperty>; required: string[] } {
   // Try to access inputSchema (v7)
   const inputSchema = (toolSchema as any).inputSchema;
-  
+
   if (!inputSchema) {
     // Fallback to legacy parameters for backwards compatibility
     const legacyParams = (toolSchema as any).parameters;
+
     if (legacyParams?.jsonSchema) {
       return {
         properties: legacyParams.jsonSchema.properties || {},
         required: legacyParams.jsonSchema.required || [],
       };
     }
+
     return { properties: {}, required: [] };
   }
 
@@ -63,6 +65,7 @@ function extractParameters(toolSchema: Tool): { properties: Record<string, Param
         type: field.type || 'string',
         description: field.description || field.describe?.(),
       };
+
       if (!field.isOptional?.()) {
         required.push(key);
       }
@@ -88,7 +91,9 @@ export default function McpServerListItem({ toolName, toolSchema }: McpToolProps
           {toolName}
         </h3>
 
-        <p className="text-amplify-elements-textSecondary">{typeof toolSchema.description === 'string' ? toolSchema.description : 'No description available'}</p>
+        <p className="text-amplify-elements-textSecondary">
+          {typeof toolSchema.description === 'string' ? toolSchema.description : 'No description available'}
+        </p>
 
         {Object.keys(parameters).length > 0 && (
           <div className="mt-2.5">

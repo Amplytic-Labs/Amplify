@@ -33,11 +33,16 @@ export class ImportExportService {
         messages: chat.messages.map((msg: ExtendedMessage) => {
           // AI SDK v7: extract content from parts or fallback to legacy content
           let content: any;
+
           if (Array.isArray(msg.parts)) {
-            content = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('');
+            content = msg.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('');
           } else {
             content = (msg as any).content;
           }
+
           return {
             id: msg.id,
             role: msg.role,

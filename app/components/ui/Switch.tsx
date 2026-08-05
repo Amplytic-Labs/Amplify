@@ -37,8 +37,10 @@ export const Switch = memo(({ className, onCheckedChange, checked }: SwitchProps
     <SwitchPrimitive.Root
       className={classNames(
         'relative h-6 w-11 cursor-pointer rounded-full',
+
         // OFF state: neutral mid-gray, clearly visible against any container.
         'bg-amplify-elements-textTertiary/40',
+
         // ON state: brand accent pink — maximally distinct from the OFF gray.
         'data-[state=checked]:bg-accent-500',
         'transition-colors duration-200 ease-in-out',

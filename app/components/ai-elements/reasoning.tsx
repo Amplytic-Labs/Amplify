@@ -114,8 +114,10 @@ export const Reasoning = memo(
       }
     }, [isStreaming, setDuration]);
 
-    // Removed auto-open effect so the thinking box stays collapsed by default
-    // and only opens when the user explicitly clicks to expand it.
+    /*
+     * Removed auto-open effect so the thinking box stays collapsed by default
+     * and only opens when the user explicitly clicks to expand it.
+     */
 
     useEffect(() => {
       if (hasEverStreamedRef.current && !isStreaming && isOpen && !hasAutoClosed) {

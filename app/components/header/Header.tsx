@@ -114,6 +114,7 @@ export function Header() {
       {/* Mobile Layout */}
       <div className={classNames('lg:hidden flex items-center justify-between w-full')}>
         {showWorkbench ? (
+
           // Workbench open: Back | [Tab Bar + Expo QR] | Deploy
           <>
             <button
@@ -142,6 +143,7 @@ export function Header() {
             <DeployButton />
           </>
         ) : (
+
           // Chat view: SidebarTrigger + Title | Expo QR + Preview button
           <>
             <div className="flex items-center gap-2 min-w-0">
@@ -180,9 +182,7 @@ export function Header() {
       </div>
 
       {/* Mobile Expo QR Modal */}
-      {expoUrl && qrModalOpen && (
-        <ExpoQrModal open={qrModalOpen} onClose={() => setQrModalOpen(false)} />
-      )}
+      {expoUrl && qrModalOpen && <ExpoQrModal open={qrModalOpen} onClose={() => setQrModalOpen(false)} />}
 
       {/* Desktop Layout */}
       <div className={classNames('hidden lg:flex items-center justify-between w-full')}>

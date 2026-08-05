@@ -50,23 +50,29 @@ const messageParser = new EnhancedStreamingMessageParser({
   },
 });
 const extractTextContent = (message: UIMessage) => {
-  // UIMessage v7 uses parts array — concatenate ALL text parts so that
-  // tool-injected content (e.g. inject_template's "template" text part)
-  // is not missed by the artifact parser.
+  /*
+   * UIMessage v7 uses parts array — concatenate ALL text parts so that
+   * tool-injected content (e.g. inject_template's "template" text part)
+   * is not missed by the artifact parser.
+   */
   if (Array.isArray(message.parts)) {
     return message.parts
       .filter((part) => part.type === 'text' && 'text' in part)
       .map((part) => (part as { type: 'text'; text: string }).text)
       .join('');
   }
+
   // Fallback for content (legacy)
   const content = (message as any).content;
+
   if (typeof content === 'string') {
     return content;
   }
+
   if (Array.isArray(content)) {
     return (content.find((item: any) => item.type === 'text')?.text as string) || '';
   }
+
   return '';
 };
 

@@ -24,6 +24,7 @@ export const links: LinksFunction = () => [
     href: '/Amplify.png',
     type: 'image/svg+xml',
   },
+
   // react-toastify CSS removed
   { rel: 'stylesheet', href: tailwindReset },
   { rel: 'stylesheet', href: globalStyles },

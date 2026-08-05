@@ -29,14 +29,18 @@ export function countTokens(text: string): TokenCountResult {
 
   const characters = text.length;
 
-  // Heuristic to detect code-like content:
-  // Check for common code characters: { } [ ] ( ) => ; :
+  /*
+   * Heuristic to detect code-like content:
+   * Check for common code characters: { } [ ] ( ) => ; :
+   */
   const codeIndicators = /[{}[\]()=>;: ]/g;
   const matchCount = (text.match(codeIndicators) || []).length;
   const codeDensity = matchCount / characters;
 
-  // If more than 10% of characters are code indicators, treat as code (3 chars/token)
-  // Otherwise, treat as prose (4 chars/token)
+  /*
+   * If more than 10% of characters are code indicators, treat as code (3 chars/token)
+   * Otherwise, treat as prose (4 chars/token)
+   */
   const ratio = codeDensity > 0.1 ? 3 : 4;
   const tokens = Math.ceil(characters / ratio);
 

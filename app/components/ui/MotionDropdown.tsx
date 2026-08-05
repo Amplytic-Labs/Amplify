@@ -35,15 +35,21 @@ export const MotionDropdown = ({
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
   // Recalculate dropdown position when it opens, window resizes, or content changes
   useLayoutEffect(() => {
-    if (!isOpen || !containerRef.current || !dropdownRef.current) return;
+    if (!isOpen || !containerRef.current || !dropdownRef.current) {
+      return;
+    }
 
     const updatePosition = () => {
-      if (!containerRef.current || !dropdownRef.current) return;
+      if (!containerRef.current || !dropdownRef.current) {
+        return;
+      }
+
       const containerRect = containerRef.current.getBoundingClientRect();
       const dropdownRect = dropdownRef.current.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
@@ -58,6 +64,7 @@ export const MotionDropdown = ({
       // Determine which alignment keeps the dropdown fully inside the viewport
       if (align === 'start') {
         const overflowRight = containerRect.left + neededWidth - viewportWidth + collisionPadding;
+
         if (overflowRight > 0 && flip && spaceLeft >= neededWidth) {
           rightOffset = 0; // flip to right-aligned
         } else if (overflowRight > 0 && flip) {
@@ -68,6 +75,7 @@ export const MotionDropdown = ({
         }
       } else if (align === 'end') {
         const overflowLeft = containerRect.right - neededWidth - collisionPadding;
+
         if (overflowLeft < 0 && flip && spaceRight >= neededWidth) {
           leftOffset = 0; // flip to left-aligned
         } else if (overflowLeft < 0 && flip) {
@@ -79,11 +87,13 @@ export const MotionDropdown = ({
       } else if (align === 'center') {
         const centerX = (containerRect.left + containerRect.right) / 2;
         let left = centerX - neededWidth / 2;
+
         if (left < collisionPadding) {
           left = collisionPadding;
         } else if (left + neededWidth > viewportWidth - collisionPadding) {
           left = viewportWidth - collisionPadding - neededWidth;
         }
+
         leftOffset = left - containerRect.left;
       }
 
@@ -100,6 +110,7 @@ export const MotionDropdown = ({
 
     updatePosition();
     window.addEventListener('resize', updatePosition);
+
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen, align, flip, collisionPadding, children]); // children may change dropdown size
 
@@ -126,6 +137,7 @@ export const MotionDropdown = ({
             className={classNames(
               'absolute top-full mt-2 z-[1000] min-w-[200px] p-2 rounded-lg shadow-lg',
               'bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor',
+
               // Only apply static alignment classes if we didn't compute an inline position
               Object.keys(positionStyle).length === 0 ? alignmentClasses[align] : '',
               className,

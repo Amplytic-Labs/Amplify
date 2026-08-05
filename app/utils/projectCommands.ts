@@ -73,8 +73,10 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
       let pkgManager: 'npm' | 'pnpm' | 'yarn' = 'npm';
 
       if (pkgManagerField) {
-        // Corepack field, e.g. "pnpm@9.10.0", "yarn@1.22.22", "yarn@4.5.0",
-        // "bun@1.1.0", "npm@10.5.0".
+        /*
+         * Corepack field, e.g. "pnpm@9.10.0", "yarn@1.22.22", "yarn@4.5.0",
+         * "bun@1.1.0", "npm@10.5.0".
+         */
         const match = /^([a-z]+)@(\d+)/i.exec(pkgManagerField.trim());
         const name = match?.[1]?.toLowerCase();
         const major = match?.[2] ? Number(match[2]) : 0;
@@ -86,15 +88,19 @@ export async function detectProjectCommands(files: FileContent[]): Promise<Proje
         } else if (name === 'npm') {
           pkgManager = 'npm';
         }
+
         // bun@*, yarn@2+ → unsupported → stays 'npm' (fallback)
       } else if (hasFile('pnpm-lock.yaml')) {
         pkgManager = 'pnpm';
       } else if (hasFile('yarn.lock')) {
-        // A bare `yarn.lock` is ambiguous (v1 vs berry share the filename).
-        // Berry projects also ship `.yarnrc.yml`; if that file is present we
-        // cannot use yarn and fall back to npm.
+        /*
+         * A bare `yarn.lock` is ambiguous (v1 vs berry share the filename).
+         * Berry projects also ship `.yarnrc.yml`; if that file is present we
+         * cannot use yarn and fall back to npm.
+         */
         pkgManager = hasFile('.yarnrc.yml') ? 'npm' : 'yarn';
       }
+
       // bun.lockb / bun.lock → unsupported → stays 'npm' (fallback)
 
       const installCmd = pkgManager === 'npm' ? 'npm install' : `${pkgManager} install`;
@@ -158,16 +164,19 @@ export function createCommandsMessage(commands: ProjectCommands): UIMessage | nu
   return {
     role: 'assistant',
     id: generateId(),
+
     // AI SDK v7: createdAt not part of UIMessage, using type assertion
-    ...( { createdAt: new Date() } as any),
-    parts: [{
-      type: 'text' as const,
-      text: `
+    ...({ createdAt: new Date() } as any),
+    parts: [
+      {
+        type: 'text' as const,
+        text: `
 ${commands.followupMessage ? `\n\n${commands.followupMessage}` : ''}
 <amplifyArtifact id="project-setup" title="Project Setup">
 ${commandString}
 </amplifyArtifact>`,
-    }],
+      },
+    ],
   };
 }
 

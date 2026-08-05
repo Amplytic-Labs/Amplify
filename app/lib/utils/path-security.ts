@@ -16,18 +16,24 @@ import path from 'node:path';
  * normalizePath('core-skills/git.md', '/app/skills') // returns '/app/skills/core-skills/git.md'
  */
 export function normalizePath(requestedPath: string, rootDir: string): string | null {
-  if (!requestedPath || !rootDir) return null;
+  if (!requestedPath || !rootDir) {
+    return null;
+  }
 
   // 1. Resolve the root directory to an absolute path
   const absoluteRoot = path.resolve(rootDir);
 
-  // 2. Join the root with the requested path and resolve it
-  // path.join + path.resolve handles '..' and '.' segments
+  /*
+   * 2. Join the root with the requested path and resolve it
+   * path.join + path.resolve handles '..' and '.' segments
+   */
   const absoluteRequested = path.resolve(absoluteRoot, requestedPath);
 
-  // 3. Check if the resolved path starts with the absolute root path
-  // We add a trailing separator to the root to prevent partial match attacks
-  // (e.g., /app/skills_secret vs /app/skills)
+  /*
+   * 3. Check if the resolved path starts with the absolute root path
+   * We add a trailing separator to the root to prevent partial match attacks
+   * (e.g., /app/skills_secret vs /app/skills)
+   */
   const rootWithTrailingSlash = absoluteRoot.endsWith(path.sep) ? absoluteRoot : absoluteRoot + path.sep;
 
   if (absoluteRequested.startsWith(rootWithTrailingSlash) || absoluteRequested === absoluteRoot) {

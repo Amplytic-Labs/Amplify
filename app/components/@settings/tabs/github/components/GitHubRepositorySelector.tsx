@@ -139,7 +139,9 @@ export function GitHubRepositorySelector({ onClone, className }: GitHubRepositor
   if (!isConnected || !connection) {
     return (
       <div className="text-center p-8">
-        <p className="text-amplify-elements-textSecondary mb-4">Please connect to GitHub first to browse repositories</p>
+        <p className="text-amplify-elements-textSecondary mb-4">
+          Please connect to GitHub first to browse repositories
+        </p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           Refresh Connection
         </Button>

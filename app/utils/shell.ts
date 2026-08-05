@@ -103,6 +103,7 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
           })
           .then((newProc) => {
             currentProcess = newProc;
+
             const newInput = newProc.input.getWriter();
             currentInput = newInput;
 
@@ -235,7 +236,6 @@ export class AmplifyShell {
     this.#terminalPipeController?.abort();
     this.#terminalPipeController = undefined;
 
-
     try {
       this.#process?.kill();
     } catch {
@@ -265,10 +265,12 @@ export class AmplifyShell {
     this.#webcontainer = webcontainer;
     this.#terminal = terminal;
 
-    // No tee — process.output is piped directly to a single WritableStream.
-    // This eliminates the backpressure bug where tee'd branches block each other
-    // when one isn't continuously consumed (the old commandStream reader).
-    // All data processing (terminal, Expo URL, OSC detection) happens in one place.
+    /*
+     * No tee — process.output is piped directly to a single WritableStream.
+     * This eliminates the backpressure bug where tee'd branches block each other
+     * when one isn't continuously consumed (the old commandStream reader).
+     * All data processing (terminal, Expo URL, OSC detection) happens in one place.
+     */
     const { process } = await this.newAmplifyShellProcess(webcontainer, terminal);
     this.#process = process;
 
@@ -351,14 +353,23 @@ export class AmplifyShell {
     const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
     const oscTerminalRegex = /\x1b\][^\x07]*\x07/g;
 
-    // Reference to `this` for use inside the closure — private fields can only
-    // be accessed via `this.#field` directly inside the class body, not via
-    // a variable reference like `shell.#field`. We bridge them through a
-    // plain object that the closure can mutate.
+    /*
+     * Reference to `this` for use inside the closure — private fields can only
+     * be accessed via `this.#field` directly inside the class body, not via
+     * a variable reference like `shell.#field`. We bridge them through a
+     * plain object that the closure can mutate.
+     */
     const bridge = {
-      pushOsc: (entry: { osc: string; text: string; code?: string }) => { this.#oscQueue.push(entry); },
-      resolveOsc: () => { this.#oscResolve?.(); this.#oscResolve = undefined; },
-      appendOutput: (text: string) => { this.#outputAccumulator += text; },
+      pushOsc: (entry: { osc: string; text: string; code?: string }) => {
+        this.#oscQueue.push(entry);
+      },
+      resolveOsc: () => {
+        this.#oscResolve?.();
+        this.#oscResolve = undefined;
+      },
+      appendOutput: (text: string) => {
+        this.#outputAccumulator += text;
+      },
     };
 
     this.#terminalPipeController = new AbortController();
@@ -377,8 +388,10 @@ export class AmplifyShell {
 
           // Detect ALL OSC codes for the queue (command completion signals)
           const [, osc, , , code] = data.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
+
           if (osc) {
             bridge.pushOsc({ osc, text: data, code });
+
             // If waitTillOscCode is waiting, resolve its promise
             bridge.resolveOsc();
           }
@@ -391,17 +404,20 @@ export class AmplifyShell {
 
           // --- Expo URL detection ---
           expoUrlBuffer += data || '';
+
           // Strip ANSI + OSC + control chars before URL matching
           const cleanBuffer = expoUrlBuffer
             .replace(ansiRegex, '')
             .replace(oscTerminalRegex, '')
             .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
           const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
+
           if (expoUrlMatch) {
             const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
             expoUrlAtom.set(cleanUrl);
             expoUrlBuffer = ''; // Clear after match
           }
+
           if (expoUrlBuffer.length > 4096) {
             expoUrlBuffer = expoUrlBuffer.slice(-2048);
           }
@@ -632,6 +648,7 @@ export class AmplifyShell {
 
               // --- Expo URL detection ---
               expoUrlBuffer += data || '';
+
               const cleanBuffer = expoUrlBuffer
                 .replace(ansiRegex, '')
                 .replace(oscTerminalRegex, '')
@@ -909,15 +926,19 @@ export class AmplifyShell {
         }
 
         if (entry.osc === waitCode) {
-          // Found the OSC code we're waiting for
-          // Return all accumulated output since we started waiting
+          /*
+           * Found the OSC code we're waiting for
+           * Return all accumulated output since we started waiting
+           */
           const fullOutput = this.#outputAccumulator.slice(outputSnapshotStart);
           return { output: fullOutput, exitCode };
         }
       }
 
-      // No matching OSC code in queue — wait for the next one to arrive
-      // The terminal writer will resolve #oscResolve when it pushes a new entry
+      /*
+       * No matching OSC code in queue — wait for the next one to arrive
+       * The terminal writer will resolve #oscResolve when it pushes a new entry
+       */
       await new Promise<void>((resolve) => {
         this.#oscResolve = resolve;
       });

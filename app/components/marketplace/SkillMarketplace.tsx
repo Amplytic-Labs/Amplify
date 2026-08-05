@@ -63,8 +63,10 @@ export function SkillMarketplace() {
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
 
   useEffect(() => {
-    // In a real app, we'd fetch installed skills from SkillLoader
-    // For now, we'll just use a mock list or try to load them
+    /*
+     * In a real app, we'd fetch installed skills from SkillLoader
+     * For now, we'll just use a mock list or try to load them
+     */
     const loader = SkillLoader.getInstance();
     const skills = loader.getSkills();
     setInstalledSkills(skills.map((s) => s.id));
@@ -75,18 +77,23 @@ export function SkillMarketplace() {
       skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       skill.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = filterCategory === 'all' || skill.category === filterCategory;
+
     return matchesSearch && matchesCategory;
   });
 
   const handleInstall = async (skill: MarketplaceSkill) => {
     try {
-      // In a real scenario, we would download the .skill bundle from a URL
-      // For this demo, we'll simulate the installation process
+      /*
+       * In a real scenario, we would download the .skill bundle from a URL
+       * For this demo, we'll simulate the installation process
+       */
       console.log(`Simulating download and installation of ${skill.name}...`);
 
-      // We'll call the actual installSkill if we had a local path,
-      // but since this is a UI demo, we'll just update the state.
-      // In a real implementation, this would be an API call to a backend that triggers SkillLoader.installSkill
+      /*
+       * We'll call the actual installSkill if we had a local path,
+       * but since this is a UI demo, we'll just update the state.
+       * In a real implementation, this would be an API call to a backend that triggers SkillLoader.installSkill
+       */
 
       setInstalledSkills((prev) => [...prev, skill.name]);
       alert(`Skill ${skill.name} installed successfully!`);

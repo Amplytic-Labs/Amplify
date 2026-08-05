@@ -336,11 +336,13 @@ export function buildNativeTools(): Record<string, any> {
         const entries = listEntriesInDir(ctx.files, rel);
 
         if (entries.length === 0) {
-          // Distinguish "no workspace loaded" (not an error — just nothing to list) from
-          // "directory does not exist in the workspace" (real error — bad path).
-          //
-          // Per the file-level convention: only `Error:`-prefixed strings are errors.
-          // No-workspace and empty-dir are successes-with-empty-data.
+          /*
+           * Distinguish "no workspace loaded" (not an error — just nothing to list) from
+           * "directory does not exist in the workspace" (real error — bad path).
+           *
+           * Per the file-level convention: only `Error:`-prefixed strings are errors.
+           * No-workspace and empty-dir are successes-with-empty-data.
+           */
           if (!ctx.files || Object.keys(ctx.files).length === 0) {
             return `No workspace is currently open. Open a workspace to list its contents.`;
           }
@@ -507,38 +509,40 @@ export function buildNativeTools(): Record<string, any> {
         maxResults: z.number().optional().default(5).describe('Maximum number of results to return (default 5)'),
       }),
       execute: async ({ query, maxResults }: { query: string; maxResults?: number }, ctx: NativeToolContext = {}) => {
-        // ─── Fallback chain ─────────────────────────────────────────────────
-        // Sources are tried in order. We STOP at the first source that returns
-        // actual results — sources after it are NEVER contacted. We only fall
-        // through to the next source when the current one returns ZERO results
-        // or fails outright (network/HTTP error, anti-bot challenge, non-JSON
-        // response, etc.).
-        //
-        //   1. DuckDuckGo HTML (PRIMARY)  — real web search across the open web.
-        //      Covers recent release notes, vendor docs, npm versions, blog posts,
-        //      changelogs, forum threads — everything Wikipedia misses. No API key,
-        //      reliable with a proper User-Agent.
-        //
-        //   2. Wikipedia search API (FALLBACK) — full-text search across English
-        //      Wikipedia. Good for encyclopedic topics (people, places, concepts).
-        //
-        //   3. DuckDuckGo Instant Answer (LAST RESORT) — entity-style queries
-        //      with a Wikipedia abstract. Rarely useful, kept as a safety net.
-        //
-        // `sawSuccessfulSource` distinguishes "search ran fine but found zero
-        // hits" (success, just empty) from "every source failed" (real error).
+        /*
+         * ─── Fallback chain ─────────────────────────────────────────────────
+         * Sources are tried in order. We STOP at the first source that returns
+         * actual results — sources after it are NEVER contacted. We only fall
+         * through to the next source when the current one returns ZERO results
+         * or fails outright (network/HTTP error, anti-bot challenge, non-JSON
+         * response, etc.).
+         *
+         *   1. DuckDuckGo HTML (PRIMARY)  — real web search across the open web.
+         *      Covers recent release notes, vendor docs, npm versions, blog posts,
+         *      changelogs, forum threads — everything Wikipedia misses. No API key,
+         *      reliable with a proper User-Agent.
+         *
+         *   2. Wikipedia search API (FALLBACK) — full-text search across English
+         *      Wikipedia. Good for encyclopedic topics (people, places, concepts).
+         *
+         *   3. DuckDuckGo Instant Answer (LAST RESORT) — entity-style queries
+         *      with a Wikipedia abstract. Rarely useful, kept as a safety net.
+         *
+         * `sawSuccessfulSource` distinguishes "search ran fine but found zero
+         * hits" (success, just empty) from "every source failed" (real error).
+         */
         const fetchFn = ctx.fetch || fetch;
         const limit = maxResults ?? 5;
 
         type SearchResult = { title: string; url: string; snippet: string };
-        type SourceOutcome =
-          | { status: 'ok'; results: SearchResult[] }
-          | { status: 'error'; error: string };
+        type SourceOutcome = { status: 'ok'; results: SearchResult[] } | { status: 'error'; error: string };
 
-        // ─── Source 1: DuckDuckGo HTML search ─────────────────────────────
-        // Parses result__a (link) + result__snippet (snippet) from
-        // https://html.duckduckgo.com/html/. DDG wraps result URLs in a redirect
-        // (//duckduckgo.com/l/?uddg=ENCODED) so we unwrap to the real URL.
+        /*
+         * ─── Source 1: DuckDuckGo HTML search ─────────────────────────────
+         * Parses result__a (link) + result__snippet (snippet) from
+         * https://html.duckduckgo.com/html/. DDG wraps result URLs in a redirect
+         * (//duckduckgo.com/l/?uddg=ENCODED) so we unwrap to the real URL.
+         */
         const searchDdgHtml = async (): Promise<SourceOutcome> => {
           try {
             const ddgHtmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -557,9 +561,12 @@ export function buildNativeTools(): Record<string, any> {
 
             const html = await ddgResp.text();
 
-            // Detect DDG's anti-bot challenge page. Treat as a failure so we
-            // fall through to the next source instead of silently swallowing it.
+            /*
+             * Detect DDG's anti-bot challenge page. Treat as a failure so we
+             * fall through to the next source instead of silently swallowing it.
+             */
             const isChallenge = html.includes('anomaly.js') || html.includes('challenge-form');
+
             if (isChallenge) {
               return { status: 'error', error: 'DuckDuckGo HTML returned an anti-bot challenge page' };
             }
@@ -570,9 +577,11 @@ export function buildNativeTools(): Record<string, any> {
             const snips = [...html.matchAll(snipRe)];
 
             const results: SearchResult[] = [];
+
             for (let i = 0; i < links.length && results.length < limit; i++) {
               let url = links[i][1];
               const uddgMatch = url.match(/uddg=([^&]+)/);
+
               if (uddgMatch) {
                 try {
                   url = decodeURIComponent(uddgMatch[1]);
@@ -580,8 +589,10 @@ export function buildNativeTools(): Record<string, any> {
                   // leave url as-is if decode fails
                 }
               }
+
               const title = links[i][2].replace(/<[^>]+>/g, '').trim();
               const snippet = (snips[i]?.[1] || '').replace(/<[^>]+>/g, '').trim();
+
               if (title && url) {
                 results.push({ title, url, snippet: snippet.slice(0, 300) });
               }
@@ -593,8 +604,10 @@ export function buildNativeTools(): Record<string, any> {
           }
         };
 
-        // ─── Source 2: Wikipedia search API ───────────────────────────────
-        // Requires a descriptive User-Agent per Wikimedia policy (else 429).
+        /*
+         * ─── Source 2: Wikipedia search API ───────────────────────────────
+         * Requires a descriptive User-Agent per Wikimedia policy (else 429).
+         */
         const searchWikipedia = async (): Promise<SourceOutcome> => {
           try {
             const wikiUrl =
@@ -613,6 +626,7 @@ export function buildNativeTools(): Record<string, any> {
 
             // Guard against non-JSON responses (Wikimedia's HTML error page on rate-limit).
             const contentType = wikiResp.headers.get('content-type') || '';
+
             if (!contentType.includes('application/json')) {
               return {
                 status: 'error',
@@ -625,6 +639,7 @@ export function buildNativeTools(): Record<string, any> {
               const snippet = String(item.snippet || '').replace(/<[^>]+>/g, '');
               const title = String(item.title || '');
               const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+
               return { title, url, snippet };
             });
 
@@ -634,8 +649,10 @@ export function buildNativeTools(): Record<string, any> {
           }
         };
 
-        // ─── Source 3: DuckDuckGo Instant Answer API ─────────────────────
-        // Only returns results for entity-style queries with a Wikipedia abstract.
+        /*
+         * ─── Source 3: DuckDuckGo Instant Answer API ─────────────────────
+         * Only returns results for entity-style queries with a Wikipedia abstract.
+         */
         const searchDdgIa = async (): Promise<SourceOutcome> => {
           try {
             const ddgIaUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
@@ -658,7 +675,10 @@ export function buildNativeTools(): Record<string, any> {
 
             if (Array.isArray(data.RelatedTopics)) {
               for (const topic of data.RelatedTopics) {
-                if (results.length >= limit) break;
+                if (results.length >= limit) {
+                  break;
+                }
+
                 if (topic.Text && topic.FirstURL) {
                   results.push({
                     title: topic.Text.split(' - ')[0] || 'Related',
@@ -675,10 +695,12 @@ export function buildNativeTools(): Record<string, any> {
           }
         };
 
-        // ─── Run the fallback chain ───────────────────────────────────────
-        // First source that returns ≥1 result wins. Sources after it are never
-        // contacted. We only advance when the current source returns 0 results
-        // OR fails outright.
+        /*
+         * ─── Run the fallback chain ───────────────────────────────────────
+         * First source that returns ≥1 result wins. Sources after it are never
+         * contacted. We only advance when the current source returns 0 results
+         * OR fails outright.
+         */
         const sources: Array<{ name: string; search: () => Promise<SourceOutcome> }> = [
           { name: 'DuckDuckGo HTML', search: searchDdgHtml },
           { name: 'Wikipedia', search: searchWikipedia },
@@ -701,14 +723,17 @@ export function buildNativeTools(): Record<string, any> {
             // Source responded successfully (even if it found 0 results).
             sawSuccessfulSource = true;
 
-            // Got actual results → return immediately. Sources after this
-            // one are NEVER contacted.
+            /*
+             * Got actual results → return immediately. Sources after this
+             * one are NEVER contacted.
+             */
             if (outcome.results.length > 0) {
               const lines = outcome.results
                 .slice(0, limit)
                 .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`);
               return `Web search results for "${query}" (via ${source.name}):\n\n${lines.join('\n\n')}`;
             }
+
             // Source returned 0 results → fall through to next source.
           }
 
@@ -716,6 +741,7 @@ export function buildNativeTools(): Record<string, any> {
           if (sawSuccessfulSource) {
             return `No web results found for: ${query}. The search completed successfully but returned zero hits.`;
           }
+
           return `Error: Web search failed: ${lastError || 'all search sources failed'}`;
         } catch (e: any) {
           logger.error('web_search failed', e);
@@ -732,14 +758,18 @@ export function buildNativeTools(): Record<string, any> {
         'Strips navigation/scripts/styles and returns clean title + main text content (max ~8000 chars). ' +
         'The URL MUST come from a web_search result or be explicitly provided by the user.',
       parameters: z.object({
-        url: z.string().describe('Absolute https URL of the page to fetch (must come from web_search results or user input)'),
+        url: z
+          .string()
+          .describe('Absolute https URL of the page to fetch (must come from web_search results or user input)'),
       }),
       execute: async ({ url }: { url: string }, ctx: NativeToolContext = {}) => {
         const fetchFn = ctx.fetch || fetch;
 
         try {
-          // Reuse the server-side /api/web-search route (it has the HTML→text extraction logic).
-          // We hit it with the target URL and return the extracted title + content.
+          /*
+           * Reuse the server-side /api/web-search route (it has the HTML→text extraction logic).
+           * We hit it with the target URL and return the extracted title + content.
+           */
           const base = ctx.apiBaseUrl || '';
           const resp = await fetchFn(`${base}/api/web-search`, {
             method: 'POST',

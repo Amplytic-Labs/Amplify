@@ -81,7 +81,15 @@ interface ThinkingBoxProps {
  *   - User can always expand/collapse by clicking the header.
  */
 export const ThinkingBox = memo(
-  ({ isActive, duration, thoughtStreaming, stepCount = 0, hasReasoning = false, activeLabel, children }: ThinkingBoxProps) => {
+  ({
+    isActive,
+    duration,
+    thoughtStreaming,
+    stepCount = 0,
+    hasReasoning = false,
+    activeLabel,
+    children,
+  }: ThinkingBoxProps) => {
     const [isOpen, setIsOpen] = useState(false);
     const startTimeRef = useRef<number | null>(null);
     const hasEverStreamedRef = useRef(false);

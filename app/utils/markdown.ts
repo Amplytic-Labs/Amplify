@@ -5,8 +5,11 @@ import rehypeKatex from 'rehype-katex';
 import type { PluggableList, Plugin } from 'unified';
 import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize';
 import { SKIP, visit } from 'unist-util-visit';
-// Use type assertion for visit to avoid strict type compatibility issues
-// between our UnistNode definition and what unist-util-visit expects
+
+/*
+ * Use type assertion for visit to avoid strict type compatibility issues
+ * between our UnistNode definition and what unist-util-visit expects
+ */
 const visitAny = visit as (tree: any, callback: any) => void;
 
 export const allowedHTMLElements = [

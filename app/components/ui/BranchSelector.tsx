@@ -212,7 +212,9 @@ export function BranchSelector({
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                               <GitBranch className="w-4 h-4 flex-shrink-0 text-amplify-elements-textSecondary" />
-                              <span className="font-medium text-amplify-elements-textPrimary truncate">{branch.name}</span>
+                              <span className="font-medium text-amplify-elements-textPrimary truncate">
+                                {branch.name}
+                              </span>
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 {branch.isDefault && <Star className="w-3 h-3 text-yellow-500" />}
                                 {branch.protected && <Shield className="w-3 h-3 text-red-500" />}

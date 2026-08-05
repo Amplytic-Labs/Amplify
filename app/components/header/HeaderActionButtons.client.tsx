@@ -16,7 +16,9 @@ export function HeaderActionButtonsContent() {
   const files = useStore(workbenchStore.files);
   const { exportChat } = useChatHistory();
 
-  if (!activePreview && Object.keys(files).length === 0) return null;
+  if (!activePreview && Object.keys(files).length === 0) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-1">
@@ -30,9 +32,7 @@ export function HeaderActionButtonsContent() {
       </MotionDropdownItem>
       <MotionDropdownSeparator />
       <MotionDropdownItem
-        onSelect={() =>
-          window.open('https://github.com/imtia33/Open_Claude/issues/new', '_blank')
-        }
+        onSelect={() => window.open('https://github.com/imtia33/Open_Claude/issues/new', '_blank')}
         className="gap-2"
       >
         <div className="i-ph:bug" />

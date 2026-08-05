@@ -65,6 +65,7 @@ export const Preview = memo(({ setSelectedElement }: PreviewProps) => {
     if (!activePreview) {
       iframeUrlAtom.set(undefined);
       displayPathAtom.set('/');
+
       return;
     }
 

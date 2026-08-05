@@ -26,9 +26,11 @@
 
 import type { ModelCapabilities } from './types';
 
-// ============================================================
-// Provider-specific capability detection
-// ============================================================
+/*
+ * ============================================================
+ * Provider-specific capability detection
+ * ============================================================
+ */
 
 /**
  * Anthropic Claude thinking detection.
@@ -140,9 +142,11 @@ function detectDeepseekCapabilities(modelId: string): ModelCapabilities {
   return {};
 }
 
-// ============================================================
-// Generic fallback for OpenAI-compatible providers
-// ============================================================
+/*
+ * ============================================================
+ * Generic fallback for OpenAI-compatible providers
+ * ============================================================
+ */
 
 /**
  * OpenAI-compatible providers that use createOpenAI() from @ai-sdk/openai.
@@ -187,9 +191,11 @@ function detectGenericReasoningCapabilities(modelId: string): ModelCapabilities 
   return {};
 }
 
-// ============================================================
-// Public API
-// ============================================================
+/*
+ * ============================================================
+ * Public API
+ * ============================================================
+ */
 
 /**
  * Detect model capabilities based on provider name and model ID.

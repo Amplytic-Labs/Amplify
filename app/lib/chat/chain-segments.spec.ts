@@ -191,14 +191,7 @@ describe('splitPartsIntoSegments', () => {
      * Multiple sandwiched tool runs: each sandwiched run is its own
      * `tools` segment.
      */
-    const segs = splitPartsIntoSegments([
-      text('a'),
-      tool('t1'),
-      tool('t2'),
-      text('b'),
-      tool('t3'),
-      text('c'),
-    ]);
+    const segs = splitPartsIntoSegments([text('a'), tool('t1'), tool('t2'), text('b'), tool('t3'), text('c')]);
 
     expect(segs).toEqual([
       { kind: 'text', text: 'a' },

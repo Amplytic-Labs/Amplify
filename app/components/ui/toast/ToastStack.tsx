@@ -1,6 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Shield, Cloud, Database, Laptop, Bell, CheckCircle2, AlertCircle, Info, AlertTriangle, Loader2 } from 'lucide-react';
+import {
+  X,
+  Shield,
+  Cloud,
+  Database,
+  Laptop,
+  Bell,
+  CheckCircle2,
+  AlertCircle,
+  Info,
+  AlertTriangle,
+  Loader2,
+} from 'lucide-react';
 
 /*
  * Premium iPhone-style stacked toast notification system.
@@ -36,7 +48,15 @@ const CARD_HEIGHT = 84;
 const CARD_GAP = 6;
 
 /* ── Hardware-accelerated progress bar ── */
-function ProgressBar({ duration, onComplete, isPaused }: { duration: number; onComplete: () => void; isPaused: boolean }) {
+function ProgressBar({
+  duration,
+  onComplete,
+  isPaused,
+}: {
+  duration: number;
+  onComplete: () => void;
+  isPaused: boolean;
+}) {
   const progressRef = useRef<HTMLDivElement>(null);
   const elapsedRef = useRef(0);
   const requestRef = useRef<number | null>(null);
@@ -44,18 +64,30 @@ function ProgressBar({ duration, onComplete, isPaused }: { duration: number; onC
 
   useEffect(() => {
     if (isPaused) {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+
       prevTimeRef.current = null;
+
       return;
     }
 
     const tick = (time: number) => {
-      if (prevTimeRef.current === null) prevTimeRef.current = time;
+      if (prevTimeRef.current === null) {
+        prevTimeRef.current = time;
+      }
+
       const delta = time - prevTimeRef.current;
       prevTimeRef.current = time;
       elapsedRef.current += delta;
+
       const progress = Math.max(0, 100 - (elapsedRef.current / duration) * 100);
-      if (progressRef.current) progressRef.current.style.width = `${progress}%`;
+
+      if (progressRef.current) {
+        progressRef.current.style.width = `${progress}%`;
+      }
+
       if (elapsedRef.current >= duration) {
         onComplete();
       } else {
@@ -64,7 +96,12 @@ function ProgressBar({ duration, onComplete, isPaused }: { duration: number; onC
     };
 
     requestRef.current = requestAnimationFrame(tick);
-    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
+
+    return () => {
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
   }, [isPaused, duration, onComplete]);
 
   return (
@@ -84,11 +121,16 @@ function getIcon(type: ToastType, customIcon?: string) {
 
   if (customIcon) {
     switch (customIcon) {
-      case 'shield': return <Shield {...iconProps} />;
-      case 'cloud': return <Cloud {...iconProps} />;
-      case 'database': return <Database {...iconProps} />;
-      case 'laptop': return <Laptop {...iconProps} />;
-      default: return <Bell {...iconProps} />;
+      case 'shield':
+        return <Shield {...iconProps} />;
+      case 'cloud':
+        return <Cloud {...iconProps} />;
+      case 'database':
+        return <Database {...iconProps} />;
+      case 'laptop':
+        return <Laptop {...iconProps} />;
+      default:
+        return <Bell {...iconProps} />;
     }
   }
 
@@ -174,7 +216,10 @@ export function ToastStack({ toasts, onDismiss, maxVisible = 5 }: ToastStackProp
 
                   {/* Dismiss button */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDismiss(item.id);
+                    }}
                     className="w-5 h-5 rounded-full bg-white/[0.05] hover:bg-white/15 flex items-center justify-center text-zinc-400 hover:text-white transition-all cursor-pointer shrink-0 z-10"
                     title="Dismiss"
                   >

@@ -31,6 +31,7 @@ function getChannel(): BroadcastChannel {
   if (!_channel) {
     _channel = new BroadcastChannel(CHANNEL_NAME);
   }
+
   return _channel;
 }
 
@@ -50,6 +51,7 @@ function broadcast(event: DebugEvent): void {
  */
 async function readAndBroadcastStream(clonedResponse: Response): Promise<void> {
   const reader = clonedResponse.body?.getReader();
+
   if (!reader) {
     broadcast({
       type: 'ERROR',
@@ -65,6 +67,7 @@ async function readAndBroadcastStream(clonedResponse: Response): Promise<void> {
   try {
     while (true) {
       const { done, value } = await reader.read();
+
       if (done) {
         broadcast({
           type: 'STREAM_END',
@@ -75,6 +78,7 @@ async function readAndBroadcastStream(clonedResponse: Response): Promise<void> {
       }
 
       chunkCount++;
+
       const text = decoder.decode(value, { stream: true });
 
       broadcast({
@@ -145,6 +149,7 @@ export function createDebugFetch(): typeof fetch {
 
     // ── Perform the real fetch ──────────────────────────────────────────────
     let response: Response;
+
     try {
       response = await fetch(input, init);
     } catch (err: unknown) {
@@ -176,6 +181,7 @@ export function createDebugFetch(): typeof fetch {
     // ── Clone and broadcast the stream ──────────────────────────────────────
     if (isChatRequest && response.body) {
       const clonedResponse = response.clone();
+
       // Fire-and-forget: read the clone in the background without blocking
       readAndBroadcastStream(clonedResponse).catch(() => {
         // Silently ignore – the original response still works fine

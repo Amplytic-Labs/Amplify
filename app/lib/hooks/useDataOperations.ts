@@ -9,23 +9,28 @@ import { generateId } from 'ai';
  * In AI SDK v7, message content can be either:
  * - A string (simple text message)
  * - An array of parts (complex message with tool invocations, etc.)
- * 
+ *
  * This helper extracts the text content from both formats.
  */
 function getMessageContent(msg: any): string {
-  if (!msg) return '';
-  
+  if (!msg) {
+    return '';
+  }
+
   // Simple string content
-  if (typeof msg.content === 'string') return msg.content;
-  
+  if (typeof msg.content === 'string') {
+    return msg.content;
+  }
+
   // V7 parts-based content
   if (Array.isArray(msg.parts)) {
-    const textParts = msg.parts
-      .filter((p: any) => p.type === 'text')
-      .map((p: any) => p.text);
-    if (textParts.length > 0) return textParts.join('');
+    const textParts = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text);
+
+    if (textParts.length > 0) {
+      return textParts.join('');
+    }
   }
-  
+
   // Fallback for other content formats
   if (typeof msg.content === 'object' && msg.content !== null) {
     // Handle content array format
@@ -35,9 +40,10 @@ function getMessageContent(msg: any): string {
         .map((c: any) => c.text)
         .join('');
     }
+
     return JSON.stringify(msg.content);
   }
-  
+
   // Last resort
   return String(msg.content || '');
 }
@@ -635,10 +641,13 @@ export function useDataOperations({
             throw new Error('Invalid chat format: missing required fields');
           }
 
-          // Ensure each message has required fields
-          // V7 MIGRATION: Use getMessageContent for parts-based extraction
+          /*
+           * Ensure each message has required fields
+           * V7 MIGRATION: Use getMessageContent for parts-based extraction
+           */
           const validatedMessages = chat.messages.map((msg: any) => {
             const extractedContent = getMessageContent(msg);
+
             if (!msg.role || !extractedContent) {
               throw new Error('Invalid message format: missing required fields');
             }
@@ -650,6 +659,7 @@ export function useDataOperations({
               name: msg.name,
               function_call: msg.function_call,
               timestamp: msg.timestamp || Date.now(),
+
               // Preserve v7 parts array if present
               ...(Array.isArray(msg.parts) ? { parts: msg.parts } : {}),
             };

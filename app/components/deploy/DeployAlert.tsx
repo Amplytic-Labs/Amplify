@@ -95,7 +95,9 @@ export default function DeployChatAlert({ alert, clearAlert, postMessage }: Depl
                     <div
                       className={classNames(
                         'h-0.5 w-8',
-                        buildStatus === 'complete' ? 'bg-amplify-elements-icon-success' : 'bg-amplify-elements-textTertiary',
+                        buildStatus === 'complete'
+                          ? 'bg-amplify-elements-icon-success'
+                          : 'bg-amplify-elements-textTertiary',
                       )}
                     ></div>
 

@@ -38,9 +38,11 @@ import {
 
 const logger = createScopedLogger('ExecutionManager');
 
-// ============================================================
-// Types
-// ============================================================
+/*
+ * ============================================================
+ * Types
+ * ============================================================
+ */
 
 export interface ExecutionStateSummary {
   /**
@@ -127,9 +129,11 @@ export interface ResumeResult {
   resumeInstruction: string;
 }
 
-// ============================================================
-// ExecutionManager
-// ============================================================
+/*
+ * ============================================================
+ * ExecutionManager
+ * ============================================================
+ */
 
 export class ExecutionManager {
   /**
@@ -141,7 +145,10 @@ export class ExecutionManager {
    */
   static getExecutionState(planId: string): ExecutionStateSummary | null {
     const plan = planStore.getPlan(planId);
-    if (!plan) return null;
+
+    if (!plan) {
+      return null;
+    }
 
     const tasks = plan.points.map((point) => {
       const state = point.executionState;
@@ -178,9 +185,7 @@ export class ExecutionManager {
       const state = activePoint.executionState;
       resumeReason = state?.resumeReason || `Task "${activePoint.title}" is ${state?.status || activePoint.status}.`;
     } else if (nextTask) {
-      resumeReason = nextTask.isResume
-        ? `Resume "${nextTask.title}" from checkpoint.`
-        : `Start "${nextTask.title}".`;
+      resumeReason = nextTask.isResume ? `Resume "${nextTask.title}" from checkpoint.` : `Start "${nextTask.title}".`;
     } else if (hasIncomplete) {
       resumeReason = 'Some tasks remain but have failed dependencies.';
     }
@@ -220,9 +225,7 @@ export class ExecutionManager {
     isResume: boolean;
   } | null {
     const completedIds = new Set(
-      plan.points
-        .filter((p) => p.status === 'completed' || p.status === 'skipped')
-        .map((p) => p.id),
+      plan.points.filter((p) => p.status === 'completed' || p.status === 'skipped').map((p) => p.id),
     );
 
     for (const point of plan.points) {
@@ -233,7 +236,10 @@ export class ExecutionManager {
 
       // Check dependencies
       const depsMet = point.dependencies.every((depId) => completedIds.has(depId));
-      if (!depsMet) continue;
+
+      if (!depsMet) {
+        continue;
+      }
 
       // Check if this is a resume (has checkpoints) or fresh
       const hasCheckpoints = (point.checkpoints?.length ?? 0) > 0;
@@ -263,6 +269,7 @@ export class ExecutionManager {
    */
   static prepareExecution(options: ResumeOptions): ResumeResult {
     const plan = planStore.getPlan(options.planId);
+
     if (!plan) {
       return { point: null, isResume: false, checkpoint: null, resumeInstruction: '' };
     }
@@ -273,6 +280,7 @@ export class ExecutionManager {
       point = plan.points.find((p) => p.id === options.pointId);
     } else {
       const next = this.findNextTask(plan);
+
       if (next) {
         point = plan.points.find((p) => p.id === next.pointId);
       }
@@ -324,13 +332,21 @@ export class ExecutionManager {
    */
   static markInterrupted(planId: string, pointId: string, reason: string): void {
     const plan = planStore.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point?.executionState) return;
 
-    // Take a final checkpoint before marking interrupted
-    // V7 MIGRATION: Extract tool invocations from parts (v7) or toolInvocations (legacy)
+    if (!point?.executionState) {
+      return;
+    }
+
+    /*
+     * Take a final checkpoint before marking interrupted
+     * V7 MIGRATION: Extract tool invocations from parts (v7) or toolInvocations (legacy)
+     */
     const toolInvocations = extractToolInvocationsFromSubChat(point.subChat);
     const completedSteps = point.executionState.completedSteps ?? [];
 
@@ -341,15 +357,8 @@ export class ExecutionManager {
       completedSteps,
     });
 
-    point.executionState = CheckpointManager.saveCheckpoint(
-      point,
-      checkpoint,
-      point.executionState,
-    );
-    point.executionState = ExecutionStateManager.markInterrupted(
-      point.executionState,
-      reason,
-    );
+    point.executionState = CheckpointManager.saveCheckpoint(point, checkpoint, point.executionState);
+    point.executionState = ExecutionStateManager.markInterrupted(point.executionState, reason);
 
     planStore.updatePlanPoint(planId, pointId, {
       executionState: point.executionState,
@@ -363,22 +372,21 @@ export class ExecutionManager {
   /**
    * Marks a task as completed successfully.
    */
-  static markCompleted(
-    planId: string,
-    pointId: string,
-    summary: string,
-  ): void {
+  static markCompleted(planId: string, pointId: string, summary: string): void {
     const plan = planStore.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point) return;
+
+    if (!point) {
+      return;
+    }
 
     if (point.executionState) {
-      point.executionState = ExecutionStateManager.updateStatus(
-        point.executionState,
-        'completed',
-      );
+      point.executionState = ExecutionStateManager.updateStatus(point.executionState, 'completed');
     }
 
     planStore.updatePlanPoint(planId, pointId, {
@@ -395,22 +403,21 @@ export class ExecutionManager {
   /**
    * Marks a task as failed.
    */
-  static markFailed(
-    planId: string,
-    pointId: string,
-    error: string,
-  ): void {
+  static markFailed(planId: string, pointId: string, error: string): void {
     const plan = planStore.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const point = plan.points.find((p) => p.id === pointId);
-    if (!point) return;
+
+    if (!point) {
+      return;
+    }
 
     if (point.executionState) {
-      point.executionState = ExecutionStateManager.updateStatus(
-        point.executionState,
-        'failed',
-      );
+      point.executionState = ExecutionStateManager.updateStatus(point.executionState, 'failed');
     }
 
     planStore.updatePlanPoint(planId, pointId, {
@@ -429,7 +436,10 @@ export class ExecutionManager {
    */
   static checkPlanCompletion(planId: string): void {
     const plan = planStore.getPlan(planId);
-    if (!plan) return;
+
+    if (!plan) {
+      return;
+    }
 
     const allDone = plan.points.every(
       (p) => p.status === 'completed' || p.status === 'skipped' || p.status === 'cancelled',
@@ -448,14 +458,11 @@ export class ExecutionManager {
   static getResumablePlans(projectId: string): Plan[] {
     return planStore
       .getPlansByProject(projectId)
-      .filter((plan) =>
-        plan.status !== 'completed' &&
-        plan.status !== 'cancelled' &&
-        plan.points.some((p) =>
-          p.status !== 'completed' &&
-          p.status !== 'skipped' &&
-          p.status !== 'cancelled',
-        ),
+      .filter(
+        (plan) =>
+          plan.status !== 'completed' &&
+          plan.status !== 'cancelled' &&
+          plan.points.some((p) => p.status !== 'completed' && p.status !== 'skipped' && p.status !== 'cancelled'),
       );
   }
 }
@@ -471,17 +478,25 @@ export class ExecutionManager {
  * `~/lib/chat/tool-parts`.
  */
 function extractToolInvocationsFromSubChat(subChat: any): any[] {
-  if (!subChat) return [];
+  if (!subChat) {
+    return [];
+  }
 
-  // V7 (Task 3b): tool invocations live inline on each message part with
-  // type `tool-<name>` / `dynamic-tool` (flat shape — NOT nested under
-  // `toolInvocation`). We use the shared helpers to extract the fields.
+  /*
+   * V7 (Task 3b): tool invocations live inline on each message part with
+   * type `tool-<name>` / `dynamic-tool` (flat shape — NOT nested under
+   * `toolInvocation`). We use the shared helpers to extract the fields.
+   */
   if (Array.isArray(subChat.messages)) {
     const fromParts: any[] = [];
+
     for (const msg of subChat.messages) {
       if (Array.isArray(msg.parts)) {
         for (const p of msg.parts) {
-          if (!isToolPart(p)) continue;
+          if (!isToolPart(p)) {
+            continue;
+          }
+
           fromParts.push({
             toolName: getToolNameFromPart(p),
             toolCallId: getToolCallId(p),
@@ -492,7 +507,10 @@ function extractToolInvocationsFromSubChat(subChat: any): any[] {
         }
       }
     }
-    if (fromParts.length > 0) return fromParts;
+
+    if (fromParts.length > 0) {
+      return fromParts;
+    }
   }
 
   // Legacy fallback: use toolInvocations array on subChat

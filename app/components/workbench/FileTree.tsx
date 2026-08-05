@@ -419,7 +419,7 @@ function FileContextMenu({
 
     try {
       const newPath = path.join(path.dirname(fullPath), newName.trim());
-      
+
       if (newPath === fullPath) {
         setIsRenaming(false);
         return;

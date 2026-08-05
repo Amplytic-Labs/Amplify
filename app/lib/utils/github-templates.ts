@@ -185,6 +185,7 @@ export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
   });
 
   const results = await Promise.all(promises);
+
   return results.filter(Boolean);
 }
 

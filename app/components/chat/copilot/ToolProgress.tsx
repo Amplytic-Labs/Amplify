@@ -1,13 +1,7 @@
 import { memo, useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import {
-  getToolNameFromPart,
-  getToolState,
-  getToolInput,
-  getToolOutput,
-  ToolState,
-} from '~/lib/chat/tool-parts';
+import { getToolNameFromPart, getToolState, getToolInput, getToolOutput, ToolState } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal, isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
 import { isClientSideTool } from '~/lib/tools/clientSideTools';
 import { tryClaimToolCallApproval } from '~/lib/chat/tool-approval-dedup';
@@ -194,8 +188,10 @@ export function classifyResult(result: any): ResultStatus {
     return 'success';
   }
 
-  // Single rule: anything prefixed with `Error:` is an error. Everything else
-  // (including "No results", "Not available", hint messages) is a success.
+  /*
+   * Single rule: anything prefixed with `Error:` is an error. Everything else
+   * (including "No results", "Not available", hint messages) is a success.
+   */
   return result.startsWith('Error:') ? 'error' : 'success';
 }
 
@@ -297,9 +293,12 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
   const meta = getMeta(toolName);
   const summary = summarizeArgs(toolName, args);
   const isResult = ToolState.isResult(state);
-  // Preserve v4 behaviour: only `state === 'call'` (v7 'input-available') is
-  // considered "pending" — input-streaming falls through to the past-tense
-  // label path. (v4 'partial' was not treated as pending either.)
+
+  /*
+   * Preserve v4 behaviour: only `state === 'call'` (v7 'input-available') is
+   * considered "pending" — input-streaming falls through to the past-tense
+   * label path. (v4 'partial' was not treated as pending either.)
+   */
   const isPending = ToolState.isCall(state);
   const readOnly = isReadOnlyNativeTool(toolName);
   const resultStatus = isResult ? classifyResult(result) : 'unknown';
@@ -310,21 +309,23 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
     [isResult, toolName, result],
   );
 
-  // Auto-approve ALL tool calls (no permission prompts)
-  // This effect runs once when a pending tool is detected and auto-approves it.
-  //
-  // DEDUP GUARD: This component, ToolInvocations.tsx, AND Chat.client.tsx ALL
-  // have auto-approve effects that fire in parallel for the same pending tool.
-  // We use a MODULE-LEVEL shared Set (tool-approval-dedup.ts) so that once
-  // ANY component claims a toolCallId, the others skip.
-  //
-  // This is the PERMANENT fix for message duplication on tool error. Without
-  // it, 2-3 `addToolResult` calls per toolCallId cause the AI SDK to send
-  // multiple follow-up /api/chat requests — each appending a new step
-  // (reasoning + text) to the same assistant message. The user sees duplicated
-  // thought blocks and duplicated message text.
-  //
-  // The local ref is kept as a secondary guard for same-component re-renders.
+  /*
+   * Auto-approve ALL tool calls (no permission prompts)
+   * This effect runs once when a pending tool is detected and auto-approves it.
+   *
+   * DEDUP GUARD: This component, ToolInvocations.tsx, AND Chat.client.tsx ALL
+   * have auto-approve effects that fire in parallel for the same pending tool.
+   * We use a MODULE-LEVEL shared Set (tool-approval-dedup.ts) so that once
+   * ANY component claims a toolCallId, the others skip.
+   *
+   * This is the PERMANENT fix for message duplication on tool error. Without
+   * it, 2-3 `addToolResult` calls per toolCallId cause the AI SDK to send
+   * multiple follow-up /api/chat requests — each appending a new step
+   * (reasoning + text) to the same assistant message. The user sees duplicated
+   * thought blocks and duplicated message text.
+   *
+   * The local ref is kept as a secondary guard for same-component re-renders.
+   */
   const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -352,10 +353,12 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
         return;
       }
 
-      // SHARED dedup (across all components — see tool-approval-dedup.ts).
-      // If Chat.client.tsx or ToolInvocations.tsx already claimed this
-      // toolCallId, skip. This guarantees exactly ONE addToolResult call
-      // per toolCallId across the entire app.
+      /*
+       * SHARED dedup (across all components — see tool-approval-dedup.ts).
+       * If Chat.client.tsx or ToolInvocations.tsx already claimed this
+       * toolCallId, skip. This guarantees exactly ONE addToolResult call
+       * per toolCallId across the entire app.
+       */
       if (!tryClaimToolCallApproval(toolCallId)) {
         return;
       }

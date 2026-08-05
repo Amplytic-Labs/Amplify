@@ -45,11 +45,13 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
       messages: [
         {
           role: 'user',
+
           // AI SDK v7: use parts instead of content
           parts: [
             {
               type: 'text' as const,
-              text: `[Model: ${model}]\n\n[Provider: ${providerName}]\n\n` +
+              text:
+                `[Model: ${model}]\n\n[Provider: ${providerName}]\n\n` +
                 stripIndents`
                 You are a professional prompt engineer specializing in crafting precise, effective prompts.
                 Your task is to enhance prompts by making them more specific, actionable, and effective.

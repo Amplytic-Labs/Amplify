@@ -48,13 +48,7 @@ import { runVerification } from '~/lib/verification/runner';
 import type { UIMessage } from 'ai';
 import { ExecutionManager } from './execution-manager';
 import { ExecutionStateManager } from './execution-state';
-import {
-  isToolPart,
-  getToolNameFromPart,
-  getToolState,
-  getToolInput,
-  getToolOutput,
-} from '~/lib/chat/tool-parts';
+import { isToolPart, getToolNameFromPart, getToolState, getToolInput, getToolOutput } from '~/lib/chat/tool-parts';
 import { CheckpointManager } from './checkpoint';
 import { ContextBuilder, type ProjectContextInfo, type WorkspaceSnapshot } from './context-builder';
 import { SkillContextBuilder, type RawSkillInput } from './skill-context';
@@ -156,7 +150,19 @@ export interface SubChatExecutionOptions {
 }
 
 export interface PlanProgressUpdate {
-  type: 'point_start' | 'point_complete' | 'point_failed' | 'verification_start' | 'verification_result' | 'plan_complete' | 'context_extracted' | 'checkpoint' | 'skill_invoked' | 'tool_output_resolved' | 'resume' | 'error';
+  type:
+    | 'point_start'
+    | 'point_complete'
+    | 'point_failed'
+    | 'verification_start'
+    | 'verification_result'
+    | 'plan_complete'
+    | 'context_extracted'
+    | 'checkpoint'
+    | 'skill_invoked'
+    | 'tool_output_resolved'
+    | 'resume'
+    | 'error';
   planId: string;
   pointId?: string;
   pointTitle?: string;
@@ -188,13 +194,16 @@ export async function executePlan(
     }
 
     // Skip terminal tasks
-    if (['completed', 'skipped', 'cancelled'].includes(point.status)) continue;
+    if (['completed', 'skipped', 'cancelled'].includes(point.status)) {
+      continue;
+    }
 
     // Check dependencies
     const depFailed = point.dependencies.some((depId) => {
       const dep = plan.points.find((p) => p.id === depId);
       return dep && (dep.status === 'failed' || dep.status === 'skipped');
     });
+
     if (depFailed) {
       planStore.updatePlanPoint(plan.id, point.id, { status: 'skipped', completedAt: new Date().toISOString() });
       options.onProgress?.({
@@ -256,6 +265,7 @@ export async function executePlan(
         if (hasErrors) {
           // Send verification errors back to the sub-chat for fixing
           const fixResult = await fixVerificationErrors(plan, point, verificationResults, options);
+
           if (!fixResult.success) {
             ExecutionManager.markFailed(plan.id, point.id, 'Failed to fix verification errors.');
             failedPoints.push(point.title);
@@ -281,8 +291,10 @@ export async function executePlan(
         message: `Context extracted for "${point.title}"`,
       });
 
-      // Mark point as completed (via ExecutionManager so it updates
-      // the execution state + checks plan completion).
+      /*
+       * Mark point as completed (via ExecutionManager so it updates
+       * the execution state + checks plan completion).
+       */
       ExecutionManager.markCompleted(plan.id, point.id, result.summary);
 
       planSummary += `- ${point.title}: ${result.summary || 'Completed'}\n`;
@@ -307,8 +319,10 @@ export async function executePlan(
         message: `Failed: ${point.title} — ${errorMessage}`,
       });
 
-      // Don't break - try to continue with remaining points
-      // unless they depend on this one
+      /*
+       * Don't break - try to continue with remaining points
+       * unless they depend on this one
+       */
     }
   }
 
@@ -356,8 +370,10 @@ export async function resumePlan(
     message: state.resumeReason,
   });
 
-  // The ExecutionManager.prepareExecution inside executePlan will
-  // handle the checkpoint reconstruction for each task.
+  /*
+   * The ExecutionManager.prepareExecution inside executePlan will
+   * handle the checkpoint reconstruction for each task.
+   */
   return executePlan(plan, options);
 }
 
@@ -409,14 +425,11 @@ async function executePlanPoint(
 
       // Also seed the cache with tool results from the main chat
       if (options.toolExecutionResults) {
-        // The main chat's tool results are already available as a string;
-        // we pass them through as a fallback tool output.
-        await toolOutputCache.put(
-          'main_chat_tool_results',
-          'main_chat',
-          {},
-          options.toolExecutionResults,
-        );
+        /*
+         * The main chat's tool results are already available as a string;
+         * we pass them through as a fallback tool output.
+         */
+        await toolOutputCache.put('main_chat_tool_results', 'main_chat', {}, options.toolExecutionResults);
       }
 
       options.onProgress?.({
@@ -434,10 +447,7 @@ async function executePlanPoint(
   let skillContexts: SkillContext[] = [];
 
   if (options.availableSkills && activePoint.requiredSkills && activePoint.requiredSkills.length > 0) {
-    skillContexts = SkillContextBuilder.buildMany(
-      options.availableSkills,
-      activePoint.requiredSkills,
-    );
+    skillContexts = SkillContextBuilder.buildMany(options.availableSkills, activePoint.requiredSkills);
 
     options.onProgress?.({
       type: 'skill_invoked',
@@ -449,6 +459,7 @@ async function executePlanPoint(
 
   // ── 2. Query project context from vector store ────────────────
   let vectorContext = '';
+
   try {
     vectorContext = await projectContextStore.formatContextForPrompt(
       plan.projectId,
@@ -495,9 +506,11 @@ async function executePlanPoint(
 
   // ── 6. Build the system prompt ────────────────────────────────
   let systemPrompt = options.systemPrompt;
+
   if (options.appBuilderPrompt) {
     systemPrompt += `\n\n${options.appBuilderPrompt}`;
   }
+
   systemPrompt += `\n\n<active_project>\n${workerContext}\n</active_project>`;
 
   // ── 7. Initialize the sub-chat in the store ───────────────────
@@ -518,13 +531,16 @@ async function executePlanPoint(
     });
   }
 
-  // ── 9. Build the user message ────────────────────────────────
-  // On a fresh start: the task description is the user message.
-  // On resume: the resume instruction is prepended so the worker
-  // knows what was already done and what remains.
-  const userContent = prep.isResume && prep.resumeInstruction
-    ? `${prep.resumeInstruction}\n\n---\n\n${activePoint.description}`
-    : activePoint.description;
+  /*
+   * ── 9. Build the user message ────────────────────────────────
+   * On a fresh start: the task description is the user message.
+   * On resume: the resume instruction is prepended so the worker
+   * knows what was already done and what remains.
+   */
+  const userContent =
+    prep.isResume && prep.resumeInstruction
+      ? `${prep.resumeInstruction}\n\n---\n\n${activePoint.description}`
+      : activePoint.description;
 
   const userMessage: SubChatMessage = {
     id: crypto.randomUUID(),
@@ -538,6 +554,7 @@ async function executePlanPoint(
   // Track the sub-chat messages
   const planData = await planStore.getPlanAsync(plan.id);
   const subChat = planData?.points.find((p) => p.id === activePoint.id)?.subChat;
+
   if (subChat) {
     subChat.messages.push(userMessage, assistantMessage);
   }
@@ -550,18 +567,16 @@ async function executePlanPoint(
 
     // Record in execution state
     if (activePoint.executionState) {
-      activePoint.executionState = ExecutionStateManager.recordToolCall(
-        activePoint.executionState,
-        tc.timestamp,
-      );
+      activePoint.executionState = ExecutionStateManager.recordToolCall(activePoint.executionState, tc.timestamp);
 
       // Track modified files
       const filePath = (tc.args as any).filePath || (tc.args as any).path;
-      if (filePath && (tc.toolName === 'write_file' || tc.toolName === 'update_file' || tc.toolName === 'create_file')) {
-        activePoint.executionState = ExecutionStateManager.recordFileModified(
-          activePoint.executionState,
-          filePath,
-        );
+
+      if (
+        filePath &&
+        (tc.toolName === 'write_file' || tc.toolName === 'update_file' || tc.toolName === 'create_file')
+      ) {
+        activePoint.executionState = ExecutionStateManager.recordFileModified(activePoint.executionState, filePath);
         planStore.addModifiedFile(plan.id, activePoint.id, filePath);
       }
     }
@@ -584,11 +599,7 @@ async function executePlanPoint(
       completedSteps,
     });
 
-    activePoint.executionState = CheckpointManager.saveCheckpoint(
-      activePoint,
-      checkpoint,
-      activePoint.executionState,
-    );
+    activePoint.executionState = CheckpointManager.saveCheckpoint(activePoint, checkpoint, activePoint.executionState);
 
     planStore.updatePlanPoint(plan.id, activePoint.id, {
       executionState: activePoint.executionState,
@@ -623,14 +634,19 @@ async function fixVerificationErrors(
     .filter((r) => !r.passed)
     .map((r) => {
       const issues = (r.issues || [])
-        .map((i) => `  - ${i.severity.toUpperCase()}: ${i.filePath}${i.line ? `:${i.line}` : ''} — ${i.message}${i.suggestion ? ` (Suggestion: ${i.suggestion})` : ''}`)
+        .map(
+          (i) =>
+            `  - ${i.severity.toUpperCase()}: ${i.filePath}${i.line ? `:${i.line}` : ''} — ${i.message}${i.suggestion ? ` (Suggestion: ${i.suggestion})` : ''}`,
+        )
         .join('\n');
       return `[${r.type}] Failed:\n${issues}`;
     })
     .join('\n\n');
 
   // Build a simplified context for the fix attempt
-  const systemPrompt = options.systemPrompt + `\n\n<active_project>\n===== TASK =====\nTask: ${point.title}\nDescription: ${point.description}\n\n===== FIX REQUEST =====\nThe following verification errors were found. Fix them.\n</active_project>`;
+  const systemPrompt =
+    options.systemPrompt +
+    `\n\n<active_project>\n===== TASK =====\nTask: ${point.title}\nDescription: ${point.description}\n\n===== FIX REQUEST =====\nThe following verification errors were found. Fix them.\n</active_project>`;
 
   const fixMessage: SubChatMessage = {
     id: crypto.randomUUID(),
@@ -722,15 +738,22 @@ async function extractContextFromSubChat(
  */
 function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
   const parts = (message as any).parts;
+
   if (Array.isArray(parts)) {
     const out: ToolInvocationRecord[] = [];
+
     for (const p of parts) {
-      if (!isToolPart(p)) continue;
+      if (!isToolPart(p)) {
+        continue;
+      }
+
       const state = getToolState(p);
+
       // Only completed tool calls have a usable result.
       if (state !== 'output-available' && state !== 'output-error' && state !== 'result') {
         continue;
       }
+
       const result = getToolOutput(p);
       out.push({
         toolName: getToolNameFromPart(p),
@@ -740,11 +763,15 @@ function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
         timestamp: new Date().toISOString(),
       });
     }
+
     return out;
   }
 
   // Fallback for legacy messages that still use toolInvocations (v4 pattern)
-  if (!message.toolInvocations) return [];
+  if (!message.toolInvocations) {
+    return [];
+  }
+
   return message.toolInvocations
     .filter((ti: any) => ti.state === 'result')
     .map((ti: any) => ({
@@ -757,4 +784,11 @@ function extractToolCalls(message: SubChatMessage): ToolInvocationRecord[] {
 }
 
 // Re-export for backwards compatibility
-export { ExecutionManager, ExecutionStateManager, CheckpointManager, ContextBuilder, SkillContextBuilder, toolOutputCache };
+export {
+  ExecutionManager,
+  ExecutionStateManager,
+  CheckpointManager,
+  ContextBuilder,
+  SkillContextBuilder,
+  toolOutputCache,
+};

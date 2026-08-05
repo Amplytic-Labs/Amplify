@@ -16,16 +16,22 @@
 export interface VerificationRunnerOptions {
   /** Files that were modified in this plan point */
   modifiedFiles: string[];
+
   /** Which verification checks to run */
   checks: Array<'lint' | 'type_check' | 'flow_verification' | 'build_check'>;
+
   /** Function to run shell commands in WebContainer */
   runShellCommand: (command: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+
   /** Function to read file content */
   readFile: (path: string) => Promise<string | null>;
+
   /** Function to list all files */
   listFiles: () => Promise<string[]>;
+
   /** Project ID (for storing results in vector DB) */
   projectId: string;
+
   /** Plan point ID (for storing results) */
   planPointId: string;
 }
@@ -39,11 +45,7 @@ export interface VerificationIssue {
   suggestion?: string;
 }
 
-export type VerificationCheckType =
-  | 'lint'
-  | 'type_check'
-  | 'flow_verification'
-  | 'build_check';
+export type VerificationCheckType = 'lint' | 'type_check' | 'flow_verification' | 'build_check';
 
 export interface VerificationResult {
   type: VerificationCheckType;

@@ -12,7 +12,10 @@
  * normalizeSkillId('Frontend-Design') // returns 'frontend-design'
  */
 export function normalizeSkillId(skillId: string): string {
-  if (!skillId) return '';
+  if (!skillId) {
+    return '';
+  }
+
   return skillId.trim().toLowerCase();
 }
 

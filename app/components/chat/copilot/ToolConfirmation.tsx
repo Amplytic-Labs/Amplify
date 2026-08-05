@@ -2,11 +2,7 @@ import { memo } from 'react';
 import { classNames } from '~/utils/classNames';
 import { TOOL_EXECUTION_APPROVAL } from '~/utils/constants';
 import { getMeta } from './ToolProgress';
-import {
-  getToolNameFromPart,
-  getToolCallId,
-  getToolInput,
-} from '~/lib/chat/tool-parts';
+import { getToolNameFromPart, getToolCallId, getToolInput } from '~/lib/chat/tool-parts';
 import styles from './chat-copilot.module.scss';
 
 interface ToolConfirmationProps {

@@ -20,7 +20,12 @@ import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 import { InlineToolRow } from './copilot/InlineToolRow';
 import { TextSegment } from './copilot/TextSegment';
-import { splitPartsIntoSegments, hasChainSegment, collectAllToolParts, getActiveChainLabel } from '~/lib/chat/chain-segments';
+import {
+  splitPartsIntoSegments,
+  hasChainSegment,
+  collectAllToolParts,
+  getActiveChainLabel,
+} from '~/lib/chat/chain-segments';
 
 interface AssistantMessageProps {
   content: string;

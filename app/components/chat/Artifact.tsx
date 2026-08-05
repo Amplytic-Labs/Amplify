@@ -23,14 +23,11 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
   const artifact = artifacts[artifactId];
 
   const actions = useStore(
-    computed(
-      artifact?.runner.actions ?? emptyActionsMap,
-      (actions) => {
-        return Object.values(actions).filter((action) => {
-          return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
-        });
-      },
-    ),
+    computed(artifact?.runner.actions ?? emptyActionsMap, (actions) => {
+      return Object.values(actions).filter((action) => {
+        return action.type !== 'supabase' && !(action.type === 'shell' && action.content?.includes('supabase'));
+      });
+    }),
   );
 
   /* ---- Build TraceTree items for files and commands ---- */
@@ -72,6 +69,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
     const isRunning = fileActions.some((a) => a.status === 'running' || a.status === 'pending');
 
     let fileText = '';
+
     if (fileActions.length > 0) {
       fileText = isRunning
         ? `Working on ${fileActions.length} file${fileActions.length > 1 ? 's' : ''}`
@@ -121,6 +119,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
 
 export function openArtifactInWorkbench(filePath: any) {
   workbenchStore.showWorkbench.set(true);
+
   if (workbenchStore.currentView.get() !== 'code') {
     workbenchStore.currentView.set('code');
   }

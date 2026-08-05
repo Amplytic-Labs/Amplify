@@ -122,9 +122,7 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
               'outline-none',
               'group',
             )}
-            onClick={() =>
-              window.open('https://github.com/imtia33/Open_Claude/issues/new', '_blank')
-            }
+            onClick={() => window.open('https://github.com/imtia33/Open_Claude/issues/new', '_blank')}
           >
             <div className="i-ph:bug w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Report Bug

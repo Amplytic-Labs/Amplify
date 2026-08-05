@@ -27,10 +27,13 @@ import type { DocxTheme } from '~/lib/markdown/theme';
 export interface DocxArtifactState {
   /** The raw markdown extracted from inside the `<docxartifact>` tag. */
   markdown: string;
+
   /** The message id that produced this document (for scoping/debugging). */
   messageId: string;
+
   /** Whether the docx block is still streaming in (unclosed tag). */
   streaming: boolean;
+
   /**
    * The inline theme parsed from the `theme={{...}}` attribute, or null if
    * the tag had no theme. This is a PARTIAL DocxTheme — only the fields the
@@ -63,6 +66,7 @@ export function setDocxArtifact(
     current &&
     current.messageId === messageId &&
     current.markdown === markdown &&
+
     // Deep-ish compare of the theme: stringify both (null → 'null').
     JSON.stringify(current.theme) === JSON.stringify(theme)
   ) {

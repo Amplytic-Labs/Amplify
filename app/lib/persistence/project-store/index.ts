@@ -550,8 +550,10 @@ export class ProjectStore {
       return;
     }
 
-    // Snapshot the chat IDs before removing the project — we need them
-    // for the async IndexedDB deletion below.
+    /*
+     * Snapshot the chat IDs before removing the project — we need them
+     * for the async IndexedDB deletion below.
+     */
     const chatIdsToDelete = [...project.chatIds];
 
     // Remove the chat → project mappings + categories.

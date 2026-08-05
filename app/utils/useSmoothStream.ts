@@ -44,6 +44,7 @@ export function useSmoothStream(text: string, isStreaming: boolean = false, spee
     if (prevTextRef.current !== text && !isStreaming && displayedText !== text) {
       setDisplayedText(text);
     }
+
     prevTextRef.current = text;
   }, [text, isStreaming, displayedText]);
 

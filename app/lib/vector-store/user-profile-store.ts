@@ -44,6 +44,7 @@ export class UserProfileVectorStore {
     if (!UserProfileVectorStore._instance) {
       UserProfileVectorStore._instance = new UserProfileVectorStore();
     }
+
     return UserProfileVectorStore._instance;
   }
 
@@ -53,14 +54,18 @@ export class UserProfileVectorStore {
    * MUST be called before any other operation.
    */
   async initialize(): Promise<void> {
-    if (this._initialized) return;
+    if (this._initialized) {
+      return;
+    }
 
     try {
       const savedData = await loadOramaFromIDB(DB_KEY);
 
       if (savedData) {
-        // Use Orama's native load() API — JSON.parse produces a plain object
-        // that lacks Orama's internal methods (search, insert, etc.)
+        /*
+         * Use Orama's native load() API — JSON.parse produces a plain object
+         * that lacks Orama's internal methods (search, insert, etc.)
+         */
         this.db = await create({
           schema: {
             id: 'string',
@@ -74,6 +79,7 @@ export class UserProfileVectorStore {
           },
           language: 'english',
         });
+
         const rawData = JSON.parse(savedData);
         await load(this.db, rawData);
         console.log(`[UserProfileVectorStore] Loaded from IndexedDB`);
@@ -116,12 +122,18 @@ export class UserProfileVectorStore {
    * Performs deduplication: if an entry with similar content exists,
    * updates its timestamp and access count instead of creating a duplicate.
    */
-  async add(entry: Omit<UserProfileEntry, 'id' | 'createdAt' | 'updatedAt' | 'accessCount'>): Promise<UserProfileEntry> {
+  async add(
+    entry: Omit<UserProfileEntry, 'id' | 'createdAt' | 'updatedAt' | 'accessCount'>,
+  ): Promise<UserProfileEntry> {
     await this.ensureInit();
-    if (!this.db) throw new Error('UserProfileVectorStore not initialized');
+
+    if (!this.db) {
+      throw new Error('UserProfileVectorStore not initialized');
+    }
 
     // Deduplication check
     const existing = await this.search(entry.content, { limit: 1, threshold: 0.8 });
+
     if (existing.length > 0 && existing[0].score > 0.8) {
       // Update existing entry
       const existingEntry = existing[0].entry;
@@ -133,6 +145,7 @@ export class UserProfileVectorStore {
         accessCount: existingEntry.accessCount + 1,
       };
       await this.update(updated);
+
       return updated;
     }
 
@@ -156,6 +169,7 @@ export class UserProfileVectorStore {
     });
 
     await this.persist();
+
     return newEntry;
   }
 
@@ -164,7 +178,10 @@ export class UserProfileVectorStore {
    */
   async update(entry: UserProfileEntry): Promise<void> {
     await this.ensureInit();
-    if (!this.db) throw new Error('UserProfileVectorStore not initialized');
+
+    if (!this.db) {
+      throw new Error('UserProfileVectorStore not initialized');
+    }
 
     // Remove old and re-insert (Orama doesn't have a native update)
     try {
@@ -193,7 +210,10 @@ export class UserProfileVectorStore {
    */
   async search(query: string, options?: VectorSearchOptions): Promise<VectorSearchResult<UserProfileEntry>[]> {
     await this.ensureInit();
-    if (!this.db) return [];
+
+    if (!this.db) {
+      return [];
+    }
 
     const limit = options?.limit ?? 5;
     const category = options?.category;
@@ -234,7 +254,10 @@ export class UserProfileVectorStore {
    */
   async getAll(category?: UserProfileEntryCategory): Promise<UserProfileEntry[]> {
     await this.ensureInit();
-    if (!this.db) return [];
+
+    if (!this.db) {
+      return [];
+    }
 
     if (!category) {
       const result = await search(this.db, { term: '', limit: 1000, properties: ['content'] });
@@ -247,6 +270,7 @@ export class UserProfileVectorStore {
       properties: ['content'],
       where: { category: { eq: category } },
     });
+
     return (Array.isArray(result.hits) ? result.hits : []).map((h: any) => h.document as unknown as UserProfileEntry);
   }
 
@@ -255,11 +279,15 @@ export class UserProfileVectorStore {
    */
   async delete(id: string): Promise<boolean> {
     await this.ensureInit();
-    if (!this.db) return false;
+
+    if (!this.db) {
+      return false;
+    }
 
     try {
       await remove(this.db, id);
       await this.persist();
+
       return true;
     } catch {
       return false;
@@ -288,7 +316,10 @@ export class UserProfileVectorStore {
    */
   async formatContextForPrompt(query: string, maxTokens: number = 500): Promise<string> {
     const results = await this.search(query, { limit: 10 });
-    if (results.length === 0) return '';
+
+    if (results.length === 0) {
+      return '';
+    }
 
     let output = '';
     let estimatedTokens = 0;
@@ -298,7 +329,9 @@ export class UserProfileVectorStore {
       const line = `- [${entry.category}] ${entry.content}`;
       const lineTokens = Math.ceil(line.length / charsPerToken);
 
-      if (estimatedTokens + lineTokens > maxTokens) break;
+      if (estimatedTokens + lineTokens > maxTokens) {
+        break;
+      }
 
       output += line + '\n';
       estimatedTokens += lineTokens;
@@ -311,7 +344,10 @@ export class UserProfileVectorStore {
    * Persists the current database state to IndexedDB.
    */
   private async persist(): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      return;
+    }
+
     try {
       // Use Orama's native save() API to get a serializable snapshot
       const rawData = await save(this.db);
@@ -326,9 +362,13 @@ export class UserProfileVectorStore {
    */
   async count(): Promise<number> {
     await this.ensureInit();
-    if (!this.db) return 0;
+
+    if (!this.db) {
+      return 0;
+    }
 
     const result = await search(this.db, { term: '', limit: 10000, properties: ['content'] });
+
     return Array.isArray(result.hits) ? result.hits.length : 0;
   }
 }

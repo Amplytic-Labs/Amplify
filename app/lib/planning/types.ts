@@ -15,29 +15,35 @@
  * 6. AI returns to main chat with summary of what was done
  */
 
-// ============================================================
-// Plan Point Status
-// ============================================================
+/*
+ * ============================================================
+ * Plan Point Status
+ * ============================================================
+ */
 
 export type PlanPointStatus =
-  | 'pending'           // Not yet started
-  | 'preparing'         // Fetching tool outputs + invoking skills
-  | 'in_progress'       // Worker is executing
-  | 'verifying'         // Running lint/type-check/flow verification
-  | 'waiting_for_tool'  // Blocked waiting for a tool result
-  | 'waiting_for_user'  // Blocked waiting for user input
-  | 'completed'         // Successfully completed
-  | 'failed'            // Failed with error
-  | 'skipped'           // Skipped (dependency failed or not needed)
-  | 'cancelled';        // Cancelled by user
+  | 'pending' // Not yet started
+  | 'preparing' // Fetching tool outputs + invoking skills
+  | 'in_progress' // Worker is executing
+  | 'verifying' // Running lint/type-check/flow verification
+  | 'waiting_for_tool' // Blocked waiting for a tool result
+  | 'waiting_for_user' // Blocked waiting for user input
+  | 'completed' // Successfully completed
+  | 'failed' // Failed with error
+  | 'skipped' // Skipped (dependency failed or not needed)
+  | 'cancelled'; // Cancelled by user
 
-// ============================================================
-// Plan Point
-// ============================================================
+/*
+ * ============================================================
+ * Plan Point
+ * ============================================================
+ */
 
-// ============================================================
-// Task Contract (Immutable — created by the Planner AI)
-// ============================================================
+/*
+ * ============================================================
+ * Task Contract (Immutable — created by the Planner AI)
+ * ============================================================
+ */
 
 /**
  * A reference to a tool output that should be fetched and injected
@@ -154,9 +160,11 @@ export interface TaskContract {
   constraints?: TaskConstraints;
 }
 
-// ============================================================
-// Plan Point (extends Task Contract with execution metadata)
-// ============================================================
+/*
+ * ============================================================
+ * Plan Point (extends Task Contract with execution metadata)
+ * ============================================================
+ */
 
 export interface PlanPoint {
   /**
@@ -235,9 +243,11 @@ export interface PlanPoint {
    */
   verificationResults?: VerificationResult[];
 
-  // ───────────────────────────────────────────────────────────
-  // Task Contract fields (immutable, set by the Planner AI)
-  // ───────────────────────────────────────────────────────────
+  /*
+   * ───────────────────────────────────────────────────────────
+   * Task Contract fields (immutable, set by the Planner AI)
+   * ───────────────────────────────────────────────────────────
+   */
 
   /**
    * The high-level goal for this task (one or two sentences).
@@ -284,15 +294,17 @@ export interface PlanPoint {
   checkpoints?: Checkpoint[];
 }
 
-// ============================================================
-// Verification Types
-// ============================================================
+/*
+ * ============================================================
+ * Verification Types
+ * ============================================================
+ */
 
 export type VerificationCheckType =
-  | 'lint'              // ESLint / style checking
-  | 'type_check'        // TypeScript type checking
+  | 'lint' // ESLint / style checking
+  | 'type_check' // TypeScript type checking
   | 'flow_verification' // "Every button does something" + "Every screen is connected"
-  | 'build_check';      // Does the project build successfully?
+  | 'build_check'; // Does the project build successfully?
 
 export interface VerificationResult {
   /**
@@ -353,9 +365,11 @@ export interface VerificationIssue {
   suggestion?: string;
 }
 
-// ============================================================
-// Task Execution State (Mutable — owned by the runtime)
-// ============================================================
+/*
+ * ============================================================
+ * Task Execution State (Mutable — owned by the runtime)
+ * ============================================================
+ */
 
 /**
  * The mutable execution state for a single task. The AI NEVER creates
@@ -440,9 +454,11 @@ export type ExecutionStatus =
   | 'failed'
   | 'cancelled';
 
-// ============================================================
-// Checkpoint
-// ============================================================
+/*
+ * ============================================================
+ * Checkpoint
+ * ============================================================
+ */
 
 /**
  * A structured snapshot of a task's progress at a point in time.
@@ -502,9 +518,11 @@ export interface Checkpoint {
   messageIndex: number;
 }
 
-// ============================================================
-// Skill Context (Structured output from invoked skills)
-// ============================================================
+/*
+ * ============================================================
+ * Skill Context (Structured output from invoked skills)
+ * ============================================================
+ */
 
 /**
  * Every skill returns the SAME structure, so the worker always knows
@@ -568,9 +586,11 @@ export interface SkillContext {
   suggestedTools: string[];
 }
 
-// ============================================================
-// Sub-Chat
-// ============================================================
+/*
+ * ============================================================
+ * Sub-Chat
+ * ============================================================
+ */
 
 export interface SubChat {
   /**
@@ -616,10 +636,12 @@ export interface SubChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+
   /**
    * For assistant messages, the annotations (tool calls, etc.)
    */
   annotations?: any[];
+
   /**
    * For assistant messages with tool calls
    */
@@ -634,18 +656,20 @@ export interface ToolInvocationRecord {
   success: boolean;
 }
 
-// ============================================================
-// Plan
-// ============================================================
+/*
+ * ============================================================
+ * Plan
+ * ============================================================
+ */
 
 export type PlanStatus =
-  | 'draft'       // AI is still generating the plan
-  | 'approved'    // User approved (or auto-approved), execution can begin
-  | 'executing'   // Currently executing plan points
-  | 'paused'      // Execution paused (user intervention, error, etc.)
-  | 'completed'   // All points completed successfully
-  | 'failed'      // One or more points failed
-  | 'cancelled';  // User cancelled the plan
+  | 'draft' // AI is still generating the plan
+  | 'approved' // User approved (or auto-approved), execution can begin
+  | 'executing' // Currently executing plan points
+  | 'paused' // Execution paused (user intervention, error, etc.)
+  | 'completed' // All points completed successfully
+  | 'failed' // One or more points failed
+  | 'cancelled'; // User cancelled the plan
 
 export interface Plan {
   /**
@@ -698,16 +722,20 @@ export interface Plan {
   completedAt?: string;
 }
 
-// ============================================================
-// Plan Store (IndexedDB Persistence)
-// ============================================================
+/*
+ * ============================================================
+ * Plan Store (IndexedDB Persistence)
+ * ============================================================
+ */
 
 export interface PlanStoreData {
   plans: Plan[];
+
   /**
    * Maps chatId -> planId for quick lookup.
    */
   chatToPlan: Record<string, string>;
+
   /**
    * Maps projectId -> planId[] for project history.
    */

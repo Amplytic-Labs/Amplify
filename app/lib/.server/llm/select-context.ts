@@ -102,6 +102,7 @@ export async function selectContext(props: {
         currrentFiles.push(relativePath);
       }
     });
+
     /*
      * List only the PATHS of context files — NOT their full contents.
      *

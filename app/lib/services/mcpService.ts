@@ -1,9 +1,4 @@
-import {
-  type UIMessage,
-  type UIMessageStreamWriter,
-  convertToModelMessages,
-  isToolUIPart,
-} from 'ai';
+import { type UIMessage, type UIMessageStreamWriter, convertToModelMessages, isToolUIPart } from 'ai';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -171,7 +166,6 @@ export class MCPService {
        * ─────────────────────────────────────────────────────────────
        */
       ...buildNativeTools(),
-
 
       search_user_context: {
         description:
@@ -731,6 +725,7 @@ export class MCPService {
        * flat parts still pass through.
        */
       const isToolInvocation = isToolUIPart(part as any) || !!(part as any).toolCallId;
+
       if (!isToolInvocation) {
         processedParts.push(part);
         continue;
@@ -759,13 +754,9 @@ export class MCPService {
        * The `state !== 'result'` check below accepts both the v7 result
        * states AND the legacy v4 'result' string (for old persisted chats).
        */
-      const state: string =
-        partAny.state || toolInvocation.state || '';
+      const state: string = partAny.state || toolInvocation.state || '';
       const isResultState =
-        state === 'output-available' ||
-        state === 'output-error' ||
-        state === 'output-denied' ||
-        state === 'result';
+        state === 'output-available' || state === 'output-error' || state === 'output-denied' || state === 'result';
 
       // return part as-is if tool does not exist, or if it's not a tool call result
       if (!this.isValidToolName(toolName) || !isResultState) {

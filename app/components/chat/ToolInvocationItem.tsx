@@ -1,13 +1,7 @@
 import { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import {
-  getToolNameFromPart,
-  getToolState,
-  getToolInput,
-  getToolOutput,
-  ToolState,
-} from '~/lib/chat/tool-parts';
+import { getToolNameFromPart, getToolState, getToolInput, getToolOutput, ToolState } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal } from '~/lib/tools/nativeTools';
 
 /**
@@ -162,10 +156,13 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
   const toggleDetails = () => setShowDetails(!showDetails);
 
   const isResult = ToolState.isResult(state);
-  // SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
-  // a tool result is an error IFF its string starts with `Error:`. Everything
-  // else (no results, empty, not available, hint messages) is a success.
-  // New tools that follow the convention get correct UI without edits here.
+
+  /*
+   * SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
+   * a tool result is an error IFF its string starts with `Error:`. Everything
+   * else (no results, empty, not available, hint messages) is a success.
+   * New tools that follow the convention get correct UI without edits here.
+   */
   const isError = typeof result === 'string' && result.startsWith('Error:');
 
   return (

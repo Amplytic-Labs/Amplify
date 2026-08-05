@@ -93,6 +93,7 @@ interface BaseChatProps {
   setChatMode?: (mode: 'discuss' | 'build') => void;
   isProjectChat?: boolean;
   append?: (message: UIMessage) => void;
+
   /** Regenerate the last assistant answer (v7: also known as onRegenerate). */
   reload?: () => void;
   designScheme?: DesignScheme;
@@ -187,8 +188,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     }, [expoUrl]);
 
-    // SpeechRecognition transcript is used via the `transcript` state variable
-    // No debug logging needed in production
+    /*
+     * SpeechRecognition transcript is used via the `transcript` state variable
+     * No debug logging needed in production
+     */
 
     useEffect(() => {
       onStreamingChange?.(isStreaming);
@@ -314,10 +317,14 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const handleFileUpload = () => {
       const input = document.createElement('input');
       input.type = 'file';
-      // Accept images AND common code/text/config files so the button matches
-      // its "Attach images or files" label. Non-image files are still attached
-      // to the chat (uploadedFiles); only images populate the preview list.
-      input.accept = 'image/*,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.xml,.yml,.yaml,.csv,.py,.go,.rs,.java,.c,.cpp,.sh,.env';
+
+      /*
+       * Accept images AND common code/text/config files so the button matches
+       * its "Attach images or files" label. Non-image files are still attached
+       * to the chat (uploadedFiles); only images populate the preview list.
+       */
+      input.accept =
+        'image/*,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.xml,.yml,.yaml,.csv,.py,.go,.rs,.java,.c,.cpp,.sh,.env';
 
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];

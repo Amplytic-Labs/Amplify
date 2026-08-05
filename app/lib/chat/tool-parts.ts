@@ -65,8 +65,10 @@ export function isToolPart(part: any): boolean {
     return true;
   }
 
-  // Some semi-legacy v7 candidates also carry a `toolCallId` on the flat
-  // shape but didn't get the `tool-` prefix; treat them as tool parts too.
+  /*
+   * Some semi-legacy v7 candidates also carry a `toolCallId` on the flat
+   * shape but didn't get the `tool-` prefix; treat them as tool parts too.
+   */
   if (typeof part.toolCallId === 'string' && part.type && typeof part.type === 'string') {
     return true;
   }
@@ -205,13 +207,17 @@ export function getToolOutput(part: any): any {
 export const ToolState = {
   /** v4 `'call'` — args fully received, awaiting execution. */
   isCall: (state: string) => state === 'input-available' || state === 'call',
+
   /** v4 `'partial'` — args still streaming in. */
   isPartial: (state: string) => state === 'input-streaming' || state === 'partial' || state === 'partial-call',
+
   /** v4 `'result'` — tool execution finished (success OR error). */
   isResult: (state: string) =>
     state === 'output-available' || state === 'output-error' || state === 'output-denied' || state === 'result',
+
   /** Strict success — output available, no error. */
   isSuccess: (state: string) => state === 'output-available' || state === 'result',
+
   /** Strict error — output-error / output-denied. */
   isError: (state: string) => state === 'output-error' || state === 'output-denied',
 } as const;

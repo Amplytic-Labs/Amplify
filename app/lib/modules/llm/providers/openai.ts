@@ -49,7 +49,14 @@ export default class OpenAIProvider extends BaseProvider {
     },
 
     // o1-mini: 128k context, 65k output limit (reasoning model)
-    { name: 'o1-mini', label: 'o1-mini', provider: 'OpenAI', maxTokenAllowed: 128000, maxCompletionTokens: 65000, capabilities: { thinking: 'effort', reasoningEffort: true } },
+    {
+      name: 'o1-mini',
+      label: 'o1-mini',
+      provider: 'OpenAI',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 65000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
+    },
   ];
 
   async getDynamicModels(

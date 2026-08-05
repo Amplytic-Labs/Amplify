@@ -69,6 +69,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
         if (message.role === 'assistant') {
           // Extract text content from UIMessage parts (v7) or fallback to content (legacy)
           let content = '';
+
           if (Array.isArray(message.parts)) {
             content = message.parts
               .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
@@ -77,6 +78,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
           } else if (typeof (message as any).content === 'string') {
             content = (message as any).content;
           }
+
           const providerMatch = content.match(/provider:\s*([\w-]+)/i);
           const provider = providerMatch ? providerMatch[1] : 'unknown';
           apiUsage[provider] = (apiUsage[provider] || 0) + 1;

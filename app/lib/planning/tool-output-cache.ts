@@ -18,9 +18,11 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('ToolOutputCache');
 
-// ============================================================
-// Types
-// ============================================================
+/*
+ * ============================================================
+ * Types
+ * ============================================================
+ */
 
 export interface CachedToolOutput {
   /**
@@ -58,15 +60,14 @@ export interface ToolExecutor {
   /**
    * Executes a tool and returns its output as a string.
    */
-  execute(
-    tool: string,
-    args: Record<string, unknown>,
-  ): Promise<string>;
+  execute(tool: string, args: Record<string, unknown>): Promise<string>;
 }
 
-// ============================================================
-// ToolOutputCache (in-memory + persisted to IndexedDB)
-// ============================================================
+/*
+ * ============================================================
+ * ToolOutputCache (in-memory + persisted to IndexedDB)
+ * ============================================================
+ */
 
 const CACHE_DB_NAME = 'amplify_tool_output_cache';
 const CACHE_DB_VERSION = 1;
@@ -90,6 +91,7 @@ class ToolOutputCache {
 
         request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
           const db = (event.target as IDBOpenDBRequest).result;
+
           if (!db.objectStoreNames.contains(CACHE_STORE_NAME)) {
             db.createObjectStore(CACHE_STORE_NAME, { keyPath: 'id' });
           }
@@ -112,11 +114,17 @@ class ToolOutputCache {
    * Loads the persisted cache into memory on first use.
    */
   private async ensureInit(): Promise<void> {
-    if (this._initialized) return;
+    if (this._initialized) {
+      return;
+    }
+
     this._initialized = true;
 
     const db = await this.openDB();
-    if (!db) return;
+
+    if (!db) {
+      return;
+    }
 
     try {
       await new Promise<void>((resolve) => {
@@ -126,6 +134,7 @@ class ToolOutputCache {
 
         request.onsuccess = () => {
           const results = (request.result || []) as CachedToolOutput[];
+
           for (const item of results) {
             this._memoryCache.set(item.id, item);
           }
@@ -148,17 +157,22 @@ class ToolOutputCache {
    */
   private async persist(entry: CachedToolOutput): Promise<void> {
     const db = await this.openDB();
-    if (!db) return;
+
+    if (!db) {
+      return;
+    }
 
     try {
       await new Promise<void>((resolve) => {
         const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
         const store = tx.objectStore(CACHE_STORE_NAME);
         store.put(entry);
+
         tx.oncomplete = () => {
           db.close();
           resolve();
         };
+
         tx.onerror = () => {
           db.close();
           resolve();
@@ -173,12 +187,7 @@ class ToolOutputCache {
    * Adds a tool output to the cache manually (e.g. from the main
    * chat's tool results, so sub-chats can reuse them).
    */
-  async put(
-    id: string,
-    tool: string,
-    args: Record<string, unknown>,
-    output: string,
-  ): Promise<void> {
+  async put(id: string, tool: string, args: Record<string, unknown>, output: string): Promise<void> {
     await this.ensureInit();
 
     const entry: CachedToolOutput = {
@@ -259,10 +268,7 @@ class ToolOutputCache {
    * Formats resolved tool outputs into a labeled text block for
    * injection into the worker's system prompt.
    */
-  formatForPrompt(
-    references: ToolOutputReference[],
-    resolved: Map<string, CachedToolOutput>,
-  ): string {
+  formatForPrompt(references: ToolOutputReference[], resolved: Map<string, CachedToolOutput>): string {
     const lines: string[] = ['===== TOOL RESULTS ====='];
 
     for (const ref of references) {
@@ -275,12 +281,10 @@ class ToolOutputCache {
 
       const label = ref.label || ref.id;
       lines.push(`[${ref.tool}] ${label} (${output.source}):`);
+
       // Truncate very long outputs to keep context lean
       const maxLen = 4000;
-      const text =
-        output.output.length > maxLen
-          ? output.output.slice(0, maxLen) + '\n... (truncated)'
-          : output.output;
+      const text = output.output.length > maxLen ? output.output.slice(0, maxLen) + '\n... (truncated)' : output.output;
       lines.push(text);
       lines.push('');
     }
@@ -295,17 +299,22 @@ class ToolOutputCache {
     this._memoryCache.clear();
 
     const db = await this.openDB();
-    if (!db) return;
+
+    if (!db) {
+      return;
+    }
 
     try {
       await new Promise<void>((resolve) => {
         const tx = db.transaction(CACHE_STORE_NAME, 'readwrite');
         const store = tx.objectStore(CACHE_STORE_NAME);
         store.clear();
+
         tx.oncomplete = () => {
           db.close();
           resolve();
         };
+
         tx.onerror = () => {
           db.close();
           resolve();

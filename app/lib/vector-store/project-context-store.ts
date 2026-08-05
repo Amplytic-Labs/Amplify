@@ -44,6 +44,7 @@ export class ProjectContextVectorStore {
     if (!ProjectContextVectorStore._instance) {
       ProjectContextVectorStore._instance = new ProjectContextVectorStore();
     }
+
     return ProjectContextVectorStore._instance;
   }
 
@@ -59,9 +60,12 @@ export class ProjectContextVectorStore {
 
     try {
       const savedData = await loadOramaFromIDB(dbKey);
+
       if (savedData) {
-        // Use Orama's native load() API — JSON.parse produces a plain object
-        // that lacks Orama's internal methods (search, insert, etc.)
+        /*
+         * Use Orama's native load() API — JSON.parse produces a plain object
+         * that lacks Orama's internal methods (search, insert, etc.)
+         */
         const db = await create({
           schema: {
             id: 'string',
@@ -81,6 +85,7 @@ export class ProjectContextVectorStore {
         await load(db, rawData);
         this.databases.set(projectId, db);
         console.log(`[ProjectContextStore] Loaded project "${projectId}" from IndexedDB`);
+
         return db;
       }
     } catch (error) {
@@ -106,6 +111,7 @@ export class ProjectContextVectorStore {
 
     this.databases.set(projectId, db);
     console.log(`[ProjectContextStore] Created new database for project "${projectId}"`);
+
     return db;
   }
 
@@ -139,6 +145,7 @@ export class ProjectContextVectorStore {
     });
 
     await this.persistProject(projectId);
+
     return newEntry;
   }
 
@@ -181,15 +188,19 @@ export class ProjectContextVectorStore {
 
     // Build where clause
     const conditions: any = {};
+
     if (options?.type) {
       conditions.type = { eq: options.type };
     }
+
     if (options?.category) {
       conditions.type = { eq: options.category }; // category maps to type
     }
+
     if (options?.tags && options.tags.length > 0) {
       conditions.tags = { containsAny: options.tags };
     }
+
     if (Object.keys(conditions).length > 0) {
       searchParams.where = conditions;
     }
@@ -225,6 +236,7 @@ export class ProjectContextVectorStore {
       limit: 20,
       threshold: 0,
     });
+
     return [...errors.map((r) => r.entry), ...fixes.map((r) => r.entry)];
   }
 
@@ -280,6 +292,7 @@ export class ProjectContextVectorStore {
       limit: 50,
       threshold: 0,
     });
+
     return [...flows.map((r) => r.entry), ...connections.map((r) => r.entry)];
   }
 
@@ -291,21 +304,24 @@ export class ProjectContextVectorStore {
    * @param maxTokens Approximate token budget (default: 1000)
    * @returns Formatted string for prompt injection
    */
-  async formatContextForPrompt(
-    projectId: string,
-    query: string,
-    maxTokens: number = 1000,
-  ): Promise<string> {
+  async formatContextForPrompt(projectId: string, query: string, maxTokens: number = 1000): Promise<string> {
     // Search across multiple types to get a diverse context
     const allResults = await this.search(projectId, query, { limit: 15 });
 
-    if (allResults.length === 0) return '';
+    if (allResults.length === 0) {
+      return '';
+    }
 
     // Group by type for organized output
     const grouped = new Map<string, VectorSearchResult<ProjectContextEntry>[]>();
+
     for (const result of allResults) {
       const type = result.entry.type;
-      if (!grouped.has(type)) grouped.set(type, []);
+
+      if (!grouped.has(type)) {
+        grouped.set(type, []);
+      }
+
       grouped.get(type)!.push(result);
     }
 
@@ -329,7 +345,10 @@ export class ProjectContextVectorStore {
 
     for (const type of typeOrder) {
       const entries = grouped.get(type);
-      if (!entries) continue;
+
+      if (!entries) {
+        continue;
+      }
 
       for (const { entry } of entries) {
         const prefix = `[${type.toUpperCase()}]`;
@@ -337,13 +356,17 @@ export class ProjectContextVectorStore {
         const line = `${prefix} ${entry.content}${filesStr}`;
         const lineTokens = Math.ceil(line.length / charsPerToken);
 
-        if (estimatedTokens + lineTokens > maxTokens) break;
+        if (estimatedTokens + lineTokens > maxTokens) {
+          break;
+        }
 
         output += line + '\n';
         estimatedTokens += lineTokens;
       }
 
-      if (estimatedTokens > maxTokens) break;
+      if (estimatedTokens > maxTokens) {
+        break;
+      }
     }
 
     return output.trim();
@@ -354,9 +377,11 @@ export class ProjectContextVectorStore {
    */
   async delete(projectId: string, entryId: string): Promise<boolean> {
     const db = await this.ensureProject(projectId);
+
     try {
       await remove(db, entryId);
       await this.persistProject(projectId);
+
       return true;
     } catch {
       return false;
@@ -378,6 +403,7 @@ export class ProjectContextVectorStore {
   async count(projectId: string): Promise<number> {
     const db = await this.ensureProject(projectId);
     const result = await search(db, { term: '', limit: 10000, properties: ['content'] });
+
     return Array.isArray(result.hits) ? result.hits.length : 0;
   }
 
@@ -393,9 +419,13 @@ export class ProjectContextVectorStore {
    */
   private async persistProject(projectId: string): Promise<void> {
     const db = this.databases.get(projectId);
-    if (!db) return;
+
+    if (!db) {
+      return;
+    }
 
     const dbKey = `vector_store_project_${projectId}`;
+
     try {
       // Use Orama's native save() API to get a serializable snapshot
       const rawData = await save(db);

@@ -5,6 +5,7 @@ export interface ITerminal {
   reset: () => void;
   clear?: () => void;
   write: (data: string) => void;
+
   /**
    * Registers a data listener. Returns a disposable whose `dispose()` removes
    * the listener. Capturing and disposing this is critical to avoid listener

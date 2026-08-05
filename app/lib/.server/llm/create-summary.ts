@@ -12,21 +12,29 @@ const logger = createScopedLogger('create-summary');
  * In v7, UIMessage uses .parts array instead of .content property.
  */
 function getMessageContent(msg: UIMessage | undefined): string {
-  if (!msg) return '';
+  if (!msg) {
+    return '';
+  }
+
   // Handle legacy content property for backwards compat
-  if (typeof (msg as any).content === 'string') return (msg as any).content;
+  if (typeof (msg as any).content === 'string') {
+    return (msg as any).content;
+  }
+
   if (Array.isArray(msg.parts)) {
     return msg.parts
       .filter((p: any) => p.type === 'text')
       .map((p: any) => p.text)
       .join('');
   }
+
   // Handle array-style content (legacy format)
   const legacyContent = (msg as any).content;
+
   if (Array.isArray(legacyContent)) {
-    return legacyContent
-      .find((item: any) => item.type === 'text')?.text || '';
+    return legacyContent.find((item: any) => item.type === 'text')?.text || '';
   }
+
   return '';
 }
 

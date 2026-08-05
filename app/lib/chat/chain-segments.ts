@@ -138,10 +138,7 @@ export type ChainSegment =
  *   - `break`: a step-start (silent break — does NOT count as a text
  *              neighbor for the sandwich rule).
  */
-type IntermediateSegment =
-  | { kind: 'run'; parts: any[] }
-  | { kind: 'text'; text: string }
-  | { kind: 'break' };
+type IntermediateSegment = { kind: 'run'; parts: any[] } | { kind: 'text'; text: string } | { kind: 'break' };
 
 /**
  * Split a `UIMessage.parts` array into ordered segments.
@@ -294,14 +291,18 @@ function findNearestTextBefore(intermediate: IntermediateSegment[], runIdx: numb
       return i;
     }
 
-    // break → keep scanning past it (it doesn't count as text but also
-    // doesn't block us from finding an earlier text).
+    /*
+     * break → keep scanning past it (it doesn't count as text but also
+     * doesn't block us from finding an earlier text).
+     */
     if (seg.kind === 'break') {
       continue;
     }
 
-    // run → we hit another run before finding text. Not sandwiched on
-    // this side.
+    /*
+     * run → we hit another run before finding text. Not sandwiched on
+     * this side.
+     */
     return -1;
   }
 

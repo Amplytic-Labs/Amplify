@@ -37,7 +37,7 @@ const Background = ({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        backgroundColor: transparent ? 'transparent' : (mode === 'light' ? '#f9fafb' : 'transparent'), // fallback
+        backgroundColor: transparent ? 'transparent' : mode === 'light' ? '#f9fafb' : 'transparent', // fallback
       }}
     >
       {!transparent && (
@@ -51,7 +51,11 @@ const Background = ({
           }}
         />
       )}
-      <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1, height: '100%' }}>{children}</div>
+      <div
+        style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', flex: 1, height: '100%' }}
+      >
+        {children}
+      </div>
     </div>
   );
 };

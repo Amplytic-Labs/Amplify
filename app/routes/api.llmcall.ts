@@ -121,6 +121,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         messages: [
           {
             role: 'user',
+
             // AI SDK v7: use parts instead of content
             parts: [{ type: 'text' as const, text: `${message}` }],
           },
@@ -133,6 +134,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
           .getSkills()
           .map((s) => `<skill name="${s.id}" description="${s.description}"/>`)
           .join('\n'),
+
         /*
          * Pass modelConfig so streamText can translate the unified
          * thinking/reasoning config into per-provider providerOptions
@@ -247,8 +249,15 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
        * per-provider options for ALL providers (Anthropic, Google, OpenAI,
        * xAI, Mistral, DeepSeek, etc.).
        */
-      const thinkingOpts = buildThinkingProviderOptions(provider.name, modelDetails.name, modelConfig, modelDetails.capabilities);
-      const hasThinking = supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities) && Object.keys(thinkingOpts).length > 0;
+      const thinkingOpts = buildThinkingProviderOptions(
+        provider.name,
+        modelDetails.name,
+        modelConfig,
+        modelDetails.capabilities,
+      );
+      const hasThinking =
+        supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities) &&
+        Object.keys(thinkingOpts).length > 0;
 
       if (hasThinking) {
         logger.info(

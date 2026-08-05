@@ -465,9 +465,12 @@ export class WorkbenchStore {
 
     await this.#filesStore.saveFile(filePath, document.value);
 
-    // If a project is loaded, persist this file change to the project's global FileMap.
-    // This ensures that "New Chat" in the same project starts with the latest files.
+    /*
+     * If a project is loaded, persist this file change to the project's global FileMap.
+     * This ensures that "New Chat" in the same project starts with the latest files.
+     */
     const projectId = this.loadedProjectId.get();
+
     if (projectId && projectId !== '<none>' && db) {
       const files = this.files.get();
       await saveProjectFiles(db, projectId, files);

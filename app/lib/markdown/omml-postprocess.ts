@@ -34,11 +34,13 @@
  * This module fixes all five issues with a tree-based transformation
  * (using `xml-js` for robust parsing).
  */
-import { xml2js, js2xml } from "xml-js";
+import { xml2js, js2xml } from 'xml-js';
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Public API
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * Apply all OMML fixes to a string of OMML markup.
@@ -49,19 +51,27 @@ import { xml2js, js2xml } from "xml-js";
  *          in Microsoft Word.
  */
 export function postProcessOmml(omml: string): string {
-  if (!omml) return omml;
+  if (!omml) {
+    return omml;
+  }
+
   try {
-    // `mathml2omml` doesn't escape `<`, `>` inside `<m:t>` text content
-    // (e.g. `x<0` from `\begin{cases}…x<0…\end{cases}`), which makes
-    // the OMML invalid XML and causes `xml2js` to throw. Fix the
-    // escaping BEFORE parsing.
+    /*
+     * `mathml2omml` doesn't escape `<`, `>` inside `<m:t>` text content
+     * (e.g. `x<0` from `\begin{cases}…x<0…\end{cases}`), which makes
+     * the OMML invalid XML and causes `xml2js` to throw. Fix the
+     * escaping BEFORE parsing.
+     */
     const fixed = fixTextEscaping(omml);
     const tree = xml2js(fixed, { compact: false }) as unknown as XNode;
     transformNode(tree);
+
     return js2xml(tree);
   } catch {
-    // If anything goes wrong, return the input unchanged — better to
-    // render an imperfect equation than no equation at all.
+    /*
+     * If anything goes wrong, return the input unchanged — better to
+     * render an imperfect equation than no equation at all.
+     */
     return omml;
   }
 }
@@ -75,27 +85,28 @@ export function postProcessOmml(omml: string): string {
  * already valid XML and must not be touched.
  */
 function fixTextEscaping(omml: string): string {
-  return omml.replace(
-    /(<m:t\b[^>]*>)([\s\S]*?)(<\/m:t>)/g,
-    (_m, open: string, text: string, close: string) => {
-      // Don't double-escape: if the text already contains &lt; or &gt;,
-      // leave them. Only escape raw < and >.
-      const fixed = text
-        .replace(/&/g, "&amp;")          // & must be first
-        .replace(/&amp;(amp|lt|gt|quot|apos);/g, "&$1;")  // un-double-escape
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return `${open}${fixed}${close}`;
-    }
-  );
+  return omml.replace(/(<m:t\b[^>]*>)([\s\S]*?)(<\/m:t>)/g, (_m, open: string, text: string, close: string) => {
+    /*
+     * Don't double-escape: if the text already contains &lt; or &gt;,
+     * leave them. Only escape raw < and >.
+     */
+    const fixed = text
+      .replace(/&/g, '&amp;') // & must be first
+      .replace(/&amp;(amp|lt|gt|quot|apos);/g, '&$1;') // un-double-escape
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `${open}${fixed}${close}`;
+  });
 }
 
-// ---------------------------------------------------------------------------
-// xml-js type shims (the lib's typings are loose; tighten them here)
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * xml-js type shims (the lib's typings are loose; tighten them here)
+ * ---------------------------------------------------------------------------
+ */
 
 interface XNode {
-  type?: "element" | "text" | "instruction" | "cdata" | "comment" | "doctype";
+  type?: 'element' | 'text' | 'instruction' | 'cdata' | 'comment' | 'doctype';
   name?: string;
   attributes?: Record<string, string>;
   elements?: XNode[];
@@ -103,81 +114,104 @@ interface XNode {
 }
 
 function el(name: string, attrs: Record<string, string> = {}, children: XNode[] = []): XNode {
-  return { type: "element", name, attributes: attrs, elements: children };
-}
-function txt(s: string): XNode {
-  return { type: "text", text: s };
+  return { type: 'element', name, attributes: attrs, elements: children };
 }
 
-// ---------------------------------------------------------------------------
-// Invisible operator characters
-// ---------------------------------------------------------------------------
+function txt(s: string): XNode {
+  return { type: 'text', text: s };
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * Invisible operator characters
+ * ---------------------------------------------------------------------------
+ */
 const INVISIBLE_RE = /[\u2061\u2062\u2063\u2064]/g;
 
-// ---------------------------------------------------------------------------
-// Transformation driver
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Transformation driver
+ * ---------------------------------------------------------------------------
+ */
 
 function transformNode(node: XNode): void {
-  if (!node.elements) return;
-
-  // 1. Split function-name runs at U+2061 boundaries, wrapping the
-  //    function-name parts in <m:fName> with plain (upright) style.
-  //    MUST run before recursing — otherwise the recursive
-  //    stripInvisibleInPlace call would delete the U+2061 marker
-  //    before we get a chance to split on it.
-  node.elements = splitFunctionNames(node.elements);
-
-  // 1b. Split mixed bar runs. KaTeX sometimes flattens `\left\| x \right\|`
-  //     into a single `<m:r><m:t>∥x∥</m:t></m:r>` run. We split any run
-  //     whose text mixes bar chars with non-bar chars into separate
-  //     runs so the bar chars become standalone and can be wrapped in
-  //     `<m:d>` delimiters. MUST run before recursing so the split
-  //     propagates to children's children.
-  node.elements = splitMixedBarRuns(node.elements);
-
-  // 2. Recurse into the (now possibly-split) children so nested
-  //    structures (fractions, radicals, matrices, …) get the same
-  //    treatment.
-  for (const child of node.elements) {
-    if (child.type === "element") transformNode(child);
+  if (!node.elements) {
+    return;
   }
 
-  // 3. Strip invisible operator chars (U+2061-U+2064) from <m:t> text
-  //    nodes — NON-recursively (the recursion above already handled
-  //    deeper levels). After step 1, U+2061 only remains inside
-  //    non-function contexts (e.g. U+2062 INVISIBLE TIMES), so we
-  //    just delete them.
+  /*
+   * 1. Split function-name runs at U+2061 boundaries, wrapping the
+   *    function-name parts in <m:fName> with plain (upright) style.
+   *    MUST run before recursing — otherwise the recursive
+   *    stripInvisibleInPlace call would delete the U+2061 marker
+   *    before we get a chance to split on it.
+   */
+  node.elements = splitFunctionNames(node.elements);
+
+  /*
+   * 1b. Split mixed bar runs. KaTeX sometimes flattens `\left\| x \right\|`
+   *     into a single `<m:r><m:t>∥x∥</m:t></m:r>` run. We split any run
+   *     whose text mixes bar chars with non-bar chars into separate
+   *     runs so the bar chars become standalone and can be wrapped in
+   *     `<m:d>` delimiters. MUST run before recursing so the split
+   *     propagates to children's children.
+   */
+  node.elements = splitMixedBarRuns(node.elements);
+
+  /*
+   * 2. Recurse into the (now possibly-split) children so nested
+   *    structures (fractions, radicals, matrices, …) get the same
+   *    treatment.
+   */
+  for (const child of node.elements) {
+    if (child.type === 'element') {
+      transformNode(child);
+    }
+  }
+
+  /*
+   * 3. Strip invisible operator chars (U+2061-U+2064) from <m:t> text
+   *    nodes — NON-recursively (the recursion above already handled
+   *    deeper levels). After step 1, U+2061 only remains inside
+   *    non-function contexts (e.g. U+2062 INVISIBLE TIMES), so we
+   *    just delete them.
+   */
   stripInvisibleInPlace(node);
 
   // 4. Drop empty <m:e/> elements (left behind by n-ary conversion).
-  node.elements = node.elements.filter(
-    (c) => !(c.name === "m:e" && (!c.elements || c.elements.length === 0))
-  );
+  node.elements = node.elements.filter((c) => !(c.name === 'm:e' && (!c.elements || c.elements.length === 0)));
 
-  // 5. Convert standalone bracket runs into <m:d> delimiter elements
-  //    that grow to fit their content. Handles paired delimiters:
-  //    ( ), [ ] { } ⟨ ⟩ | | ‖ ‖
+  /*
+   * 5. Convert standalone bracket runs into <m:d> delimiter elements
+   *    that grow to fit their content. Handles paired delimiters:
+   *    ( ), [ ] { } ⟨ ⟩ | | ‖ ‖
+   */
   node.elements = wrapPairedDelimiters(node.elements);
 
-  // 6. Handle piecewise `cases` matrices: a standalone `{` run
-  //    immediately followed by an `<m:m>` matrix becomes a growing
-  //    delimiter with empty close character.
+  /*
+   * 6. Handle piecewise `cases` matrices: a standalone `{` run
+   *    immediately followed by an `<m:m>` matrix becomes a growing
+   *    delimiter with empty close character.
+   */
   node.elements = wrapCasesBrace(node.elements);
 
-  // 7. Normalise begChr/endChr characters on ALL `<m:d>` delimiters
-  //    (both the ones we just created AND the ones KaTeX/mathml2omml
-  //    produced for `\left|…\right|`, `\begin{vmatrix}`, `\begin{cases}`,
-  //    etc.). Word only grows `|` (U+007C) and `‖` (U+2016); it silently
-  //    leaves `∣` (U+2223) and `∥` (U+2225) at fixed height even with
-  //    `<m:grow m:val="1"/>`. Swap to the visually-equivalent chars Word
-  //    CAN grow.
+  /*
+   * 7. Normalise begChr/endChr characters on ALL `<m:d>` delimiters
+   *    (both the ones we just created AND the ones KaTeX/mathml2omml
+   *    produced for `\left|…\right|`, `\begin{vmatrix}`, `\begin{cases}`,
+   *    etc.). Word only grows `|` (U+007C) and `‖` (U+2016); it silently
+   *    leaves `∣` (U+2223) and `∥` (U+2225) at fixed height even with
+   *    `<m:grow m:val="1"/>`. Swap to the visually-equivalent chars Word
+   *    CAN grow.
+   */
   normalizeDelimCharsInPlace(node);
 }
 
-// ---------------------------------------------------------------------------
-// 2. Strip invisible operator characters
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 2. Strip invisible operator characters
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * Strip invisible operator characters from DIRECT `<m:t>` children only.
@@ -188,21 +222,26 @@ function transformNode(node: XNode): void {
  * to see.
  */
 function stripInvisibleInPlace(node: XNode): void {
-  if (!node.elements) return;
+  if (!node.elements) {
+    return;
+  }
+
   for (const c of node.elements) {
-    if (c.name === "m:t" && c.elements) {
+    if (c.name === 'm:t' && c.elements) {
       for (const t of c.elements) {
-        if (t.type === "text" && t.text) {
-          t.text = t.text.replace(INVISIBLE_RE, "");
+        if (t.type === 'text' && t.text) {
+          t.text = t.text.replace(INVISIBLE_RE, '');
         }
       }
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// 3. Split function-name runs at U+2061
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 3. Split function-name runs at U+2061
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * Known function names. When a text run contains U+2061 (FUNCTION
@@ -223,13 +262,47 @@ function stripInvisibleInPlace(node: XNode): void {
  * `arcsin`) match before shorter ones (`sin`).
  */
 const FUNCTION_NAMES = [
-  "arcsin", "arccos", "arctan", "arcsec", "arccsc", "arccot",
-  "sinh", "cosh", "tanh", "coth", "sech", "csch",
-  "sin", "cos", "tan", "cot", "sec", "csc",
-  "exp", "log", "ln", "lg", "lb",
-  "det", "dim", "gcd", "lcm", "max", "min", "sup", "inf",
-  "lim", "arg", "ker", "Pr", "Re", "Im", "mod",
-  "deg", "hom", "sgn",
+  'arcsin',
+  'arccos',
+  'arctan',
+  'arcsec',
+  'arccsc',
+  'arccot',
+  'sinh',
+  'cosh',
+  'tanh',
+  'coth',
+  'sech',
+  'csch',
+  'sin',
+  'cos',
+  'tan',
+  'cot',
+  'sec',
+  'csc',
+  'exp',
+  'log',
+  'ln',
+  'lg',
+  'lb',
+  'det',
+  'dim',
+  'gcd',
+  'lcm',
+  'max',
+  'min',
+  'sup',
+  'inf',
+  'lim',
+  'arg',
+  'ker',
+  'Pr',
+  'Re',
+  'Im',
+  'mod',
+  'deg',
+  'hom',
+  'sgn',
 ].sort((a, b) => b.length - a.length);
 
 /**
@@ -254,60 +327,84 @@ const FUNCTION_NAMES = [
  */
 function splitFunctionNames(children: XNode[]): XNode[] {
   const out: XNode[] = [];
+
   for (const child of children) {
-    if (child.name === "m:r" && runHasInvisibleFunction(child)) {
+    if (child.name === 'm:r' && runHasInvisibleFunction(child)) {
       out.push(...splitFunctionRun(child));
     } else {
       out.push(child);
     }
   }
+
   return out;
 }
 
 function runHasInvisibleFunction(run: XNode): boolean {
   const t = getRunText(run);
-  return !!t && t.includes("\u2061");
+  return !!t && t.includes('\u2061');
 }
 
 function getRunText(run: XNode): string | null {
-  if (!run.elements) return null;
-  const tElem = run.elements.find((c) => c.name === "m:t");
-  if (!tElem || !tElem.elements) return null;
+  if (!run.elements) {
+    return null;
+  }
+
+  const tElem = run.elements.find((c) => c.name === 'm:t');
+
+  if (!tElem || !tElem.elements) {
+    return null;
+  }
+
   return tElem.elements
-    .filter((e) => e.type === "text")
-    .map((e) => e.text || "")
-    .join("");
+    .filter((e) => e.type === 'text')
+    .map((e) => e.text || '')
+    .join('');
 }
 
 /** Find the longest known function-name suffix of `s`, or "" if none. */
 function matchFunctionSuffix(s: string): string {
   for (const fname of FUNCTION_NAMES) {
-    if (s.length >= fname.length && s.endsWith(fname)) return fname;
+    if (s.length >= fname.length && s.endsWith(fname)) {
+      return fname;
+    }
   }
-  return "";
+  return '';
 }
 
 function splitFunctionRun(run: XNode): XNode[] {
-  const tElem = run.elements?.find((c) => c.name === "m:t");
-  if (!tElem) return [run];
-  const text = (tElem.elements || [])
-    .filter((e) => e.type === "text")
-    .map((e) => e.text || "")
-    .join("");
-  if (!text.includes("\u2061")) return [run];
+  const tElem = run.elements?.find((c) => c.name === 'm:t');
 
-  const parts = text.split("\u2061");
+  if (!tElem) {
+    return [run];
+  }
+
+  const text = (tElem.elements || [])
+    .filter((e) => e.type === 'text')
+    .map((e) => e.text || '')
+    .join('');
+
+  if (!text.includes('\u2061')) {
+    return [run];
+  }
+
+  const parts = text.split('\u2061');
   const tAttrs = tElem.attributes || {};
-  const rPr = run.elements?.find((c) => c.name === "m:rPr");
+  const rPr = run.elements?.find((c) => c.name === 'm:rPr');
   const result: XNode[] = [];
 
   /** Build a regular run (preserving any existing rPr) from text. */
   const regularRun = (s: string): XNode => {
     const children: XNode[] = [];
-    if (rPr) children.push(rPr);
-    children.push(el("m:t", tAttrs, [txt(s)]));
-    return el("m:r", {}, children);
+
+    if (rPr) {
+      children.push(rPr);
+    }
+
+    children.push(el('m:t', tAttrs, [txt(s)]));
+
+    return el('m:r', {}, children);
   };
+
   /**
    * Build an **upright** run from text — the function name. Uses
    * `<m:sty m:val="p"/>` (plain / upright) so the name renders
@@ -318,21 +415,29 @@ function splitFunctionRun(run: XNode): XNode[] {
    * `<m:func>`.
    */
   const functionNameRun = (s: string): XNode =>
-    el("m:r", {}, [
-      el("m:rPr", {}, [el("m:sty", { "m:val": "p" })]),
-      el("m:t", tAttrs, [txt(s)]),
-    ]);
+    el('m:r', {}, [el('m:rPr', {}, [el('m:sty', { 'm:val': 'p' })]), el('m:t', tAttrs, [txt(s)])]);
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
-    if (!part) continue;
+
+    if (!part) {
+      continue;
+    }
+
     if (i < parts.length - 1) {
-      // This part is followed by U+2061, so it should end with a
-      // function name. Split off the trailing function name.
+      /*
+       * This part is followed by U+2061, so it should end with a
+       * function name. Split off the trailing function name.
+       */
       const fname = matchFunctionSuffix(part);
+
       if (fname) {
         const before = part.slice(0, part.length - fname.length);
-        if (before) result.push(regularRun(before));
+
+        if (before) {
+          result.push(regularRun(before));
+        }
+
         result.push(functionNameRun(fname));
       } else {
         // No known function name — emit as a regular run.
@@ -343,33 +448,39 @@ function splitFunctionRun(run: XNode): XNode[] {
       result.push(regularRun(part));
     }
   }
+
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// 4. Wrap paired standalone bracket runs in <m:d> delimiter elements
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 4. Wrap paired standalone bracket runs in <m:d> delimiter elements
+ * ---------------------------------------------------------------------------
+ */
 
 const OPEN_CLOSE: Record<string, string> = {
-  "(": ")",
-  "[": "]",
-  "{": "}",
-  "\u27e8": "\u27e9", // ⟨ ⟩
+  '(': ')',
+  '[': ']',
+  '{': '}',
+  '\u27e8': '\u27e9', // ⟨ ⟩
 };
 const CLOSE_TO_OPEN: Record<string, string> = {
-  ")": "(",
-  "]": "[",
-  "}": "{",
-  "\u27e9": "\u27e8",
+  ')': '(',
+  ']': '[',
+  '}': '{',
+  '\u27e9': '\u27e8',
 };
-// Vertical-bar delimiters: same character for open and close. We treat
-// them as toggles — the first | opens, the next | closes, etc.
-// All vertical-bar delimiter characters KaTeX/mathml2omml may emit.
-//   U+007C  |   VERTICAL LINE           — raw `|` from markdown
-//   U+2223  ∣   DIVIDES                  — KaTeX's `\lvert`/`\rvert`/`\begin{vmatrix}`
-//   U+2225  ∥   PARALLEL TO              — KaTeX's `\lVert`/`\rVert`/`\begin{Vmatrix}`/`\|`
-//   U+2016  ‖   DOUBLE VERTICAL LINE     — visual equivalent of U+2225
-const VERT_CHARS = new Set(["\u2223", "\u2225", "\u2016", "|"]);
+
+/*
+ * Vertical-bar delimiters: same character for open and close. We treat
+ * them as toggles — the first | opens, the next | closes, etc.
+ * All vertical-bar delimiter characters KaTeX/mathml2omml may emit.
+ *   U+007C  |   VERTICAL LINE           — raw `|` from markdown
+ *   U+2223  ∣   DIVIDES                  — KaTeX's `\lvert`/`\rvert`/`\begin{vmatrix}`
+ *   U+2225  ∥   PARALLEL TO              — KaTeX's `\lVert`/`\rVert`/`\begin{Vmatrix}`/`\|`
+ *   U+2016  ‖   DOUBLE VERTICAL LINE     — visual equivalent of U+2225
+ */
+const VERT_CHARS = new Set(['\u2223', '\u2225', '\u2016', '|']);
 
 /**
  * Canonical-form tracker for vertical bars.
@@ -389,18 +500,35 @@ const VERT_CHARS = new Set(["\u2223", "\u2225", "\u2016", "|"]);
  * and should render as a tall `‖` in Word.
  */
 function canonicalBarChar(ch: string): string | null {
-  if (!ch) return null;
-  // Keep only bar chars; if any non-bar char is present, this isn't a
-  // pure bar run.
+  if (!ch) {
+    return null;
+  }
+
+  /*
+   * Keep only bar chars; if any non-bar char is present, this isn't a
+   * pure bar run.
+   */
   const bars = Array.from(ch).filter((c) => VERT_CHARS.has(c));
-  if (bars.length === 0) return null;
-  if (bars.length !== ch.length) return null;
-  // Single bar (1 char) → `|`; double bar (≥2 chars, OR already a
-  // double-bar char like ‖/∥) → `‖`.
-  // Note: U+2225 (∥) and U+2016 (‖) are themselves "double bar" chars
-  // even when they appear alone — KaTeX uses them for `\|` (norm).
-  if (ch.length === 1 && (ch === "|" || ch === "\u2223")) return "|";
-  return "\u2016";
+
+  if (bars.length === 0) {
+    return null;
+  }
+
+  if (bars.length !== ch.length) {
+    return null;
+  }
+
+  /*
+   * Single bar (1 char) → `|`; double bar (≥2 chars, OR already a
+   * double-bar char like ‖/∥) → `‖`.
+   * Note: U+2225 (∥) and U+2016 (‖) are themselves "double bar" chars
+   * even when they appear alone — KaTeX uses them for `\|` (norm).
+   */
+  if (ch.length === 1 && (ch === '|' || ch === '\u2223')) {
+    return '|';
+  }
+
+  return '\u2016';
 }
 
 /**
@@ -417,18 +545,37 @@ function canonicalBarChar(ch: string): string | null {
  * standalone runs.
  */
 function getStandaloneBracketChar(node: XNode): string | null {
-  if (node.name !== "m:r" || !node.elements) return null;
+  if (node.name !== 'm:r' || !node.elements) {
+    return null;
+  }
+
   const t = getRunText(node);
-  if (!t) return null;
+
+  if (!t) {
+    return null;
+  }
+
   // Single-char brackets: ( ) [ ] { } ⟨ ⟩ and single bars.
   if (t.length === 1) {
-    if (t in OPEN_CLOSE || t in CLOSE_TO_OPEN) return t;
-    if (VERT_CHARS.has(t)) return t;
+    if (t in OPEN_CLOSE || t in CLOSE_TO_OPEN) {
+      return t;
+    }
+
+    if (VERT_CHARS.has(t)) {
+      return t;
+    }
   }
-  // Multi-char run of all-bar chars (e.g. `∣∣` from `||x||`). Return
-  // the canonical form so downstream pairing sees a single token.
+
+  /*
+   * Multi-char run of all-bar chars (e.g. `∣∣` from `||x||`). Return
+   * the canonical form so downstream pairing sees a single token.
+   */
   const canonical = canonicalBarChar(t);
-  if (canonical) return canonical;
+
+  if (canonical) {
+    return canonical;
+  }
+
   return null;
 }
 
@@ -440,22 +587,28 @@ interface Pair {
 }
 
 function wrapPairedDelimiters(children: XNode[]): XNode[] {
-  // Walk children, tracking open brackets on a stack. Vertical bars use
-  // a per-canonical-char toggle stack — `|` and `‖` track independently
-  // so `|a| · ‖b‖` pairs correctly, and `||a|| · ||b||` (each `||` is a
-  // single `‖` run) toggles open/close correctly.
+  /*
+   * Walk children, tracking open brackets on a stack. Vertical bars use
+   * a per-canonical-char toggle stack — `|` and `‖` track independently
+   * so `|a| · ‖b‖` pairs correctly, and `||a|| · ||b||` (each `||` is a
+   * single `‖` run) toggles open/close correctly.
+   */
   const stack: { char: string; index: number }[] = [];
   const vertToggles = new Map<string, { char: string; index: number }[]>();
   const pairs: Pair[] = [];
 
   for (let i = 0; i < children.length; i++) {
     const ch = getStandaloneBracketChar(children[i]);
-    if (!ch) continue;
+
+    if (!ch) {
+      continue;
+    }
 
     if (ch in OPEN_CLOSE) {
       stack.push({ char: ch, index: i });
     } else if (ch in CLOSE_TO_OPEN) {
       const openChar = CLOSE_TO_OPEN[ch];
+
       for (let j = stack.length - 1; j >= 0; j--) {
         if (stack[j].char === openChar) {
           pairs.push({
@@ -472,10 +625,12 @@ function wrapPairedDelimiters(children: XNode[]): XNode[] {
       // Vertical bar — canonical form is either `|` or `‖`.
       const canonical = canonicalBarChar(ch) || ch;
       let toggle = vertToggles.get(canonical);
+
       if (!toggle) {
         toggle = [];
         vertToggles.set(canonical, toggle);
       }
+
       if (toggle.length > 0) {
         const open = toggle.pop()!;
         pairs.push({
@@ -490,18 +645,32 @@ function wrapPairedDelimiters(children: XNode[]): XNode[] {
     }
   }
 
-  // Greedily pick non-overlapping pairs, preferring outermost (longest
-  // span) first so nested structures stay nested correctly.
+  /*
+   * Greedily pick non-overlapping pairs, preferring outermost (longest
+   * span) first so nested structures stay nested correctly.
+   */
   pairs.sort((a, b) => b.closeIdx - b.openIdx - (a.closeIdx - a.openIdx));
+
   const used = new Set<number>();
   const valid: Pair[] = [];
+
   for (const p of pairs) {
     let overlap = false;
+
     for (let k = p.openIdx; k <= p.closeIdx; k++) {
-      if (used.has(k)) { overlap = true; break; }
+      if (used.has(k)) {
+        overlap = true;
+        break;
+      }
     }
-    if (overlap) continue;
-    for (let k = p.openIdx; k <= p.closeIdx; k++) used.add(k);
+
+    if (overlap) {
+      continue;
+    }
+
+    for (let k = p.openIdx; k <= p.closeIdx; k++) {
+      used.add(k);
+    }
     valid.push(p);
   }
 
@@ -509,32 +678,40 @@ function wrapPairedDelimiters(children: XNode[]): XNode[] {
   const pairByOpen = new Map(valid.map((p) => [p.openIdx, p]));
   const out: XNode[] = [];
   let i = 0;
+
   while (i < children.length) {
     const p = pairByOpen.get(i);
+
     if (p) {
       const inner = children.slice(p.openIdx + 1, p.closeIdx);
       out.push(
-        el("m:d", {}, [
-          el("m:dPr", {}, [
-            el("m:begChr", { "m:val": p.openChar }),
-            el("m:endChr", { "m:val": p.closeChar }),
-            el("m:grow", { "m:val": "1" }),
+        el('m:d', {}, [
+          el('m:dPr', {}, [
+            el('m:begChr', { 'm:val': p.openChar }),
+            el('m:endChr', { 'm:val': p.closeChar }),
+            el('m:grow', { 'm:val': '1' }),
           ]),
-          el("m:e", {}, inner),
-        ])
+          el('m:e', {}, inner),
+        ]),
       );
       i = p.closeIdx + 1;
     } else {
-      if (!used.has(i)) out.push(children[i]);
+      if (!used.has(i)) {
+        out.push(children[i]);
+      }
+
       i++;
     }
   }
+
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// 5. Wrap `cases` matrices: `{` + `<m:m>` → growing delimiter
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 5. Wrap `cases` matrices: `{` + `<m:m>` → growing delimiter
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * KaTeX renders `\begin{cases}…\end{cases}` as `<mo fence="true">{</mo>`
@@ -546,32 +723,37 @@ function wrapPairedDelimiters(children: XNode[]): XNode[] {
  */
 function wrapCasesBrace(children: XNode[]): XNode[] {
   const out: XNode[] = [];
+
   for (let i = 0; i < children.length; i++) {
     const cur = children[i];
     const next = children[i + 1];
     const ch = getStandaloneBracketChar(cur);
-    if (ch === "{" && next && next.name === "m:m") {
+
+    if (ch === '{' && next && next.name === 'm:m') {
       out.push(
-        el("m:d", {}, [
-          el("m:dPr", {}, [
-            el("m:begChr", { "m:val": "{" }),
-            el("m:endChr", { "m:val": "" }),
-            el("m:grow", { "m:val": "1" }),
+        el('m:d', {}, [
+          el('m:dPr', {}, [
+            el('m:begChr', { 'm:val': '{' }),
+            el('m:endChr', { 'm:val': '' }),
+            el('m:grow', { 'm:val': '1' }),
           ]),
-          el("m:e", {}, [next]),
-        ])
+          el('m:e', {}, [next]),
+        ]),
       );
       i++; // consume the matrix too
     } else {
       out.push(cur);
     }
   }
+
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// 6. Split mixed bar runs — extract bar chars from larger text runs
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 6. Split mixed bar runs — extract bar chars from larger text runs
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * KaTeX sometimes flattens `\left\| x \right\|` into a single text run
@@ -588,60 +770,83 @@ function wrapCasesBrace(children: XNode[]): XNode[] {
  */
 function splitMixedBarRuns(children: XNode[]): XNode[] {
   const out: XNode[] = [];
+
   for (const child of children) {
-    if (child.name === "m:r" && child.elements) {
-      const tElem = child.elements.find((c) => c.name === "m:t");
+    if (child.name === 'm:r' && child.elements) {
+      const tElem = child.elements.find((c) => c.name === 'm:t');
+
       if (tElem && tElem.elements) {
         const text = tElem.elements
-          .filter((e) => e.type === "text")
-          .map((e) => e.text || "")
-          .join("");
+          .filter((e) => e.type === 'text')
+          .map((e) => e.text || '')
+          .join('');
         const hasBar = Array.from(text).some((c) => VERT_CHARS.has(c));
         const hasNonBar = Array.from(text).some((c) => !VERT_CHARS.has(c));
+
         if (hasBar && hasNonBar) {
-          // Split into segments. Each contiguous run of bar chars or
-          // non-bar chars becomes its own `<m:r>` (preserving rPr).
+          /*
+           * Split into segments. Each contiguous run of bar chars or
+           * non-bar chars becomes its own `<m:r>` (preserving rPr).
+           */
           out.push(...splitRunByBars(child, tElem, text));
           continue;
         }
       }
     }
+
     out.push(child);
   }
+
   return out;
 }
 
 function splitRunByBars(run: XNode, tElem: XNode, text: string): XNode[] {
-  const rPr = run.elements?.find((c) => c.name === "m:rPr");
+  const rPr = run.elements?.find((c) => c.name === 'm:rPr');
   const tAttrs = tElem.attributes || {};
   const result: XNode[] = [];
 
-  // Walk the text, grouping consecutive chars by whether they're bar
-  // chars. Emit one `<m:r>` per group.
-  let buf = "";
+  /*
+   * Walk the text, grouping consecutive chars by whether they're bar
+   * chars. Emit one `<m:r>` per group.
+   */
+  let buf = '';
   let bufIsBar = false;
   const flush = () => {
-    if (!buf) return;
+    if (!buf) {
+      return;
+    }
+
     const children: XNode[] = [];
-    if (rPr) children.push(rPr);
-    children.push(el("m:t", tAttrs, [txt(buf)]));
-    result.push(el("m:r", {}, children));
-    buf = "";
+
+    if (rPr) {
+      children.push(rPr);
+    }
+
+    children.push(el('m:t', tAttrs, [txt(buf)]));
+    result.push(el('m:r', {}, children));
+    buf = '';
   };
 
   for (const c of Array.from(text)) {
     const isBar = VERT_CHARS.has(c);
-    if (buf && isBar !== bufIsBar) flush();
+
+    if (buf && isBar !== bufIsBar) {
+      flush();
+    }
+
     buf += c;
     bufIsBar = isBar;
   }
   flush();
+
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// 7. Normalise delimiter characters on existing <m:d> elements
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * 7. Normalise delimiter characters on existing <m:d> elements
+ * ---------------------------------------------------------------------------
+ */
 
 /**
  * Walk all `<m:d>` elements in the subtree rooted at `node` and replace
@@ -661,16 +866,27 @@ function splitRunByBars(run: XNode, tElem: XNode, text: string): XNode[] {
  * stretchy-delimiter glyph set only contains `|` and `‖`.
  */
 function normalizeDelimCharsInPlace(node: XNode): void {
-  if (!node.elements) return;
+  if (!node.elements) {
+    return;
+  }
+
   for (const child of node.elements) {
-    if (child.type !== "element") continue;
-    if (child.name === "m:begChr" || child.name === "m:endChr") {
-      const v = child.attributes?.["m:val"];
+    if (child.type !== 'element') {
+      continue;
+    }
+
+    if (child.name === 'm:begChr' || child.name === 'm:endChr') {
+      const v = child.attributes?.['m:val'];
+
       if (v) {
         const norm = normalizeBarAttrValue(v);
+
         if (norm !== v) {
-          if (!child.attributes) child.attributes = {};
-          child.attributes["m:val"] = norm;
+          if (!child.attributes) {
+            child.attributes = {};
+          }
+
+          child.attributes['m:val'] = norm;
         }
       }
     } else {
@@ -685,9 +901,15 @@ function normalizeDelimCharsInPlace(node: XNode): void {
  * characters pass through unchanged.
  */
 function normalizeBarAttrValue(v: string): string {
-  if (!v) return v;
+  if (!v) {
+    return v;
+  }
+
   const canonical = canonicalBarChar(v);
-  // canonicalBarChar returns `|` for single bars, `‖` for double bars,
-  // or null if `v` contains any non-bar char (e.g. `(`, `{`, empty).
+
+  /*
+   * canonicalBarChar returns `|` for single bars, `‖` for double bars,
+   * or null if `v` contains any non-bar char (e.g. `(`, `{`, empty).
+   */
   return canonical ?? v;
 }

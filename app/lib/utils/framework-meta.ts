@@ -11,8 +11,10 @@
 export interface FrameworkMeta {
   /** UnoCSS icon class, e.g. `i-amplify:nextjs`. */
   icon: string;
+
   /** A tailwind-friendly gradient (from/to color stops) for thumbnail tints. */
   gradient: string;
+
   /** Short display label. */
   label: string;
 }
@@ -48,13 +50,33 @@ const MAP: Record<string, FrameworkMeta> = {
  * case-insensitive on the first keyword of the label.
  */
 export function getFrameworkMeta(framework?: string): FrameworkMeta {
-  if (!framework) return UNKNOWN;
+  if (!framework) {
+    return UNKNOWN;
+  }
 
   const lower = framework.toLowerCase();
 
-  // Check each known keyword; first match wins. Order matters for compound
-  // labels like "Vite + React" — we prefer Vite's icon there.
-  const keys = ['expo', 'next', 'nuxt', 'remix', 'vite', 'react', 'vue', 'svelte', 'astro', 'angular', 'solid', 'qwik', 'slidev', 'nativescript', 'typescript'];
+  /*
+   * Check each known keyword; first match wins. Order matters for compound
+   * labels like "Vite + React" — we prefer Vite's icon there.
+   */
+  const keys = [
+    'expo',
+    'next',
+    'nuxt',
+    'remix',
+    'vite',
+    'react',
+    'vue',
+    'svelte',
+    'astro',
+    'angular',
+    'solid',
+    'qwik',
+    'slidev',
+    'nativescript',
+    'typescript',
+  ];
 
   for (const key of keys) {
     if (lower.includes(key)) {
@@ -67,7 +89,10 @@ export function getFrameworkMeta(framework?: string): FrameworkMeta {
 
 /** True if the framework label indicates a mobile/native project (Expo/RN). */
 export function isMobileFramework(framework?: string): boolean {
-  if (!framework) return false;
+  if (!framework) {
+    return false;
+  }
+
   const lower = framework.toLowerCase();
 
   return lower.includes('expo') || lower.includes('react native') || lower.includes('nativescript');

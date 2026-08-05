@@ -14,8 +14,14 @@ import { TraceTree, CircularProgress, type TraceItem, type TreeItemStatus, type 
 const STYLE_ID = 'plan-view-animations';
 
 function injectAnimations() {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById(STYLE_ID)) return;
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  if (document.getElementById(STYLE_ID)) {
+    return;
+  }
+
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
@@ -133,9 +139,7 @@ function ExecutionStateBadge({ point }: { point: PlanPoint }) {
         />
       )}
       <span
-        className={`text-[10px] font-medium transition-colors duration-300 ${
-          isRunning ? 'pv-badge-pulse' : ''
-        }`}
+        className={`text-[10px] font-medium transition-colors duration-300 ${isRunning ? 'pv-badge-pulse' : ''}`}
         style={{ color: stateInfo.color }}
       >
         {stateInfo.label}
@@ -158,13 +162,13 @@ function ExecutionStateBadge({ point }: { point: PlanPoint }) {
  * Completed checkpoints = green, interrupted (has remaining work) = amber.
  */
 function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
-  if (checkpoints.length === 0) return null;
+  if (checkpoints.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mt-2">
-      <span className="text-[10px] text-[#666] dark:text-gray-500 font-medium mb-1.5 block">
-        Checkpoints
-      </span>
+      <span className="text-[10px] text-[#666] dark:text-gray-500 font-medium mb-1.5 block">Checkpoints</span>
       <div className="relative ml-1">
         {/* Vertical timeline line */}
         <div className="absolute left-[4px] top-1 bottom-1 w-px bg-[#333] dark:bg-gray-700" />
@@ -173,12 +177,8 @@ function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
           {checkpoints.map((cp, i) => {
             const isInterrupted = cp.remainingWork.length > 0;
             const isLast = i === checkpoints.length - 1;
-            const nodeColor = isInterrupted
-              ? 'bg-amber-500'
-              : 'bg-green-500';
-            const nodeRing = isInterrupted
-              ? 'ring-2 ring-amber-500/30'
-              : 'ring-2 ring-green-500/30';
+            const nodeColor = isInterrupted ? 'bg-amber-500' : 'bg-green-500';
+            const nodeRing = isInterrupted ? 'ring-2 ring-amber-500/30' : 'ring-2 ring-green-500/30';
 
             return (
               <motion.div
@@ -196,9 +196,7 @@ function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 text-[10px]">
-                    <span className="text-[#555] dark:text-gray-600 font-mono font-medium">
-                      #{cp.index + 1}
-                    </span>
+                    <span className="text-[#555] dark:text-gray-600 font-mono font-medium">#{cp.index + 1}</span>
                     <span className="text-[#8e8e8e] dark:text-gray-400">
                       {cp.progressSummary.filesModified.length} files, {cp.progressSummary.toolsCalled} tools
                     </span>
@@ -232,7 +230,9 @@ function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
  * showing the skill's purpose.
  */
 function SkillChips({ skills }: { skills?: string[] }) {
-  if (!skills || skills.length === 0) return null;
+  if (!skills || skills.length === 0) {
+    return null;
+  }
 
   return (
     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -282,7 +282,9 @@ function ConstraintsCard({ constraints }: { constraints: NonNullable<PlanPoint['
     ...(constraints.additional?.map((c) => ({ type: 'rule' as const, text: c })) ?? []),
   ];
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    return null;
+  }
 
   return (
     <div
@@ -338,7 +340,7 @@ function ConstraintsCard({ constraints }: { constraints: NonNullable<PlanPoint['
 /*  Main PlanView Component                                            */
 /* ================================================================== */
 
-export const PlanView = React.memo(function PlanView({ planId, progress, onCancel, onResume }: PlanViewProps) {
+export const PlanView = React.memo(({ planId, progress, onCancel, onResume }: PlanViewProps) => {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [showDetails, setShowDetails] = useState<string | null>(null);
 
@@ -351,9 +353,13 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
   useEffect(() => {
     const syncPlan = () => {
       const p = planStore.getPlan(planId);
+
       if (p) {
         setPlan((prev) => {
-          if (prev === p) return prev;
+          if (prev === p) {
+            return prev;
+          }
+
           return { ...p, points: [...p.points] };
         });
       }
@@ -362,6 +368,7 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
     syncPlan();
 
     const interval = setInterval(syncPlan, 500);
+
     return () => clearInterval(interval);
   }, [planId]);
 
@@ -432,9 +439,7 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
       children: hasChildren ? (
         <div className="space-y-2 text-[11px]">
           {/* Goal */}
-          {point.goal && (
-            <p className="text-[#8e8e8e] dark:text-gray-400 italic">{point.goal}</p>
-          )}
+          {point.goal && <p className="text-[#8e8e8e] dark:text-gray-400 italic">{point.goal}</p>}
 
           {/* Execution state badge */}
           {point.executionState && <ExecutionStateBadge point={point} />}
@@ -448,7 +453,9 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
               <span className="text-[#666] dark:text-gray-500 font-medium">Requirements:</span>
               <ul className="mt-0.5 space-y-0.5">
                 {point.requirements.map((req, i) => (
-                  <li key={i} className="text-[#8e8e8e] dark:text-gray-400">• {req}</li>
+                  <li key={i} className="text-[#8e8e8e] dark:text-gray-400">
+                    • {req}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -460,7 +467,9 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
               <span className="text-[#666] dark:text-gray-500 font-medium">Success criteria:</span>
               <ul className="mt-0.5 space-y-0.5">
                 {point.successCriteria.map((crit, i) => (
-                  <li key={i} className="text-[#8e8e8e] dark:text-gray-400">✓ {crit}</li>
+                  <li key={i} className="text-[#8e8e8e] dark:text-gray-400">
+                    ✓ {crit}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -498,9 +507,7 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
           )}
 
           {/* Checkpoints */}
-          {point.checkpoints && point.checkpoints.length > 0 && (
-            <CheckpointList checkpoints={point.checkpoints} />
-          )}
+          {point.checkpoints && point.checkpoints.length > 0 && <CheckpointList checkpoints={point.checkpoints} />}
 
           {/* Verification results */}
           {point.verificationResults && point.verificationResults.length > 0 && (
@@ -534,11 +541,10 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
           )}
 
           {/* Constraints */}
-          {point.constraints && (
-            (point.constraints.doNotModify?.length || point.constraints.additional?.length) ? (
+          {point.constraints &&
+            (point.constraints.doNotModify?.length || point.constraints.additional?.length ? (
               <ConstraintsCard constraints={point.constraints} />
-            ) : null
-          )}
+            ) : null)}
         </div>
       ) : undefined,
     };
@@ -646,7 +652,9 @@ export const PlanView = React.memo(function PlanView({ planId, progress, onCance
 
         {/* Status messages */}
         {plan.status === 'failed' && !canResume && (
-          <p className="text-[11px] text-rose-400 dark:text-rose-400">Plan failed — review the failed step for details.</p>
+          <p className="text-[11px] text-rose-400 dark:text-rose-400">
+            Plan failed — review the failed step for details.
+          </p>
         )}
         {plan.status === 'completed' && (
           <motion.p

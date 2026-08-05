@@ -14,17 +14,18 @@ export class MemoryStore {
 
   private constructor() {}
 
-  public static getInstance(): MemoryStore {
+  static getInstance(): MemoryStore {
     if (!MemoryStore.instance) {
       MemoryStore.instance = new MemoryStore();
     }
+
     return MemoryStore.instance;
   }
 
   /**
    * Retrieves all stored memories.
    */
-  public getMemories(): Memory[] {
+  getMemories(): Memory[] {
     const memories = getLocalStorage(MEMORY_STORAGE_KEY);
     return Array.isArray(memories) ? memories : [];
   }
@@ -32,7 +33,7 @@ export class MemoryStore {
   /**
    * Adds a new memory to the store.
    */
-  public addMemory(content: string, category?: string): Memory {
+  addMemory(content: string, category?: string): Memory {
     const memories = this.getMemories();
 
     // Basic deduplication: check if a similar memory already exists
@@ -44,6 +45,7 @@ export class MemoryStore {
         m.id === existingMemory.id ? { ...m, timestamp: new Date().toISOString() } : m,
       );
       setLocalStorage(MEMORY_STORAGE_KEY, updatedMemories);
+
       return existingMemory;
     }
 
@@ -55,17 +57,20 @@ export class MemoryStore {
     };
 
     setLocalStorage(MEMORY_STORAGE_KEY, [...memories, newMemory]);
+
     return newMemory;
   }
 
   /**
    * Updates an existing memory.
    */
-  public updateMemory(id: string, content: string): Memory | null {
+  updateMemory(id: string, content: string): Memory | null {
     const memories = this.getMemories();
     const index = memories.findIndex((m) => m.id === id);
 
-    if (index === -1) return null;
+    if (index === -1) {
+      return null;
+    }
 
     const updatedMemory = {
       ...memories[index],
@@ -77,13 +82,14 @@ export class MemoryStore {
     newMemories[index] = updatedMemory;
 
     setLocalStorage(MEMORY_STORAGE_KEY, newMemories);
+
     return updatedMemory;
   }
 
   /**
    * Deletes a memory from the store.
    */
-  public deleteMemory(id: string): boolean {
+  deleteMemory(id: string): boolean {
     const memories = this.getMemories();
     const filteredMemories = memories.filter((m) => m.id !== id);
 
@@ -92,15 +98,17 @@ export class MemoryStore {
     }
 
     setLocalStorage(MEMORY_STORAGE_KEY, filteredMemories);
+
     return true;
   }
 
   /**
    * Searches memories for a specific query.
    */
-  public searchMemories(query: string): Memory[] {
+  searchMemories(query: string): Memory[] {
     const memories = this.getMemories();
     const lowerQuery = query.toLowerCase();
+
     return memories.filter(
       (m) =>
         m.content.toLowerCase().includes(lowerQuery) || (m.category && m.category.toLowerCase().includes(lowerQuery)),
@@ -109,7 +117,10 @@ export class MemoryStore {
 
   formatForPrompt(): string {
     const memories = this.getMemories();
-    if (memories.length === 0) return 'No persistent memory available for this user.';
+
+    if (memories.length === 0) {
+      return 'No persistent memory available for this user.';
+    }
 
     return memories.map((m) => `- ${m.content}${m.category ? ` (${m.category})` : ''}`).join('\n');
   }
@@ -117,7 +128,7 @@ export class MemoryStore {
   /**
    * Clears all memories.
    */
-  public clearAll(): void {
+  clearAll(): void {
     setLocalStorage(MEMORY_STORAGE_KEY, []);
   }
 }

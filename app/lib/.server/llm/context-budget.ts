@@ -94,6 +94,7 @@ function extractText(message: UIMessage): string {
         if (part.type === 'text') {
           return part.text || '';
         }
+
         return '';
       })
       .join('\n');

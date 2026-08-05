@@ -393,7 +393,9 @@ export default function LocalProvidersTab() {
                     ) : ollamaModels.length === 0 ? (
                       <div className="text-center py-8">
                         <PackageOpen className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Models Installed</h3>
+                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                          No Models Installed
+                        </h3>
                         <p className="text-sm text-amplify-elements-textSecondary mb-4">
                           Visit{' '}
                           <a
@@ -475,7 +477,9 @@ export default function LocalProvidersTab() {
                     ) : lmStudioModels.length === 0 ? (
                       <div className="text-center py-8">
                         <Monitor className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Models Available</h3>
+                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                          No Models Available
+                        </h3>
                         <p className="text-sm text-amplify-elements-textSecondary mb-4">
                           Make sure LM Studio is running with the local server started and CORS enabled.
                         </p>
@@ -543,7 +547,9 @@ export default function LocalProvidersTab() {
           <Card className="bg-amplify-elements-background-depth-2">
             <CardContent className="p-8 text-center">
               <Server className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-              <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Local Providers Available</h3>
+              <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                No Local Providers Available
+              </h3>
               <p className="text-sm text-amplify-elements-textSecondary">
                 Local providers will appear here when they're configured in the system.
               </p>

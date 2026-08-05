@@ -38,9 +38,11 @@ export async function runTypeCheck(options: VerificationRunnerOptions): Promise<
 
     // Parse tsc output for errors
     const lines = output.split('\n');
+
     for (const line of lines) {
       // tsc error format: file.ts(line,col): error TSxxxx: message
       const match = line.match(/^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$/);
+
       if (match) {
         issues.push({
           filePath: match[1],
@@ -61,10 +63,7 @@ export async function runTypeCheck(options: VerificationRunnerOptions): Promise<
   return {
     type: 'type_check',
     passed: errors.length === 0,
-    message:
-      errors.length === 0
-        ? 'Type check passed (basic).'
-        : `Type check failed: ${errors.length} error(s).`,
+    message: errors.length === 0 ? 'Type check passed (basic).' : `Type check failed: ${errors.length} error(s).`,
     issues: issues.length > 0 ? issues : undefined,
     timestamp: new Date().toISOString(),
   };
@@ -80,7 +79,10 @@ async function runBasicTypeChecks(
 ): Promise<void> {
   for (const filePath of tsFiles) {
     const content = await options.readFile(filePath);
-    if (!content) continue;
+
+    if (!content) {
+      continue;
+    }
 
     const lines = content.split('\n');
 
@@ -111,8 +113,10 @@ async function runBasicTypeChecks(
 
       // Check for potential null pointer dereference (basic)
       if (/(\w+)\.\w+/.test(line) && !line.includes('?.') && !line.includes('!.')) {
-        // Very basic check - just flag for review if the variable could be null
-        // This is intentionally conservative to avoid false positives
+        /*
+         * Very basic check - just flag for review if the variable could be null
+         * This is intentionally conservative to avoid false positives
+         */
       }
     }
   }

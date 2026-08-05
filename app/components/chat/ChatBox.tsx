@@ -146,8 +146,10 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
   const [showSettingsKey, setShowSettingsKey] = useState(false);
   const [isSavingSettingsKey, setIsSavingSettingsKey] = useState(false);
 
-  // Stores the last non-zero value for each field so toggling a rate-limit
-  // field back ON restores the previously entered number.
+  /*
+   * Stores the last non-zero value for each field so toggling a rate-limit
+   * field back ON restores the previously entered number.
+   */
   const [rateLimitLastValues, setRateLimitLastValues] = useState<{
     rpm: number;
     tpm: number;
@@ -1387,8 +1389,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                           </div>
                           <div className="bg-amplify-elements-background-depth-1 p-2 rounded-lg border border-amplify-elements-borderColor text-[10px] text-amplify-elements-textSecondary leading-normal">
                             Gemini 3 uses <span className="font-mono">thinkingLevel</span> (minimal/low/medium/high).{' '}
-                            <span className="text-accent-500">includeThoughts</span> is auto-enabled so thought summaries
-                            are streamed back.
+                            <span className="text-accent-500">includeThoughts</span> is auto-enabled so thought
+                            summaries are streamed back.
                           </div>
                         </div>
                       ) : (
@@ -1449,7 +1451,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                   {thinkingControlState === 'on-and-locked' && (
                     <div className="space-y-2 text-center py-2 bg-accent-500/5 border border-accent-500/10 rounded-xl">
                       <IconifyIcon icon="lucide:shield-alert" className="text-lg text-accent-500" />
-                      <span className="text-xs font-bold text-amplify-elements-textPrimary block">Thinking Enforced</span>
+                      <span className="text-xs font-bold text-amplify-elements-textPrimary block">
+                        Thinking Enforced
+                      </span>
                       <p className="text-[10px] text-amplify-elements-textSecondary px-3 leading-normal">
                         This model enforces internal thought pathways. No budget token caps can be configured.
                       </p>
@@ -1463,7 +1467,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                         icon="lucide:alert-circle"
                         className="text-amplify-elements-textSecondary text-lg mb-1"
                       />
-                      <span className="text-amplify-elements-textSecondary text-xs font-semibold">Standard Pipeline</span>
+                      <span className="text-amplify-elements-textSecondary text-xs font-semibold">
+                        Standard Pipeline
+                      </span>
                       <p className="text-amplify-elements-textTertiary text-[10px] px-3 mt-0.5 leading-normal">
                         This model accepts standard parameters and does not route through reasoning token engines.
                       </p>
@@ -1538,7 +1544,8 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                 updateRateLimit(rateLimitProviderName, { rpm: 0 });
                               } else {
                                 updateRateLimit(rateLimitProviderName, {
-                                  rpm: rateLimitLastValues.rpm || (SUGGESTED_DEFAULTS[rateLimitProviderName]?.rpm ?? 60),
+                                  rpm:
+                                    rateLimitLastValues.rpm || (SUGGESTED_DEFAULTS[rateLimitProviderName]?.rpm ?? 60),
                                 });
                               }
                             }}
@@ -1592,7 +1599,9 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                                 updateRateLimit(rateLimitProviderName, { tpm: 0 });
                               } else {
                                 updateRateLimit(rateLimitProviderName, {
-                                  tpm: rateLimitLastValues.tpm || (SUGGESTED_DEFAULTS[rateLimitProviderName]?.tpm ?? 250000),
+                                  tpm:
+                                    rateLimitLastValues.tpm ||
+                                    (SUGGESTED_DEFAULTS[rateLimitProviderName]?.tpm ?? 250000),
                                 });
                               }
                             }}
@@ -1632,9 +1641,12 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                             placeholder="e.g. 250000"
                           />
                           <div className="text-[11px] text-amplify-elements-textSecondary leading-relaxed bg-amplify-elements-background-depth-1 px-2.5 py-2 rounded-md border border-amplify-elements-borderColor">
-                            <span className="font-semibold text-amplify-elements-textPrimary">⚡ Acts as your effective context window.</span>{' '}
-                            Even if the model supports 1M tokens, a provider TPM cap of 250k means any request over 250k tokens will be rejected (429).
-                            Setting TPM here tells the server to treat this as the real context limit — auto-shrinking older messages to fit, rather than getting blocked.
+                            <span className="font-semibold text-amplify-elements-textPrimary">
+                              ⚡ Acts as your effective context window.
+                            </span>{' '}
+                            Even if the model supports 1M tokens, a provider TPM cap of 250k means any request over 250k
+                            tokens will be rejected (429). Setting TPM here tells the server to treat this as the real
+                            context limit — auto-shrinking older messages to fit, rather than getting blocked.
                           </div>
                         </>
                       )}
@@ -1736,19 +1748,19 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
                       setIsProviderOverlayOpen(false);
                       setIsSettingsPopupOpen(!isSettingsPopupOpen);
                     }}
-                  className={classNames(
-                    'flex items-center justify-center h-8 w-8 rounded-lg border transition-all active:scale-[0.98] outline-none',
-                    isSettingsPopupOpen
-                      ? 'bg-accent-500/15 text-accent-500 border-accent-500/40'
-                      : isKeyMissing && showKeyButton
-                        ? 'bg-destructive/10 text-destructive border-transparent hover:bg-destructive/20'
-                        : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary border-transparent hover:bg-amplify-elements-item-backgroundActive hover:text-amplify-elements-textPrimary',
-                  )}
-                  title="Provider & model settings"
-                >
-                  <IconifyIcon icon="lucide:sliders-horizontal" width="16" height="16" />
-                </button>
-              </div>
+                    className={classNames(
+                      'flex items-center justify-center h-8 w-8 rounded-lg border transition-all active:scale-[0.98] outline-none',
+                      isSettingsPopupOpen
+                        ? 'bg-accent-500/15 text-accent-500 border-accent-500/40'
+                        : isKeyMissing && showKeyButton
+                          ? 'bg-destructive/10 text-destructive border-transparent hover:bg-destructive/20'
+                          : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary border-transparent hover:bg-amplify-elements-item-backgroundActive hover:text-amplify-elements-textPrimary',
+                    )}
+                    title="Provider & model settings"
+                  >
+                    <IconifyIcon icon="lucide:sliders-horizontal" width="16" height="16" />
+                  </button>
+                </div>
               </div>
             </div>
 

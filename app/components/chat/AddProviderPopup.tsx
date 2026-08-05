@@ -8,10 +8,13 @@ import type { ProviderInfo } from '~/types/model';
 interface AddProviderPopupProps {
   open: boolean;
   onClose: () => void;
+
   /** Built-in providers the user can pick instead of adding a custom one. */
   existingProviders: ProviderInfo[];
+
   /** Called when the user picks an existing provider. */
   onSelectExisting?: (provider: ProviderInfo) => void;
+
   /** Called after a custom provider is successfully added. */
   onCustomProviderAdded?: (providerId: string, providerName: string) => void;
 }

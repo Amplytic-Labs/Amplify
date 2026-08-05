@@ -16,10 +16,14 @@ const EXAMPLE_PROMPTS: ExamplePrompt[] = [
 ];
 
 const CATEGORY_STYLES: Record<ExamplePrompt['category'], string> = {
-  build: 'hover:border-blue-400/60 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-blue-500/10',
-  design: 'hover:border-cyan-400/60 dark:hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-400 hover:shadow-cyan-500/10',
-  learn: 'hover:border-teal-400/60 dark:hover:border-teal-500/50 hover:text-teal-600 dark:hover:text-teal-400 hover:shadow-teal-500/10',
-  automate: 'hover:border-sky-400/60 dark:hover:border-sky-500/50 hover:text-sky-600 dark:hover:text-sky-400 hover:shadow-sky-500/10',
+  build:
+    'hover:border-blue-400/60 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 hover:shadow-blue-500/10',
+  design:
+    'hover:border-cyan-400/60 dark:hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-400 hover:shadow-cyan-500/10',
+  learn:
+    'hover:border-teal-400/60 dark:hover:border-teal-500/50 hover:text-teal-600 dark:hover:text-teal-400 hover:shadow-teal-500/10',
+  automate:
+    'hover:border-sky-400/60 dark:hover:border-sky-500/50 hover:text-sky-600 dark:hover:text-sky-400 hover:shadow-sky-500/10',
 };
 
 const CATEGORY_ICON_STYLES: Record<ExamplePrompt['category'], string> = {
@@ -58,7 +62,9 @@ export function ExamplePrompts({ sendMessage }: ExamplePromptsProps = {}) {
               }}
               className={`group inline-flex items-center gap-1.5 border border-amplify-elements-borderColor rounded-full bg-transparent hover:bg-amplify-elements-background-depth-1 text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary px-3.5 py-1.5 text-xs font-medium transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${CATEGORY_STYLES[examplePrompt.category]}`}
             >
-              <span className={`text-[10px] opacity-60 group-hover:opacity-100 transition-opacity ${CATEGORY_ICON_STYLES[examplePrompt.category]}`}>
+              <span
+                className={`text-[10px] opacity-60 group-hover:opacity-100 transition-opacity ${CATEGORY_ICON_STYLES[examplePrompt.category]}`}
+              >
                 {examplePrompt.icon}
               </span>
               {examplePrompt.text}

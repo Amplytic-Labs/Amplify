@@ -15,30 +15,75 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const Icons = {
   copy: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
   ),
   check: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="20 6 9 17 4 12" />
     </svg>
   ),
   search: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   ),
   x: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M4 4l11.733 16h4.267l-11.733 -16z" />
       <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" />
     </svg>
   ),
   share: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="18" cy="5" r="3" />
       <circle cx="6" cy="12" r="3" />
       <circle cx="18" cy="19" r="3" />
@@ -47,25 +92,61 @@ const Icons = {
     </svg>
   ),
   highlight: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M9 11l-6 6v3h9l3-3" />
       <path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
     </svg>
   ),
   readAloud: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
   ),
   stopAudio: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="6" y="6" width="12" height="12" rx="2" />
     </svg>
   ),
   ai: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z" />
     </svg>
   ),
@@ -80,13 +161,31 @@ const Icons = {
     </svg>
   ),
   link: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   ),
   native: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
       <polyline points="16 6 12 2 8 6" />
       <line x1="12" y1="2" x2="12" y2="15" />
@@ -131,7 +230,16 @@ const Icons = {
     </svg>
   ),
   quoteAsk: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       <path d="M8 10h.01" />
       <path d="M12 10h.01" />
@@ -175,11 +283,13 @@ interface SubMenuItem {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getIsMobile(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
   const hasTouchScreen =
-    'ontouchstart' in window ||
-    navigator.maxTouchPoints > 0 ||
-    (navigator as any).msMaxTouchPoints > 0;
+    'ontouchstart' in window || navigator.maxTouchPoints > 0 || (navigator as any).msMaxTouchPoints > 0;
+
   return hasTouchScreen && window.innerWidth < 768;
 }
 
@@ -188,13 +298,16 @@ function getIsMobile(): boolean {
 export interface TextSelectionToolbarProps {
   /** Which actions to show in the toolbar */
   actions?: ActionId[];
+
   /** Visual theme overrides */
   theme?: Partial<Theme>;
+
   /**
    * 'global' = whole page (default)
    * 'parent' = scoped to the element pointed to by parentRef
    */
   scope?: 'global' | 'parent';
+
   /** Ref to scope selections within (only used when scope="parent") */
   parentRef?: React.RefObject<HTMLElement>;
 }
@@ -236,11 +349,13 @@ export function TextSelectionToolbar({
   React.useEffect(() => {
     const styleId = 'text-selection-toolbar-highlight';
     let el = document.getElementById(styleId) as HTMLStyleElement | null;
+
     if (!el) {
       el = document.createElement('style');
       el.id = styleId;
       document.head.appendChild(el);
     }
+
     el.innerHTML = `::highlight(framer-custom-highlight) { background-color: ${theme.highlightColor}; color: inherit; }`;
   }, [theme.highlightColor]);
 
@@ -277,6 +392,7 @@ export function TextSelectionToolbar({
         },
       },
     ];
+
     if (typeof navigator !== 'undefined' && navigator.share) {
       opts.push({
         id: 'native',
@@ -286,10 +402,13 @@ export function TextSelectionToolbar({
         action: async (text) => {
           try {
             await navigator.share({ text, url: window.location.href });
-          } catch { /* user dismissed */ }
+          } catch {
+            /* user dismissed */
+          }
         },
       });
     }
+
     return opts;
   }, [linkCopied]);
 
@@ -330,7 +449,10 @@ export function TextSelectionToolbar({
 
   // ── Close submenu on outside click ──────────────────────────────────────
   React.useEffect(() => {
-    if (!activeMenu) return;
+    if (!activeMenu) {
+      return;
+    }
+
     const handleClick = (e: MouseEvent) => {
       if (
         menuRef.current &&
@@ -342,6 +464,7 @@ export function TextSelectionToolbar({
       }
     };
     document.addEventListener('mousedown', handleClick);
+
     return () => document.removeEventListener('mousedown', handleClick);
   }, [activeMenu]);
 
@@ -349,6 +472,7 @@ export function TextSelectionToolbar({
   React.useEffect(() => {
     if (!selection) {
       setActiveMenu(null);
+
       if (isSpeaking) {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
@@ -359,23 +483,31 @@ export function TextSelectionToolbar({
 
   // ── Dismiss submenu on scroll ────────────────────────────────────────────
   React.useEffect(() => {
-    if (!activeMenu) return;
+    if (!activeMenu) {
+      return;
+    }
+
     const handle = () => setActiveMenu(null);
     window.addEventListener('scroll', handle, true);
+
     return () => window.removeEventListener('scroll', handle, true);
   }, [activeMenu]);
 
   // ── Cleanup speech on unmount ────────────────────────────────────────────
   React.useEffect(() => {
-    return () => { window.speechSynthesis?.cancel(); };
+    return () => {
+      window.speechSynthesis?.cancel();
+    };
   }, []);
 
   // ── Selection change handler ─────────────────────────────────────────────
   const updateSelection = React.useCallback(() => {
     const sel = window.getSelection();
+
     if (!sel || sel.isCollapsed || sel.toString().trim() === '') {
       setSelection(null);
       setPosition(null);
+
       return;
     }
 
@@ -385,12 +517,12 @@ export function TextSelectionToolbar({
     // Scope check
     if (scope === 'parent' && parentRef?.current) {
       const nodeToCheck =
-        ancestor.nodeType === Node.TEXT_NODE
-          ? (ancestor as Text).parentElement
-          : (ancestor as Element);
+        ancestor.nodeType === Node.TEXT_NODE ? (ancestor as Text).parentElement : (ancestor as Element);
+
       if (!nodeToCheck || !parentRef.current.contains(nodeToCheck)) {
         setSelection(null);
         setPosition(null);
+
         return;
       }
     }
@@ -404,6 +536,7 @@ export function TextSelectionToolbar({
 
     let top = rect.top - TOOLBAR_HEIGHT - GAP;
     let isFlipped = false;
+
     if (top < 10) {
       top = rect.bottom + GAP;
       isFlipped = true;
@@ -421,6 +554,7 @@ export function TextSelectionToolbar({
     document.addEventListener('selectionchange', updateSelection);
     window.addEventListener('resize', updateSelection);
     window.addEventListener('scroll', updateSelection, true);
+
     return () => {
       document.removeEventListener('selectionchange', updateSelection);
       window.removeEventListener('resize', updateSelection);
@@ -430,7 +564,10 @@ export function TextSelectionToolbar({
 
   // ── Submenu positioning ──────────────────────────────────────────────────
   const getSubmenuStyle = (): React.CSSProperties => {
-    if (!toolbarRef.current || !position) return {};
+    if (!toolbarRef.current || !position) {
+      return {};
+    }
+
     const toolbarRect = toolbarRef.current.getBoundingClientRect();
     const MENU_WIDTH = 200;
     const GAP = 8;
@@ -444,9 +581,11 @@ export function TextSelectionToolbar({
     if (isNarrow) {
       let menuLeft = toolbarRect.left + toolbarRect.width / 2 - MENU_WIDTH / 2;
       menuLeft = Math.max(VP, Math.min(menuLeft, viewW - MENU_WIDTH - VP));
+
       const spaceAbove = toolbarRect.top - VP;
       const spaceBelow = viewH - toolbarRect.bottom - VP;
       let menuTop: number, maxH: number;
+
       if (spaceAbove >= MENU_NAT_H || spaceAbove > spaceBelow) {
         maxH = Math.min(MENU_NAT_H, spaceAbove - GAP);
         menuTop = toolbarRect.top - maxH - GAP;
@@ -454,6 +593,7 @@ export function TextSelectionToolbar({
         maxH = Math.min(MENU_NAT_H, spaceBelow - GAP);
         menuTop = toolbarRect.bottom + GAP;
       }
+
       return {
         position: 'fixed',
         top: Math.max(VP, menuTop),
@@ -475,9 +615,11 @@ export function TextSelectionToolbar({
     } else {
       menuLeft = toolbarRect.left + toolbarRect.width / 2 - MENU_WIDTH / 2;
       menuLeft = Math.max(VP, Math.min(menuLeft, viewW - MENU_WIDTH - VP));
+
       const spaceBelow = viewH - toolbarRect.bottom - VP;
       const spaceAbove = toolbarRect.top - VP;
       let menuTop: number, maxH: number;
+
       if (spaceBelow >= MENU_NAT_H || spaceBelow > spaceAbove) {
         maxH = Math.min(MENU_NAT_H, spaceBelow - GAP);
         menuTop = toolbarRect.bottom + GAP;
@@ -485,6 +627,7 @@ export function TextSelectionToolbar({
         maxH = Math.min(MENU_NAT_H, spaceAbove - GAP);
         menuTop = toolbarRect.top - maxH - GAP;
       }
+
       return {
         position: 'fixed',
         top: Math.max(VP, menuTop),
@@ -497,8 +640,15 @@ export function TextSelectionToolbar({
 
     let menuTop = toolbarRect.top;
     let maxH = Math.min(MENU_NAT_H, viewH - VP * 2);
-    if (menuTop + maxH > viewH - VP) menuTop = viewH - maxH - VP;
-    if (menuTop < VP) { menuTop = VP; maxH = viewH - VP * 2; }
+
+    if (menuTop + maxH > viewH - VP) {
+      menuTop = viewH - maxH - VP;
+    }
+
+    if (menuTop < VP) {
+      menuTop = VP;
+      maxH = viewH - VP * 2;
+    }
 
     return {
       position: 'fixed',
@@ -514,29 +664,43 @@ export function TextSelectionToolbar({
   const preventDeselect = (e: React.MouseEvent) => e.preventDefault();
 
   const handleCopy = () => {
-    if (!selection) return;
+    if (!selection) {
+      return;
+    }
+
     navigator.clipboard.writeText(selection.text);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
 
   const handleSearch = () => {
-    if (!selection) return;
+    if (!selection) {
+      return;
+    }
+
     window.open(`https://www.google.com/search?q=${encodeURIComponent(selection.text)}`, '_blank');
   };
 
   const handleXShare = () => {
-    if (!selection) return;
+    if (!selection) {
+      return;
+    }
+
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(selection.text)}`, '_blank');
   };
 
   const handleReadAloud = () => {
-    if (!selection) return;
+    if (!selection) {
+      return;
+    }
+
     if (isSpeaking) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
+
       return;
     }
+
     const utterance = new SpeechSynthesisUtterance(selection.text);
     utterance.rate = 1;
     utterance.pitch = 1;
@@ -548,11 +712,13 @@ export function TextSelectionToolbar({
   };
 
   const handleQuote = () => {
-    if (!selection) return;
+    if (!selection) {
+      return;
+    }
+
     // Dispatch a custom event that Chat.client.tsx listens for
-    window.dispatchEvent(
-      new CustomEvent('amplify:quote-text', { detail: selection.text }),
-    );
+    window.dispatchEvent(new CustomEvent('amplify:quote-text', { detail: selection.text }));
+
     // Clear the selection so the toolbar disappears
     window.getSelection()?.removeAllRanges();
   };
@@ -568,8 +734,13 @@ export function TextSelectionToolbar({
         key={option.id}
         onMouseDown={preventDeselect}
         onClick={() => {
-          if (selection) option.action(selection.text);
-          if (option.id !== 'copylink') setActiveMenu(null);
+          if (selection) {
+            option.action(selection.text);
+          }
+
+          if (option.id !== 'copylink') {
+            setActiveMenu(null);
+          }
         }}
         initial={{ opacity: 0, x: -8 }}
         animate={{ opacity: 1, x: 0 }}
@@ -729,12 +900,12 @@ export function TextSelectionToolbar({
   };
 
   // ── SSR guard ────────────────────────────────────────────────────────────
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') {
+    return null;
+  }
 
-  const activeMenuTitle =
-    activeMenu === 'share' ? 'Share via' : activeMenu === 'ai' ? 'Search with AI' : '';
-  const activeMenuItems =
-    activeMenu === 'share' ? shareOptions : activeMenu === 'ai' ? aiOptions : [];
+  const activeMenuTitle = activeMenu === 'share' ? 'Share via' : activeMenu === 'ai' ? 'Search with AI' : '';
+  const activeMenuItems = activeMenu === 'share' ? shareOptions : activeMenu === 'ai' ? aiOptions : [];
 
   return (
     <>

@@ -183,6 +183,7 @@ function buildFromCapabilities(
           };
         }
       }
+
       break;
     }
 
@@ -213,12 +214,15 @@ function buildFromCapabilities(
           reasoningEffort: config.thinkingEnabled ? effortToMagistralEffort(config.effort) : 'none',
         };
       } else if (capabilities.reasoningEffort) {
-        // Generic OpenAI-compatible provider with reasoning_effort support
-        // (Groq, GitHub, HuggingFace, Hyperbolic, OpenRouter, etc.)
+        /*
+         * Generic OpenAI-compatible provider with reasoning_effort support
+         * (Groq, GitHub, HuggingFace, Hyperbolic, OpenRouter, etc.)
+         */
         opts.openai = {
           reasoningEffort: config.effort,
         };
       }
+
       break;
     }
 
@@ -231,12 +235,15 @@ function buildFromCapabilities(
           opts.anthropic = { thinking: { type: 'adaptive' } };
         }
       }
+
       break;
     }
 
     case 'automatic': {
-      // DeepSeek R1, etc. — reasoning is always on, no providerOptions needed.
-      // The AI SDK handles reasoning_content natively.
+      /*
+       * DeepSeek R1, etc. — reasoning is always on, no providerOptions needed.
+       * The AI SDK handles reasoning_content natively.
+       */
       break;
     }
   }
@@ -260,8 +267,10 @@ export function supportsThinkingConfig(
     return false;
   }
 
-  // 'automatic' means the model always reasons — no toggle/config needed
-  // We don't claim "support" here because there's nothing for the user to tune
+  /*
+   * 'automatic' means the model always reasons — no toggle/config needed
+   * We don't claim "support" here because there's nothing for the user to tune
+   */
   if (capabilities.thinking === 'automatic') {
     return false;
   }

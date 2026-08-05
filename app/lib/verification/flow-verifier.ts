@@ -33,8 +33,10 @@ class FileReadCache {
     if (this.cache.has(path)) {
       return this.cache.get(path)!;
     }
+
     const content = await this.readFileFn(path);
     this.cache.set(path, content);
+
     return content;
   }
 }
@@ -64,9 +66,11 @@ export async function runFlowVerification(options: VerificationRunnerOptions): P
   };
 }
 
-// ============================================================
-// Rule 1: Every Button Does Something
-// ============================================================
+/*
+ * ============================================================
+ * Rule 1: Every Button Does Something
+ * ============================================================
+ */
 
 async function checkEveryButtonDoesSomething(
   options: VerificationRunnerOptions,
@@ -74,12 +78,23 @@ async function checkEveryButtonDoesSomething(
   fileCache: FileReadCache,
 ): Promise<void> {
   for (const filePath of options.modifiedFiles) {
-    if (!/\.(jsx|tsx|js|ts)$/.test(filePath)) continue;
-    if (filePath.includes('.test.') || filePath.includes('.spec.')) continue;
-    if (filePath.includes('node_modules')) continue;
+    if (!/\.(jsx|tsx|js|ts)$/.test(filePath)) {
+      continue;
+    }
+
+    if (filePath.includes('.test.') || filePath.includes('.spec.')) {
+      continue;
+    }
+
+    if (filePath.includes('node_modules')) {
+      continue;
+    }
 
     const content = await fileCache.get(filePath);
-    if (!content) continue;
+
+    if (!content) {
+      continue;
+    }
 
     const lines = content.split('\n');
 
@@ -87,9 +102,13 @@ async function checkEveryButtonDoesSomething(
       const line = lines[i];
       const lineNum = i + 1;
 
-      // Pattern 1: Empty arrow function in event handler
-      // onClick={() => {}} or onClick={async () => {}}
-      if (/\b(onClick|onChange|onSubmit|onKeyPress|onKeyDown|onFocus|onBlur)\s*=\s*\{[^}]*=>\s*\{\s*\}[^}]*\}/.test(line)) {
+      /*
+       * Pattern 1: Empty arrow function in event handler
+       * onClick={() => {}} or onClick={async () => {}}
+       */
+      if (
+        /\b(onClick|onChange|onSubmit|onKeyPress|onKeyDown|onFocus|onBlur)\s*=\s*\{[^}]*=>\s*\{\s*\}[^}]*\}/.test(line)
+      ) {
         issues.push({
           filePath,
           line: lineNum,
@@ -121,11 +140,14 @@ async function checkEveryButtonDoesSomething(
         });
       }
 
-      // Pattern 4: Button with no onClick, type, or form association
-      // <button> without onClick, type="submit", or being inside a <form>
+      /*
+       * Pattern 4: Button with no onClick, type, or form association
+       * <button> without onClick, type="submit", or being inside a <form>
+       */
       if (/<button[^>]*>/.test(line) && !/onClick|onSubmit|type=/.test(line)) {
         // Check if the next few lines add an onClick
         const nextLines = lines.slice(i, Math.min(i + 5, lines.length)).join(' ');
+
         if (!/onClick/.test(nextLines) && !/<\/button>/.test(nextLines)) {
           issues.push({
             filePath,
@@ -140,6 +162,7 @@ async function checkEveryButtonDoesSomething(
       // Pattern 5: navigate()/router.push() to undefined variable
       if (/(navigate|router\.push|router\.replace)\s*\(\s*['"`]/.test(line)) {
         const match = line.match(/(?:navigate|router\.push|router\.replace)\s*\(\s*['"]([^'"]+)['"]/);
+
         if (match && match[1] === '') {
           issues.push({
             filePath,
@@ -152,8 +175,10 @@ async function checkEveryButtonDoesSomething(
       }
     }
 
-    // Check for orphaned function definitions that are never called
-    // (basic heuristic: function is defined but never referenced elsewhere in the file)
+    /*
+     * Check for orphaned function definitions that are never called
+     * (basic heuristic: function is defined but never referenced elsewhere in the file)
+     */
     await checkOrphanedHandlers(content, filePath, issues);
   }
 }
@@ -161,16 +186,13 @@ async function checkEveryButtonDoesSomething(
 /**
  * Checks for handler functions that are defined but never connected to any element.
  */
-async function checkOrphanedHandlers(
-  content: string,
-  filePath: string,
-  issues: VerificationIssue[],
-): Promise<void> {
+async function checkOrphanedHandlers(content: string, filePath: string, issues: VerificationIssue[]): Promise<void> {
   // Find function definitions that look like handlers
   const handlerPattern = /(?:const|let|function)\s+(handle\w+|on\w+|submit\w+)\s*[=(]/g;
   const handlers: Array<{ name: string; line: number }> = [];
 
   let match;
+
   while ((match = handlerPattern.exec(content)) !== null) {
     handlers.push({
       name: match[1],
@@ -186,6 +208,7 @@ async function checkOrphanedHandlers(
 
     // If only defined once but never referenced in JSX, flag it
     const usedInJsx = new RegExp(`${handler.name}[\\s}]*[>"]`, 'm').test(content);
+
     if (!usedInJsx && refCount <= 1) {
       issues.push({
         filePath,
@@ -198,9 +221,11 @@ async function checkOrphanedHandlers(
   }
 }
 
-// ============================================================
-// Rule 2: Every Screen Is Connected
-// ============================================================
+/*
+ * ============================================================
+ * Rule 2: Every Screen Is Connected
+ * ============================================================
+ */
 
 async function checkEveryScreenIsConnected(
   options: VerificationRunnerOptions,
@@ -225,7 +250,10 @@ async function checkEveryScreenIsConnected(
 
   for (const compFile of componentFiles) {
     const content = await fileCache.get(compFile);
-    if (!content) continue;
+
+    if (!content) {
+      continue;
+    }
 
     // Extract the default export name
     const exportMatch = content.match(/export\s+(?:default\s+)?function\s+(\w+)/);
@@ -236,13 +264,17 @@ async function checkEveryScreenIsConnected(
 
     for (const routeFile of routes.routeFiles) {
       const routeContent = await fileCache.get(routeFile);
-      if (!routeContent) continue;
+
+      if (!routeContent) {
+        continue;
+      }
 
       // Check if the component file is imported in the route
       const importPattern = new RegExp(
         compFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\/index\.(tsx|jsx)$/, ''),
         'i',
       );
+
       if (importPattern.test(routeContent)) {
         isReachable = true;
         break;
@@ -255,25 +287,41 @@ async function checkEveryScreenIsConnected(
       }
     }
 
-    // Also check if the component is referenced from other components
-    // that ARE in routes (indirect connection)
+    /*
+     * Also check if the component is referenced from other components
+     * that ARE in routes (indirect connection)
+     */
     if (!isReachable) {
       for (const otherFile of allFiles) {
-        if (otherFile === compFile) continue;
-        if (routes.routeFiles.includes(otherFile)) continue;
-        if (!/\.(jsx|tsx|js|ts)$/.test(otherFile)) continue;
+        if (otherFile === compFile) {
+          continue;
+        }
+
+        if (routes.routeFiles.includes(otherFile)) {
+          continue;
+        }
+
+        if (!/\.(jsx|tsx|js|ts)$/.test(otherFile)) {
+          continue;
+        }
 
         const otherContent = await fileCache.get(otherFile);
-        if (!otherContent) continue;
+
+        if (!otherContent) {
+          continue;
+        }
 
         const fileRefPattern = new RegExp(
           compFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\/index\.(tsx|jsx)$/, ''),
           'i',
         );
+
         if (fileRefPattern.test(otherContent) || (compName && new RegExp(`\\b${compName}\\b`).test(otherContent))) {
-          // This component is referenced by another component — check if that
-          // other component is reachable from a route (recursive, but 1 level is enough)
-          // For now, mark as potentially connected
+          /*
+           * This component is referenced by another component — check if that
+           * other component is reachable from a route (recursive, but 1 level is enough)
+           * For now, mark as potentially connected
+           */
           isReachable = true;
           break;
         }
@@ -296,12 +344,14 @@ async function checkEveryScreenIsConnected(
  * (as opposed to a shared component, utility, etc.)
  */
 function isLikelyAScreen(content: string): boolean {
-  // Heuristics that suggest a page/screen:
-  // - Has a page-level layout (returns a full page structure)
-  // - Has "page" or "screen" in the filename (already filtered by caller)
-  // - Has a main container div with page-like structure
-  // - Has a heading/title element
-  // - Has a return statement with a top-level container
+  /*
+   * Heuristics that suggest a page/screen:
+   * - Has a page-level layout (returns a full page structure)
+   * - Has "page" or "screen" in the filename (already filtered by caller)
+   * - Has a main container div with page-like structure
+   * - Has a heading/title element
+   * - Has a return statement with a top-level container
+   */
 
   const hasPageStructure =
     /return\s*\(\s*<div[^>]*>\s*<(h[1-6]|main|section|header)/.test(content) ||
@@ -327,12 +377,15 @@ async function findRoutes(
   const routeFiles: string[] = [];
   const routePaths: string[] = [];
 
-  // React Router pattern: look for Route elements
-  // Remix pattern: look in app/routes/ directory
-  // Next.js pattern: look in app/ or pages/ directory
+  /*
+   * React Router pattern: look for Route elements
+   * Remix pattern: look in app/routes/ directory
+   * Next.js pattern: look in app/ or pages/ directory
+   */
 
   // Remix routes
   const remixRouteFiles = allFiles.filter((f) => f.includes('app/routes/') && /\.(tsx|ts|jsx|js)$/.test(f));
+
   if (remixRouteFiles.length > 0) {
     routeFiles.push(...remixRouteFiles);
     return { routeFiles, routePaths };
@@ -340,6 +393,7 @@ async function findRoutes(
 
   // Next.js app router
   const nextRouteFiles = allFiles.filter((f) => f.includes('app/') && /page\.(tsx|ts|jsx|js)$/.test(f));
+
   if (nextRouteFiles.length > 0) {
     routeFiles.push(...nextRouteFiles);
     return { routeFiles, routePaths };
@@ -353,6 +407,7 @@ async function findRoutes(
       !f.includes('_app') &&
       !f.includes('_document'),
   );
+
   if (pagesRouteFiles.length > 0) {
     routeFiles.push(...pagesRouteFiles);
     return { routeFiles, routePaths };
@@ -360,18 +415,30 @@ async function findRoutes(
 
   // React Router: find files that define <Route> or <Routes>
   for (const file of allFiles) {
-    if (!/\.(tsx|jsx|ts|js)$/.test(file)) continue;
-    if (file.includes('node_modules')) continue;
-    if (file.includes('.test.') || file.includes('.spec.')) continue;
+    if (!/\.(tsx|jsx|ts|js)$/.test(file)) {
+      continue;
+    }
+
+    if (file.includes('node_modules')) {
+      continue;
+    }
+
+    if (file.includes('.test.') || file.includes('.spec.')) {
+      continue;
+    }
 
     const content = await (fileCache?.get(file) ?? options.readFile(file));
-    if (!content) continue;
+
+    if (!content) {
+      continue;
+    }
 
     if (/<Route[\s>]/.test(content) || /createBrowserRouter/.test(content) || /RouterProvider/.test(content)) {
       routeFiles.push(file);
 
       // Extract route paths
       const pathMatches = content.matchAll(/path\s*=\s*["']([^"']+)["']/g);
+
       for (const m of pathMatches) {
         routePaths.push(m[1]);
       }

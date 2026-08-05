@@ -78,7 +78,9 @@ export function tryClaimToolCallApproval(toolCallId: string): boolean {
   if (approvedToolCallIds.has(toolCallId)) {
     return false;
   }
+
   approvedToolCallIds.add(toolCallId);
+
   return true;
 }
 
