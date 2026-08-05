@@ -3450,3 +3450,32 @@ Stage Summary:
 - No regressions: typecheck clean, lint clean, all chain-segments tests pass.
 - Files modified (3): app/lib/persistence/useChatHistory.ts, app/components/chat/BaseChat.tsx, worklog.md (this entry).
 - Ready to push to rebrand/amplify.
+
+---
+Task ID: revert-parallel-injection
+Agent: main (Super Z)
+Task: User reported the workspace-files-not-loading bug started when commit f66efa22 introduced a parallel file-write pipeline. Revert the parallel injection changes (keep the sequential write path) to restore reliable workspace loading.
+
+Work Log:
+- Identified commit f66efa22 "feat(template-loading): parallel file-write pipeline + tool-result gating" as the source. It introduced parallel file writing in THREE active code paths PLUS 6 new infrastructure files.
+- Reverted all three active code paths to sequential:
+  1. `app/lib/persistence/useChatHistory.ts` — `restoreFileMap` rewritten back to the original two sequential for-loops (Phase 1: mkdir all folders, Phase 2: writeFile all files). Removed the `writeFilesParallel`/`fileMapToWriteTasks` import. Individual file write failures now log a warning instead of being silently collected.
+  2. `app/components/chat/Chat.client.tsx` — removed the entire `inject_template parallel-write handler` useEffect block (~165 lines): the `processedLoadIdsRef` ref, the fetch to `/api/template-files?loadId=X`, the `writeFilesParallel` call, the `workbenchStore.files.set(newFiles)` atomic update, and the POST to `/api/template-loaded`. Removed the `writeFilesParallel` import. The legacy `<amplifyArtifact>` XML stream + ActionRunner sequential write path is now the only inject_template path.
+  3. `app/lib/.server/llm/stream-text.ts` — reverted `inject_template.execute` to stream `result.assistantMessage` (the `<amplifyArtifact>` XML) via `dataStream.write({type:'text-delta',...})` and return immediately with the async-write warning. Removed the `generateId`/`waitForTemplateLoad` imports, the `loadId` generation, the `loadPromise = waitForTemplateLoad(...)`, the 120s timeout branch, and the `filesWritten`/`filesTotal`/`failedFiles` result fields.
+- Updated `app/utils/selectStarterTemplate.ts` comment to reflect that the `files` field is now kept only for backwards compat (the active path no longer reads it).
+- Deleted the 6 now-unused infrastructure files (verified zero remaining imports before deletion):
+  - `app/lib/utils/parallel-file-writer.ts`
+  - `app/lib/utils/parallel-file-writer.spec.ts`
+  - `app/lib/utils/template-load-registry.ts`
+  - `app/lib/utils/template-load-registry.spec.ts`
+  - `app/routes/api.template-files.ts`
+  - `app/routes/api.template-loaded.ts`
+- Verified: `npx tsc --noEmit` reports only the pre-existing error in `api.export-docx.ts` (untouched by this work); `npx eslint` clean on all 4 modified files; `npx vitest run` — all 121 tests across 5 test files pass.
+
+Stage Summary:
+- Parallel file injection fully reverted. Both code paths (manual template-pick via restoreFileMap, and AI inject_template via dataStream XML + ActionRunner) now write files sequentially.
+- 6 dead infrastructure files deleted.
+- The previous workspace-refresh fix (linkedProject urlProjectId fallback, clearWorkspace race fix, awaited restoreSnapshot, snapshotHasFiles check) is PRESERVED — those fixes are orthogonal to the parallel/sequential choice and remain valuable.
+- Typecheck clean (except pre-existing api.export-docx.ts), lint clean, all 121 tests pass.
+- Files modified (4) + deleted (6): useChatHistory.ts, Chat.client.tsx, stream-text.ts, selectStarterTemplate.ts; deleted parallel-file-writer.{ts,spec.ts}, template-load-registry.{ts,spec.ts}, api.template-files.ts, api.template-loaded.ts.
+- Ready to push to rebrand/amplify.

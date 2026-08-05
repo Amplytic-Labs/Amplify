@@ -1190,104 +1190,52 @@ ${systemPrompt}`;
                   }
 
                   /*
-                   * NEW PARALLEL-WRITE PIPELINE
-                   * -----------------------------------
-                   * Previously this function streamed an <amplifyArtifact> XML
-                   * blob via dataStream.write() and returned immediately. The
-                   * client parsed the XML and wrote files SEQUENTIALLY via
-                   * ActionRunner.#currentExecutionPromise, taking ~200s for
-                   * 400 files. The tool also returned success BEFORE files
-                   * were written, causing the AI to call read_file on
-                   * non-existent files.
+                   * Stream the template's <amplifyArtifact> XML to the
+                   * client. The client-side message parser
+                   * (EnhancedStreamingMessageParser) parses the XML and
+                   * writes files to the WebContainer sequentially via
+                   * ActionRunner.
                    *
-                   * New flow:
-                   *   1. Generate a loadId.
-                   *   2. Register the load (file list + Promise) in the
-                   *      template-load-registry.
-                   *   3. Return a tool result containing the loadId + summary.
-                   *   4. The client sees the loadId, fetches the file list
-                   *      from /api/template-files?loadId=X, writes them in
-                   *      parallel via writeFilesParallel, then POSTs
-                   *      /api/template-loaded with the progress.
-                   *   5. waitForTemplateLoad() resolves when the client
-                   *      signals completion (or rejects on 120s timeout).
-                   *   6. This execute function returns the REAL result
-                   *      (success or partial failure) only after files are
-                   *      confirmed written — the AI can safely proceed.
+                   * REVERTED from the parallel-write pipeline (commit
+                   * f66efa22) because concurrent writes were causing files
+                   * to silently fail to appear in the workspace after a
+                   * page refresh. The sequential path is slower for large
+                   * templates but reliable.
                    *
-                   * The <amplifyArtifact> XML is no longer streamed. The
-                   * existing message-parser path remains for backwards-
-                   * compat with already-persisted messages, but new
-                   * inject_template calls use this direct pipeline.
-                   */
-                  const { generateId } = await import('ai');
-                  const loadId = `tpl-${generateId()}`;
-                  const { waitForTemplateLoad } = await import('~/lib/utils/template-load-registry');
-
-                  const files = result.files.map((f) => ({ path: f.path, content: f.content }));
-
-                  const loadPromise = waitForTemplateLoad(loadId, files, 120_000);
-
-                  /*
-                   * Write a small text annotation so the user sees a hint
-                   * that the template is being injected. This is NOT a UI
-                   * progress indicator (per the user's request) — it's a
-                   * one-line status message that's already part of the
-                   * existing chat UX. The client's ThoughtsPanel will show
-                   * "Used inject_template" with a shimmer while pending.
+                   * AI SDK v7 requires a "text-start" chunk before any
+                   * "text-delta" chunks for a given text part ID. Without
+                   * it, the client-side stream processor throws:
+                   *   "Received text-delta for missing text part with ID 'template'"
                    */
                   if (props.dataStream) {
                     props.dataStream.write({ type: 'text-start', id: 'template' });
-                    props.dataStream.write({
-                      type: 'text-delta',
-                      id: 'template',
-                      delta: `\n[Loading template "${resolvedTemplateName}" — ${files.length} files]\n`,
-                    });
+                    props.dataStream.write({ type: 'text-delta', id: 'template', delta: result.assistantMessage });
                     props.dataStream.write({ type: 'text-end', id: 'template' });
-                  }
-
-                  let progress;
-
-                  try {
-                    progress = await loadPromise;
-                  } catch {
-                    /*
-                     * Timeout — the client didn't signal completion in 120s.
-                     * Return a partial-success result with a warning so the
-                     * AI can continue (it'll likely retry or use list_dir).
-                     */
-                    return {
-                      summary: result.summary,
-                      userMessage: result.userMessage,
-                      loadId,
-                      warning: `Template load timed out after 120s. ${files.length} files were supposed to be written but completion was not confirmed. Use list_dir to check the workspace state before reading or modifying files.`,
-                    };
-                  }
-
-                  /*
-                   * Build the result based on the actual write progress.
-                   * If all files succeeded, return the normal success result.
-                   * If some failed, include the failures in the result so
-                   * the AI is aware.
-                   */
-                  if (progress.failed.length === 0) {
-                    return {
-                      summary: result.summary,
-                      userMessage: result.userMessage,
-                      loadId,
-                      filesWritten: progress.done,
-                      filesTotal: progress.total,
-                    };
                   }
 
                   return {
                     summary: result.summary,
                     userMessage: result.userMessage,
-                    loadId,
-                    filesWritten: progress.done,
-                    filesTotal: progress.total,
-                    failedFiles: progress.failed,
-                    warning: `${progress.failed.length} file(s) failed to write: ${progress.failed.map((f) => f.path).join(', ')}. The workspace may be in a partial state — use list_dir to verify before proceeding.`,
+
+                    /*
+                     * IMPORTANT: the template's <amplifyArtifact> XML is
+                     * streamed above and parsed/written to the WebContainer
+                     * by the client message parser ASYNCHRONOUSLY. This tool
+                     * result is returned to the model BEFORE all files are
+                     * committed to the workspace.
+                     *
+                     * The client-side readiness gate delays auto-approval of
+                     * read-only tools and the application of file mutations
+                     * until the file count has stabilized, so by the time a
+                     * subsequent read_file / list_dir / mutate call is
+                     * permitted to execute, the files will exist.
+                     *
+                     * Do NOT immediately attempt to read or modify files
+                     * that were just injected — they may not be written yet.
+                     * If you must verify, prefer list_dir first.
+                     */
+                    warning:
+                      'Template files are being written to the workspace asynchronously. Wait for the workspace to finish loading before reading or modifying files, otherwise operations may fail on non-existent files.',
                   };
                 } catch (e: any) {
                   return { error: e.message };

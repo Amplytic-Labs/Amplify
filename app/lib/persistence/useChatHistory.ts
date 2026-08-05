@@ -27,7 +27,6 @@ import { projectStore } from './project-store';
 import { getProjectFiles, createProjectCommit } from './project-files';
 import { runProjectAutoSetup } from './project-auto-run';
 import { extractChatName } from '~/lib/chat/chatname';
-import { writeFilesParallel, fileMapToWriteTasks } from '~/lib/utils/parallel-file-writer';
 
 export interface ChatHistoryItem {
   id: string;
@@ -114,42 +113,51 @@ export function useChatHistory() {
   const restoreFileMap = useCallback(async (files: FileMap) => {
     const container = await webcontainer;
 
-    /*
-     * Parallel file restoration — replaces the previous two sequential
-     * for-loops (one for mkdir, one for writeFile) that serialized every
-     * write and made large template loads take ~200s for 400 files.
-     *
-     * writeFilesParallel:
-     *   1. Dedupes parent dirs and mkdirs them in parallel (most templates
-     *      share a small set of parent dirs, so ~400 mkdirs collapse to ~10).
-     *   2. Writes files via a concurrency-limited worker pool (default 12
-     *      concurrent writes). WebContainer FS handles concurrent writes to
-     *      different paths via Comlink's non-queueing message dispatch.
-     *
-     * Errors are collected (not thrown) to match the previous behavior —
-     * individual file failures don't abort the whole restore. Failed files
-     * are logged so they're not silently lost.
-     */
-    const tasks = fileMapToWriteTasks(files, container.workdir);
+    const entries = Object.entries(files);
 
-    if (tasks.length === 0) {
-      return;
+    /*
+     * Phase 1: create all directories (sequential — the WebContainer FS
+     * is happiest with one mkdir at a time, and concurrent writes were
+     * causing files to silently fail to appear in the workspace after a
+     * page refresh).
+     */
+    for (const [rawKey, value] of entries) {
+      if (value?.type !== 'folder') {
+        continue;
+      }
+
+      let key = rawKey;
+
+      if (key.startsWith(container.workdir)) {
+        key = key.replace(container.workdir, '');
+      }
+
+      try {
+        await container.fs.mkdir(key, { recursive: true });
+      } catch {
+        /* ignore */
+      }
     }
 
-    const progress = await writeFilesParallel(tasks, {
-      concurrency: 12,
-      onProgress: ({ done, total, failed }) => {
-        if (failed.length > 0 && done === total) {
-          console.warn(
-            `[restoreFileMap] ${failed.length}/${total} files failed to restore:`,
-            failed.map((f) => f.path).join(', '),
-          );
-        }
-      },
-    });
+    /*
+     * Phase 2: write all files (sequential — see comment above).
+     */
+    for (const [rawKey, value] of entries) {
+      if (value?.type !== 'file') {
+        continue;
+      }
 
-    if (progress.failed.length > 0) {
-      console.warn(`[restoreFileMap] ${progress.failed.length}/${progress.total} files failed:`, progress.failed);
+      let key = rawKey;
+
+      if (key.startsWith(container.workdir)) {
+        key = key.replace(container.workdir, '');
+      }
+
+      try {
+        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
+      } catch (e) {
+        console.warn(`[restoreFileMap] Failed to write ${key}:`, e);
+      }
     }
   }, []);
 

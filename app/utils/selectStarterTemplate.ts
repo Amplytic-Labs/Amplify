@@ -293,14 +293,10 @@ Now that the Template is imported, please continue with my original request.
     userMessage,
 
     /*
-     * Raw file list — used by inject_template.execute's new parallel-write
-     * path. The client writes these files directly to the WebContainer via
-     * writeFilesParallel, bypassing the legacy <amplifyArtifact> XML stream
-     * + ActionRunner serialize chain.
-     *
-     * The assistantMessage XML is still returned for backwards compat (any
-     * persisted messages from before this change still reference it), but
-     * the new execute path does NOT write it to the dataStream.
+     * Raw file list — kept for backwards compat with any callers that
+     * reference it. The active inject_template.execute path streams the
+     * <amplifyArtifact> XML via dataStream and the client message parser
+     * writes files to the WebContainer sequentially.
      */
     files: filesToImport.files.map((f) => ({ name: f.name, path: f.path, content: f.content })),
   };
