@@ -2,7 +2,7 @@ import type { TextUIPart, ReasoningUIPart } from '@ai-sdk/ui-utils';
 import { isToolPart, getToolNameFromPart, getToolState } from './tool-parts';
 
 /**
- * Chain-of-thought segment splitter.
+ * Chain-of-thought segment splitter — COPILOT-FAITHFUL semantics.
  *
  * PROBLEM BEING SOLVED
  * --------------------
@@ -10,119 +10,74 @@ import { isToolPart, getToolNameFromPart, getToolState } from './tool-parts';
  *
  *   [reasoning₁, tool₁, text₁, reasoning₂, tool₂]
  *
- * The previous AssistantMessage renderer filtered ALL reasoning+tool parts
- * into ONE flat array and concatenated ALL text parts into ONE string, then
- * rendered exactly one `<ThoughtsPanel>` followed by one `<Markdown>`. That
- * discarded the position of `text₁` — so a normal response that arrived
- * BETWEEN two reasoning/tool bursts was "pushed out" below the entire chain,
- * and the second reasoning/tool burst glued onto the original panel instead
- * of starting a new one. Visually, the chain appeared to continue across
- * what should have been a clean break.
+ * VS Code Copilot's renderer (in vscode/workbench/contrib/chat/browser/)
+ * groups consecutive `thinking` + `toolInvocation` parts into ONE
+ * collapsible "Thinking" panel. A `markdown` part — i.e. real user-facing
+ * response text — TERMINATES the panel. The next thinking/tool run after
+ * that text starts a FRESH panel.
+ *
+ * That's exactly the behaviour the user wants:
+ *
+ *   - "any combination of tools and thought parts in consecutive should be
+ *      chained together — does not matter who comes after who or is it
+ *      tools repeating or just thought blocks repeating"
+ *   - "they may send a normal response before executing a tool and say like
+ *      'I will not use list_dir' — so as you can see we should break the
+ *      previous chain of thought"
  *
  * WHAT THIS HELPER DOES
  * ---------------------
  * Walks `parts` in stream order and produces an ordered list of segments.
  * Three kinds:
  *
- *   - `chain`  : a run of consecutive reasoning + tool parts. ALWAYS collapsible
- *                ("Thought for Ns" / "Completed in N steps" panel). A pure-tool
- *                run with NO reasoning is STILL a `chain` — the only thing that
- *                demotes a run to `tools` (inline, non-collapsible) is being
- *                SANDWICHED between two text segments (see `tools` below).
+ *   - `chain`  : a run of consecutive reasoning + tool parts. ALWAYS collapsible.
+ *                A pure-tool run with NO reasoning is STILL a `chain`.
  *   - `tools`  : a run of tool parts (with or without reasoning) that sits
  *                BETWEEN two `text` segments — i.e. the model emitted a
  *                response, then called a tool, then emitted another response.
  *                These render as flat inline `[icon] Used x tool …` rows
- *                WITHOUT a collapsible wrapper, because the surrounding text
- *                already gives the user enough context — the tool call is a
- *                side action, not a "thinking" phase.
+ *                WITHOUT a collapsible wrapper. (Sandwiched case only.)
  *   - `text`   : a text part (non-empty after trim). Closes the current
  *                chain/tools accumulator, emits itself, and starts a fresh
- *                accumulator. This is the chain-BREAK trigger.
+ *                accumulator. This is the chain-BREAK trigger — matching
+ *                Copilot's "markdown terminates the thinking panel" rule.
  *
- * Empty/whitespace-only text parts do NOT create a phantom `text` segment —
- * they're skipped so we don't render empty Markdown blocks between chains.
+ * RULE (final, Copilot-faithful)
+ * ------------------------------
+ *   - `text` (non-empty)            → BREAKS the chain.
+ *   - `reasoning` / tool parts      → accumulate into the current run.
+ *   - `step-start`                  → IGNORED. Does NOT break the chain.
+ *                                     The AI SDK emits step-starts between
+ *                                     agent steps (after a tool result
+ *                                     comes back). Copilot's renderer never
+ *                                     sees these (the extension API has no
+ *                                     such concept), so to faithfully match
+ *                                     Copilot we must NOT break on them.
+ *                                     This is the fix for "the same chain
+ *                                     repeats multiple times across steps".
+ *   - empty/whitespace text         → skipped (no phantom text segment).
+ *   - unknown parts (source-url,
+ *     file, etc.)                   → ignored, no break.
  *
- * CLASSIFICATION RULE (v2 — fixes the v1 bug)
- * -------------------------------------------
- * In v1, a run was `chain` only if it contained a reasoning part, otherwise
- * `tools`. That was wrong: a pure-tool run at the START of a message (e.g.
- * `[tool, tool, tool, tool, reasoning, response]`) was demoted to `tools`
- * (inline, non-collapsible) even though the user clearly wanted those tools
- * grouped as the model's "thinking" phase before the answer.
- *
- * v2 rule: a run is `tools` (inline) ONLY when it is sandwiched between two
- * text segments. Everything else — leading runs, trailing runs, runs between
- * text and step-start, runs containing reasoning, etc. — is `chain`
- * (collapsible). This makes the collapsible panel the DEFAULT, with inline
- * tool rows being the special case for "tool calls between two responses".
- *
- * IMPLEMENTATION
- * --------------
- * We can't decide `tools` vs `chain` during the first walk because we don't
- * yet know if a `text` segment will follow. So we do two passes:
- *
- *   1. Walk parts, build a list of "raw runs" (non-text accumulators) and
- *      `text` segments in stream order.
- *   2. Walk the raw runs: any run that has a `text` segment BOTH before AND
- *      after it becomes `tools`; everything else becomes `chain`.
+ * Two-pass implementation:
+ *   1. Walk parts, build a list of "raw runs" + `text` segments in stream order.
+ *   2. Walk raw runs: any run with a `text` BOTH before AND after it becomes
+ *      `tools` (inline); everything else becomes `chain` (collapsible).
  *
  * EXAMPLES
  * --------
- *   [reasoning, tool]
- *     → [chain: [reasoning, tool]]
- *
- *   [text]
- *     → [text: "..."]
- *
- *   [reasoning, tool, text, reasoning, tool]      ← the user's bug scenario
- *     → [chain: [reasoning, tool], text: "...", chain: [reasoning, tool]]
- *
- *   [text, reasoning]
- *     → [text: "...", chain: [reasoning]]
- *
- *   [tool]                                         ← leading tool, no text around
- *     → [chain: [tool]]
- *
- *   [tool, tool, tool, tool, reasoning, response] ← user's example: ONE chain
- *     → [chain: [tool, tool, tool, tool, reasoning], text: "response"]
- *
- *   [text, tool, text]                             ← sandwiched tool
- *     → [text: "...", tools: [tool], text: "..."]
- *
- *   [reasoning, text, tool]                        ← chain split by text; tool is trailing
- *     → [chain: [reasoning], text: "...", chain: [tool]]
- *     (NOT tools — the tool is at the END, not between two texts)
- *
- *   [tool, text, reasoning, tool]                  ← leading tool, then chain
- *     → [chain: [tool], text: "...", chain: [reasoning, tool]]
- *     (NOT tools for the first run — it's at the START, not sandwiched)
- *
- *   [reasoning, "", text, reasoning]               ← empty text part skipped
- *     → [chain: [reasoning], text: "...", chain: [reasoning]]
- *
- *   [text, tool]                                   ← tool AFTER text, no text after
- *     → [text: "...", chain: [tool]]
- *     (NOT tools — no following text segment)
- *
- * STEP-START PARTS
- * ----------------
- * The AI SDK emits `step-start` parts to mark the beginning of a new
- * generation step (e.g. after a tool result comes back and the model
- * generates a follow-up turn). These are NOT reasoning, NOT tools, and NOT
- * user-facing text — but they DO semantically mark a chain break (the model
- * is starting a fresh generation after the previous turn's tools completed).
- *
- * We treat `step-start` the same as `text`: it closes the current
- * chain/tools accumulator. We do NOT emit a `text` segment for it (it has
- * no content), so it acts as a silent break. IMPORTANTLY: a `step-start`
- * does NOT count as a "text neighbor" for the sandwich rule — a run between
- * a `text` and a `step-start` is still `chain`, because the step-start
- * doesn't give the user visible response text on both sides.
- *
- * Source/dynamic parts (`source-url`, `file`, etc.) are currently ignored —
- * they don't trigger a break and don't contribute to any segment. If a
- * future feature needs them rendered inline, add a new segment kind.
+ *   [reasoning, tool]                              → [chain: [reasoning, tool]]
+ *   [text]                                         → [text: "..."]
+ *   [reasoning, tool, text, reasoning, tool]       → [chain, text, chain]
+ *   [step-start, reasoning, step-start, tool]      → [chain: [reasoning, tool]]
+ *                                                    (step-starts ignored)
+ *   [reasoning, step-start, reasoning, tool, text] → [chain: [r,r,t], text]
+ *                                                    (ONE chain — step-start
+ *                                                     did NOT split it)
+ *   [text, tool, text]                             → [text, tools, text]
+ *                                                    (sandwiched → inline)
+ *   [tool, tool, tool, reasoning, response]        → [chain: [t,t,t,r], text]
+ *                                                    (ONE chain + ONE text)
  */
 export type ChainSegment =
   | { kind: 'chain'; parts: (ReasoningUIPart | any)[] }
@@ -132,13 +87,11 @@ export type ChainSegment =
 /**
  * Internal intermediate shape used during the two-pass walk.
  *
- *   - `run`  : a consecutive non-text, non-step-start accumulator. Will be
- *              reclassified to `chain` or `tools` in pass 2.
+ *   - `run`  : a consecutive non-text accumulator. Will be reclassified to
+ *              `chain` or `tools` in pass 2.
  *   - `text` : a non-empty text segment (final — not reclassified).
- *   - `break`: a step-start (silent break — does NOT count as a text
- *              neighbor for the sandwich rule).
  */
-type IntermediateSegment = { kind: 'run'; parts: any[] } | { kind: 'text'; text: string } | { kind: 'break' };
+type IntermediateSegment = { kind: 'run'; parts: any[] } | { kind: 'text'; text: string };
 
 /**
  * Split a `UIMessage.parts` array into ordered segments.
@@ -158,7 +111,11 @@ export function splitPartsIntoSegments(
    *
    * Consecutive reasoning/tool parts accumulate into a single `run`. A
    * non-empty text part closes the current run and emits a `text` segment.
-   * A step-start closes the current run and emits a `break` (silent).
+   *
+   * NOTE: `step-start` is intentionally NOT handled here. It falls through
+   * to the "unknown part types — ignored" branch, so it neither breaks the
+   * chain nor contributes to any segment. This matches Copilot's renderer,
+   * which never sees step-starts at all.
    */
   const intermediate: IntermediateSegment[] = [];
   let acc: any[] = [];
@@ -194,7 +151,7 @@ export function splitPartsIntoSegments(
 
     /*
      * Text part → close current run, emit a text segment (if non-empty),
-     * then start a fresh accumulator.
+     * then start a fresh accumulator. THIS is the chain-break trigger.
      */
     if (part.type === 'text') {
       const text = (part as TextUIPart).text ?? '';
@@ -209,19 +166,10 @@ export function splitPartsIntoSegments(
     }
 
     /*
-     * `step-start` (and any other non-content marker) → close the current
-     * run silently. Emits a `break` so pass 2 knows the run ended, but the
-     * break does NOT count as a "text neighbor" for the sandwich rule.
-     */
-    if (part.type === 'step-start' || part.type === 'stepStart') {
-      flushAccumulator();
-      intermediate.push({ kind: 'break' });
-      continue;
-    }
-
-    /*
-     * Unknown part types (source-url, file, etc.) — currently ignored.
-     * They don't break the chain and don't contribute to any segment.
+     * All other part types — `step-start`, `source-url`, `file`, etc. —
+     * are IGNORED. They do NOT break the chain and do NOT contribute to
+     * any segment. This is the Copilot-faithful behaviour: only real
+     * user-facing text terminates a thinking panel.
      */
   }
 
@@ -236,13 +184,8 @@ export function splitPartsIntoSegments(
    * PASS 2 — reclassify each `run` as `chain` or `tools`.
    *
    * A run becomes `tools` (inline, non-collapsible) ONLY when it has a
-   * `text` segment BOTH immediately before AND immediately after it
-   * (ignoring `break` segments — those don't count as text neighbors).
-   *
+   * `text` segment BOTH immediately before AND immediately after it.
    * Everything else becomes `chain` (collapsible).
-   *
-   * We also collapse `break` segments out of the final output — they were
-   * only there to mark silent breaks during pass 1.
    */
   const segments: ChainSegment[] = [];
 
@@ -251,11 +194,6 @@ export function splitPartsIntoSegments(
 
     if (seg.kind === 'text') {
       segments.push({ kind: 'text', text: seg.text });
-      continue;
-    }
-
-    if (seg.kind === 'break') {
-      // Breaks are silent — they don't appear in the final output.
       continue;
     }
 
@@ -276,12 +214,8 @@ export function splitPartsIntoSegments(
 }
 
 /**
- * Find the index of the nearest `text` segment BEFORE `runIdx` in the
- * intermediate list, skipping over `break` segments. Returns -1 if there
- * isn't one (i.e. the run is at the start, or only breaks precede it).
- *
- * A `break` (step-start) does NOT count as a text neighbor — it's a silent
- * chain breaker, not user-visible response text.
+ * Find the index of the nearest `text` segment BEFORE `runIdx`.
+ * Returns -1 if there isn't one (i.e. the run is at the start).
  */
 function findNearestTextBefore(intermediate: IntermediateSegment[], runIdx: number): number {
   for (let i = runIdx - 1; i >= 0; i--) {
@@ -291,18 +225,7 @@ function findNearestTextBefore(intermediate: IntermediateSegment[], runIdx: numb
       return i;
     }
 
-    /*
-     * break → keep scanning past it (it doesn't count as text but also
-     * doesn't block us from finding an earlier text).
-     */
-    if (seg.kind === 'break') {
-      continue;
-    }
-
-    /*
-     * run → we hit another run before finding text. Not sandwiched on
-     * this side.
-     */
+    // run → another run before finding text. Not sandwiched on this side.
     return -1;
   }
 
@@ -310,9 +233,8 @@ function findNearestTextBefore(intermediate: IntermediateSegment[], runIdx: numb
 }
 
 /**
- * Find the index of the nearest `text` segment AFTER `runIdx` in the
- * intermediate list, skipping over `break` segments. Returns -1 if there
- * isn't one.
+ * Find the index of the nearest `text` segment AFTER `runIdx`.
+ * Returns -1 if there isn't one.
  */
 function findNearestTextAfter(intermediate: IntermediateSegment[], runIdx: number): number {
   for (let i = runIdx + 1; i < intermediate.length; i++) {
@@ -320,10 +242,6 @@ function findNearestTextAfter(intermediate: IntermediateSegment[], runIdx: numbe
 
     if (seg.kind === 'text') {
       return i;
-    }
-
-    if (seg.kind === 'break') {
-      continue;
     }
 
     // run → another run before finding text.
@@ -335,10 +253,6 @@ function findNearestTextAfter(intermediate: IntermediateSegment[], runIdx: numbe
 
 /**
  * Convenience: does this segment list contain ANY chain segment?
- *
- * Used by AssistantMessage to decide whether to render ANY ThoughtsPanel.
- * Note: a `chain` segment may contain ONLY tools (no reasoning) — that's
- * still a collapsible chain, just without reasoning text inside.
  */
 export function hasChainSegment(segments: ChainSegment[] | undefined): boolean {
   if (!segments) {
@@ -350,8 +264,6 @@ export function hasChainSegment(segments: ChainSegment[] | undefined): boolean {
 
 /**
  * Convenience: collect ALL tool parts across ALL segments (chain + tools).
- * Used by AssistantMessage to evaluate `hasPendingToolCalls` — a pending tool
- * in ANY segment (chain or standalone) keeps the message "active".
  */
 export function collectAllToolParts(segments: ChainSegment[] | undefined): any[] {
   if (!segments) {
@@ -371,16 +283,6 @@ export function collectAllToolParts(segments: ChainSegment[] | undefined): any[]
 
 /**
  * Convenience: concatenate all text segments into a single string.
- *
- * Used by AssistantMessage for the legacy `content` fallback path and for
- * the docx-artifact extractor (which needs the full text to scan for
- * `<docxartifact>` blocks regardless of where they appear).
- *
- * NOTE: This DOES preserve order — text segments are joined in the order
- * they appeared in the stream. What it does NOT do is preserve the
- * POSITION of text relative to chain/tools segments (that information is
- * only available by walking `segments` directly, which the new renderer
- * does).
  */
 export function concatTextSegments(segments: ChainSegment[] | undefined): string {
   if (!segments) {
@@ -398,31 +300,11 @@ export function concatTextSegments(segments: ChainSegment[] | undefined): string
  * ACTIVE LABEL — what should the chain header show while streaming?
  * ===========================================================================
  *
- * The user's requirement:
- *
  *   - While a tool is running (pending)  → show the tool's label
  *     (e.g. "Searching the web", "Reading file", "Editing file").
  *   - While reasoning is streaming but NO tool is running  → "Thinking…".
- *   - When streaming ends  → existing "Completed with N steps" label.
- *
- * The label is computed from the LAST pending tool in the segment (most
- * recent action). If multiple tools are pending simultaneously, the last
- * one wins (matches Copilot's "show the most recent step" behaviour).
- *
- * If no tool is pending but a reasoning part is present, returns
- * `'Thinking…'` so the caller can show it instead of the generic
- * "Thinking…" placeholder.
- *
- * Returns `null` when:
- *   - The segment has no parts.
- *   - No tool is pending AND no reasoning is present (caller should fall
- *     back to its own label logic, e.g. "Completed with N steps").
- *
- * The pendingLabel text comes from `getMeta(toolName).pendingLabel` — but
- * to avoid a circular import (ToolProgress imports from chain-segments via
- * other paths), we duplicate the small pending-label table here. The
- * table is intentionally tiny; the fallback `Using ${toolName}` covers
- * any tool not listed.
+ *   - When streaming ends  → "" (empty — no "Thought for Ns" label,
+ *     per user request).
  */
 const TOOL_PENDING_LABELS: Record<string, string> = {
   web_search: 'Searching the web',
@@ -452,7 +334,6 @@ export function getToolPendingLabel(toolName: string): string {
 
 /**
  * Tool-call states that count as "pending" (in-flight, no result yet).
- * Mirrors the same vocabulary as `tool-parts.ts` (v7 + v4 normalised).
  */
 const PENDING_TOOL_STATES = new Set([
   'input-streaming',
@@ -467,10 +348,9 @@ const PENDING_TOOL_STATES = new Set([
  * Compute the "active label" for a chain segment — what the header should
  * show while this segment is streaming.
  *
- *   - If a tool in this segment is pending  → that tool's pending label
- *     (e.g. "Searching the web"). The LAST pending tool wins (most recent).
+ *   - If a tool in this segment is pending  → that tool's pending label.
  *   - Else if the segment contains any reasoning part  → "Thinking…".
- *   - Else  → null (caller falls back to its own label logic).
+ *   - Else  → null (caller falls back to empty / no label).
  *
  * `isStreaming` controls whether the segment is considered "active". When
  * false, this function always returns null (nothing is in-flight).

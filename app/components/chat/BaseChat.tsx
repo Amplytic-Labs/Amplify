@@ -15,6 +15,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import useViewport from '~/lib/hooks';
 import { workbenchStore } from '~/lib/stores/workbench';
 import styles from './BaseChat.module.scss';
+import { ExamplePrompts } from '~/components/chat/ExamplePrompts';
 import type { ProviderInfo } from '~/types/model';
 import type { ActionAlert, SupabaseAlert, DeployAlert, LlmErrorAlertType } from '~/types/actions';
 import DeployChatAlert from '~/components/deploy/DeployAlert';
@@ -389,6 +390,22 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         {isSmallViewport ? (
           <div className="flex flex-col lg:flex-row overflow-hidden w-full h-full">
             <div className={classNames(styles.Chat, 'flex flex-col flex-grow h-full')}>
+              {!chatStarted && (
+                <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
+                  <div className="relative mb-4 animate-fade-in">
+                    <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
+                      <div className="w-[280px] h-[80px] bg-gradient-to-r from-purple-500/20 via-fuchsia-500/20 to-pink-500/20 blur-3xl rounded-full" />
+                    </div>
+                    <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 dark:from-purple-400 dark:via-fuchsia-400 dark:to-purple-400 bg-clip-text text-transparent">
+                      Where ideas begin
+                    </h1>
+                  </div>
+                  <p className="text-md lg:text-xl mb-6 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
+                    Bring ideas to life in seconds or get help on existing projects.
+                  </p>
+                  <ExamplePrompts sendMessage={sendMessage} />
+                </div>
+              )}
               <StickToBottom
                 className={classNames('pt-2 px-2 sm:px-0 relative', {
                   'h-full flex flex-col chat-scrollbar-hide': chatStarted,
@@ -545,6 +562,22 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   collapsible={showWorkbench}
                 >
                   <div className={classNames(styles.Chat, 'flex flex-col h-full w-full relative')}>
+                    {!chatStarted && (
+                      <div id="intro" className="mt-[16vh] max-w-2xl mx-auto text-center px-4 lg:px-0">
+                        <div className="relative mb-4 animate-fade-in">
+                          <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
+                            <div className="w-[340px] h-[100px] bg-gradient-to-r from-purple-500/20 via-fuchsia-500/20 to-pink-500/20 blur-3xl rounded-full" />
+                          </div>
+                          <h1 className="text-3xl lg:text-6xl font-bold text-amplify-elements-textPrimary bg-gradient-to-r from-purple-600 via-fuchsia-600 to-purple-600 dark:from-purple-400 dark:via-fuchsia-400 dark:to-purple-400 bg-clip-text text-transparent">
+                            Where ideas begin
+                          </h1>
+                        </div>
+                        <p className="text-md lg:text-xl mb-6 text-amplify-elements-textSecondary animate-fade-in animation-delay-200">
+                          Bring ideas to life in seconds or get help on existing projects.
+                        </p>
+                        <ExamplePrompts sendMessage={sendMessage} />
+                      </div>
+                    )}
                     <StickToBottom
                       className={classNames('pt-6 px-2 sm:px-6 relative', {
                         'h-full flex flex-col chat-scrollbar-hide': chatStarted,

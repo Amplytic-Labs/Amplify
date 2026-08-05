@@ -9,7 +9,6 @@ import WithTooltip from '~/components/ui/Tooltip';
 import type { ProviderInfo } from '~/types/model';
 import type { TextUIPart, ReasoningUIPart, SourceUIPart, FileUIPart, StepStartUIPart } from '@ai-sdk/ui-utils';
 import { isToolPart, getToolCallId } from '~/lib/chat/tool-parts';
-import { parseThoughts, isThoughtStreaming } from '~/lib/chat/thought-parser';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
 import { extractDocxArtifact } from '~/lib/chat/docx-artifact';
@@ -25,6 +24,7 @@ import {
   hasChainSegment,
   collectAllToolParts,
   getActiveChainLabel,
+  concatTextSegments,
 } from '~/lib/chat/chain-segments';
 
 interface AssistantMessageProps {
@@ -71,10 +71,10 @@ function normalizedFilePath(path: string) {
 }
 
 /**
- * Assistant message — Copilot-exact layout.
+ * Assistant message — Copilot-faithful layout.
  *
  *   ┌─────────────────────────────────────────────┐
- *   │ ▾ Thought for 4s                            │  ← .chat-thinking-box
+ *   │ ▾ Thinking…                                 │  ← .chat-thinking-box (collapsible)
  *   │   reasoning text (muted, 12px)              │     (curved connector)
  *   │   [icon] Read file  src/index.ts            │  ← .progress-container (flat, NO card)
  *   │   [icon] Edited file  src/index.ts          │  ← .progress-container (flat, NO card)
@@ -84,15 +84,24 @@ function normalizedFilePath(path: string) {
  *   │ 👍 👎 | 📋 ↻ 🔊              1.2k tokens    │  ← hover action bar (AnswerActions)
  *   └─────────────────────────────────────────────┘
  *
- * The thought panel pulls from TWO sources:
- *   1. `<thought>…</thought>` tags the model emits in its text response
- *      (parsed streaming-safe by `parseThoughts`).
- *   2. Native AI-SDK `reasoning` parts (for models that use a dedicated
- *      reasoning channel).
+ * CHAINING RULE (matches VS Code Copilot core):
+ *   - Consecutive reasoning + tool parts → ONE collapsible "Thinking" panel.
+ *   - A non-empty `text` part BREAKS the chain (Copilot: "markdown terminates
+ *     the thinking panel"). The next reasoning/tool run after that text
+ *     starts a FRESH panel.
+ *   - `step-start` parts do NOT break the chain (Copilot's extension API has
+ *     no such concept; the AI SDK emitting them between agent steps is an
+ *     internal detail that must not fragment the visible thinking panel).
  *
- * Tool invocations (from `parts`) render as flat inline `.progress-container`
- * rows inside the panel — NO CARDS. The final answer is the text OUTSIDE the
- * thought tags, smooth-streamed with a typewriter effect.
+ * The thought panel pulls ONLY from native AI-SDK `reasoning` parts. The
+ * `<thought>`-tag text-extraction system has been removed — the system prompt
+ * forbids the model from emitting `<thought>` tags, and any stray tags are
+ * stripped defensively by the Markdown component's preprocessor.
+ *
+ * Tool invocations render as flat inline `.progress-container` rows inside
+ * the panel — NO CARDS. The final answer is the text parts, smooth-streamed
+ * with a typewriter effect (per-segment, so each text block typewriters in
+ * its correct position relative to the chain panels around it).
  */
 export const AssistantMessage = memo(
   ({
@@ -126,80 +135,46 @@ export const AssistantMessage = memo(
     const visibleContent = useMemo(() => stripChatName(content), [content]);
 
     /*
-     * Parse `<thought>` tags out of the streamed content. The answer text
-     * (everything outside the tags) feeds the typewriter + markdown body;
-     * the thought text feeds the collapsible panel. Re-runs every tick
-     * during streaming — cheap (a single indexOf scan).
-     */
-    const {
-      thoughtText,
-      answerText: rawAnswerText,
-      hasThoughts,
-    } = useMemo(() => parseThoughts(visibleContent), [visibleContent]);
-    const thoughtStreaming = useMemo(() => isThoughtStreaming(visibleContent), [visibleContent]);
-
-    /*
-     * Native reasoning + tool-invocation parts from the AI SDK. These are
-     * interleaved with the `<thought>`-tag text inside the panel.
-     *
-     * v7 note: tool parts have `type: 'tool-<name>'` / `'dynamic-tool'`
-     * (NOT the v4 literal `'tool-invocation'`). We use the shared
-     * `isToolPart` helper which accepts both v7 and legacy v4 shapes so
-     * old persisted messages still render.
-     */
-    /*
-     * Legacy flat filter — used ONLY by the legacy render path (models that
-     * emit `<thought>` tags). The new segment-based render path uses
-     * `segments` (computed below) instead, which preserves the position of
-     * text parts so chains break correctly on intermediate text responses.
-     */
-    const reasoningAndToolParts = useMemo(() => {
-      if (!parts) {
-        return undefined;
-      }
-
-      const filtered = parts.filter((p) => p.type === 'reasoning' || isToolPart(p));
-
-      return filtered.length > 0 ? filtered : undefined;
-    }, [parts]);
-
-    /*
-     * NEW segment-based decomposition — walks `parts` in stream order and
-     * splits them into chain / tools / text segments. A `text` part BREAKS
-     * the current chain, so a normal response that arrives between two
+     * Segment-based decomposition — walks `parts` in stream order and splits
+     * them into chain / tools / text segments. A `text` part BREAKS the
+     * current chain (matches VS Code Copilot's "markdown terminates the
+     * thinking panel" rule), so a normal response that arrives between two
      * reasoning/tool bursts renders in its correct position (between two
      * separate chain panels) instead of being concatenated below one big
      * chain.
      *
-     * Only used when `hasThoughts` is false (i.e. the model is NOT using
-     * `<thought>` tags). Models that use `<thought>` tags take the legacy
-     * path because their reasoning is embedded in text and needs the
-     * `parseThoughts` extractor — splitting text into segments would break
-     * that extraction.
+     * This is now the ONLY render path. The previous `<thought>`-tag legacy
+     * path has been removed — the system prompt forbids the AI from emitting
+     * `<thought>` tags (it must use its native reasoning channel, which
+     * arrives as structured `reasoning` parts). Any stray `<thought>` tags
+     * are stripped defensively by the Markdown component's preprocessor.
      */
     const segments = useMemo(() => splitPartsIntoSegments(parts), [parts]);
 
     /*
-     * Use the new segment-based renderer when:
-     *   - The model did NOT emit `<thought>` tags (`!hasThoughts`), AND
-     *   - We have stream-ordered `parts` to work with (`segments` is defined).
-     *
-     * Otherwise fall back to the legacy single-panel + single-markdown
-     * renderer (which correctly handles `<thought>`-tag models and the
-     * no-parts legacy `content` string path).
+     * Always use the segment renderer when we have stream-ordered `parts`.
+     * When `parts` is undefined (legacy persisted messages without parts),
+     * fall back to a simple single-markdown render of `visibleContent`.
      */
-    const useSegmentRenderer = !hasThoughts && segments !== undefined;
+    const useSegmentRenderer = segments !== undefined;
 
     /*
-     * FIX: When native reasoning parts exist (parts[].type === 'reasoning')
-     * AND the answerText is empty, the model put its entire user-facing
-     * response in the native reasoning channel. The <thought> tag parser
-     * stripped everything, leaving no answer text. In this case, use the
-     * full visibleContent as the answer — the ThoughtsPanel already
-     * renders the reasoning from the native parts, so the text parts
-     * should contain the actual answer, not more reasoning.
+     * Concatenated text from all text segments — used by the docx-artifact
+     * extractor (which needs the full text to scan for `<docxartifact>`
+     * blocks regardless of where they appear) and by the legacy fallback
+     * path (no `parts`).
      */
-    const hasNativeReasoning = reasoningAndToolParts?.some((p) => p.type === 'reasoning') ?? false;
+    const concatenatedText = useMemo(
+      () => (segments ? concatTextSegments(segments) : visibleContent),
+      [segments, visibleContent],
+    );
+
+    /*
+     * Native reasoning presence — used to decide whether to surface the
+     * docx artifact even when the visible answer text is empty (the model
+     * put its response entirely in the reasoning channel).
+     */
+    const hasNativeReasoning = useMemo(() => parts?.some((p) => p?.type === 'reasoning') ?? false, [parts]);
 
     /*
      * SEVER the template-injected artifact trace-tree from the chat while
@@ -227,15 +202,18 @@ export const AssistantMessage = memo(
      */
     const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
 
+    /*
+     * `answerText` — the FULL concatenated text, used only for the docx
+     * artifact extractor (which needs to scan the whole response for
+     * `<docxartifact>` blocks regardless of segment boundaries).
+     *
+     * In the segment render path, each text segment is stripped + rendered
+     * independently by `stripTextSegment` inside `SegmentRenderer`. This
+     * `answerText` is NOT used for visible rendering in that path — it's
+     * only the input to `extractDocxArtifact`.
+     */
     const answerText = useMemo(() => {
-      /*
-       * If native reasoning parts exist and answerText is empty, the model
-       * used its native reasoning channel for thinking. The <thought> tag
-       * parser may have stripped the entire response. Use the full visible
-       * content as the answer instead — the ThoughtsPanel already handles
-       * the reasoning display from the native parts.
-       */
-      const effectiveRaw = !rawAnswerText && hasNativeReasoning ? visibleContent : rawAnswerText;
+      const effectiveRaw = !concatenatedText && hasNativeReasoning ? visibleContent : concatenatedText;
 
       const stripped = stripAmplifyArtifacts(effectiveRaw);
 
@@ -244,7 +222,7 @@ export const AssistantMessage = memo(
       }
 
       return stripped;
-    }, [rawAnswerText, hasNativeReasoning, visibleContent, isTemplateInjection]);
+    }, [concatenatedText, hasNativeReasoning, visibleContent, isTemplateInjection]);
 
     /*
      * Extract a `<docxartifact>…</docxartifact>` block (if present) from the
@@ -342,16 +320,11 @@ export const AssistantMessage = memo(
     const usage = usageAnnotation?.value;
 
     /*
-     * `hasPanelContent` — true when ANY chain (reasoning) segment exists.
-     * In the new segment path, pure-tool segments render as inline rows
+     * `hasPanelContent` — true when ANY chain segment exists (collapsible
+     * panel will be rendered). Pure-tool segments render as inline rows
      * (NOT a panel), so they don't count toward `hasPanelContent`.
-     *
-     * In the legacy path, `hasThoughts` (from `<thought>` tags) OR any
-     * reasoning/tool part triggers the panel.
      */
-    const hasPanelContent = useSegmentRenderer
-      ? hasChainSegment(segments)
-      : hasThoughts || (reasoningAndToolParts && reasoningAndToolParts.length > 0);
+    const hasPanelContent = useSegmentRenderer ? hasChainSegment(segments) : false;
 
     /*
      * Thinking is "done" when streaming has ended AND there's actual panel
@@ -408,7 +381,21 @@ export const AssistantMessage = memo(
       });
     }, [parts]);
 
-    const thinkingDone = !isStreaming && !thoughtStreaming && hasPanelContent && !hasPendingToolCalls;
+    /*
+     * Thinking is "done" when streaming has ended AND there's panel content
+     * AND all tool calls have completed. There's no more `thoughtStreaming`
+     * concept (the `<thought>`-tag system is gone) — we rely solely on the
+     * overall message `isStreaming` flag plus the pending-tool check.
+     */
+    const thinkingDone = !isStreaming && hasPanelContent && !hasPendingToolCalls;
+
+    /*
+     * `thinkingDone` is currently unused by SegmentRenderer (the new ThinkingBox
+     * collapses silently when streaming ends — no "Done" checkmark label is
+     * shown). Kept here for future use and to keep `hasPendingToolCalls`
+     * exercised so the panel state stays correct during streaming.
+     */
+    void thinkingDone;
 
     return (
       <div className="group relative overflow-hidden w-full">
@@ -482,53 +469,54 @@ export const AssistantMessage = memo(
 
         {/*
          * ====================================================================
-         * RENDER PATH — segment-based (new) vs legacy single-panel
+         * RENDER PATH — segment-based (default) vs fallback single-markdown
          * ====================================================================
          *
-         * SEGMENT-BASED PATH (when the model did NOT emit `<thought>` tags):
+         * SEGMENT-BASED PATH (default — used whenever `parts` is defined):
          *
          *   Walks `segments` in stream order. Each segment renders in its
          *   correct position relative to the others:
          *
-         *     chain  → <ThoughtsPanel> ("Thought for Ns" / "Completed with N steps"
-         *              / tool-name-while-streaming collapsible). Renders for ANY
-         *              consecutive non-text run (tools-only OR tools+reasoning OR
-         *              reasoning-only) — UNLESS the run is sandwiched between
-         *              two text segments, in which case it becomes `tools`.
+         *     chain  → <ThoughtsPanel> (collapsible "Thinking…" panel).
+         *              Renders for ANY consecutive non-text run (tools-only
+         *              OR tools+reasoning OR reasoning-only) — UNLESS the
+         *              run is sandwiched between two text segments, in which
+         *              case it becomes `tools`.
          *              While streaming, the header shows the current tool's
          *              pending label (e.g. "Searching the web") via activeLabel,
          *              or "Thinking…" if only reasoning is streaming.
+         *              When streaming ends, the header is empty (no "Thought
+         *              for Ns" label — removed per user request).
          *     tools  → flat list of <InlineToolRow> rows. ONLY used for runs
          *              sandwiched between two text segments. NO card, NO
-         *              "Thought for Ns" header. Same visual as a tool step
-         *              inside the chain, just without the chain line.
+         *              "Thinking" header. Same visual as a tool step inside
+         *              the chain, just without the chain line.
          *     text   → <TextSegment> (per-segment typewriter + Markdown)
          *
          *   A `text` segment BREAKS the chain — the next `chain`/`tools`
-         *   segment starts a fresh panel/inline group, exactly like the
-         *   user wanted. Intermediate chains are marked `thinkingDone=true`
-         *   so they show the "Done" checkmark immediately (the model already
-         *   moved on to text). Only the LAST chain segment respects the
-         *   global `thinkingDone` / `isStreaming` flags.
+         *   segment starts a fresh panel/inline group. This matches VS Code
+         *   Copilot's "markdown terminates the thinking panel" rule.
+         *
+         *   Intermediate chain segments get `isStreaming=false` so their
+         *   panel is silent (no shimmer). Only the LAST chain segment
+         *   respects the global `isStreaming` flag.
          *
          *   Intermediate `text` segments snap immediately (their typewriter
          *   gets `isStreaming=false`); only the LAST text segment typewriters.
          *
-         * LEGACY PATH (when the model uses `<thought>` tags, OR when `parts`
-         * is undefined and we only have a `content` string):
+         * FALLBACK PATH (when `parts` is undefined — legacy persisted
+         * messages from before the parts-array migration):
          *
-         *   Single <ThoughtsPanel> (with `thoughtText` from `<thought>` tags)
-         *   followed by a single <Markdown> with the concatenated
-         *   `smoothAnswer`. This preserves the existing behavior for
-         *   `<thought>`-tag models — splitting their text into segments
-         *   would break the `parseThoughts` extractor.
+         *   A single <Markdown> with the smooth-streamed `visibleContent`.
+         *   No thinking panel — we don't have structured reasoning parts to
+         *   render one. This is the rare case; all current messages go
+         *   through the segment path above.
          * ====================================================================
          */}
         {useSegmentRenderer && segments ? (
           <SegmentRenderer
             segments={segments}
             isStreaming={isStreaming}
-            thinkingDone={thinkingDone}
             addToolResult={addToolResult}
             append={append}
             chatMode={chatMode}
@@ -536,31 +524,19 @@ export const AssistantMessage = memo(
             model={model}
             provider={provider}
             isTemplateInjection={isTemplateInjection}
+            messageId={messageId}
           />
         ) : (
-          <>
-            {hasPanelContent && (
-              <ThoughtsPanel
-                thoughtText={thoughtText}
-                thoughtStreaming={thoughtStreaming}
-                thinkingDone={thinkingDone}
-                parts={reasoningAndToolParts}
-                isStreaming={isStreaming}
-                addToolResult={addToolResult}
-              />
-            )}
-
-            <Markdown
-              append={append}
-              chatMode={chatMode}
-              setChatMode={setChatMode}
-              model={model}
-              provider={provider}
-              html
-            >
-              {smoothAnswer}
-            </Markdown>
-          </>
+          <Markdown
+            append={append}
+            chatMode={chatMode}
+            setChatMode={setChatMode}
+            model={model}
+            provider={provider}
+            html
+          >
+            {smoothAnswer}
+          </Markdown>
         )}
 
         {/*
@@ -622,7 +598,6 @@ function stripTextSegment(text: string, isTemplateInjection: boolean): string {
 interface SegmentRendererProps {
   segments: NonNullable<ReturnType<typeof splitPartsIntoSegments>>;
   isStreaming?: boolean;
-  thinkingDone?: boolean;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   append?: (message: UIMessage) => void;
   chatMode?: 'discuss' | 'build';
@@ -630,13 +605,14 @@ interface SegmentRendererProps {
   model?: string;
   provider?: ProviderInfo;
   isTemplateInjection: boolean;
+  /** Message ID — passed through to ThoughtsPanel for per-message dedup. */
+  messageId?: string;
 }
 
 const SegmentRenderer = memo(
   ({
     segments,
     isStreaming,
-    thinkingDone,
     addToolResult,
     append,
     chatMode,
@@ -644,12 +620,12 @@ const SegmentRenderer = memo(
     model,
     provider,
     isTemplateInjection,
+    messageId,
   }: SegmentRendererProps) => {
     /*
      * Index of the last segment — used to decide which segment is "active"
-     * (gets `isStreaming=true` / `thinkingDone=global`) vs "completed"
-     * (gets `isStreaming=false` / `thinkingDone=true` so it shows "Done"
-     * immediately).
+     * (gets `isStreaming=true` so its panel shimmers) vs "completed"
+     * (gets `isStreaming=false` so its panel is silent).
      */
     const lastIdx = segments.length - 1;
 
@@ -683,27 +659,25 @@ const SegmentRenderer = memo(
             return (
               <ThoughtsPanel
                 key={`seg-${idx}`}
-                thoughtText=""
-                thoughtStreaming={false}
-                thinkingDone={isLast ? thinkingDone : true}
                 parts={seg.parts}
                 isStreaming={isLast ? isStreaming : false}
                 addToolResult={addToolResult}
                 activeLabel={activeLabel}
+                messageId={messageId}
               />
             );
           }
 
           if (seg.kind === 'tools') {
             /*
-             * Flat inline tool rows — NO card, NO "Thought for Ns" header.
+             * Flat inline tool rows — NO card, NO "Thinking" header.
              * Each tool renders as `[tool-type-icon] [ToolProgress row]`,
              * matching the visual of a tool step inside the chain but
              * without the chain line.
              *
-             * Used for: non-reasoning models (tool-only segments) AND for
-             * tool calls that follow a normal text response (the user's
-             * "tool usage after normal response" concern).
+             * Used for: tool calls sandwiched between two text segments
+             * (the model emitted a response, called a tool, then emitted
+             * another response).
              */
             return (
               <div key={`seg-${idx}`} className="flex flex-col">

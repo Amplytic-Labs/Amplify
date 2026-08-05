@@ -9,8 +9,8 @@ import styles from './chat-copilot.module.scss';
 
 /**
  * A single renderable step inside the thinking box. We flatten the message
- * parts (reasoning + tool-invocation) plus any `<thought>`-tag text into an
- * ordered list of steps so the UI can interleave them like Copilot does.
+ * parts (reasoning + tool-invocation) into an ordered list of steps so the
+ * UI can interleave them like Copilot does.
  *
  * Each step renders as a NODE on the vertical chain-of-thought line —
  * exactly like VS Code Copilot's `.chat-thinking-collapsible`:
@@ -21,20 +21,7 @@ import styles from './chat-copilot.module.scss';
 type ThoughtStep = { kind: 'reasoning'; text: string; key: string } | { kind: 'tool'; item: any; key: string };
 
 interface ThoughtsPanelProps {
-  /** Text extracted from `<thought>…</thought>` tags in the answer body. */
-  thoughtText: string;
-
-  /** True while the `<thought>` block is still streaming (no close tag yet). */
-  thoughtStreaming: boolean;
-
-  /**
-   * True when thinking is complete (`</thought>` received) and the AI has moved
-   * on to its final answer (no tool calls pending). Triggers the "Done" node
-   * at the end of the chain-of-thought.
-   */
-  thinkingDone?: boolean;
-
-  /** Native reasoning + tool-invocation parts from the AI SDK. */
+  /** Native reasoning + tool-invocation parts from the AI SDK (this segment only). */
   parts: (TextUIPart | ReasoningUIPart | SourceUIPart | FileUIPart | StepStartUIPart | any)[] | undefined;
 
   /** True when this is the streaming message and we're still producing parts. */
@@ -45,17 +32,77 @@ interface ThoughtsPanelProps {
 
   /**
    * Override for the streaming label. When provided AND the panel is
-   * streaming, shows this string INSTEAD of "Thinking…". Use to surface
-   * the current tool's pending label (e.g. "Searching the web").
+   * streaming, shows this string INSTEAD of "Thinking…".
    *
-   * Computed by the caller via `getActiveChainLabel()` — the panel itself
-   * stays agnostic of how the label is derived.
+   * Computed by the caller via `getActiveChainLabel()`.
    */
   activeLabel?: string;
+
+  /**
+   * Message ID — used to scope the per-message dedup state (toolCallId +
+   * reasoning text) so multiple chain panels in the same message don't
+   * each accept the same reasoning text or the same toolCallId as "new".
+   *
+   * Without this, a `step-start` boundary (or any chain break) would
+   * create a new panel with its own fresh dedup state, and the SDK
+   * re-emitting the same reasoning text after the break would render
+   * AGAIN inside the new panel — causing the visible duplication the
+   * user reported ("same chain or reasoning block repeats multiple
+   * times").
+   */
+  messageId?: string;
+}
+
+/*
+ * ===========================================================================
+ * PER-MESSAGE DEDUP STATE
+ * ===========================================================================
+ *
+ * Module-level Map keyed by messageId. Each entry holds:
+ *   - toolIndexById: toolCallId → step key. When the same toolCallId
+ *     appears in a later segment (e.g. after a step-start re-emits the
+ *     tool's output-available state), we walk back to the ORIGINAL step
+ *     and replace its item in-place instead of pushing a duplicate.
+ *   - seenReasoning: Set of reasoning text hashes. If the SDK re-emits
+ *     the same reasoning text after a chain break, the new panel rejects
+ *     it as a duplicate.
+ *
+ * This state is shared across ALL ThoughtsPanel instances rendered for
+ * the same message — so a chain broken by `text` into [chain₁, text,
+ * chain₂] still dedupes against the same Maps.
+ *
+ * The Map is unbounded in principle but in practice each chat has a
+ * finite number of messages, and each message is GC'd when the chat
+ * unmounts. We could add an LRU cap if memory becomes a concern.
+ */
+interface MessageDedupState {
+  toolIndexByKey: Map<string, string>; // toolCallId → step key
+  seenReasoning: Set<string>;
+}
+
+const messageDedupState = new Map<string, MessageDedupState>();
+
+function getDedupState(messageId: string | undefined): MessageDedupState {
+  if (!messageId) {
+    /*
+     * No messageId available (legacy / ephemeral render). Use a transient
+     * state that won't be shared — same behaviour as before the fix.
+     */
+    return { toolIndexByKey: new Map(), seenReasoning: new Set() };
+  }
+
+  let state = messageDedupState.get(messageId);
+
+  if (!state) {
+    state = { toolIndexByKey: new Map(), seenReasoning: new Set() };
+    messageDedupState.set(messageId, state);
+  }
+
+  return state;
 }
 
 /**
- * Copilot-exact collapsible "Thought for Ns" panel with the chain-of-thought
+ * Copilot-faithful collapsible "Thinking…" panel with the chain-of-thought
  * vertical line + step icons.
  *
  * Wraps `ThinkingBox` and renders each step as a NODE on the vertical
@@ -65,68 +112,31 @@ interface ThoughtsPanelProps {
  *   - Each step's `::before` draws a vertical line with a mask-image gap
  *     where the step's `.chatThinkingIcon` sits (so icons appear ON the line).
  *   - Reasoning text → `.chatThinkingItemMarkdown` with a book icon.
- *   - Tool invocations → `.chatThinkingToolWrapper` with a tool-type icon
- *     (search/book/pencil/terminal/wrench — mirrors VS Code's
- *     `getToolInvocationIcon`). The inner progress-container hides its own
- *     status icon; the chain icon represents the step.
+ *   - Tool invocations → `.chatThinkingToolWrapper` with a tool-type icon.
  *   - Live "Working…" → `.chatThinkingSpinnerItem` with a spinning icon.
  *
- * The whole panel collapses to a single shimmering "Thinking…" label while
- * streaming, and to "Thought for Ns" when done.
+ * The `<thought>`-tag `thoughtText` / `thoughtStreaming` props have been
+ * removed — the system now uses native AI-SDK `reasoning` parts exclusively.
+ *
+ * DEDUPLICATION:
+ *   The incoming `parts` array can carry MULTIPLE entries for the same
+ *   `toolCallId` (AI SDK state machine: input-streaming → input-available →
+ *   output-available). Dedup is now PER-MESSAGE (via `messageId`), so a
+ *   toolCallId that appears in chain segment #1 won't be rendered AGAIN
+ *   if it re-appears in chain segment #2 after a text break.
  */
 export const ThoughtsPanel = memo(
-  ({
-    thoughtText,
-    thoughtStreaming,
-    thinkingDone = false,
-    parts,
-    isStreaming = false,
-    addToolResult,
-    activeLabel,
-  }: ThoughtsPanelProps) => {
-    const isActive = isStreaming || thoughtStreaming;
+  ({ parts, isStreaming = false, addToolResult, activeLabel, messageId }: ThoughtsPanelProps) => {
+    const isActive = isStreaming;
 
-    /**
-     * Flatten parts + thought text into ordered steps. Tools stay as
-     * individual steps (Copilot shows each tool call as its own node on the
-     * chain, not grouped into a card).
-     *
-     * BUGFIX (duplicate tool usage): the incoming `parts` array can carry
-     * MULTIPLE entries for the same `toolCallId` — this happens when the
-     * AI SDK streams a tool through its state machine
-     * (`input-streaming` → `input-available` → `output-available`) and the
-     * parts array is appended to (rather than updated in-place) during
-     * multi-step / restored-persistence flows. Without de-duplication each
-     * state shows up as its own "Read file" / "Edited file" row, so the
-     * user sees the same tool twice.
-     *
-     * Fix: walk parts once, track seen `toolCallId`s, and keep only the
-     * MOST PROGRESSED state per call (output-* > input-available >
-     * input-streaming). We also de-duplicate reasoning parts by their
-     * text content so the step count stays stable across re-renders.
-     */
     const steps = useMemo<ThoughtStep[]>(() => {
       const out: ThoughtStep[] = [];
       let counter = 0;
 
-      // Lead with the <thought>-tag text (if any) as the first reasoning step.
-      if (thoughtText && thoughtText.trim()) {
-        out.push({ kind: 'reasoning', text: thoughtText, key: `thought-${counter++}` });
-      }
+      // Per-message dedup state — shared across all chain segments in this message.
+      const dedup = getDedupState(messageId);
 
       if (parts) {
-        /*
-         * toolCallId → index in `out` where we last placed this tool step.
-         * We replace the entry in-place when a more progressed state arrives.
-         */
-        const toolIndexById = new Map<string, number>();
-
-        /*
-         * Reasoning text dedupe set — avoids stacking the same reasoning
-         * text twice if the SDK re-emits it across ticks.
-         */
-        const seenReasoning = new Set<string>();
-
         const toolStateRank = (state: string): number => {
           // Higher = more progressed. Output states beat input states.
           if (
@@ -154,25 +164,29 @@ export const ThoughtsPanel = memo(
             const id = getToolCallId(part);
 
             if (id) {
-              const existingIdx = toolIndexById.get(id);
+              const existingKey = dedup.toolIndexByKey.get(id);
 
-              if (existingIdx !== undefined) {
+              if (existingKey) {
                 /*
-                 * Already have a step for this toolCallId — replace ONLY if
-                 * this part is more progressed. This collapses the
-                 * streaming → available → result chain into a single row.
+                 * Already have a step for this toolCallId (either in THIS
+                 * segment or in an EARLIER segment of the same message).
+                 * Replace the existing step's item ONLY if this part is
+                 * more progressed. This collapses the
+                 * streaming → available → result chain into a single row
+                 * AND prevents the same tool from rendering twice across
+                 * chain boundaries.
                  */
-                const existingStep = out[existingIdx];
+                const existingIdx = out.findIndex((s) => s.key === existingKey);
 
-                if (existingStep.kind === 'tool') {
-                  const existingRank = toolStateRank(getToolState(existingStep.item));
+                if (existingIdx >= 0 && out[existingIdx].kind === 'tool') {
+                  const existingRank = toolStateRank(getToolState(out[existingIdx].item));
                   const newRank = toolStateRank(getToolState(part));
 
                   if (newRank > existingRank) {
                     out[existingIdx] = {
                       kind: 'tool',
                       item: part,
-                      key: `tool-${id}`,
+                      key: existingKey,
                     };
                   }
                 }
@@ -180,14 +194,13 @@ export const ThoughtsPanel = memo(
                 continue;
               }
 
-              toolIndexById.set(id, out.length);
+              const key = `tool-${id}`;
+              dedup.toolIndexByKey.set(id, key);
+              out.push({ kind: 'tool', item: part, key });
+              continue;
             }
 
-            out.push({
-              kind: 'tool',
-              item: part,
-              key: `tool-${id ?? counter++}`,
-            });
+            out.push({ kind: 'tool', item: part, key: `tool-${counter++}` });
             continue;
           }
 
@@ -197,8 +210,8 @@ export const ThoughtsPanel = memo(
               ? r.details.map((d: any) => d.text || '').join('')
               : (r as any).textDelta || (r as any).text || '';
 
-            if (text && text.trim() && !seenReasoning.has(text)) {
-              seenReasoning.add(text);
+            if (text && text.trim() && !dedup.seenReasoning.has(text)) {
+              dedup.seenReasoning.add(text);
               out.push({ kind: 'reasoning', text, key: `reasoning-${counter++}` });
             }
           }
@@ -206,35 +219,21 @@ export const ThoughtsPanel = memo(
       }
 
       return out;
-    }, [thoughtText, parts]);
+    }, [parts, messageId]);
 
-    /*
-     * Step count for the "Completed with N steps" header label. We count
-     * BOTH reasoning steps AND tool steps — the user perceives the whole
-     * chain (reasoning + tools) as the model's "thinking" phase.
-     */
     const stepCount = steps.length;
-
-    /*
-     * Whether the panel actually has any reasoning (i.e. native reasoning
-     * parts OR <thought> tag text). When false AND not streaming, the
-     * model didn't really "think" — we still render the panel if there
-     * are tool calls, but we DON'T show a misleading "Thought process"
-     * label (see ThinkingBox).
-     */
     const hasReasoning = steps.some((s) => s.kind === 'reasoning');
 
-    if (steps.length === 0 && !isActive && !thinkingDone) {
+    if (steps.length === 0 && !isActive) {
       return null;
     }
 
     return (
       <ThinkingBox
         isActive={isActive}
-        thoughtStreaming={thoughtStreaming}
+        thoughtStreaming={false}
         stepCount={stepCount}
         hasReasoning={hasReasoning}
-        thinkingDone={thinkingDone}
         activeLabel={activeLabel}
       >
         {steps.map((step) => {
@@ -253,10 +252,6 @@ export const ThoughtsPanel = memo(
           const toolName = getToolNameFromPart(step.item);
           const result = getToolOutput(step.item);
 
-          /*
-           * v7 'output-error' is itself an error; v7 'output-available' (v4 'result')
-           * is an error only when the result string starts with a known error prefix.
-           */
           const isError =
             state === 'output-error' || (state === 'output-available' && classifyResult(result) === 'error');
           const toolIcon = getToolIcon(toolName);
@@ -273,23 +268,10 @@ export const ThoughtsPanel = memo(
          * Live "Working…" node — spinning icon on the chain line. This is the
          * last node in the chain while streaming (Copilot's .chat-thinking-spinner-item).
          */}
-        {isActive && !thinkingDone && (
+        {isActive && (
           <div className={styles.chatThinkingSpinnerItem}>
             <span className={classNames(styles.chatThinkingIcon, styles.spinning, 'i-ph:spinner-gap')} aria-hidden />
             <span className={styles.spinnerLabel}>Working…</span>
-          </div>
-        )}
-
-        {/*
-         * "Done" node — static check icon on the chain line. Appears when
-         * `</thought>` has been received and the AI has moved on to its
-         * final answer (no pending tool calls). Signals to the user that
-         * the thinking phase is complete.
-         */}
-        {!isActive && thinkingDone && (
-          <div className={styles.chatThinkingDoneItem}>
-            <span className={classNames(styles.chatThinkingIcon, styles.doneIcon, 'i-ph:check-circle')} aria-hidden />
-            <span className={styles.doneLabel}>Done</span>
           </div>
         )}
       </ThinkingBox>

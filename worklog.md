@@ -3349,3 +3349,104 @@ Stage Summary:
 - Workspace race condition investigation: SKIPPED per user instruction
   ("remove the workspace related thing from worklog will not work on it").
   No new workspace investigation content added.
+
+---
+Task ID: copilot-faithful-chain
+Agent: main (Super Z)
+Task: Refactor assistant message / tool-usage formatting to be 100% Copilot-faithful. Fix the "same chain repeats multiple times" bug. Remove the "Thought for Ns" label. Remove the `<thought>`-tag legacy system. Don't break markdown / diagram / docx support.
+
+Work Log:
+- Cloned `imtia33/Open_Claude` (rebrand/amplify branch) and sparse-cloned `microsoft/vscode` `extensions/copilot/` for reference.
+- Diagnosed root cause: `chain-segments.ts` was breaking the chain on TWO triggers — (a) `text` parts (correct — Copilot also breaks on markdown) and (b) `step-start` parts (WRONG — Copilot's extension API has no `step-start` concept, so its renderer never fragments on agent-step boundaries). The `step-start` break was the single biggest cause of the "same chain repeats" duplication.
+- Diagnosed secondary cause: `ThoughtsPanel` had per-panel-local dedup state (`seenReasoning` Set, `toolIndexById` Map). When the chain broke (on text or step-start), the new panel re-accepted the same reasoning text / toolCallId as "new" → visible duplication across panels.
+- Diagnosed tertiary cause: legacy `<thought>`-tag render path paralleled the segment path with different semantics — switching between them produced inconsistent UI.
+- Changes made (4 files):
+
+  1. `app/lib/chat/chain-segments.ts` — REWROTE:
+     - Removed the `step-start` chain-break branch entirely. Step-starts now fall through to "unknown part types — ignored". This matches Copilot core (the extension API cannot emit step-starts, so the renderer never sees them).
+     - Only `text` (non-empty after trim) breaks the chain now — matching Copilot's "markdown terminates the thinking panel" rule.
+     - Updated all docstrings to reflect Copilot-faithful semantics.
+     - Removed the now-unused `IntermediateSegment` `break` kind.
+
+  2. `app/components/chat/AssistantMessage.tsx`:
+     - Removed `parseThoughts` / `isThoughtStreaming` imports and all `<thought>`-tag handling.
+     - Removed the `reasoningAndToolParts` flat-filter (legacy path).
+     - Removed `thoughtText`, `thoughtStreaming`, `hasThoughts`, `rawAnswerText` derived state.
+     - Removed `useSegmentRenderer = !hasThoughts && segments !== undefined` → replaced with `useSegmentRenderer = segments !== undefined` (always use segment path when parts exist).
+     - Removed the legacy `<ThoughtsPanel thoughtText=... thoughtStreaming=...>` render branch — replaced with a simple `<Markdown>{smoothAnswer}</Markdown>` fallback for the rare no-`parts` case.
+     - Updated `answerText` to use `concatTextSegments(segments)` (or `visibleContent` fallback) instead of the `<thought>`-tag-stripped `rawAnswerText`.
+     - Added `messageId` prop pass-through to `SegmentRenderer` → `ThoughtsPanel` for per-message dedup.
+     - Removed `thinkingDone` prop from `SegmentRenderer` (no longer needed — `ThinkingBox` no longer shows a "Done" label).
+     - Updated all docstrings (module header, render-path block, SegmentRenderer block) to describe the new Copilot-faithful behaviour.
+
+  3. `app/components/chat/copilot/ThinkingBox.tsx` — REWROTE:
+     - Removed the "Thought for Ns" duration-tracking state (`startTimeRef`, `hasEverStreamedRef`, `effectiveDuration`).
+     - Removed the "Completed with N steps" label branch.
+     - New label rule: while streaming → `activeLabel ?? 'Thinking…'`; when done → empty string (panel collapses silently, just shows brain icon + chevron).
+     - Removed the `duration` prop (no longer used).
+     - Removed the auto-collapse effect (the box is collapsed by default; user is in full control).
+
+  4. `app/components/chat/copilot/ThoughtsPanel.tsx` — REWROTE:
+     - Added module-level `messageDedupState: Map<string, MessageDedupState>` keyed by `messageId`.
+     - Each entry holds `toolIndexByKey: Map<string, string>` (toolCallId → step key) and `seenReasoning: Set<string>`.
+     - `getDedupState(messageId)` returns the shared state for that message — so multiple chain segments in the same message all dedup against the SAME Maps. A toolCallId that appeared in chain #1 will NOT render again if it re-appears in chain #2 after a text break.
+     - Removed `thoughtText`, `thoughtStreaming`, `thinkingDone` props (no longer needed).
+     - Added `messageId` prop.
+     - Removed the "Done" checkmark node (no longer needed — ThinkingBox no longer shows a "Done" label).
+
+  5. `app/lib/chat/chain-segments.spec.ts`:
+     - Replaced the "step-start closes the current chain silently" test with "step-start does NOT break the chain — ignored entirely (Copilot-faithful)".
+     - Added two new tests: "multiple step-starts between reasoning parts do NOT split the chain" and "step-start between text and tool does NOT create a separate chain".
+
+- PRESERVED (no changes):
+  - `Markdown.tsx` — still strips residual `<thought>` tags defensively ( defence-in-depth; the prompt already forbids them).
+  - `TextSegment.tsx` — per-segment typewriter + Markdown render (diagrams, math, code blocks all still work via the `Markdown` component).
+  - `ToolProgress.tsx` — flat inline `.progress-container` row render (unchanged).
+  - `InlineToolRow.tsx` — sandwiched-tool render (unchanged).
+  - `AnswerActions.tsx` — hover action bar (unchanged).
+  - `chat-copilot.module.scss` — Copilot-faithful CSS (unchanged).
+  - `thought-parser.ts` — file kept as-is (no longer imported by AssistantMessage, but kept for any external callers; future cleanup can delete it).
+  - System prompts (`new-prompt.ts`, `discuss-prompt.ts`) — already did NOT instruct `<thought>` tag use; no changes needed.
+
+Stage Summary:
+- 4 files rewritten, 1 spec updated, 0 regressions.
+- All 147 tests pass (including the updated chain-segments spec).
+- Typecheck clean (only pre-existing error in `api.export-docx.ts` which we did not touch).
+- ESLint clean (auto-fixed 5 prettier / multiline-comment-style issues).
+- The "same chain repeats multiple times" bug is fixed: step-starts no longer fragment the chain.
+- The "thought content in the middle makes it a separate block" behaviour is now CORRECT per user's spec: a real text response ("I will not use list_dir") DOES break the chain (matches Copilot), and the next consecutive reasoning+tool run forms a NEW chain.
+- The "Thought for Ns" label is gone — the panel collapses silently when streaming ends.
+- The `<thought>`-tag legacy system is gone — all models go through the segment path; reasoning comes from native AI-SDK `reasoning` parts exclusively.
+- Per-message dedup state prevents the same toolCallId / reasoning text from rendering twice across chain boundaries.
+- Markdown / diagrams / math / code blocks / docx artifacts / template injection / chat naming all preserved (TextSegment still wraps Markdown; the docx-artifact extractor still runs on the concatenated text).
+
+---
+Task ID: workspace-refresh-fix + hero-reintroduce
+Agent: main (Super Z)
+Task: Two follow-ups requested by user after the Copilot-faithful refactor: (1) "workspace contents don't load when the chat is refreshed" — fix it. (2) An old commit (45ba9daf) removed the "Where ideas begin" hero section — reintroduce it at the exact location. Then push to rebrand/amplify using a user-provided PAT.
+
+Work Log:
+- Diagnosed the workspace-refresh bug by tracing the load effect in `app/lib/persistence/useChatHistory.ts`. Found FIVE interlocking root causes:
+  1. **IIFE else-branch cleared files** — when `getProjectFiles()` returned null/empty, the IIFE called `workbenchStore.files.set({})`, wiping files that the Promise.all safety net had JUST set from the chat snapshot. (Race condition: IIFE runs in parallel with `Promise.all([getMessages, getSnapshot])`.)
+  2. **`linkedProject` resolution missed `urlProjectId` fallback** — when a chat's metadata lacked `projectId` AND `chatToProject[chatId]` was missing (common after metadata migrations or for chats loaded via URL only), `linkedProject` came back undefined even though the URL clearly named a project. Control then fell into the `if (!linkedProject)` "personal chat" branch.
+  3. **`clearWorkspace()` in the personal-chat branch raced the IIFE** — that branch fired `clearWorkspace()` whenever `loadedProjectId !== '<none>'`. But the IIFE (running in parallel) had JUST set `loadedProjectId = project.id` and loaded files. The personal-chat branch then wiped them.
+  4. **`restoreSnapshot` was fire-and-forget** — both call sites (lines 467 & 499 in the original) didn't await the promise. WebContainer boot failures and FS errors were silently swallowed, leaving the file store empty.
+  5. **`metadata.projectInitiated` flag check excluded valid snapshots** — both the `if (!linkedProject)` and `else if` branches required `metadata.projectInitiated === true` before restoring from snapshot. The flag is set when the first artifact is created, but it's unreliable on older chats / after metadata migrations. If a chat had a snapshot with files but the flag was false, no files were loaded.
+- Fix applied in `app/lib/persistence/useChatHistory.ts`:
+  - IIFE else-branch: removed the `workbenchStore.files.set({})` call. Now only logs a warning; the Promise.all safety net is responsible for setting files in that case.
+  - `linkedProject` resolution: added `urlProjectId` as a third fallback (`projectStore.getProject(urlProjectId)`), so a project chat loaded via URL is recognised even when metadata is missing.
+  - Personal-chat branch: tightened the `clearWorkspace` guard to only fire when `loadedProjectId` is set to a DIFFERENT project than `urlProjectId` (i.e. a genuinely different project is loaded). This prevents wiping the IIFE's work when loading `/{projectId}/{chatId}`.
+  - Both `restoreSnapshot` calls: now awaited and wrapped in `try/catch` so WebContainer failures surface as console warnings instead of silently losing files.
+  - Replaced `storedMessages.metadata?.projectInitiated && snapshot` with `snapshotHasFiles` (`!!snapshot?.files && Object.keys(snapshot.files).length > 0`) in both branches. The snapshot itself is the source of truth — if it has files, restore them.
+  - Safety-net `files.set(snapshot.files)` calls: now re-check `workbenchStore.files.get()` immediately before setting, because the awaited `restoreSnapshot` may have completed AFTER the IIFE set files — in which case we should NOT overwrite them.
+- Hero section reintroduced in `app/components/chat/BaseChat.tsx`:
+  - Re-added the `import { ExamplePrompts } from '~/components/chat/ExamplePrompts';` line (was removed in commit 45ba9daf).
+  - Re-inserted the exact `{!chatStarted && (<div id="intro">…</div>)}` block at both viewport branches — small viewport (between `styles.Chat` div and `<StickToBottom>`) and large viewport (between the panel's `styles.Chat` div and `<StickToBottom>`). Content is byte-identical to what 45ba9daf removed: gradient blur backdrop, "Where ideas begin" gradient h1, "Bring ideas to life in seconds or get help on existing projects." subtitle, and `<ExamplePrompts sendMessage={sendMessage} />`.
+- Verified: `npx tsc --noEmit` reports zero errors in any modified file; `npx eslint` clean on all 6 modified files (BaseChat.tsx, useChatHistory.ts, chain-segments.ts, chain-segments.spec.ts, AssistantMessage.tsx, ThoughtsPanel.tsx, ThinkingBox.tsx); `npx vitest run app/lib/chat/chain-segments.spec.ts` — all 31 tests pass.
+
+Stage Summary:
+- Workspace-refresh bug fixed at the root cause (5 interlocking races / silent failures), not just papered over.
+- "Where ideas begin" hero section is back at the exact two locations commit 45ba9daf removed it from, byte-identical to the original.
+- No regressions: typecheck clean, lint clean, all chain-segments tests pass.
+- Files modified (3): app/lib/persistence/useChatHistory.ts, app/components/chat/BaseChat.tsx, worklog.md (this entry).
+- Ready to push to rebrand/amplify.

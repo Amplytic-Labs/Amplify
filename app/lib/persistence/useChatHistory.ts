@@ -230,9 +230,8 @@ export function useChatHistory() {
           });
 
           try {
-            const { detectProjectMemory, mergeDetectedMemory } = await import(
-              '~/lib/persistence/project-memory-detect'
-            );
+            const { detectProjectMemory, mergeDetectedMemory } =
+              await import('~/lib/persistence/project-memory-detect');
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);
@@ -393,8 +392,23 @@ export function useChatHistory() {
                     await restoreFileMap(projectFiles.files);
                     workbenchStore.files.set(projectFiles.files);
                   } else {
-                    console.warn('[ChatHistory] No files found for project:', project.id);
-                    workbenchStore.files.set({});
+                    /*
+                     * DON'T clear files here. The Promise.all safety net
+                     * below may have already populated `workbenchStore.files`
+                     * from the chat snapshot. Clearing them would wipe the
+                     * snapshot and leave the workspace showing
+                     * "Loading workspace…" forever — the
+                     * "workspace contents don't load on refresh" bug.
+                     *
+                     * Just log the warning; the safety net (or the
+                     * no-snapshot fallback) is responsible for setting
+                     * files in this case.
+                     */
+                    console.warn(
+                      '[ChatHistory] No project files found for project:',
+                      project.id,
+                      '— falling back to snapshot',
+                    );
                   }
 
                   workbenchStore.loadedProjectId.set(project.id);
@@ -446,25 +460,76 @@ export function useChatHistory() {
 
             setArchivedMessages(archivedMessages);
 
+            /*
+             * linkedProject resolution — fall back to urlProjectId.
+             *
+             * Previously this ONLY checked `chatToProject[chatId]` and
+             * `metadata.projectId`. If both were missing (e.g. the chat
+             * was loaded via a URL like /{projectId}/{chatId} but the
+             * chat's metadata was never persisted with projectId, or the
+             * projectStore's chatToProject map was reset), linkedProject
+             * came back undefined and we fell into the "personal chat"
+             * branch below. That branch then called `clearWorkspace()`
+             * because `loadedProjectId !== '<none>'` — wiping files the
+             * IIFE had JUST loaded. The workspace ended up empty on
+             * refresh even though the URL clearly named a project.
+             *
+             * FIX: add `urlProjectId` as a final fallback so a project
+             * chat loaded via URL is recognised even when metadata is
+             * missing.
+             */
             const linkedProject =
               projectStore.getProjectByChat(storedMessages.id) ??
               (storedMessages.metadata?.projectId
                 ? projectStore.getProject(storedMessages.metadata.projectId)
-                : undefined);
+                : undefined) ??
+              (urlProjectId ? projectStore.getProject(urlProjectId) : undefined);
+
+            /*
+             * "Snapshot has files" — used in place of the
+             * `metadata.projectInitiated` flag for deciding whether to
+             * restore files. The flag is set when an artifact is first
+             * created (see sendMessage flow), but it's unreliable on
+             * older chats or after metadata migrations. The snapshot
+             * itself is the source of truth: if it has files, restore
+             * them.
+             */
+            const snapshotHasFiles = !!snapshot?.files && Object.keys(snapshot.files).length > 0;
 
             if (!linkedProject) {
               /*
-               * Personal chat loaded via /chat/{chatId}. If a project was
-               * previously loaded, destroy the workspace (kill processes,
-               * clear FS) so terminal processes from the project don't leak
-               * into this personal chat.
+               * Personal chat loaded via /chat/{chatId}. If a DIFFERENT
+               * project is currently loaded, destroy the workspace (kill
+               * processes, clear FS) so terminal processes from that
+               * project don't leak into this personal chat.
+               *
+               * BUG FIX: previously this fired whenever
+               * `loadedProjectId !== '<none>'`. But when the URL is
+               * `/{projectId}/{chatId}` and the IIFE has already set
+               * `loadedProjectId = project.id` (and loaded files), this
+               * branch would clearWorkspace() — wiping the IIFE's work.
+               * Now we only clear if loadedProjectId is set to something
+               * OTHER than urlProjectId (i.e. a genuinely different
+               * project is loaded).
                */
-              if (workbenchStore.loadedProjectId.get() !== '<none>') {
+              const currentLoaded = workbenchStore.loadedProjectId.get();
+
+              if (currentLoaded && currentLoaded !== '<none>' && currentLoaded !== urlProjectId) {
                 await workbenchStore.clearWorkspace();
               }
 
-              if (storedMessages.metadata?.projectInitiated && snapshot) {
-                restoreSnapshot(mixedId || '', snapshot);
+              if (snapshotHasFiles) {
+                /*
+                 * Awaiting restoreSnapshot — previously this was
+                 * fire-and-forget, so WebContainer boot failures or FS
+                 * errors were silently swallowed and the workspace ended
+                 * up empty.
+                 */
+                try {
+                  await restoreSnapshot(mixedId || '', snapshot);
+                } catch (e) {
+                  console.warn('[ChatHistory] restoreSnapshot failed (personal chat):', e);
+                }
 
                 /*
                  * Safety net: restoreSnapshot writes to the WebContainer FS
@@ -473,17 +538,15 @@ export function useChatHistory() {
                  * forever if the IIFE failed. Populate the file store from
                  * the snapshot.
                  */
-                if (snapshot?.files && Object.keys(snapshot.files).length > 0) {
-                  const currentFiles = workbenchStore.files.get();
+                const currentFiles = workbenchStore.files.get();
 
-                  if (!currentFiles || Object.keys(currentFiles).length === 0) {
-                    workbenchStore.files.set(snapshot.files);
-                  }
+                if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                  workbenchStore.files.set(snapshot!.files);
                 }
 
                 workbenchStore.showWorkbench.set(true);
               }
-            } else if (storedMessages.metadata?.projectInitiated && snapshot) {
+            } else if (snapshotHasFiles) {
               /*
                * Only restore the snapshot if the workspace is empty (initial
                * load) or the project changed. When switching between chats
@@ -496,7 +559,16 @@ export function useChatHistory() {
               const sameProject = workbenchStore.loadedProjectId.get() === linkedProject?.id;
 
               if (!hasFiles || !sameProject) {
-                restoreSnapshot(mixedId || '', snapshot);
+                /*
+                 * Awaiting restoreSnapshot — previously fire-and-forget,
+                 * which silently swallowed WebContainer boot / FS errors
+                 * and left the workspace empty.
+                 */
+                try {
+                  await restoreSnapshot(mixedId || '', snapshot);
+                } catch (e) {
+                  console.warn('[ChatHistory] restoreSnapshot failed (project chat):', e);
+                }
               }
 
               workbenchStore.loadedProjectId.set(linkedProject?.id || '<none>');
@@ -507,10 +579,16 @@ export function useChatHistory() {
                * WebContainer but not to the file store. If the IIFE failed,
                * populate the file store from the snapshot so hasFiles
                * becomes true and the workspace renders.
+               *
+               * Re-check currentFiles here because the awaited
+               * restoreSnapshot may have completed AFTER the IIFE set
+               * files — in which case we should NOT overwrite them.
                */
-              if (snapshot?.files && Object.keys(snapshot.files).length > 0) {
-                if (!hasFiles) {
-                  workbenchStore.files.set(snapshot.files);
+              if (snapshotHasFiles) {
+                const currentFilesNow = workbenchStore.files.get();
+
+                if (!currentFilesNow || Object.keys(currentFilesNow).length === 0) {
+                  workbenchStore.files.set(snapshot!.files);
                 }
               }
             } else {

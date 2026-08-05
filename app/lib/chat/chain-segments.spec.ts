@@ -224,29 +224,41 @@ describe('splitPartsIntoSegments', () => {
     expect(segs).toEqual([{ kind: 'chain', parts: [r1, r2, r3] }]);
   });
 
-  it('step-start closes the current chain silently (no text segment emitted)', () => {
+  it('step-start does NOT break the chain — ignored entirely (Copilot-faithful)', () => {
+    /*
+     * v3 (Copilot-faithful): step-start is IGNORED. It does not break the
+     * chain. This is the fix for "the same chain repeats multiple times
+     * across step boundaries" — the AI SDK emits step-starts between agent
+     * steps, but Copilot's renderer never sees them (the extension API has
+     * no such concept), so we must not fragment the visible thinking panel
+     * on them.
+     */
     const segs = splitPartsIntoSegments([reasoning('first'), stepStart(), reasoning('second')]);
-    expect(segs).toEqual([
-      { kind: 'chain', parts: [reasoning('first')] },
-      { kind: 'chain', parts: [reasoning('second')] },
-    ]);
+    expect(segs).toEqual([{ kind: 'chain', parts: [reasoning('first'), reasoning('second')] }]);
   });
 
-  it('step-start does NOT count as text neighbor for sandwich rule', () => {
+  it('multiple step-starts between reasoning parts do NOT split the chain', () => {
+    const segs = splitPartsIntoSegments([
+      reasoning('first'),
+      stepStart(),
+      stepStart(),
+      reasoning('second'),
+      stepStart(),
+      tool('t1'),
+    ]);
+    expect(segs).toEqual([{ kind: 'chain', parts: [reasoning('first'), reasoning('second'), tool('t1')] }]);
+  });
+
+  it('step-start between text and tool does NOT create a separate chain', () => {
     /*
-     * [text, tool, step-start, tool] → text, chain (the step-start breaks
-     * the run, but neither half is sandwiched between two TEXT segments,
-     * so both halves become chain). Actually: text → tool is a run after
-     * text; then step-start breaks; then tool is another run. The first
-     * run is between text and step-start (not text-text), so it's chain.
-     * The second run is after a step-start with no text after, so it's
-     * chain. Result: text, chain, chain.
+     * [text, step-start, tool] → text, chain
+     * (step-start is invisible — the tool is NOT sandwiched between two
+     * texts, so it becomes a chain, not inline tools)
      */
-    const segs = splitPartsIntoSegments([text('a'), tool('t1'), stepStart(), tool('t2')]);
+    const segs = splitPartsIntoSegments([text('a'), stepStart(), tool('t1')]);
     expect(segs).toEqual([
       { kind: 'text', text: 'a' },
       { kind: 'chain', parts: [tool('t1')] },
-      { kind: 'chain', parts: [tool('t2')] },
     ]);
   });
 
