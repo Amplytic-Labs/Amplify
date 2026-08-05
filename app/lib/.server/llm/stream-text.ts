@@ -1190,52 +1190,53 @@ ${systemPrompt}`;
                   }
 
                   /*
-                   * Stream the template's <amplifyArtifact> XML to the
-                   * client. The client-side message parser
-                   * (EnhancedStreamingMessageParser) parses the XML and
-                   * writes files to the WebContainer sequentially via
-                   * ActionRunner.
+                   * Return the file list to the client. The client-side
+                   * handler in Chat.client.tsx detects inject_template tool
+                   * results and writes files to the WebContainer
+                   * SEQUENTIALLY via workbenchStore.addAction/runAction
+                   * (same execution queue the message parser uses).
                    *
-                   * REVERTED from the parallel-write pipeline (commit
-                   * f66efa22) because concurrent writes were causing files
-                   * to silently fail to appear in the workspace after a
-                   * page refresh. The sequential path is slower for large
-                   * templates but reliable.
+                   * WHY NOT stream the <amplifyArtifact> XML as text-delta?
                    *
-                   * AI SDK v7 requires a "text-start" chunk before any
-                   * "text-delta" chunks for a given text part ID. Without
-                   * it, the client-side stream processor throws:
-                   *   "Received text-delta for missing text part with ID 'template'"
+                   *   Streaming the XML as a text part (the previous
+                   *   approach) caused THREE regressions:
+                   *
+                   *   1. CHAIN BREAK: the text part breaks the
+                   *      chain-of-thought segment splitter
+                   *      (splitPartsIntoSegments), so consecutive tools
+                   *      (list_skills → get_skill → inject_template) that
+                   *      should be in ONE collapsible "Thinking" panel end
+                   *      up as separate flat rows.
+                   *
+                   *   2. DUPLICATE HEADINGS: Chat.client.tsx replaces ALL
+                   *      text parts with the parsedContent (the full
+                   *      concatenated parsed output). When inject_template's
+                   *      text part is present alongside the model's response
+                   *      text parts, every text part gets the SAME full
+                   *      parsedContent — so the model's headings (e.g.
+                   *      "## Start Expo Application") appear multiple times.
+                   *
+                   *   3. ARTIFACT TITLE LEAK: the <amplifyArtifact
+                   *      title="Start Expo Application"> XML, after parsing
+                   *      and the parsedContent replacement, can render the
+                   *      title as visible text in the chat.
+                   *
+                   *   By returning files in the tool RESULT (not as a text
+                   *   part), no text part is created, so none of these
+                   *   issues occur. The client writes files from the result
+                   *   using the same sequential execution queue as the
+                   *   message parser — reliable, no parallel-write bug.
+                   *
+                   * The `files` array is consumed by the
+                   * `inject_template` result handler in Chat.client.tsx.
+                   * The `userMessage` is kept for the model (template
+                   * instructions + file-access rules) but is NOT displayed
+                   * in the UI — ToolProgress.renderResult filters it out.
                    */
-                  if (props.dataStream) {
-                    props.dataStream.write({ type: 'text-start', id: 'template' });
-                    props.dataStream.write({ type: 'text-delta', id: 'template', delta: result.assistantMessage });
-                    props.dataStream.write({ type: 'text-end', id: 'template' });
-                  }
-
                   return {
                     summary: result.summary,
                     userMessage: result.userMessage,
-
-                    /*
-                     * IMPORTANT: the template's <amplifyArtifact> XML is
-                     * streamed above and parsed/written to the WebContainer
-                     * by the client message parser ASYNCHRONOUSLY. This tool
-                     * result is returned to the model BEFORE all files are
-                     * committed to the workspace.
-                     *
-                     * The client-side readiness gate delays auto-approval of
-                     * read-only tools and the application of file mutations
-                     * until the file count has stabilized, so by the time a
-                     * subsequent read_file / list_dir / mutate call is
-                     * permitted to execute, the files will exist.
-                     *
-                     * Do NOT immediately attempt to read or modify files
-                     * that were just injected — they may not be written yet.
-                     * If you must verify, prefer list_dir first.
-                     */
-                    warning:
-                      'Template files are being written to the workspace asynchronously. Wait for the workspace to finish loading before reading or modifying files, otherwise operations may fail on non-existent files.',
+                    files: result.files.map((f) => ({ path: f.path, content: f.content })),
                   };
                 } catch (e: any) {
                   return { error: e.message };

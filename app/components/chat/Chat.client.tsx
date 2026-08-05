@@ -9,6 +9,7 @@ import {
   getToolNameFromPart,
   getToolCallId,
   getToolState,
+  getToolInput,
   getToolOutput,
   ToolState,
 } from '~/lib/chat/tool-parts';
@@ -912,6 +913,13 @@ export const ChatImpl = memo(
     const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
 
     /*
+     * Track which inject_template toolCallIds we've already processed
+     * (written files for). Prevents re-writing files on re-renders.
+     * Reset on chat switch — see the mount effect below.
+     */
+    const processedTemplateImportsRef = useRef<Set<string>>(new Set());
+
+    /*
      * Track whether the workspace has finished processing an inject_template
      * or file-loading operation. When a project is loaded, we wait for the
      * files to be present in the workbench store before allowing tool
@@ -952,6 +960,7 @@ export const ChatImpl = memo(
     useEffect(() => {
       processedMutationToolCallIdsRef.current = new Set();
       autoApprovedToolCallIdsRef.current = new Set();
+      processedTemplateImportsRef.current = new Set();
       pendingAutoApprovalsRef.current = [];
       workspaceReadyRef.current = true;
       workspaceFileCountRef.current = 0;
@@ -1189,6 +1198,153 @@ export const ChatImpl = memo(
 
       return () => clearInterval(interval);
     }, [messages, addToolResult]);
+
+    /*
+     * ── inject_template file writer ────────────────────────────────────
+     *
+     * When the `inject_template` tool completes, its result contains a
+     * `files` array (path + content for each file in the template). This
+     * effect detects completed inject_template calls and writes the files
+     * to the WebContainer SEQUENTIALLY via workbenchStore's execution
+     * queue — the same mechanism the message parser uses for
+     * <amplifyArtifact> actions.
+     *
+     * WHY: the previous approach streamed the <amplifyArtifact> XML as a
+     * text-delta, which created a TEXT part in the message. That text part
+     * broke the chain-of-thought segment splitter (causing consecutive
+     * tools to appear as separate flat rows instead of one collapsible
+     * panel) and caused duplicate headings via the parsedContent
+     * replacement. By writing files from the tool RESULT instead, no text
+     * part is created, and the chain stays intact.
+     *
+     * DEDUP: `processedTemplateImportsRef` (declared with the other refs
+     * above) tracks processed toolCallIds so files are written exactly
+     * once per inject_template call, even across re-renders. It's cleared
+     * on chat switch by the mount effect.
+     */
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!isToolPart(p)) {
+            continue;
+          }
+
+          if (getToolNameFromPart(p) !== 'inject_template') {
+            continue;
+          }
+
+          const state = getToolState(p);
+
+          /*
+           * Only process results (output-available). While the tool is
+           * still in 'call'/'partial' state, files aren't available yet.
+           */
+          if (!ToolState.isResult(state)) {
+            continue;
+          }
+
+          const toolCallId = getToolCallId(p);
+
+          if (!toolCallId) {
+            continue;
+          }
+
+          /* Already processed this inject_template call — skip. */
+          if (processedTemplateImportsRef.current.has(toolCallId)) {
+            continue;
+          }
+
+          const result = getToolOutput(p);
+          const input = getToolInput(p);
+
+          if (!result || !result.files || !Array.isArray(result.files) || result.files.length === 0) {
+            continue;
+          }
+
+          processedTemplateImportsRef.current.add(toolCallId);
+
+          const messageId = msg.id;
+          const artifactId = `template-${toolCallId}`;
+          const title = input?.title || 'Imported Template';
+
+          logger.info(
+            `[inject_template] Writing ${result.files.length} files for artifact ${artifactId} (message ${messageId})`,
+          );
+
+          /*
+           * Create the artifact in the workbench store. This:
+           *   - Registers it in `workbenchStore.artifacts` so the
+           *     `firstArtifact` getter returns it (used by useChatHistory
+           *     for project auto-promotion + command detection).
+           *   - Creates an ActionRunner instance that manages the
+           *     execution queue for this artifact's file writes.
+           *
+           * `type: 'template'` matches what the message parser used to
+           * set for inject_template artifacts.
+           */
+          workbenchStore.addArtifact({
+            messageId,
+            id: artifactId,
+            title,
+            type: 'template',
+          });
+
+          /*
+           * Enqueue each file write. `addAction` registers the action in
+           * the runner; `runAction` executes it (writes to WebContainer +
+           * updates workbenchStore.files). Both are sequential via the
+           * global execution queue — no parallel writes, so no refresh
+           * bug.
+           *
+           * We wrap in `addToExecutionQueue` to ensure the entire batch
+           * is enqueued atomically (the individual addAction/runAction
+           * calls also enqueue, but this outer wrapper ensures ordering
+           * relative to any other pending actions).
+           */
+          workbenchStore.addToExecutionQueue(async () => {
+            for (let i = 0; i < result.files.length; i++) {
+              const file = result.files[i];
+              const actionId = `${artifactId}-file-${i}`;
+
+              const actionData = {
+                artifactId,
+                messageId,
+                actionId,
+                action: {
+                  type: 'file' as const,
+                  filePath: file.path,
+                  content: file.content,
+                },
+              };
+
+              /* Register the action in the runner (mimics onActionOpen). */
+              await workbenchStore._addAction(actionData);
+
+              /*
+               * Execute the action — writes to WebContainer + updates
+               * workbenchStore.files (mimics onActionClose).
+               */
+              await workbenchStore._runAction(actionData, false);
+            }
+
+            /* Mark the artifact as closed (all files written). */
+            workbenchStore.updateArtifact({ messageId, id: artifactId, title, type: 'template' }, { closed: true });
+
+            logger.info(`[inject_template] Finished writing ${result.files.length} files for artifact ${artifactId}`);
+          });
+        }
+      }
+    }, [messages]);
 
     useEffect(() => {
       for (const msg of messages) {

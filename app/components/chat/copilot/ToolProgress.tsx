@@ -201,7 +201,12 @@ export function classifyResult(result: any): ResultStatus {
  *  - Mutation tools: parse the JSON signal and show per-operation summaries
  *    (Created X, Replaced in Y, …) plus a compact preview.
  *  - Read tools: show the (possibly truncated) string.
- *  - Objects: pretty-printed JSON.
+ *  - inject_template: show ONLY the `summary` field. The `userMessage`
+ *    (template instructions / file-access rules) and `files` array are
+ *    model-side data — they must NOT be shown in the UI. The user
+ *    complained about seeing raw JSON with `userMessage` and `warning`
+ *    fields; this filter ensures only the human-readable summary appears.
+ *  - Other objects: pretty-printed JSON (with large/noisy fields stripped).
  */
 function renderResult(toolName: string, result: any): { summary: string[]; preview?: string; isMutation: boolean } {
   if (result == null) {
@@ -235,8 +240,49 @@ function renderResult(toolName: string, result: any): { summary: string[]; previ
     return { summary: [], preview: truncated, isMutation: false };
   }
 
+  /*
+   * inject_template — the result is { summary, userMessage, files }.
+   * Show ONLY the `summary` string. The `userMessage` contains verbose
+   * template instructions and file-access rules meant for the MODEL, not
+   * the user. The `files` array is the raw file list (potentially huge —
+   * hundreds of files with full content). Displaying either would be
+   * noise the user doesn't want to see.
+   */
+  if (toolName === 'inject_template' && typeof result === 'object' && typeof result.summary === 'string') {
+    const fileCount = Array.isArray(result.files) ? result.files.length : 0;
+    return {
+      summary: [result.summary, fileCount > 0 ? `${fileCount} file(s) written to workspace` : ''].filter(Boolean),
+      isMutation: true,
+    };
+  }
+
+  /*
+   * Other object results — pretty-print as JSON, but strip known noisy
+   * fields (files arrays, verbose userMessage blocks) so the expandable
+   * details stay readable.
+   */
   try {
-    return { summary: [], preview: JSON.stringify(result, null, 2), isMutation: false };
+    const filtered: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(result)) {
+      // Skip fields that are verbose or meant for the model, not the UI.
+      if (key === 'files' || key === 'userMessage' || key === 'warning') {
+        continue;
+      }
+
+      filtered[key] = value;
+    }
+
+    const json = JSON.stringify(filtered, null, 2);
+
+    // If we stripped everything, fall back to a simple stringification.
+    if (json === '{}') {
+      return { summary: [String(result)], isMutation: false };
+    }
+
+    const truncated = json.length > 1200 ? json.slice(0, 1200) + '\n…' : json;
+
+    return { summary: [], preview: truncated, isMutation: false };
   } catch {
     return { summary: [String(result)], isMutation: false };
   }
