@@ -8,6 +8,7 @@ import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
 import { Chart } from './Chart';
 import { FilePill } from './copilot/FilePill';
+import { transformAmplifyQuickActions } from '~/lib/chat/quick-actions';
 import type { UIMessage } from 'ai';
 import styles from './Markdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
@@ -41,10 +42,18 @@ export const Markdown = memo(
      *      the old multi-panel "thought block" UI inside the answer.
      *      `transformThoughtBlocks` is kept as a no-op safety net for
      *      any external callers that still rely on it.
+     *   3. Transform `<amplify-quick-actions>` XML → `<div class="__amplifyQuickAction__">`
+     *      HTML so the existing div/button component handlers below can
+     *      render them as styled pill buttons. Without this step, the raw
+     *      XML would render as plain text (react-markdown doesn't know
+     *      about custom XML element names). Streaming-safe — see
+     *      quick-actions.ts for details.
      */
     const parsedChildren = useMemo(() => {
       const stripped = stripCodeFenceFromArtifact(children);
-      return stripResidualThoughtTags(stripped);
+      const thoughtsStripped = stripResidualThoughtTags(stripped);
+
+      return transformAmplifyQuickActions(thoughtsStripped);
     }, [children]);
 
     const childrenRef = useRef(parsedChildren);
