@@ -64,27 +64,25 @@ interface ThinkingBoxProps {
  *          specific tool is running), ELSE "Thinking…" (shimmer-animated
  *          by ShinyText).
  *   2. When streaming has ended:
- *        → empty string. The panel still renders so tools (if any) are
- *          visible, but no header text is shown. The user can expand/
- *          collapse manually via the chevron.
+ *        → "Reasoning" (simple, non-timing label). The panel header
+ *          remains visible so the user can click to expand and review
+ *          the reasoning. Previously this was an empty string, which
+ *          made the header invisible and users thought the reasoning
+ *          had "disappeared".
  *
- * The previous "Completed with N steps" / "Thought for Ns" labels have
- * been removed — the user explicitly asked for the time-based label to go,
- * and the step-count label was redundant (the user can see the steps by
- * expanding the panel).
- *
- * Behaviour:
- *   - Collapsed by default (user opts in to see reasoning by clicking).
- *   - While streaming: label reads "Thinking…" (or activeLabel) with
- *     shimmer, even when collapsed.
- *   - When streaming ends: label is empty.
- *   - For non-streaming models that produced no reasoning AND no tool
- *     calls, the parent (ThoughtsPanel) hides the panel entirely.
+ * EXPAND/COLLAPSE BEHAVIOUR:
+ *   - Auto-EXPANDS when streaming starts (so the user sees reasoning
+ *     + tool progress as it arrives).
+ *   - Auto-COLLAPSES when streaming ends (clean UI, but header stays
+ *     visible with "Reasoning" label for review).
+ *   - If the user manually toggles during streaming, their choice is
+ *     respected (no fighting the auto-expand/collapse).
  */
 export const ThinkingBox = memo(
   ({ isActive, thoughtStreaming, stepCount = 0, hasReasoning = false, activeLabel, children }: ThinkingBoxProps) => {
     const [isOpen, setIsOpen] = useState(false);
-    const hasAutoCollapsedRef = useRef(false);
+    const wasStreamingRef = useRef(false);
+    const userToggledRef = useRef(false);
 
     /*
      * Mark unused props as referenced — they're part of the public props
@@ -95,35 +93,57 @@ export const ThinkingBox = memo(
     void hasReasoning;
 
     /*
-     * Auto-collapse is now a no-op because the box starts collapsed and the
-     * user is in full control. Kept as a hook so the existing effect deps
-     * don't change unexpectedly — could be removed in a follow-up cleanup.
+     * AUTO-EXPAND while streaming, AUTO-COLLAPSE when streaming ends.
+     *
+     * Behaviour:
+     *   - When streaming starts (isActive becomes true): auto-EXPAND the
+     *     panel so the user can see reasoning + tool progress as it
+     *     arrives. (Previously the panel was collapsed by default and the
+     *     user had to manually click to see anything — they perceived the
+     *     hidden reasoning as "disappeared".)
+     *   - When streaming ends (isActive becomes false): auto-COLLAPSE the
+     *     panel. The header remains visible (brain icon + label) so the
+     *     user can click to re-expand and review the reasoning.
+     *   - If the user manually toggles the panel while streaming, we
+     *     respect their choice and don't fight them (userToggledRef).
      */
     useEffect(() => {
-      if (hasAutoCollapsedRef.current) {
-        return;
-      }
+      const isStreaming = isActive || thoughtStreaming;
 
-      if (!isActive) {
-        /*
-         * Box is collapsed by default now; if the user manually expanded
-         * it while streaming, leave it expanded after streaming ends —
-         * don't snap it shut on them. They chose to see the reasoning.
-         */
-        hasAutoCollapsedRef.current = true;
+      if (isStreaming && !wasStreamingRef.current) {
+        // Streaming just started — auto-expand (unless user already toggled).
+        if (!userToggledRef.current) {
+          setIsOpen(true);
+        }
+
+        wasStreamingRef.current = true;
+      } else if (!isStreaming && wasStreamingRef.current) {
+        // Streaming just ended — auto-collapse (unless user toggled during streaming).
+        if (!userToggledRef.current) {
+          setIsOpen(false);
+        }
+
+        wasStreamingRef.current = false;
       }
-    }, [isActive]);
+    }, [isActive, thoughtStreaming]);
+
+    const handleToggle = () => {
+      userToggledRef.current = true;
+      setIsOpen((v) => !v);
+    };
 
     /*
      * Label logic — Copilot-faithful, no "Thought for Ns".
      *
      *   - Streaming (active or thought-streaming):
-     *       → activeLabel if provided, else "Thinking…"
+     *       → activeLabel if provided (e.g. "Searching the web"), else "Thinking…"
      *   - Done:
-     *       → empty string (panel collapses silently, just shows the
-     *         chevron + brain icon; user can expand to review steps).
+     *       → "Reasoning" (simple, non-timing label so the user knows the
+     *         panel exists and can click to expand). Previously this was
+     *         an empty string, which made the panel header invisible and
+     *         the user thought the reasoning "disappeared".
      */
-    const label = isActive || thoughtStreaming ? (activeLabel ?? 'Thinking…') : '';
+    const label = isActive || thoughtStreaming ? (activeLabel ?? 'Thinking…') : 'Reasoning';
 
     /*
      * When there's no label AND no children to show, hide the panel entirely.
@@ -141,12 +161,7 @@ export const ThinkingBox = memo(
         )}
       >
         {/* Header button — brain icon on the LEFT, chevron on the RIGHT. */}
-        <button
-          type="button"
-          onClick={() => setIsOpen((v) => !v)}
-          className={styles.headerButton}
-          aria-expanded={isOpen}
-        >
+        <button type="button" onClick={handleToggle} className={styles.headerButton} aria-expanded={isOpen}>
           <span className={classNames(styles.brainIcon, 'i-ph:brain')} aria-hidden />
 
           <ShinyText text={label} loading={isActive || thoughtStreaming} />

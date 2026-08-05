@@ -3479,3 +3479,34 @@ Stage Summary:
 - Typecheck clean (except pre-existing api.export-docx.ts), lint clean, all 121 tests pass.
 - Files modified (4) + deleted (6): useChatHistory.ts, Chat.client.tsx, stream-text.ts, selectStarterTemplate.ts; deleted parallel-file-writer.{ts,spec.ts}, template-load-registry.{ts,spec.ts}, api.template-files.ts, api.template-loaded.ts.
 - Ready to push to rebrand/amplify.
+
+---
+Task ID: fix-reasoning-disappears
+Agent: main (Super Z)
+Task: User reported "the reasoning block is not present after the chain of thought completes — like breaks off". The reasoning panel vanishes when streaming ends, causing the user to lose context (and inject_template calls to appear broken because the planning reasoning disappeared).
+
+Work Log:
+- Diagnosed TWO root causes:
+  1. **Module-level `seenReasoning` Set bug in ThoughtsPanel.tsx**: The `seenReasoning` Set was module-level (keyed by messageId) and persisted across ALL useMemo recomputations. During streaming, each render added the accumulated reasoning text to the Set. When streaming ended and the memo recomputed one final time, the reasoning text was ALREADY in the Set → it got deduped away → `steps.length === 0` → `return null` (line 227) → the entire panel vanished.
+  2. **Panel collapsed by default with no auto-expand in ThinkingBox.tsx**: `isOpen` started as `false` and there was no auto-expand logic while streaming. So even during streaming, the user only saw the "Thinking…" header label — the reasoning content was hidden behind the collapsed panel. When streaming ended, the label became an empty string, making the header nearly invisible (just a brain icon with no text).
+
+- Fix 1 (ThoughtsPanel.tsx):
+  - Removed `seenReasoning` from the module-level `MessageDedupState` interface.
+  - Replaced it with a LOCAL `Set<string>` inside the `useMemo` — scoped to each individual computation pass. This prevents duplicate reasoning within a single render (e.g. if the SDK emits the same part twice) but does NOT persist across re-renders. The reasoning text is now always present in `steps` regardless of how many times the memo recomputes.
+  - Kept the `toolIndexByKey` Map at module-level — that dedup is correct and necessary because the AI SDK state machine genuinely emits multiple parts for the same `toolCallId` (input-streaming → input-available → output-available), and we need to replace the existing step with the more-progressed version across chain segments.
+
+- Fix 2 (ThinkingBox.tsx):
+  - Added auto-EXPAND when streaming starts: `wasStreamingRef` tracks the previous streaming state. When `isActive` transitions from false→true, the panel auto-expands so the user sees reasoning + tool progress as it arrives.
+  - Added auto-COLLAPSE when streaming ends: when `isActive` transitions from true→false, the panel auto-collapses. The header remains visible so the user can click to re-expand and review.
+  - Added `userToggledRef`: if the user manually clicks the panel during streaming, we respect their choice and don't fight them with auto-expand/collapse.
+  - Changed the "done" label from empty string `''` to `'Reasoning'` — a simple, non-timing label so the user knows the panel exists and can click to expand. The "Thought for Ns" timing label is still gone (per the user's earlier request).
+
+- Verified: `npx tsc --noEmit` clean for modified files; `npx eslint` clean (after auto-fix); `npx vitest run chain-segments.spec.ts` — all 31 tests pass.
+
+Stage Summary:
+- Reasoning no longer vanishes when streaming ends — the dedup bug that caused `steps` to be emptied on the final re-render is fixed.
+- Panel auto-expands while streaming so reasoning is visible as it arrives.
+- Panel auto-collapses when streaming ends but the header stays visible with "Reasoning" label.
+- User can manually toggle at any time; auto-expand/collapse respects their choice.
+- Files modified (2): app/components/chat/copilot/ThoughtsPanel.tsx, app/components/chat/copilot/ThinkingBox.tsx.
+- Ready to push to rebrand/amplify.

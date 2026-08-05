@@ -77,7 +77,6 @@ interface ThoughtsPanelProps {
  */
 interface MessageDedupState {
   toolIndexByKey: Map<string, string>; // toolCallId → step key
-  seenReasoning: Set<string>;
 }
 
 const messageDedupState = new Map<string, MessageDedupState>();
@@ -88,13 +87,13 @@ function getDedupState(messageId: string | undefined): MessageDedupState {
      * No messageId available (legacy / ephemeral render). Use a transient
      * state that won't be shared — same behaviour as before the fix.
      */
-    return { toolIndexByKey: new Map(), seenReasoning: new Set() };
+    return { toolIndexByKey: new Map() };
   }
 
   let state = messageDedupState.get(messageId);
 
   if (!state) {
-    state = { toolIndexByKey: new Map(), seenReasoning: new Set() };
+    state = { toolIndexByKey: new Map() };
     messageDedupState.set(messageId, state);
   }
 
@@ -135,6 +134,17 @@ export const ThoughtsPanel = memo(
 
       // Per-message dedup state — shared across all chain segments in this message.
       const dedup = getDedupState(messageId);
+
+      /*
+       * LOCAL reasoning dedup — scoped to THIS useMemo computation only.
+       * Prevents the same reasoning text from appearing twice within a
+       * single render pass (e.g. if the SDK emits duplicate parts).
+       * Does NOT persist across re-renders — that was the bug that caused
+       * reasoning to vanish when streaming ended (the module-level Set
+       * accumulated all previous texts and filtered them out on the
+       * final re-render).
+       */
+      const localSeenReasoning = new Set<string>();
 
       if (parts) {
         const toolStateRank = (state: string): number => {
@@ -210,8 +220,8 @@ export const ThoughtsPanel = memo(
               ? r.details.map((d: any) => d.text || '').join('')
               : (r as any).textDelta || (r as any).text || '';
 
-            if (text && text.trim() && !dedup.seenReasoning.has(text)) {
-              dedup.seenReasoning.add(text);
+            if (text && text.trim() && !localSeenReasoning.has(text)) {
+              localSeenReasoning.add(text);
               out.push({ kind: 'reasoning', text, key: `reasoning-${counter++}` });
             }
           }
@@ -224,6 +234,13 @@ export const ThoughtsPanel = memo(
     const stepCount = steps.length;
     const hasReasoning = steps.some((s) => s.kind === 'reasoning');
 
+    /*
+     * Hide the panel ONLY when there are no steps AND we're not streaming.
+     * With the dedup fix, steps should always contain the reasoning text
+     * even after streaming ends — so the panel stays visible for the user
+     * to review. If steps is truly empty (no reasoning, no tools) and
+     * we're not streaming, there's nothing to show.
+     */
     if (steps.length === 0 && !isActive) {
       return null;
     }
