@@ -1,5 +1,5 @@
 import { parse, HTMLElement, NodeType } from 'node-html-parser';
-import { Paragraph, TextRun, AlignmentType, BorderStyle, ShadingType, convertInchesToTwip } from 'docx';
+import { Paragraph, TextRun, BorderStyle, ShadingType, convertInchesToTwip } from 'docx';
 import { DEFAULT_DOCX_THEME } from './theme';
 import type { ResolvedDocxTheme } from './theme';
 

@@ -111,6 +111,7 @@ export const MotionDropdown = ({
     updatePosition();
     window.addEventListener('resize', updatePosition);
 
+    // eslint-disable-next-line consistent-return
     return () => window.removeEventListener('resize', updatePosition);
   }, [isOpen, align, flip, collisionPadding, children]); // children may change dropdown size
 

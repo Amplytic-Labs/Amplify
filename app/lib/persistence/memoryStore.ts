@@ -10,6 +10,7 @@ export interface Memory {
 const MEMORY_STORAGE_KEY = 'amplify_user_memories';
 
 export class MemoryStore {
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static instance: MemoryStore;
 
   private constructor() {}

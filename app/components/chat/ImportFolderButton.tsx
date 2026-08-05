@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import type { UIMessage } from 'ai';
 import { toast } from '~/components/ui/toast';
 import { MAX_FILES, isBinaryFile, shouldIncludeFile } from '~/utils/fileUtils';
 import { createChatFromFolder } from '~/utils/folderImport';

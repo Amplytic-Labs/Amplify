@@ -300,6 +300,7 @@ export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false 
    * label path. (v4 'partial' was not treated as pending either.)
    */
   const isPending = ToolState.isCall(state);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const readOnly = isReadOnlyNativeTool(toolName);
   const resultStatus = isResult ? classifyResult(result) : 'unknown';
   const isError = resultStatus === 'error' || state === 'output-error';

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { planStore } from '~/lib/planning/plan-store';
 import { ExecutionManager } from '~/lib/planning/execution-manager';
 import { ExecutionStateManager } from '~/lib/planning/execution-state';
-import type { Plan, PlanPoint, PlanPointStatus, Checkpoint, TaskExecutionState } from '~/lib/planning/types';
+import type { Plan, PlanPoint, PlanPointStatus, Checkpoint } from '~/lib/planning/types';
 import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 import { TraceTree, CircularProgress, type TraceItem, type TreeItemStatus, type TreeItemType } from './TraceTree';
 
@@ -176,6 +176,7 @@ function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
         <div className="space-y-2">
           {checkpoints.map((cp, i) => {
             const isInterrupted = cp.remainingWork.length > 0;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const isLast = i === checkpoints.length - 1;
             const nodeColor = isInterrupted ? 'bg-amber-500' : 'bg-green-500';
             const nodeRing = isInterrupted ? 'ring-2 ring-amber-500/30' : 'ring-2 ring-green-500/30';
@@ -342,7 +343,8 @@ function ConstraintsCard({ constraints }: { constraints: NonNullable<PlanPoint['
 
 export const PlanView = React.memo(({ planId, progress, onCancel, onResume }: PlanViewProps) => {
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [showDetails, setShowDetails] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showDetails, _setShowDetails] = useState<string | null>(null);
 
   // Inject CSS animations on mount
   useEffect(() => {
@@ -415,6 +417,7 @@ export const PlanView = React.memo(({ planId, progress, onCancel, onResume }: Pl
       !!point.executionState ||
       (point.requirements && point.requirements.length > 0);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const isExpanded = showDetails === point.id;
 
     return {

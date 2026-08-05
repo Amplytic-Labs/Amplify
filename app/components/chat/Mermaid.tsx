@@ -1,6 +1,5 @@
 import { memo, useEffect, useState, useRef } from 'react';
 import mermaid from 'mermaid';
-import styles from './Markdown.module.scss';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -88,7 +87,6 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
   return (
     <div
       className="flex justify-center my-4 overflow-auto"
-
       /*
        * minHeight while svg is loading prevents a layout shift that would
        * scroll the page. Once svg is populated the height is determined by

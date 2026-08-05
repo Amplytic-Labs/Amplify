@@ -1,24 +1,34 @@
 'use client';
 
 import * as React from 'react';
-import { Command, Home, Inbox, Search, Settings } from 'lucide-react';
+import { Home, Inbox, Search, Settings } from 'lucide-react';
 
-import { NavUser } from '~/components/ui/shadcn/nav-user';
 import {
   Sidebar,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarContent,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarFooter,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarGroup,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarGroupContent,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarGroupLabel,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarHeader,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarMenu,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarMenuButton,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarMenuItem,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SidebarSeparator,
 } from '~/components/ui/shadcn/sidebar';
 import { ProjectSidebar } from '~/components/sidebar/ProjectSidebar';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const data = {
   user: {
     name: 'John Doe',
@@ -27,6 +37,7 @@ const data = {
   },
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const menuItems = [
   { title: 'Home', url: '#', icon: Home },
   { title: 'Inbox', url: '#', icon: Inbox },

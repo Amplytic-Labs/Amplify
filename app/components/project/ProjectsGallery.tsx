@@ -33,6 +33,7 @@ export function ProjectsGallery({ onSelectProject }: ProjectsGalleryProps) {
    * Reactive project list — re-renders on any project mutation.
    * projectStore._versionStore is private but stable across releases.
    */
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-expect-error — _versionStore is private but stable across releases.
   const projectsVersion = useStore(projectStore._versionStore);
   const selectedId = useStore(selectedProjectId);

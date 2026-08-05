@@ -13,7 +13,7 @@
  * Then include `userContext` and `projectContext` in the `useChat({ body: { ... } })` call.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { userProfileStore } from '~/lib/vector-store/user-profile-store';
 import { projectContextStore } from '~/lib/vector-store/project-context-store';
 import { projectStore } from '~/lib/persistence/project-store';
@@ -117,6 +117,7 @@ export function useVectorContext(query: string): VectorContextResult {
     // Debounce the query to avoid excessive searches during typing
     const timer = setTimeout(queryContext, 300);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -131,7 +132,7 @@ export function useVectorContext(query: string): VectorContextResult {
  * and store them in the user profile vector store.
  * Called after each AI response.
  */
-export async function extractAndStoreUserFacts(userMessage: string, assistantMessage: string): Promise<void> {
+export async function extractAndStoreUserFacts(userMessage: string, _assistantMessage: string): Promise<void> {
   // Simple heuristic: look for explicit user statements about preferences
   const preferencePatterns = [
     { pattern: /i (?:prefer|like|want|use|always use|never use) (\w[\w\s]{5,80})/i, category: 'preference' as const },

@@ -1,7 +1,6 @@
 import { BaseProvider, getOpenAILikeModel } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModel } from 'ai';
 import { logger } from '~/utils/logger';
 import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 

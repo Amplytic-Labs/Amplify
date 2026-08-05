@@ -181,6 +181,7 @@ export class ContextBuilder {
    * ============================================================
    */
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildResumeSection(checkpoint: Checkpoint, point: PlanPoint): string {
     const lines: string[] = ['===== RESUME ====='];
     lines.push(`You are resuming task "${point.title}" after an interruption.`);
@@ -219,6 +220,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildTaskSection(point: PlanPoint): string {
     const lines: string[] = ['===== TASK ====='];
 
@@ -257,6 +259,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildProjectSection(info: ProjectContextInfo): string {
     const lines: string[] = ['===== PROJECT ====='];
 
@@ -275,11 +278,13 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildSkillsSection(skills: SkillContext[]): string {
     const blocks = skills.map((s) => SkillContextBuilder.formatForPrompt(s));
     return `===== SKILLS =====\n${blocks.join('\n\n')}`;
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildToolResultsSection(
     references: ToolOutputReference[],
     resolved: Map<string, CachedToolOutput>,
@@ -307,6 +312,7 @@ export class ContextBuilder {
     return lines.join('\n').trimEnd();
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildWorkspaceSection(ws: WorkspaceSnapshot): string {
     const lines: string[] = ['===== WORKSPACE SNAPSHOT ====='];
 
@@ -331,6 +337,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildPlanContextSection(
     plan: Plan,
     point: PlanPoint,
@@ -358,6 +365,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildConstraintsSection(constraints: TaskConstraints): string {
     const lines: string[] = ['===== CONSTRAINTS ====='];
 
@@ -388,6 +396,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildUserRequestSection(userRequest: string): string {
     return `===== USER REQUEST =====\n${userRequest}`;
   }

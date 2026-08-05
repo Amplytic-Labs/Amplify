@@ -47,7 +47,7 @@ interface ThemeToggleProps {
   onChange?: (theme: Theme) => void;
 }
 
-export default function ThemeToggle({ defaultTheme = 'dark', onChange }: ThemeToggleProps) {
+export default function ThemeToggle({ defaultTheme: _defaultTheme = 'dark', onChange }: ThemeToggleProps) {
   const theme = useStore(themeStore);
   const isDark = theme === 'dark';
 

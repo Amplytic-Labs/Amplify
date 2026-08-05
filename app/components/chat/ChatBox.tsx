@@ -5,13 +5,11 @@ import { X, FileText, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalL
 import { classNames } from '~/utils/classNames';
 import { LOCAL_PROVIDERS, providersStore, updateProviderSettings } from '~/lib/stores/settings';
 import { Switch } from '~/components/ui/Switch';
-import styles from './BaseChat.module.scss';
 import type { ProviderInfo } from '~/types/model';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import { ContextBudgetIndicator } from './ContextBudgetIndicator';
 import { SummarizationToast } from './SummarizationToast';
 import { ChatModeToggle } from './ChatModeToggle';
-import { customProvidersStore } from '~/lib/stores/custom-providers';
 import { useStore } from '@nanostores/react';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import Cookies from 'js-cookie';
@@ -286,6 +284,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     });
     inputObserver.observe(chatInputContainerRef.current);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       wsObserver.disconnect();
       inputObserver.disconnect();
@@ -379,6 +378,7 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);

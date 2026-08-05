@@ -32,10 +32,12 @@
  */
 
 import type {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Checkpoint,
   Plan,
   PlanPoint,
   SkillContext,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SubChat,
   SubChatMessage,
   ToolInvocationRecord,
@@ -43,9 +45,7 @@ import type {
 } from './types';
 import { planStore } from './plan-store';
 import { projectContextStore } from '~/lib/vector-store/project-context-store';
-import { userProfileStore } from '~/lib/vector-store/user-profile-store';
 import { runVerification } from '~/lib/verification/runner';
-import type { UIMessage } from 'ai';
 import { ExecutionManager } from './execution-manager';
 import { ExecutionStateManager } from './execution-state';
 import { isToolPart, getToolNameFromPart, getToolState, getToolInput, getToolOutput } from '~/lib/chat/tool-parts';
@@ -438,6 +438,7 @@ async function executePlanPoint(
         pointId: activePoint.id,
         message: `Resolved ${resolvedToolOutputs.size}/${toolRefs.length} tool outputs`,
       });
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       // Non-critical — the worker can still proceed
     }

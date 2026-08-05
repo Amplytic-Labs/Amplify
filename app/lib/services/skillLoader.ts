@@ -104,7 +104,7 @@ export class SkillLoader {
     }
   }
 
-  private async _loadFromDirectory(dir: string, isUserDir: boolean, useFrontmatter = false) {
+  private async _loadFromDirectory(dir: string, isUserDir: boolean, _useFrontmatter = false) {
     try {
       await fs.mkdir(dir, { recursive: true });
 

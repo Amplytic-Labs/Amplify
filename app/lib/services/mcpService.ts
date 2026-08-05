@@ -6,7 +6,6 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { z } from 'zod';
 import type { ToolCallAnnotation } from '~/types/context';
 import { SkillLoader } from '~/lib/services/skillLoader';
-import { memoryStore } from '~/lib/persistence/memoryStore';
 
 /*
  * NOTE: userProfileStore, projectContextStore, and projectStore use browser-only APIs

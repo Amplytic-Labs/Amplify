@@ -453,7 +453,6 @@ export function useScreenshotCapture(): void {
     captureForCurrentProject().catch((e) => {
       console.warn('[screenshotCapture] error:', e);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previews, loadedProjectId]);
 }
 

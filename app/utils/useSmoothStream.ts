@@ -30,6 +30,7 @@ export function useSmoothStream(text: string, isStreaming: boolean = false, spee
       setDisplayedText((prev) => prev + text.slice(prev.length, prev.length + chunkSize));
     }, speed);
 
+    // eslint-disable-next-line consistent-return
     return () => clearTimeout(timer);
   }, [text, displayedText, isStreaming, speed]);
 

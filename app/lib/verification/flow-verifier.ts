@@ -22,7 +22,9 @@ import type { VerificationResult, VerificationRunnerOptions, VerificationIssue }
  * Prevents re-reading the same file multiple times in nested loops.
  */
 class FileReadCache {
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private cache = new Map<string, string | null>();
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private readFileFn: (path: string) => Promise<string | null>;
 
   constructor(readFileFn: (path: string) => Promise<string | null>) {

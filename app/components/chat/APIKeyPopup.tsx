@@ -11,6 +11,7 @@ interface APIKeyPopupProps {
   onClose: () => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setApiKey, onClose }) => {
   const [tempKey, setTempKey] = useState(apiKey);
   const [isSaving, setIsSaving] = useState(false);

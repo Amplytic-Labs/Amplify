@@ -119,6 +119,7 @@ export const Reasoning = memo(
      * and only opens when the user explicitly clicks to expand it.
      */
 
+    // eslint-disable-next-line consistent-return
     useEffect(() => {
       if (hasEverStreamedRef.current && !isStreaming && isOpen && !hasAutoClosed) {
         const timer = setTimeout(() => {
@@ -237,6 +238,7 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
       setDisplayedText((prev) => prev + children.slice(prev.length, prev.length + chunkSize));
     }, 15);
 
+    // eslint-disable-next-line consistent-return
     return () => clearTimeout(timer);
   }, [children, displayedText, isStreaming]);
 

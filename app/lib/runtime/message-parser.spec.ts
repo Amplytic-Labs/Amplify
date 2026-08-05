@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { StreamingMessageParser, type ActionCallback, type ArtifactCallback } from './message-parser';
 import { EnhancedStreamingMessageParser } from './enhanced-message-parser';
 

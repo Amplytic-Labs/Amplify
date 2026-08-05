@@ -282,6 +282,7 @@ interface SubMenuItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getIsMobile(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -465,6 +466,7 @@ export function TextSelectionToolbar({
     };
     document.addEventListener('mousedown', handleClick);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('mousedown', handleClick);
   }, [activeMenu]);
 
@@ -478,7 +480,6 @@ export function TextSelectionToolbar({
         setIsSpeaking(false);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
   // ── Dismiss submenu on scroll ────────────────────────────────────────────
@@ -490,6 +491,7 @@ export function TextSelectionToolbar({
     const handle = () => setActiveMenu(null);
     window.addEventListener('scroll', handle, true);
 
+    // eslint-disable-next-line consistent-return
     return () => window.removeEventListener('scroll', handle, true);
   }, [activeMenu]);
 

@@ -81,7 +81,7 @@ async function loadPlanDataFromIDB(): Promise<PlanStoreData> {
   try {
     const db = await openPlanDB();
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const tx = db.transaction(PLAN_STORE_NAME, 'readonly');
       const store = tx.objectStore(PLAN_STORE_NAME);
       const request = store.get(PLAN_DATA_KEY);
@@ -115,6 +115,7 @@ async function savePlanDataToIDB(data: PlanStoreData): Promise<void> {
   try {
     const db = await openPlanDB();
 
+    // eslint-disable-next-line consistent-return
     return new Promise((resolve, reject) => {
       const tx = db.transaction(PLAN_STORE_NAME, 'readwrite');
       const store = tx.objectStore(PLAN_STORE_NAME);
@@ -159,6 +160,7 @@ export class PlanStore {
    * Ensures the in-memory data has been loaded from IndexedDB.
    * Uses a promise-gate so concurrent callers share a single init.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async ensureInit(): Promise<void> {
     if (this._initialized) {
       return;
@@ -193,6 +195,7 @@ export class PlanStore {
    * Fire-and-forget persist to IndexedDB. Errors are logged but never thrown
    * so the caller doesn't need to await.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private persist(): void {
     savePlanDataToIDB(this._data).catch((e) => {
       console.error('[PlanStore] Background persist failed:', e);

@@ -80,6 +80,7 @@ class ToolOutputCache {
   /**
    * Opens the IndexedDB database for persisted cache.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async openDB(): Promise<IDBDatabase | null> {
     if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
       return null;
@@ -113,6 +114,7 @@ class ToolOutputCache {
   /**
    * Loads the persisted cache into memory on first use.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async ensureInit(): Promise<void> {
     if (this._initialized) {
       return;
@@ -155,6 +157,7 @@ class ToolOutputCache {
   /**
    * Persists a single cached output to IndexedDB.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async persist(entry: CachedToolOutput): Promise<void> {
     const db = await this.openDB();
 

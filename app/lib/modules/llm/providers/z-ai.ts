@@ -1,6 +1,5 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModel } from 'ai';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { createOpenAI } from '@ai-sdk/openai';
 import crypto from 'node:crypto';

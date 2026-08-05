@@ -346,7 +346,6 @@ export const Menu = () => {
     if (open && db) {
       loadEntries();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listVersion, open]);
 
   // Exit selection mode when sidebar is closed

@@ -193,6 +193,7 @@ export const DocxPreviewPanel = memo(() => {
       fetchPreview(markdown);
     }, ASSET_RENDER_WAIT_MS);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       if (assetTimerRef.current) {
         clearTimeout(assetTimerRef.current);
@@ -201,6 +202,7 @@ export const DocxPreviewPanel = memo(() => {
   }, [markdown, themeKey, collectAssets, fetchPreview]);
 
   // Re-fetch with fresh assets once streaming completes (final render)
+  // eslint-disable-next-line consistent-return
   useEffect(() => {
     if (!isStreaming && markdown && assetsReadyRef.current) {
       fetchTimerRef.current = setTimeout(() => {

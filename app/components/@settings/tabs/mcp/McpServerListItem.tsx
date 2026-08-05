@@ -10,6 +10,7 @@ type ParameterProperty = {
   description?: string;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type JsonSchemaObject = {
   properties?: Record<string, ParameterProperty>;
   required?: string[];

@@ -5,7 +5,6 @@ import { workbenchStore } from '~/lib/stores/workbench';
 import { Mermaid } from '~/components/chat/Mermaid';
 import { Chart } from '~/components/chat/Chart';
 import { rehypePlugins, remarkPlugins } from '~/utils/markdown';
-import { classNames } from '~/utils/classNames';
 
 interface ArtifactRendererProps {
   filePath: string;

@@ -108,7 +108,7 @@ function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof cr
    */
 
   // Step 4: Drop empty assistant messages after all cleanup
-  const final = merged.filter((msg, idx) => {
+  const final = merged.filter((msg, _idx) => {
     if (msg.role !== 'assistant') {
       return true;
     }

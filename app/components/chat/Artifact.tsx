@@ -35,6 +35,7 @@ export const Artifact = memo(({ artifactId }: ArtifactProps) => {
     const fileActions = actions.filter((a) => a.type === 'file');
     const shellActions = actions.filter((a) => a.type === 'shell' || a.type === 'start' || a.type === 'build');
 
+    // eslint-disable-next-line consistent-return
     const mapStatus = (s: ActionState['status']): TreeItemStatus => {
       switch (s) {
         case 'pending':

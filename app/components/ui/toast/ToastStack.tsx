@@ -97,6 +97,7 @@ function ProgressBar({
 
     requestRef.current = requestAnimationFrame(tick);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
@@ -116,6 +117,7 @@ function ProgressBar({
 }
 
 /* ── Icon mapping ── */
+// eslint-disable-next-line consistent-return
 function getIcon(type: ToastType, customIcon?: string) {
   const iconProps = { size: 18, className: 'text-zinc-300' };
 

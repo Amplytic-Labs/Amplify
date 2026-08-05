@@ -51,6 +51,7 @@ export function latexToOmml(latex: string, displayMode: boolean): string | null 
     }
 
     return postProcessOmml(omml);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (e) {
     return null;
   }

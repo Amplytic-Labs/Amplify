@@ -146,6 +146,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     promptTokens: 0,
     totalTokens: 0,
   };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const encoder: TextEncoder = new TextEncoder();
   let progressCounter: number = 1;
 
@@ -160,6 +161,7 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     }, '');
     logger.debug(`Total message length: ${totalMessageContent.split(' ').length}, words`);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const lastChunk: string | undefined = undefined;
 
     const uiStream = createUIMessageStream({

@@ -1,4 +1,3 @@
-import type { UIMessage } from 'ai';
 import { toast } from '~/components/ui/toast';
 import { ImportFolderButton } from '~/components/chat/ImportFolderButton';
 import { Button } from '~/components/ui/Button';

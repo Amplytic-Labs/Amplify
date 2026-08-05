@@ -36,7 +36,6 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
       onClick={onSelect}
       aria-label={tab.label}
       aria-pressed={isActive}
-
       // Flex grows wider for the active pill
       animate={{ flex: isActive ? 2.2 : 1 }}
       transition={{ duration: 0.25, ease: cubicEasingFn }}

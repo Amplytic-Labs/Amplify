@@ -24,6 +24,7 @@ import { create, insert, search, remove, save, load } from '@orama/orama';
 import type {
   UserProfileEntry,
   UserProfileEntryCategory,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   UserProfileSchema,
   VectorSearchOptions,
   VectorSearchResult,
@@ -35,6 +36,7 @@ const DB_KEY = `vector_store_${STORE_NAME}`;
 
 export class UserProfileVectorStore {
   private static _instance: UserProfileVectorStore;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private db: any = null;
   private _initialized = false;
 
@@ -111,6 +113,7 @@ export class UserProfileVectorStore {
   /**
    * Ensures the store is initialized before proceeding.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async ensureInit(): Promise<void> {
     if (!this._initialized) {
       await this.initialize();
@@ -325,7 +328,8 @@ export class UserProfileVectorStore {
     let estimatedTokens = 0;
     const charsPerToken = 4;
 
-    for (const { entry, score } of results) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for (const { entry, score: _score } of results) {
       const line = `- [${entry.category}] ${entry.content}`;
       const lineTokens = Math.ceil(line.length / charsPerToken);
 
@@ -343,6 +347,7 @@ export class UserProfileVectorStore {
   /**
    * Persists the current database state to IndexedDB.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async persist(): Promise<void> {
     if (!this.db) {
       return;

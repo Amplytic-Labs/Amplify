@@ -58,6 +58,7 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
       })
       .catch(() => undefined);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       cancelled = true;
     };
@@ -77,6 +78,7 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
 
     document.addEventListener('mousedown', handleClickOutside);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpen]);
 

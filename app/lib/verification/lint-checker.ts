@@ -57,6 +57,7 @@ export async function runLintCheck(options: VerificationRunnerOptions): Promise<
         await runBasicLintChecks(options, issues);
       }
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (error: any) {
     // Fallback to basic checks
     await runBasicLintChecks(options, issues);

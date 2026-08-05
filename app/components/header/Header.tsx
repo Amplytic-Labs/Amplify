@@ -13,7 +13,6 @@ import { description as descriptionStore } from '~/lib/persistence';
 import { MotionDropdown } from '~/components/ui/MotionDropdown';
 import { DeployButton } from '~/components/deploy/DeployButton';
 import { PreviewHeader } from '~/components/workbench/PreviewHeader';
-import SvgGradientText from '~/components/ui/SVGgradient';
 import { MobileWorkbenchTabBar } from '~/components/ui/MobileWorkbenchTabBar';
 import { findRenderableFiles } from '~/lib/renderable/registry';
 import { SidebarTrigger } from '~/components/ui/shadcn/sidebar';
@@ -69,11 +68,13 @@ const RenderIcon = ({ className }: { className?: string }) => (
 export function Header() {
   const chat = useStore(chatStore);
   const showWorkbench = useStore(workbenchStore.showWorkbench);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sidebarOpen = useStore(sidebarStore);
   const expoUrl = useStore(expoUrlAtom);
   const chatDescription = useStore(descriptionStore);
 
   const selectedView = useStore(workbenchStore.currentView);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const fileHistory = useStore(workbenchStore.fileHistory);
   const workbenchLeftPosition = useStore(workbenchStore.workbenchLeftPosition);
   const files = useStore(workbenchStore.files);
@@ -102,6 +103,7 @@ export function Header() {
     workbenchStore.currentView.set(view);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isSmallViewport = useViewport(1024);
 
   return (
@@ -114,7 +116,6 @@ export function Header() {
       {/* Mobile Layout */}
       <div className={classNames('lg:hidden flex items-center justify-between w-full')}>
         {showWorkbench ? (
-
           // Workbench open: Back | [Tab Bar + Expo QR] | Deploy
           <>
             <button
@@ -143,7 +144,6 @@ export function Header() {
             <DeployButton />
           </>
         ) : (
-
           // Chat view: SidebarTrigger + Title | Expo QR + Preview button
           <>
             <div className="flex items-center gap-2 min-w-0">

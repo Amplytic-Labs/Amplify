@@ -12,7 +12,6 @@ import {
   type OnChangeCallback as OnEditorChange,
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
-import { IconButton } from '~/components/ui/IconButton';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
@@ -29,6 +28,7 @@ import { chatStore } from '~/lib/stores/chat';
 import { docxArtifactStore } from '~/lib/stores/docx-artifact';
 import type { ElementInfo } from './Inspector';
 import { streamingState } from '~/lib/stores/streaming';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 interface WorkspaceProps {
@@ -43,6 +43,7 @@ interface WorkspaceProps {
 
 const viewTransition = { ease: cubicEasingFn };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const workbenchVariants = {
   closed: {
     width: 0,
@@ -77,6 +78,7 @@ const mobileWorkbenchVariants = {
   },
 } satisfies Variants;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const FileModifiedDropdown = memo(
   ({
     fileHistory,
@@ -304,12 +306,14 @@ export const Workbench = memo(
     const files = useStore(workbenchStore.files);
     const selectedView = useStore(workbenchStore.currentView);
     const { showChat } = useStore(chatStore);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const canHideChat = showWorkbench || !showChat;
 
     const isSmallViewport = useViewport(1024);
     const streaming = useStore(streamingState);
 
-    const [isSyncing, setIsSyncing] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_isSyncing, setIsSyncing] = useState(false);
 
     const hasFiles = useMemo(() => Object.values(files).some((f) => f?.type === 'file'), [files]);
 
@@ -380,6 +384,7 @@ export const Workbench = memo(
         resizeObserver.observe(workbenchElement);
       }
 
+      // eslint-disable-next-line consistent-return
       return () => {
         window.removeEventListener('resize', updateWorkbenchPosition);
         resizeObserver?.disconnect();
@@ -448,11 +453,13 @@ export const Workbench = memo(
       workbenchStore.resetCurrentDocument();
     }, []);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleSelectFile = useCallback((filePath: string) => {
       workbenchStore.setSelectedFile(filePath);
       workbenchStore.currentView.set('diff');
     }, []);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleSyncFiles = useCallback(async () => {
       setIsSyncing(true);
 

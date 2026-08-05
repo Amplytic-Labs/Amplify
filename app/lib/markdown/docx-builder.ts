@@ -11,11 +11,15 @@ import {
   WidthType,
   BorderStyle,
   ImageRun,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   PageOrientation,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   LevelFormat,
   ShadingType,
   convertInchesToTwip,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TabStopType,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TabStopPosition,
 } from 'docx';
 import type { DiagramAsset } from './types';
@@ -35,9 +39,12 @@ import type { DocxTheme, ResolvedDocxTheme } from './theme';
  *  border sz  -> 1/8 pt              (1pt = 8)
  */
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const FONT = 'Arial';
 const FONT_MONO = 'Consolas';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const BODY_SIZE = 22; // 11pt
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const LINE_115 = 276; // 1.15 line spacing (Google Docs default)
 
 /*

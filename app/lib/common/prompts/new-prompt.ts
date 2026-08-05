@@ -1,11 +1,10 @@
 import type { PromptOptions } from '~/lib/common/prompt-library';
-import type { DesignScheme } from '~/types/design-scheme';
 import { WORK_DIR, STARTER_TEMPLATES } from '~/utils/constants';
 import { allowedHTMLElements } from '~/utils/markdown';
 import { stripIndents } from '~/utils/stripIndent';
 
 export const getAppBuilderCapabilities = (options: PromptOptions) => {
-  const { cwd = WORK_DIR, supabase, designScheme, skills, memory, userContext, projectContext } = options;
+  const { cwd = WORK_DIR, supabase, skills, memory, userContext, projectContext } = options;
   return `
 You are Amplify, an expert AI assistant and exceptional senior software developer with vast knowledge across multiple programming languages, frameworks, and best practices, built with Amplify.
 

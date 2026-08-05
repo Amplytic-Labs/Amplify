@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, ChevronDown, ChevronRight, Plus, X, Sparkles, Clock, RotateCcw } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight, Plus, X, Sparkles, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '~/components/ui/Input';
 import { Label } from '~/components/ui/Label';

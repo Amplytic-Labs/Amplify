@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { Icon as IconifyIcon } from '@iconify/react';
 
 interface ChatModeToggleProps {
   isAgentMode: boolean;

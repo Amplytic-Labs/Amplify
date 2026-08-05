@@ -434,6 +434,7 @@ export function useChatHistory() {
       Promise.all([getMessages(db, finalChatIdToLoad!), getSnapshot(db, finalChatIdToLoad!)])
         .then(async ([storedMessages, snapshot]) => {
           if (storedMessages && storedMessages.messages.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const validSnapshot = snapshot || { chatIndex: '', files: {} };
             const rewindId = searchParams.get('rewindTo');
             const endingIdx = rewindId

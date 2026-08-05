@@ -70,7 +70,6 @@ export function UserMessage({ content, parts }: UserMessageProps) {
                 className="relative rounded-lg border border-amplify-elements-borderColor/50 overflow-hidden shadow-sm bg-amplify-elements-background-depth-1"
               >
                 <img
-
                   // AI SDK v7: FileUIPart.url is full data URL (data:mediaType;base64,data)
                   src={item.url}
                   alt={`Image ${index + 1}`}

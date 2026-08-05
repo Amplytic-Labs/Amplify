@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { DeployButton } from '~/components/deploy/DeployButton';
 import { MotionDropdownItem, MotionDropdownSeparator } from '~/components/ui/MotionDropdown';
 import { useChatHistory } from '~/lib/persistence';
 

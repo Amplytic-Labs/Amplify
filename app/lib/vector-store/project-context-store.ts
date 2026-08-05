@@ -27,6 +27,7 @@ import { create, insert, search, remove, save, load } from '@orama/orama';
 import type {
   ProjectContextEntry,
   ProjectContextEntryType,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ProjectContextSchema,
   VectorSearchOptions,
   VectorSearchResult,
@@ -35,6 +36,7 @@ import { saveOramaToIDB, loadOramaFromIDB, deleteOramaFromIDB } from './persiste
 
 export class ProjectContextVectorStore {
   private static _instance: ProjectContextVectorStore;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private databases: Map<string, any> = new Map();
   private _initPromise: Promise<void> | null = null;
 
@@ -417,6 +419,7 @@ export class ProjectContextVectorStore {
   /**
    * Persists a single project's database to IndexedDB.
    */
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private async persistProject(projectId: string): Promise<void> {
     const db = this.databases.get(projectId);
 

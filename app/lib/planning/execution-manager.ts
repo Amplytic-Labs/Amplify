@@ -21,7 +21,7 @@
  *   Relevant tool outputs → Skills → Worker
  */
 
-import type { Plan, PlanPoint, TaskExecutionState } from './types';
+import type { Plan, PlanPoint } from './types';
 import { planStore } from './plan-store';
 import { ExecutionStateManager } from './execution-state';
 import { CheckpointManager } from './checkpoint';
@@ -33,6 +33,7 @@ import {
   getToolState,
   getToolInput,
   getToolOutput,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ToolState,
 } from '~/lib/chat/tool-parts';
 

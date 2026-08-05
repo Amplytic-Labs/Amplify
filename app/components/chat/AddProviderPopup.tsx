@@ -87,6 +87,7 @@ export const AddProviderPopup: React.FC<AddProviderPopupProps> = ({
 
     document.addEventListener('keydown', onKey);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 

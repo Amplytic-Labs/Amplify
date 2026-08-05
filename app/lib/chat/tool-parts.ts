@@ -204,6 +204,7 @@ export function getToolOutput(part: any): any {
 /**
  * v7 state predicates (named after the v4 concepts they replace).
  */
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export const ToolState = {
   /** v4 `'call'` — args fully received, awaiting execution. */
   isCall: (state: string) => state === 'input-available' || state === 'call',

@@ -35,6 +35,7 @@ Your full markdown document goes here...
 ```
 
 With a theme:
+
 ```
 <docxartifact theme={{ heading1: "#0B4F6C", link: "#1B6CA8", fontFamily: "Georgia", bodyFontSize: 12 }}>
 # Document Title
@@ -57,23 +58,23 @@ Your full markdown document goes here...
 
 The pipeline fully supports (these are the features most AI docx tools miss):
 
-| Feature | Syntax | Notes |
-|---|---|---|
-| Headings | `#` … `######` | Maps to Word Heading 1–6 styles |
-| Paragraphs | blank line separated | |
-| Bold / Italic | `**bold**` / `*italic*` | |
-| Strikethrough | `~~text~~` | GFM |
-| Inline code | `` `code` `` | Monospace, shaded |
-| Code blocks | ` ```lang ` | Syntax-highlighted (lowlight) |
-| Blockquotes | `> quote` | Left border, indented |
-| Bullet lists | `- ` / `* ` | Nested with indentation |
-| Numbered lists | `1. ` | Nested: `a.`, then `i.` |
-| Task lists | `- [ ]` / `- [x]` | GFM |
-| Tables | GFM pipe tables | Real Word tables with borders |
-| Horizontal rule | `---` | |
-| Links | `[text](url)` | Blue, underlined |
-| Images | `![alt](url)` | Embedded (URL must be publicly reachable) |
-| Headings w/ anchor | normal | |
+| Feature            | Syntax                  | Notes                                     |
+| ------------------ | ----------------------- | ----------------------------------------- |
+| Headings           | `#` … `######`          | Maps to Word Heading 1–6 styles           |
+| Paragraphs         | blank line separated    |                                           |
+| Bold / Italic      | `**bold**` / `*italic*` |                                           |
+| Strikethrough      | `~~text~~`              | GFM                                       |
+| Inline code        | `` `code` ``            | Monospace, shaded                         |
+| Code blocks        | ` ```lang `             | Syntax-highlighted (lowlight)             |
+| Blockquotes        | `> quote`               | Left border, indented                     |
+| Bullet lists       | `- ` / `* `             | Nested with indentation                   |
+| Numbered lists     | `1. `                   | Nested: `a.`, then `i.`                   |
+| Task lists         | `- [ ]` / `- [x]`       | GFM                                       |
+| Tables             | GFM pipe tables         | Real Word tables with borders             |
+| Horizontal rule    | `---`                   |                                           |
+| Links              | `[text](url)`           | Blue, underlined                          |
+| Images             | `![alt](url)`           | Embedded (URL must be publicly reachable) |
+| Headings w/ anchor | normal                  |                                           |
 
 ### Math (the killer feature — native Word equations)
 
@@ -101,56 +102,60 @@ Add a `theme={{...}}` attribute to the opening `<docxartifact>` tag to give the 
 
 ### Colour fields
 
-| Field | What it controls | Example |
-|-------|------------------|--------|
-| `body` | Body paragraph text colour | `"#333333"` |
-| `heading1` … `heading6` | H1–H6 text colours (independent) | `"#0B4F6C"` |
-| `link` | Hyperlink text colour | `"#1B6CA8"` |
-| `inlineCodeColor` | Inline `` `code` `` text colour | `"#1F1F1F"` |
-| `inlineCodeBg` | Inline `` `code` `` background fill | `"#F2F2F2"` |
-| `codeBlockColor` | Fenced code-block text colour | `"#1F1F1F"` |
-| `codeBlockBg` | Fenced code-block background fill | `"#F5F5F5"` |
-| `codeBlockBorder` | Fenced code-block border colour | `"#E0E0E0"` |
-| `tableBorder` | Table cell border colour | `"#BFBFBF"` |
-| `tableHeaderBg` | Table header-row background fill | `"#F0F0F0"` |
-| `blockquoteBorder` | Blockquote left-bar border colour | `"#CCCCCC"` |
-| `thematicBreak` | Horizontal-rule (`---`) border colour | `"#BFBFBF"` |
+| Field                   | What it controls                      | Example     |
+| ----------------------- | ------------------------------------- | ----------- |
+| `body`                  | Body paragraph text colour            | `"#333333"` |
+| `heading1` … `heading6` | H1–H6 text colours (independent)      | `"#0B4F6C"` |
+| `link`                  | Hyperlink text colour                 | `"#1B6CA8"` |
+| `inlineCodeColor`       | Inline `` `code` `` text colour       | `"#1F1F1F"` |
+| `inlineCodeBg`          | Inline `` `code` `` background fill   | `"#F2F2F2"` |
+| `codeBlockColor`        | Fenced code-block text colour         | `"#1F1F1F"` |
+| `codeBlockBg`           | Fenced code-block background fill     | `"#F5F5F5"` |
+| `codeBlockBorder`       | Fenced code-block border colour       | `"#E0E0E0"` |
+| `tableBorder`           | Table cell border colour              | `"#BFBFBF"` |
+| `tableHeaderBg`         | Table header-row background fill      | `"#F0F0F0"` |
+| `blockquoteBorder`      | Blockquote left-bar border colour     | `"#CCCCCC"` |
+| `thematicBreak`         | Horizontal-rule (`---`) border colour | `"#BFBFBF"` |
 
 Colours accept `#rgb`, `#rrggbb`, `rrggbb` (no `#`), or `rgb(r,g,b)`. Invalid values are silently dropped (the default for that field is kept) — a typo never breaks the export.
 
 ### Typography fields
 
-| Field | What it controls | Default | Example |
-|-------|------------------|---------|--------|
-| `fontFamily` | Body + heading font family | `"Arial"` | `"Georgia"`, `"Times New Roman"`, `"Calibri"` |
-| `headingFontFamily` | Heading font override (defaults to fontFamily) | `"Arial"` | `"Georgia"` |
-| `codeFontFamily` | Code/monospace font family | `"Consolas"` | `"Courier New"`, `"Fira Code"` |
-| `bodyFontSize` | Body font size in **points** | `11` | `12` |
-| `heading1Size` … `heading6Size` | H1–H6 font sizes in points (independent) | `20,16,14,12,11,11` | `heading1Size: 22` |
-| `margin` | Page margin in **inches** | `1` | `1.25`, `0.75` |
-| `lineSpacing` | Line spacing multiplier | `1.15` | `1.0` (single), `1.5`, `2.0` (double) |
-| `pageSize` | Page size preset | `"letter"` | `"a4"` |
+| Field                           | What it controls                               | Default             | Example                                       |
+| ------------------------------- | ---------------------------------------------- | ------------------- | --------------------------------------------- |
+| `fontFamily`                    | Body + heading font family                     | `"Arial"`           | `"Georgia"`, `"Times New Roman"`, `"Calibri"` |
+| `headingFontFamily`             | Heading font override (defaults to fontFamily) | `"Arial"`           | `"Georgia"`                                   |
+| `codeFontFamily`                | Code/monospace font family                     | `"Consolas"`        | `"Courier New"`, `"Fira Code"`                |
+| `bodyFontSize`                  | Body font size in **points**                   | `11`                | `12`                                          |
+| `heading1Size` … `heading6Size` | H1–H6 font sizes in points (independent)       | `20,16,14,12,11,11` | `heading1Size: 22`                            |
+| `margin`                        | Page margin in **inches**                      | `1`                 | `1.25`, `0.75`                                |
+| `lineSpacing`                   | Line spacing multiplier                        | `1.15`              | `1.0` (single), `1.5`, `2.0` (double)         |
+| `pageSize`                      | Page size preset                               | `"letter"`          | `"a4"`                                        |
 
 Font sizes are clamped to [6, 72] pt. Margins are clamped to [0.25, 3] in. Line spacing is clamped to [0.5, 3].
 
 ### Quick-start theme recipes
 
 **Academic / manuscript (serif, 12pt, 1.5 spacing):**
+
 ```
 <docxartifact theme={{ fontFamily: "Georgia", bodyFontSize: 12, heading1Size: 22, heading2Size: 18, lineSpacing: 1.5, margin: 1.25 }}>
 ```
 
 **Compact / dense (10pt, 0.75in margins, single spacing):**
+
 ```
 <docxartifact theme={{ bodyFontSize: 10, heading1Size: 16, heading2Size: 13, lineSpacing: 1.0, margin: 0.75 }}>
 ```
 
 **Ocean colour palette (deep teal headings):**
+
 ```
 <docxartifact theme={{ heading1: "#0B4F6C", heading2: "#0B4F6C", heading3: "#145374", link: "#1B6CA8", blockquoteBorder: "#5A9BB8" }}>
 ```
 
 **A4 page, European paper size:**
+
 ```
 <docxartifact theme={{ pageSize: "a4", margin: 2.5 }}>
 ```
@@ -169,7 +174,8 @@ Font sizes are clamped to [6, 72] pt. Margins are clamped to [0.25, 3] in. Line 
 User: "Write me a quarterly business report with a revenue chart and the growth formula."
 
 You:
-```
+
+````
 Here's your Q3 business report as a Word document. It includes a revenue chart, the compound growth formula as a native equation, and a summary table. I've themed it with deep teal headings and a serif body for a polished look.
 
 <docxartifact theme={{ fontFamily: "Georgia", headingFontFamily: "Georgia", heading1: "#0B4F6C", heading2: "#0B4F6C", heading3: "#145374", link: "#1B6CA8", bodyFontSize: 11, lineSpacing: 1.15 }}>
@@ -190,7 +196,7 @@ Quarterly revenue grew **23%** year-over-year, driven by enterprise expansion.
   },
   "options": { "responsive": true }
 }
-```
+````
 
 ## Growth Model
 
@@ -203,18 +209,19 @@ where $R_0 = 12$ (Q1 baseline) and $r = 0.15$ (quarterly growth rate).
 ## Summary Table
 
 | Quarter | Revenue ($M) | Growth |
-|---------|-------------|--------|
-| Q1      | 12          | —      |
-| Q2      | 15          | +25%   |
-| Q3      | 18          | +20%   |
-| Q4      | 22          | +22%   |
+| ------- | ------------ | ------ |
+| Q1      | 12           | —      |
+| Q2      | 15           | +25%   |
+| Q3      | 18           | +20%   |
+| Q4      | 22           | +22%   |
 
 ## Outlook
 
 - Enterprise pipeline at **$8M** ARR
 - Net retention at **118%**
 - Expanding into EMEA in Q1 2025
-</docxartifact>
+  </docxartifact>
+
 ```
 
 ## Token efficiency
@@ -224,3 +231,4 @@ This approach saves ~70% vs. the old workspace method:
 - **New way:** AI emits the document as markdown (the natural format), one pass, no code, no install, no compile. The server builds the `.docx` from the markdown directly.
 
 Always prefer this skill over generating docx-building code.
+```

@@ -10,17 +10,12 @@ import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
 import { PROVIDER_LIST } from '~/utils/constants';
 import { Messages } from './Messages.client';
-import { getApiKeysFromCookies } from './APIKeyManager';
-import Cookies from 'js-cookie';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import useViewport from '~/lib/hooks';
 import { workbenchStore } from '~/lib/stores/workbench';
 import styles from './BaseChat.module.scss';
-import { ImportButtons } from '~/components/chat/chatExportAndImport/ImportButtons';
-import GitCloneButton from './GitCloneButton';
 import type { ProviderInfo } from '~/types/model';
-import StarterTemplates from './StarterTemplates';
 import type { ActionAlert, SupabaseAlert, DeployAlert, LlmErrorAlertType } from '~/types/actions';
 import DeployChatAlert from '~/components/deploy/DeployAlert';
 import ChatAlert from './ChatAlert';
@@ -125,15 +120,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       setProvider,
       providerList,
       input = '',
-      enhancingPrompt,
+      enhancingPrompt: _enhancingPrompt,
       handleInputChange,
 
       // promptEnhanced,
-      enhancePrompt,
+      enhancePrompt: _enhancePrompt,
       sendMessage,
       handleStop,
-      importChat,
-      exportChat,
+      importChat: _importChat,
+      exportChat: _exportChat,
       uploadedFiles = [],
       setUploadedFiles,
       imageDataList = [],
@@ -147,20 +142,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       clearSupabaseAlert,
       llmErrorAlert,
       clearLlmErrorAlert,
-      data,
+      data: _data,
       chatMode,
       setChatMode,
       isProjectChat,
       append,
       reload,
-      designScheme,
-      setDesignScheme,
+      designScheme: _designScheme,
+      setDesignScheme: _setDesignScheme,
       selectedElement,
       setSelectedElement,
       addToolResult = () => {
         throw new Error('addToolResult not implemented');
       },
-      onWebSearchResult,
+      onWebSearchResult: _onWebSearchResult,
       apiKeys,
       onApiKeysChange,
       planExecuting = false,
@@ -173,12 +168,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
     const [modelList, setModelList] = useState<ModelInfo[]>([]);
-    const [isListening, setIsListening] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_isListening, setIsListening] = useState(false);
     const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
-    const [transcript, setTranscript] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_transcript, setTranscript] = useState('');
     const [isModelLoading, setIsModelLoading] = useState<string | undefined>('all');
     const expoUrl = useStore(expoUrlAtom);
-    const [qrModalOpen, setQrModalOpen] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_qrModalOpen, setQrModalOpen] = useState(false);
     const showWorkbench = useStore(workbenchStore.showWorkbench);
     const isSmallViewport = useViewport(1024);
 
@@ -197,6 +195,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       onStreamingChange?.(isStreaming);
     }, [isStreaming, onStreamingChange]);
 
+    // eslint-disable-next-line consistent-return
     useEffect(() => {
       if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -279,6 +278,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       setIsModelLoading(undefined);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const startListening = () => {
       if (recognition) {
         recognition.start();
@@ -286,6 +286,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const stopListening = () => {
       if (recognition) {
         recognition.stop();

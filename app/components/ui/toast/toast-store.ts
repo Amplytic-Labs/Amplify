@@ -1,4 +1,4 @@
-import { atom, map } from 'nanostores';
+import { map } from 'nanostores';
 import type { ToastItem, ToastType } from '~/components/ui/toast/ToastStack';
 
 /*

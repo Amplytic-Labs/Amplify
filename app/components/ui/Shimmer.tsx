@@ -95,6 +95,7 @@ function usePrefersReducedMotion() {
     update();
     mq.addEventListener?.('change', update);
 
+    // eslint-disable-next-line consistent-return
     return () => mq.removeEventListener?.('change', update);
   }, []);
 

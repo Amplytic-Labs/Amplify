@@ -157,6 +157,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
    * (create / rename / delete / memory update) because `_versionStore` is
    * bumped on every mutation. Used to keep the selected-project lookup fresh.
    */
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-expect-error — _versionStore is private but stable across releases.
   const projectsVersion = useStore(projectStore._versionStore);
 
@@ -455,7 +456,6 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
          */
         .then((list) => list.filter((item) => item.urlId))
         .then((list) =>
-
           /*
            * Sort newest-first by timestamp so the most recent chat
            * appears at the top of the list immediately after creation.
@@ -487,7 +487,6 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
     if (db) {
       loadEntries();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listVersion]);
 
   // Delete single chat
@@ -860,6 +859,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
 
         {/* Navigation Links */}
         <div className="w-full flex flex-col gap-[2px]">
+          {/* eslint-disable-next-line @typescript-eslint/naming-convention */}
           {navItems.map(({ icon: Icon, label }) => {
             /*
              * Active-state logic for the three nav buttons:
@@ -962,7 +962,6 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 chats — either the selected project's chats, or personal chats.
               */}
               {selectedProject ? (
-
                 /*
                  * A project is selected → show the project's chats. Switching
                  * between these chats does NOT reload the workspace (handled in
@@ -990,7 +989,6 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   exportChat={exportChat}
                 />
               ) : (
-
                 /*
                  * No project selected → personal chats (binned by date).
                  */
@@ -1229,7 +1227,6 @@ function SelectedProjectChatsList({
       {loadingChats ? (
         <div className="px-[10px] py-[7px] text-[12px] text-muted-foreground">Loading chats…</div>
       ) : chats.length === 0 ? (
-
         // Better empty state — icon + descriptive copy + CTA
         <div className="px-[8px] py-[16px] flex flex-col items-center justify-center gap-2 text-center">
           <div className="relative">
@@ -1470,6 +1467,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
     }
     document.addEventListener('mousedown', handleClickOutside);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen]);
 

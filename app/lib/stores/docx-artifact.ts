@@ -66,7 +66,6 @@ export function setDocxArtifact(
     current &&
     current.messageId === messageId &&
     current.markdown === markdown &&
-
     // Deep-ish compare of the theme: stringify both (null → 'null').
     JSON.stringify(current.theme) === JSON.stringify(theme)
   ) {

@@ -47,7 +47,7 @@ import { filesToArtifacts } from '~/utils/fileUtils';
 import { supabaseConnection } from '~/lib/stores/supabase';
 import { defaultDesignScheme, type DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
-import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
+import type { Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { projectStore } from '~/lib/persistence/project-store';
@@ -169,7 +169,7 @@ export const ChatImpl = memo(
       (project) => project.id === supabaseConn.selectedProjectId,
     );
     const supabaseAlert = useStore(workbenchStore.supabaseAlert);
-    const { activeProviders, promptId, autoSelectTemplate, contextOptimizationEnabled } = useSettings();
+    const { activeProviders, promptId, contextOptimizationEnabled } = useSettings();
     const [llmErrorAlert, setLlmErrorAlert] = useState<LlmErrorAlertType | undefined>(undefined);
     const [model, setModel] = useState(() => {
       const savedModel = Cookies.get('selectedModel');
@@ -341,6 +341,7 @@ export const ChatImpl = memo(
       regenerate,
       error,
       addToolResult,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       addToolOutput,
     } = useChat({
       /*
@@ -552,7 +553,6 @@ export const ChatImpl = memo(
         stop();
         workbenchStore.abortAllActions();
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -1609,6 +1609,7 @@ export const ChatImpl = memo(
             signal.taskDescription,
             1000,
           );
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (e) {
           // Vector context is optional
         }
@@ -1700,7 +1701,7 @@ export const ChatImpl = memo(
 
         // Execute the plan
         const result = await executePlan(plan, {
-          callLLM: async (subMessages, systemPrompt) => {
+          callLLM: async (subMessages, _systemPrompt) => {
             // Make a real fetch to /api/chat and collect the streamed response
             const response = await fetch('/api/chat', {
               method: 'POST',
@@ -2028,7 +2029,7 @@ export const ChatImpl = memo(
           .join('\n');
 
         await resumePlan(plan, {
-          callLLM: async (subMessages, systemPrompt) => {
+          callLLM: async (subMessages, _systemPrompt) => {
             const response = await fetch('/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
