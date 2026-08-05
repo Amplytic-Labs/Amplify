@@ -559,15 +559,36 @@ AssistantMessage.displayName = 'AssistantMessage';
  * pushed to the docx store — this per-segment strip is purely for
  * rendering, so the user doesn't see the raw `<docxartifact>` tags inline.
  *
- * Also strips `<amplifyArtifact>` XML blocks and template-injection div
- * placeholders, mirroring the legacy `answerText` pipeline.
+ * Also strips `<amplifyArtifact>` XML blocks, template-injection div
+ * placeholders, AND the one-shot `<chatname>…</chatname>` naming tag —
+ * mirroring the legacy `answerText` pipeline.
+ *
+ * WHY stripChatName is here:
+ * -------------------------
+ * The chain-segment splitter walks `parts` in stream order. When the AI
+ * emits `<chatname>Title</chatname>` followed by its real answer, the
+ * AI SDK may deliver those as ONE text part or as TWO text parts
+ * (depending on token boundaries). Either way, the text segment(s)
+ * carry the raw `<chatname>` tag. The legacy `visibleContent` path
+ * strips it via `stripChatName(content)` at the top of the component,
+ * but the segment-renderer path renders each `text` segment
+ * independently via THIS function — so without stripping here, the
+ * `<chatname>` tag would leak into the visible message. That is the
+ * "chat name leaking into normal message" bug.
  */
 function stripTextSegment(text: string, isTemplateInjection: boolean): string {
   if (!text) {
     return '';
   }
 
-  let out = stripAmplifyArtifacts(text);
+  /*
+   * Strip `<chatname>…</chatname>` FIRST — before any other processing.
+   * Streaming-safe: an unclosed `<chatname>` (still streaming) is also
+   * dropped so no partial name leaks to the UI mid-stream.
+   */
+  let out = stripChatName(text);
+
+  out = stripAmplifyArtifacts(out);
 
   if (isTemplateInjection) {
     out = stripArtifactDivs(out);

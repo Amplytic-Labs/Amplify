@@ -278,8 +278,65 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                 <div className="text-amplify-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
                 <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
                   <div className="relative group/copy">
-                    <JsonCodeBlock className="mb-0" code={JSON.stringify(result)} theme={theme} />
-                    <CopyJsonButton text={typeof result === 'string' ? result : JSON.stringify(result, null, 2)} />
+                    <JsonCodeBlock
+                      className="mb-0"
+                      code={JSON.stringify(
+                        (() => {
+                          /*
+                           * Strip model-only fields from the rendered JSON.
+                           * `files` is the (potentially huge) file list from
+                           * inject_template; `userMessage` is the verbose
+                           * template instructions / file-access rules meant
+                           * for the model; `warning` is a stale legacy field.
+                           * The user explicitly said they don't want to see
+                           * these in the UI.
+                           */
+                          if (result && typeof result === 'object') {
+                            const filtered: Record<string, any> = {};
+
+                            for (const [k, v] of Object.entries(result)) {
+                              if (k === 'files' || k === 'userMessage' || k === 'warning') {
+                                continue;
+                              }
+
+                              filtered[k] = v;
+                            }
+
+                            return Object.keys(filtered).length > 0 ? filtered : result;
+                          }
+
+                          return result;
+                        })(),
+                      )}
+                      theme={theme}
+                    />
+                    <CopyJsonButton
+                      text={
+                        typeof result === 'string'
+                          ? result
+                          : JSON.stringify(
+                              (() => {
+                                if (result && typeof result === 'object') {
+                                  const filtered: Record<string, any> = {};
+
+                                  for (const [k, v] of Object.entries(result)) {
+                                    if (k === 'files' || k === 'userMessage' || k === 'warning') {
+                                      continue;
+                                    }
+
+                                    filtered[k] = v;
+                                  }
+
+                                  return Object.keys(filtered).length > 0 ? filtered : result;
+                                }
+
+                                return result;
+                              })(),
+                              null,
+                              2,
+                            )
+                      }
+                    />
                   </div>
                 </div>
               </div>

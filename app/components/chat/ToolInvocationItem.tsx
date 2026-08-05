@@ -84,6 +84,26 @@ function summarizeArgs(toolName: string, args: any): string {
 }
 
 /**
+ * Keys to STRIP from a tool result object before rendering it as JSON.
+ *
+ * These fields are meant for the MODEL (or for the workspace file-writer),
+ * NOT for the user:
+ *   - `files`         — raw file list from inject_template (potentially
+ *                       hundreds of files with full content — huge noise).
+ *   - `userMessage`   — verbose template instructions / file-access rules
+ *                       echoed to the model by the AI SDK as part of the
+ *                       tool result. Never meant for the UI.
+ *   - `warning`       — legacy field that previously warned about async
+ *                       workspace loading. Stale but still in some old
+ *                       persisted messages.
+ *
+ * Without this filter, the user sees a giant JSON blob containing the
+ * `userMessage` text ("template import is done…") — which they explicitly
+ * said they don't want.
+ */
+const RESULT_KEYS_TO_STRIP = new Set(['files', 'userMessage', 'warning']);
+
+/**
  * Render the result of a native tool in a human-friendly way.
  * For mutation tools, we parse the mutation signal and show the operations.
  * For other tools, we show the truncated string result.
@@ -121,8 +141,33 @@ function renderResult(toolName: string, result: any): string {
     return result.length > 400 ? result.slice(0, 400) + '...' : result;
   }
 
+  /*
+   * Object result — strip model-only fields before JSON-stringifying.
+   * See RESULT_KEYS_TO_STRIP above for why each field is removed.
+   */
   try {
-    return JSON.stringify(result, null, 2);
+    const filtered: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(result)) {
+      if (RESULT_KEYS_TO_STRIP.has(key)) {
+        continue;
+      }
+
+      filtered[key] = value;
+    }
+
+    const json = JSON.stringify(filtered, null, 2);
+
+    if (json === '{}') {
+      // Everything was stripped — fall back to the summary string if present.
+      if (typeof result.summary === 'string') {
+        return result.summary;
+      }
+
+      return String(result);
+    }
+
+    return json.length > 1200 ? json.slice(0, 1200) + '...' : json;
   } catch {
     return String(result);
   }
