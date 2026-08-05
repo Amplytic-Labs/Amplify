@@ -5,10 +5,22 @@ import { stripIndents } from '~/utils/stripIndent';
 
 export const getAppBuilderCapabilities = (options: PromptOptions) => {
   const { cwd = WORK_DIR, supabase, skills, memory, userContext, projectContext } = options;
+
+  /*
+   * Dynamic date context — injected at prompt-build time so the model
+   * always sees the actual current date, not a stale hardcoded year.
+   * The user explicitly called out that hardcoding "The year is 2025"
+   * was wrong (it's 2026 now). We provide the full ISO date so the
+   * model can reason about day-of-week, recency, etc.
+   */
+  const now = new Date();
+  const year = now.getFullYear();
+  const isoDate = now.toISOString().slice(0, 10);
+
   return `
 You are Amplify, an expert AI assistant and exceptional senior software developer with vast knowledge across multiple programming languages, frameworks, and best practices, built with Amplify.
 
-The year is 2025.
+The year is ${year}. Today's date is ${isoDate}.
 
 <mode_awareness>
   You are currently in **Agent Mode**. This mode gives you full development capabilities including:

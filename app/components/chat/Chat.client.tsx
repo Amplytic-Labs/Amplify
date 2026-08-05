@@ -504,7 +504,15 @@ export const ChatImpl = memo(
     }, [model, provider, searchParams]);
 
     const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
-    const { parsedMessages, parseMessages } = useMessageParser();
+    /*
+     * The message parser runs for its SIDE EFFECTS — its callbacks
+     * (onArtifactOpen / onActionClose / onActionStream) write files and
+     * shell actions to the workbench store. The returned `parsedMessages`
+     * string state is intentionally unused: we no longer re-inject parsed
+     * content back into the message parts (that caused duplicate text —
+     * see fix in render below).
+     */
+    const { parseMessages } = useMessageParser();
 
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
@@ -2651,23 +2659,7 @@ export const ChatImpl = memo(
           description={description}
           importChat={importChat}
           exportChat={exportChat}
-          messages={(messages || []).map((message, i) => {
-            if (message.role === 'user') {
-              return message;
-            }
-
-            // For assistant messages with parsed content, update the text part
-            const parsedContent = parsedMessages[i] || '';
-
-            if (parsedContent && Array.isArray(message.parts)) {
-              return {
-                ...message,
-                parts: message.parts.map((part) => (part.type === 'text' ? { ...part, text: parsedContent } : part)),
-              };
-            }
-
-            return message;
-          })}
+          messages={messages || []}
           enhancePrompt={() => {
             enhancePrompt(
               input,

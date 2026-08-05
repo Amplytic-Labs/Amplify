@@ -41,6 +41,14 @@ const TOOL_META: Record<string, ToolMeta> = {
   execute_plan: { label: 'Executed plan', pendingLabel: 'Executing plan' },
   update_user_memory: { label: 'Updated memory', pendingLabel: 'Updating memory' },
   read_user_memory: { label: 'Read memory', pendingLabel: 'Reading memory' },
+  list_skills: { label: 'Listed available skills', pendingLabel: 'Listing available skills' },
+  get_skill: { label: 'Loaded skill instructions', pendingLabel: 'Loading skill instructions' },
+  request_capabilities: { label: 'Loaded app builder', pendingLabel: 'Loading app builder' },
+  inject_template: { label: 'Injected starter template', pendingLabel: 'Injecting starter template' },
+  list_design_systems: { label: 'Listed design systems', pendingLabel: 'Listing design systems' },
+  get_design_system: { label: 'Loaded design system', pendingLabel: 'Loading design system' },
+  detect_project: { label: 'Detected project type', pendingLabel: 'Detecting project type' },
+  webSearch: { label: 'Searched the web', pendingLabel: 'Searching the web' },
 };
 
 export function getMeta(toolName: string): ToolMeta {
@@ -201,16 +209,40 @@ export function classifyResult(result: any): ResultStatus {
  *  - Mutation tools: parse the JSON signal and show per-operation summaries
  *    (Created X, Replaced in Y, …) plus a compact preview.
  *  - Read tools: show the (possibly truncated) string.
- *  - inject_template: show ONLY the `summary` field. The `userMessage`
- *    (template instructions / file-access rules) and `files` array are
- *    model-side data — they must NOT be shown in the UI. The user
- *    complained about seeing raw JSON with `userMessage` and `warning`
- *    fields; this filter ensures only the human-readable summary appears.
+ *  - inject_template: show ONLY a short label like "Injected Expo App
+ *    template" — NEVER the full file list (which can be hundreds of paths
+ *    and is noise the user explicitly said they don't want to see).
+ *    The `userMessage` (template instructions / file-access rules) and
+ *    `files` array are model-side data and must NOT be shown in the UI.
+ *  - request_capabilities: show ONLY "Loaded app_builder capabilities".
+ *    The actual return value is the FULL system prompt (a multi-KB string
+ *    with mode awareness, available skills, response requirements, etc.)
+ *    which is metadata meant for the MODEL, not user-facing content.
+ *    Displaying it verbatim was a leak — the user explicitly called this
+ *    out: "why did the app builder tool returned [entire system prompt]".
  *  - Other objects: pretty-printed JSON (with large/noisy fields stripped).
  */
 function renderResult(toolName: string, result: any): { summary: string[]; preview?: string; isMutation: boolean } {
   if (result == null) {
     return { summary: ['No result'], isMutation: false };
+  }
+
+  /*
+   * request_capabilities — returns the ENTIRE app_builder system prompt
+   * as a string. This is a capability-bundle loader, not a query tool:
+   * the model calls it once to load the heavy system-prompt content
+   * (mode awareness, technology preferences, response requirements,
+   * available skills, etc.). The user should NOT see this verbatim —
+   * it's not user-facing content, it's lazy-loaded model instructions.
+   *
+   * Show only a short success label. The model still receives the full
+   * prompt as the tool result (we're just filtering the UI display).
+   */
+  if (toolName === 'request_capabilities') {
+    return {
+      summary: ['Loaded app_builder capabilities'],
+      isMutation: false,
+    };
   }
 
   if (typeof result === 'string') {
@@ -242,16 +274,30 @@ function renderResult(toolName: string, result: any): { summary: string[]; previ
 
   /*
    * inject_template — the result is { summary, userMessage, files }.
-   * Show ONLY the `summary` string. The `userMessage` contains verbose
-   * template instructions and file-access rules meant for the MODEL, not
-   * the user. The `files` array is the raw file list (potentially huge —
-   * hundreds of files with full content). Displaying either would be
-   * noise the user doesn't want to see.
+   *
+   * The `summary` field is a long string like:
+   *   "Injected Expo App template. Files created: app.json, app/_layout.jsx,
+   *    app/index.jsx, assets/adaptive-icon.png, ..." (potentially 50+ paths).
+   *
+   * The user explicitly said they don't want to see this file list:
+   *   "seeing this between input and output card of the inject template
+   *    tool usage [pasted file list] Is the user supposed to see this? No"
+   *
+   * We extract ONLY the template name from the summary (the part before
+   * ". Files created:") and show "Injected <name> template" + the file
+   * count. The full file list is preserved for the model (it's in the
+   * tool result) but hidden from the UI.
    */
-  if (toolName === 'inject_template' && typeof result === 'object' && typeof result.summary === 'string') {
+  if (toolName === 'inject_template' && typeof result === 'object') {
     const fileCount = Array.isArray(result.files) ? result.files.length : 0;
+    const rawSummary = typeof result.summary === 'string' ? result.summary : '';
+    const templateName = rawSummary.match(/^Injected\s+(.+?)\s+template\b/)?.[1] || 'template';
+
     return {
-      summary: [result.summary, fileCount > 0 ? `${fileCount} file(s) written to workspace` : ''].filter(Boolean),
+      summary: [
+        `Injected ${templateName} template`,
+        ...(fileCount > 0 ? [`${fileCount} file(s) written to workspace`] : []),
+      ],
       isMutation: true,
     };
   }
