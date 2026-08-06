@@ -1,8 +1,8 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class MoonshotProvider extends BaseProvider {
   name = 'Moonshot';
@@ -83,6 +83,7 @@ export default class MoonshotProvider extends BaseProvider {
             label: `${m.id} (Dynamic)`,
             provider: this.name,
             maxTokenAllowed: 128000, // Kimi models typically have large context
+            capabilities: detectModelCapabilities(this.name, m.id),
           })) || [];
 
       return dynamicModels;
@@ -97,7 +98,7 @@ export default class MoonshotProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { apiKey } = this.getProviderBaseUrlAndKey({

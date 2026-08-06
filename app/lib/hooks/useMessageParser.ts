@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { useCallback, useState } from 'react';
 import { EnhancedStreamingMessageParser } from '~/lib/runtime/enhanced-message-parser';
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -49,15 +49,37 @@ const messageParser = new EnhancedStreamingMessageParser({
     },
   },
 });
-const extractTextContent = (message: Message) =>
-  Array.isArray(message.content)
-    ? (message.content.find((item) => item.type === 'text')?.text as string) || ''
-    : message.content;
+const extractTextContent = (message: UIMessage) => {
+  /*
+   * UIMessage v7 uses parts array — concatenate ALL text parts so that
+   * tool-injected content (e.g. inject_template's "template" text part)
+   * is not missed by the artifact parser.
+   */
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter((part) => part.type === 'text' && 'text' in part)
+      .map((part) => (part as { type: 'text'; text: string }).text)
+      .join('');
+  }
+
+  // Fallback for content (legacy)
+  const content = (message as any).content;
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return (content.find((item: any) => item.type === 'text')?.text as string) || '';
+  }
+
+  return '';
+};
 
 export function useMessageParser() {
   const [parsedMessages, setParsedMessages] = useState<{ [key: number]: string }>({});
 
-  const parseMessages = useCallback((messages: Message[], isLoading: boolean) => {
+  const parseMessages = useCallback((messages: UIMessage[], isLoading: boolean, _chatMode?: 'discuss' | 'build') => {
     let reset = false;
 
     if (import.meta.env.DEV && !isLoading) {

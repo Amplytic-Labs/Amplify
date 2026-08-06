@@ -1,9 +1,11 @@
-import { memo, useState, useMemo } from 'react';
+import { memo, useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
+import { getToolNameFromPart, getToolState, getToolInput, getToolOutput, ToolState } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal, isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
-import { ToolConfirmation } from './ToolConfirmation';
+import { isClientSideTool } from '~/lib/tools/clientSideTools';
+import { tryClaimToolCallApproval } from '~/lib/chat/tool-approval-dedup';
+import { TOOL_EXECUTION_APPROVAL } from '~/utils/constants';
 import styles from './chat-copilot.module.scss';
 
 /**
@@ -22,6 +24,7 @@ interface ToolMeta {
 
 const TOOL_META: Record<string, ToolMeta> = {
   web_search: { label: 'Searched the web', pendingLabel: 'Searching the web' },
+  fetch_webpage: { label: 'Read web page', pendingLabel: 'Reading web page' },
   read_file: { label: 'Read file', pendingLabel: 'Reading file' },
   list_dir: { label: 'Listed directory', pendingLabel: 'Listing directory' },
   find_files: { label: 'Found files', pendingLabel: 'Finding files' },
@@ -38,6 +41,14 @@ const TOOL_META: Record<string, ToolMeta> = {
   execute_plan: { label: 'Executed plan', pendingLabel: 'Executing plan' },
   update_user_memory: { label: 'Updated memory', pendingLabel: 'Updating memory' },
   read_user_memory: { label: 'Read memory', pendingLabel: 'Reading memory' },
+  list_skills: { label: 'Listed available skills', pendingLabel: 'Listing available skills' },
+  get_skill: { label: 'Loaded skill instructions', pendingLabel: 'Loading skill instructions' },
+  request_capabilities: { label: 'Loaded app builder', pendingLabel: 'Loading app builder' },
+  inject_template: { label: 'Injected starter template', pendingLabel: 'Injecting starter template' },
+  list_design_systems: { label: 'Listed design systems', pendingLabel: 'Listing design systems' },
+  get_design_system: { label: 'Loaded design system', pendingLabel: 'Loading design system' },
+  detect_project: { label: 'Detected project type', pendingLabel: 'Detecting project type' },
+  webSearch: { label: 'Searched the web', pendingLabel: 'Searching the web' },
 };
 
 export function getMeta(toolName: string): ToolMeta {
@@ -58,6 +69,11 @@ export function getMeta(toolName: string): ToolMeta {
  */
 export function getToolIcon(toolName: string): string {
   const lower = (toolName || '').toLowerCase();
+
+  // Web tools get a globe icon regardless of whether they include "search".
+  if (lower === 'fetch_webpage' || lower === 'web_search' || lower === 'websearch') {
+    return 'i-ph:globe';
+  }
 
   if (
     lower.includes('search') ||
@@ -125,6 +141,14 @@ function summarizeArgs(toolName: string, args: any): string {
         return args.pattern || '';
       case 'web_search':
         return args.query || '';
+      case 'fetch_webpage':
+        // Show just the host + path for brevity
+        try {
+          const u = new URL(args.url);
+          return u.host + u.pathname.slice(0, 40);
+        } catch {
+          return args.url || '';
+        }
       case 'run_in_terminal':
         return args.command || '';
       case 'execute_plan':
@@ -139,8 +163,22 @@ function summarizeArgs(toolName: string, args: any): string {
 
 /**
  * Result classifier. Copilot shows an error icon (codicon-error, red) for
- * failed tool calls. We inspect the result string for known error prefixes
- * emitted by nativeTools.ts.
+ * failed tool calls.
+ *
+ * SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
+ *   A tool result is an error IFF its string starts with `Error:`.
+ *
+ * Everything else — including "No results", "Directory is empty",
+ * "No workspace is currently open", "No matches for pattern", "No web
+ * results found", "User fact storage is not available", hint/guidance
+ * messages — is a SUCCESS. The tool ran fine; it just had nothing to
+ * return or it politely told the model how to proceed.
+ *
+ * This rule is PERMANENT: new tools that follow the convention get correct
+ * UI classification without any edits here. No more per-tool prefix lists.
+ *
+ * The only non-string special case is the file-mutation signal (JSON
+ * blob consumed by the workspace), which is always a success.
  */
 type ResultStatus = 'success' | 'error' | 'unknown';
 
@@ -158,23 +196,11 @@ export function classifyResult(result: any): ResultStatus {
     return 'success';
   }
 
-  const errorPrefixes = [
-    'Error:',
-    'File not found',
-    'Edit failed',
-    'Cannot edit',
-    'File already exists',
-    'oldString',
-    'Invalid pattern',
-    'Web search failed',
-    'Web search error',
-    'Directory is empty',
-    'No files matched',
-    'No matches for pattern',
-    'No web results',
-  ];
-
-  return errorPrefixes.some((p) => result.startsWith(p)) ? 'error' : 'success';
+  /*
+   * Single rule: anything prefixed with `Error:` is an error. Everything else
+   * (including "No results", "Not available", hint messages) is a success.
+   */
+  return result.startsWith('Error:') ? 'error' : 'success';
 }
 
 /**
@@ -183,11 +209,40 @@ export function classifyResult(result: any): ResultStatus {
  *  - Mutation tools: parse the JSON signal and show per-operation summaries
  *    (Created X, Replaced in Y, …) plus a compact preview.
  *  - Read tools: show the (possibly truncated) string.
- *  - Objects: pretty-printed JSON.
+ *  - inject_template: show ONLY a short label like "Injected Expo App
+ *    template" — NEVER the full file list (which can be hundreds of paths
+ *    and is noise the user explicitly said they don't want to see).
+ *    The `userMessage` (template instructions / file-access rules) and
+ *    `files` array are model-side data and must NOT be shown in the UI.
+ *  - request_capabilities: show ONLY "Loaded app_builder capabilities".
+ *    The actual return value is the FULL system prompt (a multi-KB string
+ *    with mode awareness, available skills, response requirements, etc.)
+ *    which is metadata meant for the MODEL, not user-facing content.
+ *    Displaying it verbatim was a leak — the user explicitly called this
+ *    out: "why did the app builder tool returned [entire system prompt]".
+ *  - Other objects: pretty-printed JSON (with large/noisy fields stripped).
  */
 function renderResult(toolName: string, result: any): { summary: string[]; preview?: string; isMutation: boolean } {
   if (result == null) {
     return { summary: ['No result'], isMutation: false };
+  }
+
+  /*
+   * request_capabilities — returns the ENTIRE app_builder system prompt
+   * as a string. This is a capability-bundle loader, not a query tool:
+   * the model calls it once to load the heavy system-prompt content
+   * (mode awareness, technology preferences, response requirements,
+   * available skills, etc.). The user should NOT see this verbatim —
+   * it's not user-facing content, it's lazy-loaded model instructions.
+   *
+   * Show only a short success label. The model still receives the full
+   * prompt as the tool result (we're just filtering the UI display).
+   */
+  if (toolName === 'request_capabilities') {
+    return {
+      summary: ['Loaded app_builder capabilities'],
+      isMutation: false,
+    };
   }
 
   if (typeof result === 'string') {
@@ -217,15 +272,74 @@ function renderResult(toolName: string, result: any): { summary: string[]; previ
     return { summary: [], preview: truncated, isMutation: false };
   }
 
+  /*
+   * inject_template — the result is { summary, userMessage, files }.
+   *
+   * The `summary` field is a long string like:
+   *   "Injected Expo App template. Files created: app.json, app/_layout.jsx,
+   *    app/index.jsx, assets/adaptive-icon.png, ..." (potentially 50+ paths).
+   *
+   * The user explicitly said they don't want to see this file list:
+   *   "seeing this between input and output card of the inject template
+   *    tool usage [pasted file list] Is the user supposed to see this? No"
+   *
+   * We extract ONLY the template name from the summary (the part before
+   * ". Files created:") and show "Injected <name> template" + the file
+   * count. The full file list is preserved for the model (it's in the
+   * tool result) but hidden from the UI.
+   */
+  if (toolName === 'inject_template' && typeof result === 'object') {
+    const fileCount = Array.isArray(result.files) ? result.files.length : 0;
+    const rawSummary = typeof result.summary === 'string' ? result.summary : '';
+    const templateName = rawSummary.match(/^Injected\s+(.+?)\s+template\b/)?.[1] || 'template';
+
+    return {
+      summary: [
+        `Injected ${templateName} template`,
+        ...(fileCount > 0 ? [`${fileCount} file(s) written to workspace`] : []),
+      ],
+      isMutation: true,
+    };
+  }
+
+  /*
+   * Other object results — pretty-print as JSON, but strip known noisy
+   * fields (files arrays, verbose userMessage blocks) so the expandable
+   * details stay readable.
+   */
   try {
-    return { summary: [], preview: JSON.stringify(result, null, 2), isMutation: false };
+    const filtered: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(result)) {
+      // Skip fields that are verbose or meant for the model, not the UI.
+      if (key === 'files' || key === 'userMessage' || key === 'warning') {
+        continue;
+      }
+
+      filtered[key] = value;
+    }
+
+    const json = JSON.stringify(filtered, null, 2);
+
+    // If we stripped everything, fall back to a simple stringification.
+    if (json === '{}') {
+      return { summary: [String(result)], isMutation: false };
+    }
+
+    const truncated = json.length > 1200 ? json.slice(0, 1200) + '\n…' : json;
+
+    return { summary: [], preview: truncated, isMutation: false };
   } catch {
     return { summary: [String(result)], isMutation: false };
   }
 }
 
 interface ToolProgressProps {
-  part: ToolInvocationUIPart;
+  /**
+   * v7 tool part (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` part. Both shapes are accepted.
+   */
+  part: any;
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 
   /**
@@ -257,26 +371,98 @@ interface ToolProgressProps {
  */
 export const ToolProgress = memo(({ part, addToolResult, inThinkingList = false }: ToolProgressProps) => {
   const [showDetails, setShowDetails] = useState(false);
-  const { toolInvocation } = part;
-  const { toolName, args, state, result } = toolInvocation as any;
+
+  /*
+   * v7 migration: tool fields are FLAT on the part (`toolCallId`, `state`,
+   * `input`, `output`). The legacy v4 shape nested them under `toolInvocation`.
+   * The shared helpers handle both shapes transparently.
+   */
+  const toolName = getToolNameFromPart(part);
+  const state = getToolState(part);
+  const args = getToolInput(part);
+  const result = getToolOutput(part);
 
   const meta = getMeta(toolName);
   const summary = summarizeArgs(toolName, args);
-  const isResult = state === 'result';
-  const isPending = state === 'call';
+  const isResult = ToolState.isResult(state);
+
+  /*
+   * Preserve v4 behaviour: only `state === 'call'` (v7 'input-available') is
+   * considered "pending" — input-streaming falls through to the past-tense
+   * label path. (v4 'partial' was not treated as pending either.)
+   */
+  const isPending = ToolState.isCall(state);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const readOnly = isReadOnlyNativeTool(toolName);
   const resultStatus = isResult ? classifyResult(result) : 'unknown';
-  const isError = resultStatus === 'error';
+  const isError = resultStatus === 'error' || state === 'output-error';
 
   const renderedResult = useMemo(
     () => (isResult ? renderResult(toolName, result) : null),
     [isResult, toolName, result],
   );
 
-  // Pending mutating tool → render the confirmation widget (still flat — no outer card).
-  if (isPending && !readOnly) {
-    return <ToolConfirmation part={part} addToolResult={addToolResult} />;
-  }
+  /*
+   * Auto-approve ALL tool calls (no permission prompts)
+   * This effect runs once when a pending tool is detected and auto-approves it.
+   *
+   * DEDUP GUARD: This component, ToolInvocations.tsx, AND Chat.client.tsx ALL
+   * have auto-approve effects that fire in parallel for the same pending tool.
+   * We use a MODULE-LEVEL shared Set (tool-approval-dedup.ts) so that once
+   * ANY component claims a toolCallId, the others skip.
+   *
+   * This is the PERMANENT fix for message duplication on tool error. Without
+   * it, 2-3 `addToolResult` calls per toolCallId cause the AI SDK to send
+   * multiple follow-up /api/chat requests — each appending a new step
+   * (reasoning + text) to the same assistant message. The user sees duplicated
+   * thought blocks and duplicated message text.
+   *
+   * The local ref is kept as a secondary guard for same-component re-renders.
+   */
+  const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (isPending) {
+      const toolCallId = part?.toolCallId || part?.toolInvocation?.id;
+      const toolName = getToolNameFromPart(part);
+
+      /*
+       * Skip client-side tools (store_user_fact, search_user_context, etc.).
+       * These are executed CLIENT-SIDE by Chat.client.tsx because they use
+       * IndexedDB. If we send APPROVE here, the server would run their
+       * execute function server-side, which returns "not available on the
+       * server" — causing the AI to retry and duplicate messages.
+       */
+      if (toolName && isClientSideTool(toolName)) {
+        return;
+      }
+
+      if (!toolCallId) {
+        return;
+      }
+
+      // Local dedup (same-component re-renders).
+      if (autoApprovedToolCallIdsRef.current.has(toolCallId)) {
+        return;
+      }
+
+      /*
+       * SHARED dedup (across all components — see tool-approval-dedup.ts).
+       * If Chat.client.tsx or ToolInvocations.tsx already claimed this
+       * toolCallId, skip. This guarantees exactly ONE addToolResult call
+       * per toolCallId across the entire app.
+       */
+      if (!tryClaimToolCallApproval(toolCallId)) {
+        return;
+      }
+
+      autoApprovedToolCallIdsRef.current.add(toolCallId);
+      addToolResult({
+        toolCallId,
+        result: TOOL_EXECUTION_APPROVAL.APPROVE,
+      });
+    }
+  }, [isPending, part, addToolResult]);
 
   const label = isPending ? meta.pendingLabel : meta.label;
 

@@ -1,7 +1,6 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
 export default class XAIProvider extends BaseProvider {
@@ -15,8 +14,20 @@ export default class XAIProvider extends BaseProvider {
   staticModels: ModelInfo[] = [
     { name: 'grok-4', label: 'xAI Grok 4', provider: 'xAI', maxTokenAllowed: 256000 },
     { name: 'grok-4-07-09', label: 'xAI Grok 4 (07-09)', provider: 'xAI', maxTokenAllowed: 256000 },
-    { name: 'grok-3-mini', label: 'xAI Grok 3 Mini', provider: 'xAI', maxTokenAllowed: 131000 },
-    { name: 'grok-3-mini-fast', label: 'xAI Grok 3 Mini Fast', provider: 'xAI', maxTokenAllowed: 131000 },
+    {
+      name: 'grok-3-mini',
+      label: 'xAI Grok 3 Mini',
+      provider: 'xAI',
+      maxTokenAllowed: 131000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
+    },
+    {
+      name: 'grok-3-mini-fast',
+      label: 'xAI Grok 3 Mini Fast',
+      provider: 'xAI',
+      maxTokenAllowed: 131000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
+    },
     { name: 'grok-code-fast-1', label: 'xAI Grok Code Fast 1', provider: 'xAI', maxTokenAllowed: 131000 },
   ];
 
@@ -25,7 +36,7 @@ export default class XAIProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { apiKey } = this.getProviderBaseUrlAndKey({

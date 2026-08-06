@@ -1,9 +1,14 @@
 import { memo } from 'react';
 import { ToolInvocationItem } from './ToolInvocationItem';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 
 interface ToolInvocationGroupProps {
-  parts: ToolInvocationUIPart[];
+  /**
+   * v7 tool parts (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` parts. Both shapes are accepted — they are passed
+   * through to ToolInvocationItem, which uses the shape-agnostic helpers
+   * in `~/lib/chat/tool-parts`.
+   */
+  parts: any[];
 }
 
 export const ToolInvocationGroup = memo(({ parts }: ToolInvocationGroupProps) => {

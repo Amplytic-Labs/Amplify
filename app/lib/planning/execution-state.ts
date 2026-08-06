@@ -19,15 +19,13 @@
  *  - canResume: check if a task can be resumed
  */
 
-import type {
-  ExecutionStatus,
-  PlanPoint,
-  TaskExecutionState,
-} from './types';
+import type { ExecutionStatus, PlanPoint, TaskExecutionState } from './types';
 
-// ============================================================
-// ExecutionStateManager
-// ============================================================
+/*
+ * ============================================================
+ * ExecutionStateManager
+ * ============================================================
+ */
 
 export class ExecutionStateManager {
   /**
@@ -52,10 +50,7 @@ export class ExecutionStateManager {
    * Updates the status of an execution state.
    * Automatically updates `lastActivity`.
    */
-  static updateStatus(
-    state: TaskExecutionState,
-    status: ExecutionStatus,
-  ): TaskExecutionState {
+  static updateStatus(state: TaskExecutionState, status: ExecutionStatus): TaskExecutionState {
     const newState: TaskExecutionState = {
       ...state,
       status,
@@ -74,10 +69,7 @@ export class ExecutionStateManager {
   /**
    * Records a completed step.
    */
-  static recordStep(
-    state: TaskExecutionState,
-    step: string,
-  ): TaskExecutionState {
+  static recordStep(state: TaskExecutionState, step: string): TaskExecutionState {
     return {
       ...state,
       completedSteps: [...state.completedSteps, step],
@@ -88,10 +80,7 @@ export class ExecutionStateManager {
   /**
    * Records a tool call.
    */
-  static recordToolCall(
-    state: TaskExecutionState,
-    toolCallId: string,
-  ): TaskExecutionState {
+  static recordToolCall(state: TaskExecutionState, toolCallId: string): TaskExecutionState {
     return {
       ...state,
       toolCallIds: [...state.toolCallIds, toolCallId],
@@ -102,10 +91,7 @@ export class ExecutionStateManager {
   /**
    * Records a modified file (deduped).
    */
-  static recordFileModified(
-    state: TaskExecutionState,
-    filePath: string,
-  ): TaskExecutionState {
+  static recordFileModified(state: TaskExecutionState, filePath: string): TaskExecutionState {
     if (state.filesModified.includes(filePath)) {
       return state;
     }
@@ -121,10 +107,7 @@ export class ExecutionStateManager {
    * Marks a task as interrupted (e.g. network drop, tab close).
    * The task remains resumable.
    */
-  static markInterrupted(
-    state: TaskExecutionState,
-    reason: string,
-  ): TaskExecutionState {
+  static markInterrupted(state: TaskExecutionState, reason: string): TaskExecutionState {
     return {
       ...state,
       status: 'pending', // Reset to pending so the ExecutionManager picks it up
@@ -159,19 +142,29 @@ export class ExecutionStateManager {
     const state = point.executionState;
 
     if (!state) {
-      // No state means the task hasn't started — it's "resumable" in
-      // the sense that it can be started fresh.
+      /*
+       * No state means the task hasn't started — it's "resumable" in
+       * the sense that it can be started fresh.
+       */
       return point.status === 'pending';
     }
 
-    if (!state.canResume) return false;
+    if (!state.canResume) {
+      return false;
+    }
 
     const terminalStatuses: ExecutionStatus[] = ['completed', 'failed', 'cancelled'];
-    if (terminalStatuses.includes(state.status)) return false;
 
-    // Can resume if there's a checkpoint to resume from,
-    // or if the task is still pending (hasn't started).
+    if (terminalStatuses.includes(state.status)) {
+      return false;
+    }
+
+    /*
+     * Can resume if there's a checkpoint to resume from,
+     * or if the task is still pending (hasn't started).
+     */
     const hasCheckpoint = (point.checkpoints?.length ?? 0) > 0;
+
     return hasCheckpoint || state.status === 'pending';
   }
 

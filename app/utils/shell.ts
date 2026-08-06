@@ -58,11 +58,81 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
     }),
   );
 
+  /*
+   * Track the current process so we can kill it on Ctrl+C.
+   * WebContainer's jsh shell does NOT reliably propagate SIGINT to
+   * child processes when it receives \x03 — the user sees a fresh
+   * prompt but the old process (e.g. a dev server) keeps running.
+   *
+   * We work around this by killing the jsh process itself (which
+   * also kills all its children) and then respawning a new one.
+   */
+  let currentProcess: WebContainerProcess | undefined = process;
+  let currentInput: WritableStreamDefaultWriter<string> | undefined = input;
+
   terminal.onData((data) => {
     // console.log('terminal onData', { data, isInteractive });
 
     if (isInteractive) {
-      input.write(data);
+      /*
+       * Detect Ctrl+C (\x03) from user input.
+       *
+       * The standard jsh behaviour is to show a new prompt, but
+       * child processes are often NOT killed — they keep running
+       * in the background. We fix this by killing the jsh process
+       * (which terminates all its children) and respawning a new
+       * shell so the user gets a clean terminal.
+       */
+      if (data === '\x03') {
+        try {
+          currentProcess?.kill();
+        } catch {
+          /* process may already be dead */
+        }
+        currentProcess = undefined;
+        currentInput = undefined;
+        isInteractive = false;
+
+        // Respawn a new jsh process
+        webcontainer
+          .spawn('/bin/jsh', ['--osc', ...args], {
+            terminal: {
+              cols: terminal.cols ?? 80,
+              rows: terminal.rows ?? 15,
+            },
+          })
+          .then((newProc) => {
+            currentProcess = newProc;
+
+            const newInput = newProc.input.getWriter();
+            currentInput = newInput;
+
+            newProc.output.pipeTo(
+              new WritableStream({
+                write(d: string) {
+                  if (!isInteractive) {
+                    const [, osc] = d.match(/\x1b\]654;([^\x07]+)\x07/) || [];
+
+                    if (osc === 'interactive') {
+                      isInteractive = true;
+                    }
+                  }
+
+                  terminal.write(d);
+                },
+              }),
+            );
+          })
+          .catch(() => {
+            /* respawn failed — user will see a dead terminal */
+          });
+
+        return; // Don't write \x03 to the now-dead process
+      }
+
+      if (currentInput) {
+        currentInput.write(data);
+      }
 
       // Capture terminal input for debugging
       try {
@@ -100,8 +170,41 @@ export class AmplifyShell {
   executionState = atom<
     { sessionId: string; active: boolean; executionPrms?: Promise<any>; abort?: () => void } | undefined
   >();
-  #outputStream: ReadableStreamDefaultReader<string> | undefined;
   #shellInputStream: WritableStreamDefaultWriter<string> | undefined;
+
+  /*
+   * OSC signal queue: When OSC codes are detected in the terminal writer,
+   * they are pushed here. waitTillOscCode() reads from this queue instead
+   * of a separate stream reader. This eliminates the tee backpressure bug.
+   *
+   * Each entry: { osc: string, text: string, code?: string, sessionId?: string }
+   */
+  #oscQueue: Array<{ osc: string; text: string; code?: string; sessionId?: string }> = [];
+  #oscResolve: ((value: void) => void) | undefined;
+
+  /*
+   * Output accumulator: The terminal writer appends all text here.
+   * waitTillOscCode reads from this buffer when it needs output text.
+   */
+  #outputAccumulator = '';
+
+  /*
+   * Track the onData disposable + pipe so we can tear them down before re-init
+   * (prevents the "characters multiply on reset" bug where each reset adds a
+   * duplicate onData listener + echo pipe on the same long-lived XTerm).
+   */
+  #onDataDisposable: { dispose: () => void } | undefined;
+  #terminalPipeController: AbortController | undefined;
+
+  #initializedOnce = false;
+
+  /*
+   * Track directly-spawned detached processes (dev servers started via
+   * spawnDetached()). These are NOT children of the jsh shell, so the Ctrl+C
+   * sent to jsh in killRunningProcesses() won't reach them — we kill them
+   * explicitly here on chat switch / reset.
+   */
+  #detachedProcesses: WebContainerProcess[] = [];
 
   constructor() {
     this.#readyPromise = new Promise((resolve) => {
@@ -113,20 +216,97 @@ export class AmplifyShell {
     return this.#readyPromise;
   }
 
+  /**
+   * Tear down everything a previous init() / newAmplifyShellProcess() created:
+   * the onData listener, the terminal echo pipe, the expo-url watcher, and the
+   * jsh process itself. Safe to call even if nothing was set up.
+   *
+   * This is what makes reset() safe — without it, every reset layers a new
+   * onData listener on the same XTerm, so N resets ⇒ N+1 characters per
+   * keystroke.
+   */
+  #teardown() {
+    try {
+      this.#onDataDisposable?.dispose();
+    } catch {
+      /* ignore */
+    }
+    this.#onDataDisposable = undefined;
+
+    this.#terminalPipeController?.abort();
+    this.#terminalPipeController = undefined;
+
+    try {
+      this.#process?.kill();
+    } catch {
+      /* process may already be dead */
+    }
+    this.#process = undefined;
+
+    this.#shellInputStream = undefined;
+    this.#oscQueue = [];
+    this.#oscResolve = undefined;
+    this.#outputAccumulator = '';
+  }
+
   async init(webcontainer: WebContainer, terminal: ITerminal) {
+    /*
+     * If we already have a live process for this terminal, do NOT re-init —
+     * re-initing is the root cause of the multiply-characters bug. Callers
+     * that just want to clear the screen should use resetTerminal() instead.
+     */
+    if (this.#initializedOnce && this.#process && this.#terminal === terminal) {
+      return;
+    }
+
+    // Tear down any prior process / listeners / pipes before spawning new ones.
+    this.#teardown();
+
     this.#webcontainer = webcontainer;
     this.#terminal = terminal;
 
-    // Use all three streams from tee: one for terminal, one for command execution, one for Expo URL detection
-    const { process, commandStream, expoUrlStream } = await this.newAmplifyShellProcess(webcontainer, terminal);
+    /*
+     * No tee — process.output is piped directly to a single WritableStream.
+     * This eliminates the backpressure bug where tee'd branches block each other
+     * when one isn't continuously consumed (the old commandStream reader).
+     * All data processing (terminal, Expo URL, OSC detection) happens in one place.
+     */
+    const { process } = await this.newAmplifyShellProcess(webcontainer, terminal);
     this.#process = process;
-    this.#outputStream = commandStream.getReader();
-
-    // Start background Expo URL watcher immediately
-    this._watchExpoUrlInBackground(expoUrlStream);
 
     await this.waitTillOscCode('interactive');
     this.#initialized?.();
+    this.#initializedOnce = true;
+  }
+
+  /**
+   * Soft reset: clear the screen + send `clear` to the shell WITHOUT spawning
+   * a new jsh process or registering a new onData listener. This is what the
+   * Reset button should call instead of attachAmplifyTerminal(terminal).
+   */
+  resetTerminal() {
+    if (!this.#terminal) {
+      return;
+    }
+
+    try {
+      this.#terminal.clear?.();
+    } catch {
+      /* ignore */
+    }
+
+    // Send `clear` to the running shell so the scrollback + prompt are reset.
+    try {
+      this.#terminal.input('clear\n');
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      this.#terminal.focus?.();
+    } catch {
+      /* ignore */
+    }
   }
 
   async newAmplifyShellProcess(webcontainer: WebContainer, terminal: ITerminal) {
@@ -141,15 +321,62 @@ export class AmplifyShell {
     const input = process.input.getWriter();
     this.#shellInputStream = input;
 
-    // Tee the output so we can have three independent readers
-    const [streamA, streamB] = process.output.tee();
-    const [streamC, streamD] = streamB.tee();
-
     const jshReady = withResolvers<void>();
     let isInteractive = false;
-    streamA.pipeTo(
+
+    /*
+     * NO TEE — pipe process.output directly to a single WritableStream.
+     *
+     * Why: The previous approach used ReadableStream.tee() to split the
+     * output into multiple branches (terminal + commandStream + expoUrlStream).
+     * This was fundamentally broken because .tee() applies backpressure
+     * from BOTH branches back to the original stream. If one branch's
+     * reader isn't actively consuming data (the commandStream reader was
+     * only used during executeCommand calls), the tee's internal queue
+     * fills up and blocks data flow to the other branches — including
+     * the terminal writer and the Expo URL detector. The Expo URL never
+     * appeared because data literally stopped flowing through the pipe.
+     *
+     * Now: A single WritableStream callback processes ALL data:
+     *   1. terminal.write(data) — render to xterm
+     *   2. Expo URL detection — regex match on stripped buffer
+     *   3. OSC code detection — push signals to #oscQueue for waitTillOscCode()
+     *   4. Accumulate output text — stored in #outputAccumulator
+     *
+     * Since this writer is ALWAYS consuming (pipeTo runs continuously),
+     * there is zero backpressure and data flows without interruption.
+     * waitTillOscCode() reads from the in-memory #oscQueue instead of
+     * a stream reader, so it always works regardless of tee state.
+     */
+    let expoUrlBuffer = '';
+    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+    const oscTerminalRegex = /\x1b\][^\x07]*\x07/g;
+
+    /*
+     * Reference to `this` for use inside the closure — private fields can only
+     * be accessed via `this.#field` directly inside the class body, not via
+     * a variable reference like `shell.#field`. We bridge them through a
+     * plain object that the closure can mutate.
+     */
+    const bridge = {
+      pushOsc: (entry: { osc: string; text: string; code?: string }) => {
+        this.#oscQueue.push(entry);
+      },
+      resolveOsc: () => {
+        this.#oscResolve?.();
+        this.#oscResolve = undefined;
+      },
+      appendOutput: (text: string) => {
+        this.#outputAccumulator += text;
+      },
+    };
+
+    this.#terminalPipeController = new AbortController();
+    process.output.pipeTo(
       new WritableStream({
         write(data) {
+          // --- OSC code detection (for jsh interactive + command completion) ---
           if (!isInteractive) {
             const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
 
@@ -159,51 +386,140 @@ export class AmplifyShell {
             }
           }
 
+          // Detect ALL OSC codes for the queue (command completion signals)
+          const [, osc, , , code] = data.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
+
+          if (osc) {
+            bridge.pushOsc({ osc, text: data, code });
+
+            // If waitTillOscCode is waiting, resolve its promise
+            bridge.resolveOsc();
+          }
+
+          // --- Write to terminal ---
           terminal.write(data);
+
+          // --- Accumulate output for waitTillOscCode ---
+          bridge.appendOutput(data || '');
+
+          // --- Expo URL detection ---
+          expoUrlBuffer += data || '';
+
+          // Strip ANSI + OSC + control chars before URL matching
+          const cleanBuffer = expoUrlBuffer
+            .replace(ansiRegex, '')
+            .replace(oscTerminalRegex, '')
+            .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
+          const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
+
+          if (expoUrlMatch) {
+            const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
+            expoUrlAtom.set(cleanUrl);
+            expoUrlBuffer = ''; // Clear after match
+          }
+
+          if (expoUrlBuffer.length > 4096) {
+            expoUrlBuffer = expoUrlBuffer.slice(-2048);
+          }
         },
       }),
+      { signal: this.#terminalPipeController.signal },
     );
 
-    terminal.onData((data) => {
+    /*
+     * Capture the disposable so #teardown() can remove this listener.
+     * Without this, every reset layers a new onData listener on the same
+     * XTerm instance and keystrokes get echoed N+1 times.
+     *
+     * Ctrl+C handling: WebContainer's jsh does NOT reliably propagate
+     * SIGINT to child processes. When the user presses Ctrl+C, the
+     * shell shows a new prompt but the old process (e.g. dev server)
+     * keeps running. We fix this by:
+     *   1. Killing detached processes (dev servers) explicitly
+     *   2. Resetting the execution state
+     *   3. Killing the jsh process itself (which kills all its children)
+     *   4. Respawning a new jsh process
+     */
+    this.#onDataDisposable = terminal.onData((data) => {
       if (isInteractive) {
+        if (data === '\x03') {
+          /*
+           * User pressed Ctrl+C — kill everything and respawn.
+           * We don't forward the \x03 to the (about-to-be-killed) process.
+           */
+          this.#handleUserInterrupt();
+
+          return;
+        }
+
         input.write(data);
       }
     });
 
     await jshReady.promise;
 
-    // Return all streams for use in init
-    return { process, terminalStream: streamA, commandStream: streamC, expoUrlStream: streamD };
+    return { process };
   }
 
-  // Dedicated background watcher for Expo URL
-  private async _watchExpoUrlInBackground(stream: ReadableStream<string>) {
-    const reader = stream.getReader();
-    let buffer = '';
-    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+  /**
+   * Handle Ctrl+C from the user: kill detached processes, reset execution
+   * state, kill the jsh process (which terminates all its children), and
+   * respawn a fresh shell.
+   */
+  #handleUserInterrupt() {
+    // 1. Kill detached processes (dev servers started via spawnDetached)
+    for (const proc of this.#detachedProcesses) {
+      try {
+        proc.kill();
+      } catch {
+        /* process may already be dead */
+      }
+    }
+    this.#detachedProcesses = [];
 
-    while (true) {
-      const { value, done } = await reader.read();
+    // 2. Reset execution state so the AI knows the command was interrupted
+    this.executionState.set({
+      sessionId: '',
+      active: false,
+      abort: undefined,
+    });
 
-      if (done) {
-        break;
+    // 3. Kill the jsh process + all its children, then respawn
+    if (this.#webcontainer && this.#terminal) {
+      try {
+        this.#process?.kill();
+      } catch {
+        /* process may already be dead */
+      }
+      this.#process = undefined;
+      this.#shellInputStream = undefined;
+      this.#oscQueue = [];
+      this.#oscResolve = undefined;
+      this.#outputAccumulator = '';
+      this.#onDataDisposable?.dispose();
+      this.#onDataDisposable = undefined;
+      this.#terminalPipeController?.abort();
+      this.#terminalPipeController = undefined;
+
+      // Clear the terminal visually
+      try {
+        this.#terminal.clear?.();
+      } catch {
+        /* ignore */
       }
 
-      buffer += value || '';
+      // Allow re-init
+      this.#initializedOnce = false;
 
-      const expoUrlMatch = buffer.match(expoUrlRegex);
+      // Create a new ready promise
+      this.#readyPromise = new Promise((resolve) => {
+        this.#initialized = resolve;
+      });
 
-      if (expoUrlMatch) {
-        const cleanUrl = expoUrlMatch[1]
-          .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
-          .replace(/[^\x20-\x7E]+$/g, '');
-        expoUrlAtom.set(cleanUrl);
-        buffer = buffer.slice(buffer.indexOf(expoUrlMatch[1]) + expoUrlMatch[1].length);
-      }
-
-      if (buffer.length > 2048) {
-        buffer = buffer.slice(-2048);
-      }
+      // Respawn asynchronously
+      this.init(this.#webcontainer, this.#terminal).catch(() => {
+        /* respawn failed — user will see an empty terminal */
+      });
     }
   }
 
@@ -215,30 +531,342 @@ export class AmplifyShell {
     return this.#process;
   }
 
-  async executeCommand(sessionId: string, command: string, abort?: () => void): Promise<ExecutionResult> {
+  /*
+   * Kill any running processes on this shell. Called when switching chats
+   * to ensure terminal processes from the previous chat don't leak into
+   * the new one.
+   *
+   * Sends Ctrl+C (\x03) to the terminal input, which kills the foreground
+   * process. For detached (backgrounded) processes like `npm run dev &`,
+   * this may not be sufficient — but the WebContainer's process table is
+   * scoped to the jsh process, and when the shell receives Ctrl+C it
+   * typically propagates the SIGINT to child processes.
+   *
+   * Also resets executionState so the next executeCommand doesn't think
+   * a command is still running.
+   */
+  killRunningProcesses() {
+    /*
+     * Kill directly-spawned detached processes (dev servers started via
+     * spawnDetached()). These are NOT children of jsh, so the Ctrl+C sent to
+     * jsh below will NOT reach them — we must kill them explicitly.
+     */
+    for (const proc of this.#detachedProcesses) {
+      try {
+        proc.kill();
+      } catch {
+        /* process may already be dead */
+      }
+    }
+    this.#detachedProcesses = [];
+
+    if (!this.#terminal) {
+      return;
+    }
+
+    try {
+      // Send Ctrl+C to kill the foreground process
+      this.#terminal.input('\x03');
+    } catch {
+      /* ignore */
+    }
+
+    // Reset execution state
+    this.executionState.set({
+      sessionId: '',
+      active: false,
+      abort: undefined,
+    });
+  }
+
+  /**
+   * Spawn a long-running command (e.g. `npm run dev` dev server) as a DIRECT
+   * WebContainer process, bypassing the jsh shell entirely.
+   *
+   * Why this exists (instead of using executeCommand with detached:true):
+   * The detached executeCommand path appends ` &` to background the command so
+   * the jsh prompt returns — but jsh ECHOES the input, so the user sees
+   * `npm run dev &` in the terminal, which looks like a stray character.
+   * Spawning directly via webcontainer.spawn() avoids both issues:
+   *  - No `&` needed (the process runs independently of jsh, not as a child).
+   *  - No input echo (we're not typing into jsh).
+   *
+   * The process's stdout/stderr are piped to the terminal so the user still
+   * sees the dev server output (port info, errors, HMR logs, etc.).
+   *
+   * The spawned process is tracked in #detachedProcesses so
+   * killRunningProcesses() can terminate it when switching chats.
+   */
+  async spawnDetached(command: string): Promise<void> {
+    if (!this.#webcontainer || !this.#terminal) {
+      console.warn('[spawnDetached] Shell not initialized — cannot spawn.');
+
+      return;
+    }
+
+    const trimmed = command.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    /*
+     * Parse the command into program + args. Simple whitespace-splitting is
+     * sufficient here because start commands come from detectProjectCommands
+     * and are always simple: `npm run dev`, `pnpm run dev`, `yarn dev`,
+     * `npx --yes serve`. No pipes, no &&, no quotes, no env vars.
+     */
+    const parts = trimmed.split(/\s+/);
+    const program = parts[0];
+    const args = parts.slice(1);
+
+    try {
+      const proc = await this.#webcontainer.spawn(program, args);
+
+      this.#detachedProcesses.push(proc);
+
+      // Pipe the process output to the terminal so the user sees dev server output.
+      const terminal = this.#terminal;
+
+      /*
+       * Expo URL detection buffer + regex — same logic as in
+       * newAmplifyShellProcess's output pipe. Without this, Expo URLs
+       * produced by `npm start` (which calls `expo start`) are never
+       * detected because spawnDetached bypasses the jsh output pipe
+       * that normally handles Expo URL detection.
+       */
+      let expoUrlBuffer = '';
+      const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+      const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+      const oscTerminalRegex = /\x1b\][^\x07]*\x07/g;
+
+      proc.output
+        .pipeTo(
+          new WritableStream({
+            write(data) {
+              terminal.write(data);
+
+              // --- Expo URL detection ---
+              expoUrlBuffer += data || '';
+
+              const cleanBuffer = expoUrlBuffer
+                .replace(ansiRegex, '')
+                .replace(oscTerminalRegex, '')
+                .replace(/[\x00-\x08\x0b\x0c\x0e-\x1a]/g, '');
+              const expoUrlMatch = cleanBuffer.match(expoUrlRegex);
+
+              if (expoUrlMatch) {
+                const cleanUrl = expoUrlMatch[1].replace(/[^\x20-\x7E]/g, '');
+                expoUrlAtom.set(cleanUrl);
+                expoUrlBuffer = ''; // Clear after match
+              }
+
+              if (expoUrlBuffer.length > 4096) {
+                expoUrlBuffer = expoUrlBuffer.slice(-2048);
+              }
+            },
+          }),
+        )
+        .catch(() => {
+          /* stream closed — ignore */
+        });
+    } catch (e) {
+      console.error(`[spawnDetached] Failed to spawn "${trimmed}":`, e);
+
+      // Surface the error in the terminal so the user knows the start failed.
+      try {
+        this.#terminal.write(`\r\nFailed to start: ${trimmed}\r\n${(e as Error)?.message || e}\r\n`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async executeCommand(
+    sessionId: string,
+    command: string,
+    abort?: () => void,
+    options?: { detached?: boolean },
+  ): Promise<ExecutionResult> {
+    if (!this.process || !this.terminal) {
+      return undefined;
+    }
+
+    /*
+     * detached mode: used for long-running commands (dev servers / `start`
+     * actions). Such a command never exits, so the normal
+     * waitTillOscCode('exit') would hold executionState.active forever —
+     * causing EVERY subsequent executeCommand to send Ctrl+C and kill the
+     * dev server. In detached mode we background the command (` &`) so the
+     * shell prompt returns, and we do NOT track it in executionState, so
+     * later shell commands run normally without interrupting the server.
+     */
+    const detached = !!options?.detached;
+
+    /*
+     * Split &&-chained commands and execute them ONE AT A TIME.
+     *
+     * Why: the shell integration emits an OSC 'exit' sequence after each
+     * sub-command in a && chain. Our waitTillOscCode('exit') breaks on
+     * the FIRST exit it sees, so sending the whole chain as one line
+     * would make executeCommand return after just the first sub-command
+     * — the next executeCommand call would then inject its command while
+     * the rest of the chain is still running (e.g. npm install gets
+     * killed mid-way by the start command being injected).
+     *
+     * By splitting on && and running each sub-command individually, each
+     * gets its own executeSingleCommand call with its own exit-OSC wait,
+     * so commands run truly sequentially. If any sub-command fails
+     * (non-zero exit), we stop the chain (same semantics as &&).
+     */
+    const subCommands = this.#splitCommandChain(command);
+
+    if (subCommands.length <= 1) {
+      return this.#executeSingleCommand(sessionId, command, abort, detached);
+    }
+
+    let lastResp: ExecutionResult | undefined;
+
+    for (const subCmd of subCommands) {
+      lastResp = await this.#executeSingleCommand(sessionId, subCmd, abort, detached);
+
+      // && semantics: stop if the previous command failed.
+      if (lastResp && lastResp.exitCode !== 0) {
+        break;
+      }
+    }
+
+    return lastResp;
+  }
+
+  /**
+   * Splits a command string on top-level && separators (not inside quotes).
+   * Returns the trimmed, non-empty sub-commands.
+   */
+  #splitCommandChain(command: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let inSingle = false;
+    let inDouble = false;
+    let escaped = false;
+
+    for (let i = 0; i < command.length; i++) {
+      const ch = command[i];
+
+      if (escaped) {
+        current += ch;
+        escaped = false;
+        continue;
+      }
+
+      if (ch === '\\') {
+        current += ch;
+        escaped = true;
+        continue;
+      }
+
+      if (ch === "'" && !inDouble) {
+        inSingle = !inSingle;
+        current += ch;
+        continue;
+      }
+
+      if (ch === '"' && !inSingle) {
+        inDouble = !inDouble;
+        current += ch;
+        continue;
+      }
+
+      // Check for && (only when not inside quotes)
+      if (ch === '&' && !inSingle && !inDouble && command[i + 1] === '&') {
+        parts.push(current.trim());
+        current = '';
+        i++; // skip the second &
+        continue;
+      }
+
+      current += ch;
+    }
+
+    if (current.trim()) {
+      parts.push(current.trim());
+    }
+
+    return parts.filter(Boolean);
+  }
+
+  /**
+   * Executes a SINGLE command (no && chain) in the terminal and waits for
+   * it to complete. This is the original executeCommand logic.
+   *
+   * When `detached` is true (used for long-running `start` commands like dev
+   * servers), the command is backgrounded with ` &` and NOT tracked in
+   * executionState. This is critical: a dev server never exits, so tracking
+   * it would leave executionState.active=true forever, causing every later
+   * executeCommand to send Ctrl+C and kill the server. Detached commands
+   * return immediately with an undefined result.
+   */
+  async #executeSingleCommand(
+    sessionId: string,
+    command: string,
+    abort?: () => void,
+    detached: boolean = false,
+  ): Promise<ExecutionResult> {
     if (!this.process || !this.terminal) {
       return undefined;
     }
 
     const state = this.executionState.get();
 
-    if (state?.active && state.abort) {
-      state.abort();
+    if (!detached) {
+      if (state?.active && state.abort) {
+        state.abort();
+      }
+
+      /*
+       * Only send Ctrl+C (\x03) when a tracked command is genuinely running.
+       * Sending it unconditionally when the shell is idle can interfere with
+       * the prompt and cause the next command to be swallowed.
+       */
+      if (state?.active) {
+        this.terminal.input('\x03');
+        await this.waitTillOscCode('prompt');
+      }
+
+      if (state && state.executionPrms) {
+        await state.executionPrms;
+      }
+    } else {
+      /*
+       * Detached: still wait for any in-flight tracked command (e.g. the
+       * `npm install` setup) to finish before launching the dev server, but
+       * do NOT abort it and do NOT send Ctrl+C.
+       */
+      if (state?.active && state.executionPrms) {
+        try {
+          await state.executionPrms;
+        } catch {
+          /* ignore — the tracked command's error is handled by its caller */
+        }
+      }
     }
 
-    /*
-     * interrupt the current execution
-     *  this.#shellInputStream?.write('\x03');
-     */
-    this.terminal.input('\x03');
-    await this.waitTillOscCode('prompt');
-
-    if (state && state.executionPrms) {
-      await state.executionPrms;
-    }
+    const cmdToRun = detached ? `${command.trim()} &` : `${command.trim()}`;
 
     //start a new execution
-    this.terminal.input(command.trim() + '\n');
+    this.terminal.input(cmdToRun + '\n');
+
+    if (detached) {
+      /*
+       * Long-running command (dev server) launched in the background. Do NOT
+       * track it in executionState and do NOT wait for an exit OSC (it will
+       * never come). Give the shell a brief moment to accept the background
+       * job and return the prompt.
+       */
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      return undefined;
+    }
 
     //wait for the execution to finish
     const executionPromise = this.getCurrentExecutionResult();
@@ -266,57 +894,55 @@ export class AmplifyShell {
   onQRCodeDetected?: (qrCode: string) => void;
 
   async waitTillOscCode(waitCode: string) {
-    let fullOutput = '';
     let exitCode: number = 0;
-    let buffer = ''; // <-- Add a buffer to accumulate output
 
-    if (!this.#outputStream) {
-      return { output: fullOutput, exitCode };
-    }
-
-    const tappedStream = this.#outputStream;
-
-    // Regex for Expo URL
-    const expoUrlRegex = /(exp:\/\/[^\s]+|https?:\/\/[^\s]+\.boltexpo\.dev[^\s]*)/;
+    /*
+     * Queue-based OSC detection: Instead of reading from a separate stream
+     * (which caused the tee backpressure bug), we now read from an in-memory
+     * queue that is populated by the terminal writer callback in
+     * newAmplifyShellProcess(). The terminal writer pushes OSC codes to
+     * #oscQueue as it processes data, and signals #oscResolve when a new
+     * entry arrives.
+     *
+     * This approach works because:
+     * 1. The terminal writer is ALWAYS consuming data (no backpressure)
+     * 2. The queue is in-memory, so there's no stream blocking issue
+     * 3. We use a Promise-based signal (#oscResolve) to efficiently wait
+     *    for new OSC codes without polling
+     *
+     * The output text is taken from #outputAccumulator which the terminal
+     * writer continuously populates. We snapshot it at the start and
+     * compare with the current state when we find the matching OSC code.
+     */
+    const outputSnapshotStart = this.#outputAccumulator.length;
 
     while (true) {
-      const { value, done } = await tappedStream.read();
+      // Check the queue for any OSC codes that arrived since last check
+      while (this.#oscQueue.length > 0) {
+        const entry = this.#oscQueue.shift()!;
 
-      if (done) {
-        break;
+        if (entry.osc === 'exit' && entry.code) {
+          exitCode = parseInt(entry.code, 10);
+        }
+
+        if (entry.osc === waitCode) {
+          /*
+           * Found the OSC code we're waiting for
+           * Return all accumulated output since we started waiting
+           */
+          const fullOutput = this.#outputAccumulator.slice(outputSnapshotStart);
+          return { output: fullOutput, exitCode };
+        }
       }
 
-      const text = value || '';
-      fullOutput += text;
-      buffer += text; // <-- Accumulate in buffer
-
-      // Extract Expo URL from buffer and set store
-      const expoUrlMatch = buffer.match(expoUrlRegex);
-
-      if (expoUrlMatch) {
-        // Remove any trailing ANSI escape codes or non-printable characters
-        const cleanUrl = expoUrlMatch[1]
-          .replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
-          .replace(/[^\x20-\x7E]+$/g, '');
-        expoUrlAtom.set(cleanUrl);
-
-        // Remove everything up to and including the URL from the buffer to avoid duplicate matches
-        buffer = buffer.slice(buffer.indexOf(expoUrlMatch[1]) + expoUrlMatch[1].length);
-      }
-
-      // Check if command completion signal with exit code
-      const [, osc, , , code] = text.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
-
-      if (osc === 'exit') {
-        exitCode = parseInt(code, 10);
-      }
-
-      if (osc === waitCode) {
-        break;
-      }
+      /*
+       * No matching OSC code in queue — wait for the next one to arrive
+       * The terminal writer will resolve #oscResolve when it pushes a new entry
+       */
+      await new Promise<void>((resolve) => {
+        this.#oscResolve = resolve;
+      });
     }
-
-    return { output: fullOutput, exitCode };
   }
 }
 

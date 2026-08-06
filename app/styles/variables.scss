@@ -63,7 +63,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #0d9fff;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -84,18 +84,39 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: #0d9fff;
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.97 0.005 250);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: #0d9fff;
 
   --header-height: 44px;
   --chat-max-width: 700px;
 
   --amplify-elements-borderColor: var(--border);
   --amplify-elements-borderColorActive: var(--ring);
+
+  /*
+   * Base element background — the "no explicit bg" default.
+   *
+   * DESIGN RULE (applies project-wide):
+   *   Any container / button that does NOT carry an explicit `bg-*` class
+   *   (or that uses `bg-amplify-elements-background` as its bg) renders
+   *   TRANSPARENT — it inherits whatever its parent paints. This is the
+   *   opposite of the previous behaviour, where this token resolved to
+   *   `var(--background)` (pure white in light mode, near-black in dark
+   *   mode) and made every "default" Button, Card, Input, Badge, etc.
+   *   paint a solid slab of the page background — producing the
+   *   "white-on-white" look the user reported for Save Key / primary
+   *   buttons and various containers.
+   *
+   *   Containers that genuinely need a solid theme-aware surface MUST
+   *   opt in explicitly via one of the depth tokens below
+   *   (`bg-amplify-elements-background-depth-1/2/3/4`) or another
+   *   explicit `bg-*` class.
+   */
+  --amplify-elements-background: transparent;
 
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);
@@ -175,6 +196,25 @@
   --amplify-elements-cta-background: var(--muted);
   --amplify-elements-cta-text: var(--foreground);
 
+  /*
+   * Focus / accent token — the orange accent used across the chat UI
+   * (send button, model picker selection, "Save Key" button, focus rings).
+   *
+   * Previously `bg-amplify-elements-focus` referenced an UNDEFINED
+   * variable, so primary action buttons (e.g. "Save Key" in APIKeyPopup)
+   * rendered with NO background — they looked plain white in light mode
+   * and invisible in dark mode. Defining it here gives every
+   * `bg-amplify-elements-focus` / `ring-amplify-elements-focus` consumer
+   * a proper theme-aware accent colour.
+   *
+   * The value matches the `oklch(0.6171_0.1375_39.0427)` literal used
+   * inline throughout ChatBox.tsx / SendButton.tsx so the popup matches
+   * the rest of the chat UI.
+   */
+  --amplify-elements-focus: #0d9fff;
+  --amplify-elements-focus-hover: color-mix(in srgb, #0d9fff, black 10%);
+  --amplify-elements-focus-foreground: oklch(0.985 0 0);
+
   --amplify-terminal-background: var(--amplify-elements-terminals-background);
   --amplify-terminal-foreground: #333333;
   --amplify-terminal-selection-background: #00000040;
@@ -206,7 +246,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.145 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
+  --primary: #0d9fff;
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
@@ -226,17 +266,33 @@
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.1906 0.0026 247.96);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: #0d9fff;
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(0.269 0.005 250);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar-ring: #0d9fff;
 
   --header-height: 48px;
 
   --amplify-elements-borderColor: var(--border);
   --amplify-elements-borderColorActive: var(--ring);
+
+  /*
+   * Base element background — the "no explicit bg" default.
+   *
+   * DESIGN RULE (applies project-wide):
+   *   Any container / button that does NOT carry an explicit `bg-*` class
+   *   (or that uses `bg-amplify-elements-background` as its bg) renders
+   *   TRANSPARENT — it inherits whatever its parent paints. See the
+   *   light-theme comment above for the full rationale.
+   *
+   *   Containers that genuinely need a solid theme-aware surface MUST
+   *   opt in explicitly via one of the depth tokens below
+   *   (`bg-amplify-elements-background-depth-1/2/3/4`) or another
+   *   explicit `bg-*` class.
+   */
+  --amplify-elements-background: transparent;
 
   --amplify-elements-bg-depth-1: var(--background);
   --amplify-elements-bg-depth-2: var(--card);
@@ -315,6 +371,16 @@
 
   --amplify-elements-cta-background: var(--muted);
   --amplify-elements-cta-text: var(--foreground);
+
+  /*
+   * Focus / accent token — same orange accent as the light theme, so
+   * `bg-amplify-elements-focus` buttons (e.g. "Save Key" in APIKeyPopup)
+   * have a visible background in dark mode too. See light-theme comment
+   * for the full story.
+   */
+  --amplify-elements-focus: #0d9fff;
+  --amplify-elements-focus-hover: color-mix(in srgb, #0d9fff, white 10%);
+  --amplify-elements-focus-foreground: oklch(0.985 0 0);
 
   --amplify-terminal-background: var(--amplify-elements-terminals-background);
   --amplify-terminal-foreground: #eff0eb;

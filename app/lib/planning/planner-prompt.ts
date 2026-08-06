@@ -177,7 +177,10 @@ export function extractPlanFromResponse(content: string): {
   }>;
 } | null {
   const planMatch = content.match(/<plan>\s*([\s\S]*?)\s*<\/plan>/);
-  if (!planMatch) return null;
+
+  if (!planMatch) {
+    return null;
+  }
 
   try {
     const json = JSON.parse(planMatch[1]);
@@ -192,6 +195,7 @@ export function extractPlanFromResponse(content: string): {
       if (!point.title || !point.goal || !point.description) {
         return null;
       }
+
       // Ensure arrays exist with defaults
       point.requirements = point.requirements || [];
       point.successCriteria = point.successCriteria || [];

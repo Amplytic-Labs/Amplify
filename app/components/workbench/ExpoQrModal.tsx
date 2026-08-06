@@ -3,6 +3,7 @@ import { Dialog, DialogTitle, DialogDescription, DialogRoot } from '~/components
 import { useStore } from '@nanostores/react';
 import { expoUrlAtom } from '~/lib/stores/qrCodeStore';
 import { QRCode } from 'react-qrcode-logo';
+import useViewport from '~/lib/hooks';
 
 interface ExpoQrModalProps {
   open: boolean;
@@ -11,14 +12,55 @@ interface ExpoQrModalProps {
 
 export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
   const expoUrl = useStore(expoUrlAtom);
+  const isMobile = useViewport(1024);
 
   const getExpoGoUrl = (url: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('exp://')) return url;
+    if (!url) {
+      return null;
+    }
+
+    if (url.startsWith('exp://')) {
+      return url;
+    }
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url.replace(/^https?:\/\//, 'exp://');
     }
+
     return url;
+  };
+
+  /**
+   * Build the deep-link URL that opens the project directly in the Expo Go app.
+   * Format: exp://exp.host/--/to?exp=<encoded-exp-url>&host=<encoded-host>
+   * On iOS the universal link format is used: https://expo.go/--/to?...
+   */
+  const getExpoGoDeepLink = (url: string | null) => {
+    if (!url) {
+      return null;
+    }
+
+    const expUrl = getExpoGoUrl(url);
+
+    if (!expUrl) {
+      return null;
+    }
+
+    /*
+     * For iOS devices, use the universal link format that opens Expo Go
+     * For Android, the exp:// scheme works directly
+     */
+    const encodedExpUrl = encodeURIComponent(expUrl);
+
+    return `https://expo.go/--/to?exp=${encodedExpUrl}`;
+  };
+
+  const handleOpenInExpoGo = () => {
+    const deepLink = getExpoGoDeepLink(expoUrl);
+
+    if (deepLink) {
+      window.open(deepLink, '_blank');
+    }
   };
 
   return (
@@ -57,6 +99,17 @@ export const ExpoQrModal: React.FC<ExpoQrModalProps> = ({ open, onClose }) => {
               <div className="text-gray-500 text-center">No Expo URL detected.</div>
             )}
           </div>
+
+          {/* "Open in Expo Go" button — shown on mobile where the user likely has Expo Go installed */}
+          {isMobile && expoUrl && (
+            <button
+              onClick={handleOpenInExpoGo}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 w-full max-w-[280px] rounded-lg bg-[#8a5fff] text-white font-semibold text-sm hover:bg-[#7a4fef] transition-colors"
+            >
+              <div className="i-amplify:expo-brand h-5 w-5 invert" />
+              Open in Expo Go
+            </button>
+          )}
         </div>
       </Dialog>
     </DialogRoot>

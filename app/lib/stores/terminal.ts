@@ -9,6 +9,23 @@ export class TerminalStore {
   #terminals: Array<{ terminal: ITerminal; process: WebContainerProcess }> = [];
   #amplifyTerminal = newAmplifyShellProcess();
 
+  /*
+   * Dedicated shell for project initialization (npm install + npm run dev).
+   *
+   * This is SEPARATE from the `#amplifyTerminal` (which the AI's shell/start
+   * actions run on). Keeping them separate means:
+   *  - The AI's commands (e.g. `npm install some-package`) don't interfere
+   *    with the project's running dev server.
+   *  - The dev server's output doesn't pollute the AI's terminal scrollback.
+   *  - Ctrl+C in the AI terminal doesn't kill the dev server.
+   *
+   * The init terminal is attached to the VISIBLE "Amplify Terminal" tab
+   * (index 0) in TerminalTabs.tsx so the user can see `npm install` + the
+   * dev server output. The AI's `#amplifyTerminal` is attached to the
+   * "AI Terminal" tab (index 1).
+   */
+  #initTerminal = newAmplifyShellProcess();
+
   showTerminal: WritableAtom<boolean> = import.meta.hot?.data.showTerminal ?? atom(true);
 
   constructor(webcontainerPromise: Promise<WebContainer>) {
@@ -22,6 +39,10 @@ export class TerminalStore {
     return this.#amplifyTerminal;
   }
 
+  get initTerminal() {
+    return this.#initTerminal;
+  }
+
   toggleTerminal(value?: boolean) {
     this.showTerminal.set(value !== undefined ? value : !this.showTerminal.get());
   }
@@ -31,6 +52,21 @@ export class TerminalStore {
       await this.#amplifyTerminal.init(wc, terminal);
     } catch (error: any) {
       terminal.write(coloredText.red('Failed to spawn amplify shell\n\n') + error.message);
+      return;
+    }
+  }
+
+  /*
+   * Attach the init terminal (project auto-setup shell). Called from
+   * TerminalTabs.tsx tab 0 ("Amplify Terminal"). Safe to call multiple
+   * times — `AmplifyShell.init()` is guarded by `#initializedOnce`.
+   */
+  async attachInitTerminal(terminal: ITerminal) {
+    try {
+      const wc = await this.#webcontainer;
+      await this.#initTerminal.init(wc, terminal);
+    } catch (error: any) {
+      console.warn('[TerminalStore] Failed to spawn init shell:', error.message);
       return;
     }
   }

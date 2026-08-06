@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react';
 import { motion, type HTMLMotionProps, type Variants } from 'framer-motion';
 import { computed } from 'nanostores';
 import { memo, useCallback, useEffect, useState, useMemo } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { Popover, Transition } from '@headlessui/react';
 import { diffLines, type Change } from 'diff';
 import { getLanguageFromExtension } from '~/utils/getLanguageFromExtension';
@@ -12,7 +12,6 @@ import {
   type OnChangeCallback as OnEditorChange,
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
-import { IconButton } from '~/components/ui/IconButton';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
@@ -20,13 +19,16 @@ import { renderLogger } from '~/utils/logger';
 import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
 import { RenderPanel } from './RenderPanel';
+import { DocxPreviewPanel } from './DocxPreviewPanel';
 import { findRenderableFiles } from '~/lib/renderable/registry';
 import useViewport from '~/lib/hooks';
 
 import { usePreviewStore } from '~/lib/stores/previews';
 import { chatStore } from '~/lib/stores/chat';
+import { docxArtifactStore } from '~/lib/stores/docx-artifact';
 import type { ElementInfo } from './Inspector';
 import { streamingState } from '~/lib/stores/streaming';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
 interface WorkspaceProps {
@@ -41,6 +43,7 @@ interface WorkspaceProps {
 
 const viewTransition = { ease: cubicEasingFn };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const workbenchVariants = {
   closed: {
     width: 0,
@@ -75,6 +78,7 @@ const mobileWorkbenchVariants = {
   },
 } satisfies Variants;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const FileModifiedDropdown = memo(
   ({
     fileHistory,
@@ -261,9 +265,7 @@ const FileModifiedDropdown = memo(
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(filteredFiles.map(([filePath]) => filePath).join('\n'));
-                          toast('File list copied to clipboard', {
-                            icon: <div className="i-ph:check-circle text-accent-500" />,
-                          });
+                          toast.success('File list copied to clipboard');
                         }}
                         className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-amplify-elements-background-depth-1 hover:bg-amplify-elements-background-depth-3 transition-colors text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary"
                       >
@@ -304,15 +306,36 @@ export const Workbench = memo(
     const files = useStore(workbenchStore.files);
     const selectedView = useStore(workbenchStore.currentView);
     const { showChat } = useStore(chatStore);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const canHideChat = showWorkbench || !showChat;
 
     const isSmallViewport = useViewport(1024);
     const streaming = useStore(streamingState);
 
-    const [isSyncing, setIsSyncing] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_isSyncing, setIsSyncing] = useState(false);
 
-    // Show veil only while streaming and no preview port is available yet
-    const showVeil = streaming && !hasPreview;
+    const hasFiles = useMemo(() => Object.values(files).some((f) => f?.type === 'file'), [files]);
+
+    /*
+     * A chat-generated `<docxartifact>` document. The Document view must be
+     * reachable even when the workspace has NO files (a pure document chat
+     * with no project), so this is tracked separately from `hasFiles`.
+     */
+    const docxArtifact = useStore(docxArtifactStore);
+    const hasDocx = !!docxArtifact?.markdown;
+
+    /*
+     * Show the "Initializing project…" veil ONLY during the initial workspace
+     * bootstrapping — i.e. while the AI is streaming AND no files have been
+     * written to the WebContainer yet. Once files exist the project is
+     * initialized and subsequent messages must NOT veil the workspace, even
+     * if the AI is streaming or no preview port is open. The previous logic
+     * (`streaming && !hasPreview`) re-veiled the workspace on every message
+     * for projects that don't expose a preview port, hiding the editor the
+     * user was trying to look at.
+     */
+    const showVeil = streaming && !hasFiles && !hasDocx;
 
     // Check if ANY file in the workspace is renderable (for tab visibility).
     const hasRenderableFiles = useMemo(() => findRenderableFiles(files).length > 0, [files]);
@@ -321,7 +344,10 @@ export const Workbench = memo(
       workbenchStore.currentView.set(view);
     };
 
-    // Track workbench panel position for slider alignment (desktop only)
+    /*
+     * Track workbench panel position for slider alignment (desktop only)
+     * Uses ResizeObserver instead of requestAnimationFrame loop for efficiency
+     */
     useEffect(() => {
       if (isSmallViewport || !showWorkbench) {
         workbenchStore.workbenchLeftPosition.set(null);
@@ -343,17 +369,25 @@ export const Workbench = memo(
       // Update on resize
       window.addEventListener('resize', updateWorkbenchPosition);
 
-      // Update on animation frame for smooth tracking during resize
-      let animationFrameId: number;
-      const observePosition = () => {
-        updateWorkbenchPosition();
-        animationFrameId = requestAnimationFrame(observePosition);
-      };
-      animationFrameId = requestAnimationFrame(observePosition);
+      /*
+       * Use ResizeObserver for efficient position tracking instead of
+       * a continuous requestAnimationFrame loop. The old RAF loop ran at
+       * ~60fps indefinitely, causing unnecessary React re-renders.
+       */
+      let resizeObserver: ResizeObserver | undefined;
+      const workbenchElement = document.querySelector('[data-workbench-panel]');
 
+      if (workbenchElement) {
+        resizeObserver = new ResizeObserver(() => {
+          updateWorkbenchPosition();
+        });
+        resizeObserver.observe(workbenchElement);
+      }
+
+      // eslint-disable-next-line consistent-return
       return () => {
         window.removeEventListener('resize', updateWorkbenchPosition);
-        cancelAnimationFrame(animationFrameId);
+        resizeObserver?.disconnect();
       };
     }, [isSmallViewport, showWorkbench]);
 
@@ -371,8 +405,10 @@ export const Workbench = memo(
       const currentView = workbenchStore.currentView.get();
 
       if (hasRenderableFiles && !hasPreview) {
-        // Auto-switch to the Render tab when renderable files first appear
-        // (only if no preview is active, so preview takes priority).
+        /*
+         * Auto-switch to the Render tab when renderable files first appear
+         * (only if no preview is active, so preview takes priority).
+         */
         if (currentView === 'code') {
           setSelectedView('render');
         }
@@ -417,11 +453,13 @@ export const Workbench = memo(
       workbenchStore.resetCurrentDocument();
     }, []);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleSelectFile = useCallback((filePath: string) => {
       workbenchStore.setSelectedFile(filePath);
       workbenchStore.currentView.set('diff');
     }, []);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleSyncFiles = useCallback(async () => {
       setIsSyncing(true);
 
@@ -437,14 +475,48 @@ export const Workbench = memo(
       }
     }, []);
 
+    /*
+     * Determine whether the workspace content should be rendered.
+     * We use chatStarted OR showWorkbench (not just chatStarted) to
+     * eliminate the one-render gap that occurs when showWorkbench
+     * becomes true before the chatStarted state has caught up via
+     * the sync effect. Without this, the panel opens but the
+     * Workbench returns null for one frame, causing a flash.
+     *
+     * IMPORTANT: We always keep the Workbench mounted when a chat has
+     * started, even if showWorkbench is false. Unmounting would destroy
+     * the terminal, WebContainer, and running dev servers. On mobile,
+     * the workbench is hidden from view via CSS/animation, but stays
+     * alive in the DOM so processes keep running.
+     */
+    const shouldRender = chatStarted || showWorkbench;
+
+    /*
+     * Mobile hiding: When showWorkbench is false on mobile, the workbench
+     * must be completely off-screen and non-interactive, but STILL MOUNTED
+     * so terminal/WebContainer/dev server keep running.
+     *
+     * We use CSS-only hiding that cannot be disrupted by React re-renders
+     * or stacking context changes (e.g. sidebar Dialog overlay):
+     *   1) Inline style transform:translateX(100%) — synchronous, off-screen
+     *   2) visibility:hidden + pointer-events:none — bulletproof fallback
+     *
+     * When showWorkbench is true on mobile, we remove CSS hiding and let
+     * framer-motion animate the slide-in. On desktop (lg:), none applied.
+     */
+    const isMobileHidden = !showWorkbench && isSmallViewport;
+
     return (
-      chatStarted && (
+      shouldRender && (
         <motion.div
           data-workbench-panel
           initial="closed"
           animate={showWorkbench ? 'open' : 'closed'}
           variants={isSmallViewport ? mobileWorkbenchVariants : undefined}
-          className={classNames('z-workbench lg:pb-4 lg:pr-4 absolute inset-0')}
+          style={isMobileHidden ? { transform: 'translateX(100%)' } : undefined}
+          className={classNames('z-workbench lg:pb-4 lg:pr-4 absolute inset-0', {
+            'invisible pointer-events-none lg:visible lg:pointer-events-auto': isMobileHidden,
+          })}
         >
           {' '}
           {showVeil && (
@@ -463,53 +535,61 @@ export const Workbench = memo(
           <div
             className={classNames(
               'z-0 h-full w-full lg:rounded-2xl border border-amplify-elements-borderColor overflow-hidden',
-              {
-                'transition-[left,width] duration-200 amplify-ease-cubic-bezier': isSmallViewport,
-                'left-0': showWorkbench && isSmallViewport,
-                'left-[100%]': !showWorkbench && isSmallViewport,
-              },
             )}
           >
             <div className="h-full ">
               <div className="h-full flex flex-col bg-amplify-elements-background-depth-2  overflow-hidden">
-                <div className="relative flex-1 overflow-hidden">
-                  <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
-                    <EditorPanel
-                      editorDocument={currentDocument}
-                      isStreaming={isStreaming}
-                      selectedFile={selectedFile}
-                      files={files}
-                      unsavedFiles={unsavedFiles}
-                      fileHistory={fileHistory}
-                      onFileSelect={onFileSelect}
-                      onEditorScroll={onEditorScroll}
-                      onEditorChange={onEditorChange}
-                      onFileSave={onFileSave}
-                      onFileReset={onFileReset}
-                      onVersionSelect={(content) => {
-                        setComparisonContentState(content);
-                        workbenchStore.currentView.set('diff');
-                      }}
-                    />
-                  </View>
-                  <View
-                    initial={{ x: '100%' }}
-                    animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
-                  >
-                    <DiffView
-                      fileHistory={fileHistory}
-                      setFileHistory={(history) => workbenchStore.fileHistory.set(history)}
-                      comparisonContent={comparisonContentState || undefined}
-                      showWholeFile={Object.keys(fileHistory).length > 1}
-                    />
-                  </View>
-                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
-                    <Preview setSelectedElement={setSelectedElement} />
-                  </View>
-                  <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
-                    <RenderPanel />
-                  </View>
-                </div>
+                {!hasFiles && !hasDocx && showWorkbench && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3 text-amplify-elements-textTertiary">
+                      <div className="i-ph:folder-open text-3xl" />
+                      <p className="text-sm font-medium">Loading workspace…</p>
+                    </div>
+                  </div>
+                )}
+                {(hasFiles || hasDocx) && (
+                  <div className="relative flex-1 overflow-hidden">
+                    <View initial={{ x: '0%' }} animate={{ x: selectedView === 'code' ? '0%' : '-100%' }}>
+                      <EditorPanel
+                        editorDocument={currentDocument}
+                        isStreaming={isStreaming}
+                        selectedFile={selectedFile}
+                        files={files}
+                        unsavedFiles={unsavedFiles}
+                        fileHistory={fileHistory}
+                        onFileSelect={onFileSelect}
+                        onEditorScroll={onEditorScroll}
+                        onEditorChange={onEditorChange}
+                        onFileSave={onFileSave}
+                        onFileReset={onFileReset}
+                        onVersionSelect={(content) => {
+                          setComparisonContentState(content);
+                          workbenchStore.currentView.set('diff');
+                        }}
+                      />
+                    </View>
+                    <View
+                      initial={{ x: '100%' }}
+                      animate={{ x: selectedView === 'diff' ? '0%' : selectedView === 'code' ? '100%' : '-100%' }}
+                    >
+                      <DiffView
+                        fileHistory={fileHistory}
+                        setFileHistory={(history) => workbenchStore.fileHistory.set(history)}
+                        comparisonContent={comparisonContentState || undefined}
+                        showWholeFile={Object.keys(fileHistory).length > 1}
+                      />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'preview' ? '0%' : '100%' }}>
+                      <Preview setSelectedElement={setSelectedElement} />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
+                      <RenderPanel />
+                    </View>
+                    <View initial={{ x: '100%' }} animate={{ x: selectedView === 'document' ? '0%' : '100%' }}>
+                      <DocxPreviewPanel />
+                    </View>
+                  </div>
+                )}
               </div>
             </div>
           </div>

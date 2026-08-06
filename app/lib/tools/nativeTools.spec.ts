@@ -168,9 +168,19 @@ describe('native tools — list_dir', () => {
     expect(result).not.toContain('README.md');
   });
 
-  it('should report empty/missing dir gracefully', async () => {
+  it('should report no-workspace gracefully (empty file map = success, not error)', async () => {
+    // Empty workspace → "No workspace is currently open" (NOT an Error: prefix)
     const result = await tools.list_dir.execute({ path: 'nope' }, { files: makeFileMap({}) });
-    expect(result).toContain('empty or does not exist');
+    expect(result).toContain('No workspace is currently open');
+    expect(result.startsWith('Error:')).toBe(false);
+  });
+
+  it('should return Error: prefix when the directory does not exist in a populated workspace', async () => {
+    // Workspace has files, but the requested path doesn't exist → real error
+    const files = makeFileMap({ 'a.ts': '' });
+    const result = await tools.list_dir.execute({ path: 'nope' }, { files });
+    expect(result.startsWith('Error:')).toBe(true);
+    expect(result).toContain('Directory not found');
   });
 });
 

@@ -4,7 +4,7 @@ import { webcontainer as webcontainerPromise } from '~/lib/webcontainer';
 import git, { type GitAuth, type PromiseFsClient } from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import Cookies from 'js-cookie';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 
 const lookupSavedPassword = (url: string) => {
   const domain = url.split('/')[2];

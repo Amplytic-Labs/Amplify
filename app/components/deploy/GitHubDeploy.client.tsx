@@ -1,4 +1,4 @@
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useStore } from '@nanostores/react';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { webcontainer } from '~/lib/webcontainer';

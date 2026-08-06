@@ -58,6 +58,7 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
       })
       .catch(() => undefined);
 
+    // eslint-disable-next-line consistent-return
     return () => {
       cancelled = true;
     };
@@ -77,6 +78,7 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
 
     document.addEventListener('mousedown', handleClickOutside);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpen]);
 
@@ -95,14 +97,14 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
         className={classNames(
           'relative rounded-2xl overflow-hidden border border-dashed transition-colors cursor-pointer group',
           isSelected
-            ? 'border-purple-500/60 bg-purple-500/[0.04]'
-            : 'border-sidebar-border/70 bg-sidebar/60 hover:bg-sidebar/80 hover:border-purple-500/40',
+            ? 'border-blue-500/60 bg-blue-500/[0.04]'
+            : 'border-sidebar-border/70 bg-sidebar/60 hover:bg-sidebar/80 hover:border-blue-500/40',
         )}
         style={{ borderWidth: 1 }}
       >
         {/* Selection accent ring */}
         {isSelected && (
-          <div className="pointer-events-none absolute inset-0 ring-1 ring-purple-500/40 rounded-2xl z-20" />
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-blue-500/40 rounded-2xl z-20" />
         )}
 
         {/* Kebab menu — top-right, above the hero */}
@@ -282,13 +284,13 @@ export function ProjectTile({ project, isSelected, onSelect, onRenameProject, on
           <span
             className={classNames(
               'text-[13px] font-semibold truncate',
-              isSelected ? 'text-purple-600 dark:text-purple-400' : 'text-sidebar-foreground',
+              isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-sidebar-foreground',
             )}
           >
             {project.name}
           </span>
           {isSelected && (
-            <span className="shrink-0 inline-block w-1.5 h-1.5 rounded-full bg-purple-500" title="Selected" />
+            <span className="shrink-0 inline-block w-1.5 h-1.5 rounded-full bg-blue-500" title="Selected" />
           )}
         </div>
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">

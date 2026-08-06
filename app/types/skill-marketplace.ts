@@ -1,6 +1,7 @@
 import type { ZodSchema } from 'zod';
 import { z } from 'zod';
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export const SkillManifestSchema: ZodSchema = z.object({
   name: z.string().min(1),
   version: z.string().regex(/^\d+\.\d+\.\d+$/, 'Version must be in SemVer format (e.g. 1.0.0)'),

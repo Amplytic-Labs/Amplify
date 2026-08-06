@@ -33,6 +33,7 @@ export function ProjectsGallery({ onSelectProject }: ProjectsGalleryProps) {
    * Reactive project list — re-renders on any project mutation.
    * projectStore._versionStore is private but stable across releases.
    */
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-expect-error — _versionStore is private but stable across releases.
   const projectsVersion = useStore(projectStore._versionStore);
   const selectedId = useStore(selectedProjectId);
@@ -118,7 +119,7 @@ export function ProjectsGallery({ onSelectProject }: ProjectsGalleryProps) {
             </button>
             <div className="h-4 w-px bg-border/60 hidden sm:block" />
             <h1 className="flex items-center gap-2 text-[18px] font-semibold text-sidebar-foreground truncate">
-              <Folder size={18} className="text-purple-500 shrink-0" />
+              <Folder size={18} className="text-blue-500 shrink-0" />
               <span>Projects</span>
               <span className="text-[12px] font-normal text-muted-foreground">({filtered.length})</span>
             </h1>
@@ -132,7 +133,7 @@ export function ProjectsGallery({ onSelectProject }: ProjectsGalleryProps) {
             placeholder="Search projects by name, description, or tech…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-sidebar border border-sidebar-border rounded-lg pl-9 pr-3 py-2 text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="w-full bg-sidebar border border-sidebar-border rounded-lg pl-9 pr-3 py-2 text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           />
         </div>
       </div>
@@ -185,7 +186,7 @@ export function ProjectsGallery({ onSelectProject }: ProjectsGalleryProps) {
                     }
                   }}
                   autoFocus
-                  className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   placeholder="Project name"
                 />
                 <div className="flex justify-end gap-3 mt-6">
@@ -232,12 +233,12 @@ function EmptyState({ hasProjects, onCreate }: { hasProjects: boolean; onCreate:
   return (
     <div className="flex flex-col items-center justify-center gap-4 text-center py-20 max-w-md mx-auto">
       <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 blur-xl rounded-full" />
-        <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/15 to-fuchsia-500/10 flex items-center justify-center ring-1 ring-purple-500/20">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-blue-400/10 blur-xl rounded-full" />
+        <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/15 to-blue-400/10 flex items-center justify-center ring-1 ring-blue-500/20">
           {hasProjects ? (
-            <Search size={26} className="text-purple-500" />
+            <Search size={26} className="text-blue-500" />
           ) : (
-            <Sparkles size={26} className="text-purple-500" />
+            <Sparkles size={26} className="text-blue-500" />
           )}
         </div>
       </div>
@@ -255,7 +256,7 @@ function EmptyState({ hasProjects, onCreate }: { hasProjects: boolean; onCreate:
         <button
           type="button"
           onClick={onCreate}
-          className="mt-1 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/15 border border-purple-500/20 transition-colors"
+          className="mt-1 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/20 transition-colors"
         >
           <Plus size={13} className="shrink-0" />
           <span>Start a new chat</span>

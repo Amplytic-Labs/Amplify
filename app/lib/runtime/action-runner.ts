@@ -1,7 +1,14 @@
 import type { WebContainer } from '@webcontainer/api';
 import { path as nodePath } from '~/utils/path';
 import { atom, map, type MapStore } from 'nanostores';
-import type { ActionAlert, AmplifyAction, DeployAlert, FileHistory, SupabaseAction, SupabaseAlert } from '~/types/actions';
+import type {
+  ActionAlert,
+  AmplifyAction,
+  DeployAlert,
+  FileHistory,
+  SupabaseAction,
+  SupabaseAlert,
+} from '~/types/actions';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 import type { ActionCallbackData } from './message-parser';
@@ -120,6 +127,39 @@ export class ActionRunner {
     });
   }
 
+  /**
+   * Mark an action as complete WITHOUT executing it.
+   *
+   * Used when loading an old (historical) chat: the message parser re-fires
+   * `onActionOpen` / `onActionClose` / `onActionStream` for every action in
+   * the stored history, which would normally trigger `runAction` →
+   * `#executeAction` → `#runFileAction` / `#runShellAction` / `#runStartAction`.
+   *
+   * Re-executing those actions against the live WebContainer is destructive:
+   *  - File writes overwrite any manual modifications the user made since
+   *    the chat was last active (the AI's stale version clobbers the user's
+   *    current version, breaking the project "again and again").
+   *  - Shell actions re-run `npm install`, killing time and the running dev
+   *    server.
+   *  - Start actions kill + relaunch the dev server.
+   *
+   * The project files have ALREADY been restored from IndexedDB (the latest
+   * committed version) via `restoreFileMap()` / `restoreSnapshot()` in
+   * `useChatHistory`, so re-execution is redundant as well as destructive.
+   *
+   * This method chains onto `#currentExecutionPromise` (same as `runAction`)
+   * so ordering is preserved relative to the `status: 'running'` scheduled
+   * by `addAction` — the action ends up `complete` with `executed: true`,
+   * which makes the UI render the action as done (no stuck spinner) while
+   * skipping every side-effect.
+   */
+  markActionAsReplayed(actionId: string) {
+    this.#currentExecutionPromise = this.#currentExecutionPromise.then(() => {
+      this.#updateAction(actionId, { status: 'complete', executed: true });
+    });
+    return this.#currentExecutionPromise;
+  }
+
   async runAction(data: ActionCallbackData, isStreaming: boolean = false) {
     const { actionId } = data;
     const action = this.actions.get()[actionId];
@@ -189,11 +229,13 @@ export class ActionRunner {
           break;
         }
         case 'start': {
-          // Start commands (dev servers) run indefinitely, so we mark them
-          // complete once they've been running for a short period — meaning
-          // the server launched without an immediate error.
+          /*
+           * Start commands (dev servers) run indefinitely, so we mark them
+           * complete once they've been running for a short period — meaning
+           * the server launched without an immediate error.
+           */
 
-          this.#runStartAction(action)
+          this.#runStartAction(action, actionId)
             .then(() => {
               // Server process exited on its own (unusual but possible)
               const currentStatus = this.actions.get()[actionId]?.status;
@@ -298,9 +340,30 @@ export class ActionRunner {
     }
   }
 
-  async #runStartAction(action: ActionState) {
+  async #runStartAction(action: ActionState, currentActionId: string) {
     if (action.type !== 'start') {
       unreachable('Expected shell action');
+    }
+
+    /*
+     * Skip re-running a start command if another `start` action is already
+     * running or has completed. Long-running dev servers should NOT be
+     * relaunched on every turn — doing so kills the existing server (Ctrl+C
+     * in executeCommand) and triggers a "Dev Server Failed" alert. The model
+     * sometimes re-emits `<amplifyAction type="start">` even with the
+     * project-continuation prompt; this guard makes that a no-op.
+     */
+    const existingActions = this.actions.get();
+    const startAlreadyActive = Object.entries(existingActions).some(
+      ([id, a]) => id !== currentActionId && a.type === 'start' && (a.status === 'running' || a.status === 'complete'),
+    );
+
+    if (startAlreadyActive) {
+      logger.debug(
+        '[start]: A start action is already running/complete — skipping re-launch to avoid killing the dev server.',
+      );
+
+      return undefined;
     }
 
     if (!this.#shellTerminal) {
@@ -314,17 +377,19 @@ export class ActionRunner {
       unreachable('Shell terminal not found');
     }
 
-    const resp = await shell.executeCommand(this.runnerId.get(), action.content, () => {
-      logger.debug(`[${action.type}]:Aborting Action\n\n`, action);
-      action.abort();
-    });
-    logger.debug(`${action.type} Shell Response: [exit code:${resp?.exitCode}]`);
+    /*
+     * Spawn the dev server DIRECTLY via webcontainer.spawn() (not through
+     * jsh). A dev server never exits, so the normal executeCommand path
+     * would either hold executionState.active forever (causing every later
+     * shell command to send Ctrl+C and kill the server) or — in detached
+     * mode — append a visible ` &` to the command that jsh echoes to the
+     * terminal. Spawning directly avoids both: no `&`, no echo, and the
+     * process runs independently of jsh so the prompt stays usable.
+     */
+    await shell.spawnDetached(action.content);
+    logger.debug(`${action.type} spawned detached (dev server running)`);
 
-    if (resp?.exitCode != 0) {
-      throw new ActionCommandError('Failed To Start Application', resp?.output || 'No Output Available');
-    }
-
-    return resp;
+    return undefined;
   }
 
   async #runFileAction(action: ActionState) {

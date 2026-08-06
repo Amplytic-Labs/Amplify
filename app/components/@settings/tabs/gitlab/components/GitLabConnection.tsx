@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { classNames } from '~/utils/classNames';
 import { Button } from '~/components/ui/Button';
 import { useGitLabConnection } from '~/lib/hooks';
@@ -80,7 +80,9 @@ export default function GitLabConnection({ connectionTest, onTestConnection }: G
             <p className="flex items-center gap-1 mb-1">
               <span className="i-ph:lightbulb w-3.5 h-3.5 text-amplify-elements-icon-success" />
               <span className="font-medium">Tip:</span> You can also set the{' '}
-              <code className="px-1 py-0.5 bg-amplify-elements-background-depth-2 rounded">VITE_GITLAB_ACCESS_TOKEN</code>{' '}
+              <code className="px-1 py-0.5 bg-amplify-elements-background-depth-2 rounded">
+                VITE_GITLAB_ACCESS_TOKEN
+              </code>{' '}
               environment variable to connect automatically.
             </p>
             <p>

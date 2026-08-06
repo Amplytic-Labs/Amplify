@@ -19,16 +19,13 @@
  *  - On explicit request
  */
 
-import type {
-  Checkpoint,
-  PlanPoint,
-  TaskExecutionState,
-  ToolInvocationRecord,
-} from './types';
+import type { Checkpoint, PlanPoint, TaskExecutionState, ToolInvocationRecord } from './types';
 
-// ============================================================
-// CheckpointManager
-// ============================================================
+/*
+ * ============================================================
+ * CheckpointManager
+ * ============================================================
+ */
 
 export interface CheckpointContext {
   /**
@@ -62,10 +59,7 @@ export class CheckpointManager {
    * Determines whether a checkpoint should be taken given the current
    * number of tool calls and the last checkpoint index.
    */
-  static shouldCheckpoint(
-    toolCallCount: number,
-    lastCheckpointIndex: number,
-  ): boolean {
+  static shouldCheckpoint(toolCallCount: number, lastCheckpointIndex: number): boolean {
     const callsSinceLastCheckpoint = toolCallCount - (lastCheckpointIndex + 1) * this.CHECKPOINT_INTERVAL;
     return callsSinceLastCheckpoint >= this.CHECKPOINT_INTERVAL;
   }
@@ -91,21 +85,26 @@ export class CheckpointManager {
     const filesChanged = allModifiedFiles.filter((f) => !previousFiles.has(f));
 
     // Tools used since the previous checkpoint
-    const previousToolCount = previousCheckpoint
-      ? previousCheckpoint.progressSummary.toolsCalled
-      : 0;
+    const previousToolCount = previousCheckpoint ? previousCheckpoint.progressSummary.toolsCalled : 0;
     const recentTools = toolInvocations.slice(previousToolCount);
     const toolsUsed = recentTools.map((t) => t.toolName);
 
-    // Remaining work: derived from the task contract's requirements
-    // vs. what's been completed. Each requirement that doesn't appear
-    // in any completed step is considered remaining.
+    /*
+     * Remaining work: derived from the task contract's requirements
+     * vs. what's been completed. Each requirement that doesn't appear
+     * in any completed step is considered remaining.
+     */
     const requirements = point.requirements ?? [];
     const completedText = completedSteps.join(' ').toLowerCase();
     const remainingWork = requirements.filter((req) => {
-      // Simple heuristic: if keywords from the requirement appear in
-      // completed steps, consider it done.
-      const keywords = req.toLowerCase().split(/\s+/).filter((w) => w.length > 4);
+      /*
+       * Simple heuristic: if keywords from the requirement appear in
+       * completed steps, consider it done.
+       */
+      const keywords = req
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 4);
       return keywords.length > 0 && !keywords.some((kw) => completedText.includes(kw));
     });
 
@@ -138,6 +137,7 @@ export class CheckpointManager {
     if (!point.checkpoints) {
       point.checkpoints = [];
     }
+
     point.checkpoints.push(checkpoint);
 
     return {
@@ -155,6 +155,7 @@ export class CheckpointManager {
     if (!point.checkpoints || point.checkpoints.length === 0) {
       return null;
     }
+
     return point.checkpoints[point.checkpoints.length - 1];
   }
 
@@ -195,6 +196,7 @@ export class CheckpointManager {
 
     if (checkpoint.progressSummary.filesModified.length > 0) {
       lines.push('', 'Files modified so far:');
+
       for (const file of checkpoint.progressSummary.filesModified) {
         lines.push(`  - ${file}`);
       }
@@ -202,6 +204,7 @@ export class CheckpointManager {
 
     if (checkpoint.remainingWork.length > 0) {
       lines.push('', 'Remaining work:');
+
       for (const item of checkpoint.remainingWork) {
         lines.push(`  ○ ${item}`);
       }

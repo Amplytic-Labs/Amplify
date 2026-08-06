@@ -150,7 +150,15 @@ const getGitHubRepoContent = async (repoName: string): Promise<{ name: string; p
   return fetchRepoContents(repoName);
 };
 
-export async function getTemplates(templateName: string, title?: string) {
+export async function getTemplates(
+  templateName: string,
+  title?: string,
+): Promise<{
+  assistantMessage: string;
+  summary: string;
+  userMessage: string;
+  files: Array<{ name: string; path: string; content: string }>;
+} | null> {
   const template = STARTER_TEMPLATES.find((t) => t.name == templateName);
 
   if (!template) {
@@ -215,9 +223,6 @@ ${file.content}
 </amplifyAction>`,
   )
   .join('\n')}
-<amplifyAction type="shell">
-npm install
-</amplifyAction>
 </amplifyArtifact>
 `;
   let userMessage = ``;
@@ -261,10 +266,17 @@ If you need to make changes to functionality, create new files instead of modify
 `;
   }
 
-  const packageJsonFile = filesToImport.files.find((f) => f.path.endsWith('package.json'));
-  const packageJsonContext = packageJsonFile
-    ? `\nHere is the template's package.json:\n\`\`\`json\n${packageJsonFile.content}\n\`\`\`\nPlease check the "scripts" section to determine the correct development start command (e.g., npm run dev, npm start, etc.).`
-    : '';
+  /*
+   * Auto-initialization: npm install + start command are now detected and
+   * run silently by `runProjectAutoSetup` on the dedicated init terminal.
+   * We no longer need to:
+   *  - Include `npm install` as a shell action in the artifact (removed above)
+   *  - Tell the AI to "check the scripts section to determine the correct
+   *    development start command" (the system detects this automatically)
+   * The AI can focus on the user's actual request instead of project setup.
+   */
+  void isExpo;
+  void devCommand;
 
   userMessage += `
 ---
@@ -272,14 +284,20 @@ template import is done, and you can now use the imported files.
 edit only the files that need to be changed, and you can create new files as needed.
 DO NOT EDIT/WRITE ANY FILES THAT ALREADY EXIST IN THE PROJECT AND DO NOT NEED TO BE MODIFIED.
 ---
-Now that the Template is imported and \`npm install\` has been executed automatically, please continue with my original request.
-${packageJsonContext}
-IMPORTANT: When starting the development server, you MUST use the appropriate command from the package.json scripts.
+Now that the Template is imported, please continue with my original request.
 `;
 
   return {
     assistantMessage,
     summary: `Injected ${template.name} template. Files created: ${filesToImport.files.map((f) => f.path).join(', ')}`,
     userMessage,
+
+    /*
+     * Raw file list — kept for backwards compat with any callers that
+     * reference it. The active inject_template.execute path streams the
+     * <amplifyArtifact> XML via dataStream and the client message parser
+     * writes files to the WebContainer sequentially.
+     */
+    files: filesToImport.files.map((f) => ({ name: f.name, path: f.path, content: f.content })),
   };
 }

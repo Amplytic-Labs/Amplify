@@ -1,6 +1,5 @@
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
 import { AnimatePresence, motion } from 'framer-motion';
-import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { createHighlighter, type BundledLanguage, type BundledTheme, type HighlighterGeneric } from 'shiki';
 import { classNames } from '~/utils/classNames';
 import {
@@ -13,7 +12,17 @@ import { cubicEasingFn } from '~/utils/easings';
 import { logger } from '~/utils/logger';
 import { themeStore, type Theme } from '~/lib/stores/theme';
 import { useStore } from '@nanostores/react';
+import { isClientSideTool } from '~/lib/tools/clientSideTools';
+import { tryClaimToolCallApproval } from '~/lib/chat/tool-approval-dedup';
 import type { ToolCallAnnotation } from '~/types/context';
+import {
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 
 const highlighterOptions = {
   langs: ['json'],
@@ -67,7 +76,13 @@ function JsonCodeBlock({ className, code, theme }: JsonCodeBlockProps) {
 }
 
 interface ToolInvocationsProps {
-  toolInvocations: ToolInvocationUIPart[];
+  /**
+   * v7 tool parts (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` parts. The prop name is kept for backward compatibility
+   * but the element shape is shape-agnostic — fields are accessed via the
+   * shared helpers in `~/lib/chat/tool-parts`.
+   */
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
 }
@@ -80,13 +95,18 @@ export const ToolInvocations = memo(({ toolInvocations, toolCallAnnotations, add
     setShowDetails((prev) => !prev);
   };
 
+  /*
+   * v7 migration: state checks use the v7 vocabulary. `getToolState` returns
+   * the normalised v7 state (mapping v4 'call'/'result' onto
+   * 'input-available'/'output-available' if a legacy part slips through).
+   */
   const toolCalls = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'call'),
+    () => toolInvocations.filter((inv) => ToolState.isCall(getToolState(inv))),
     [toolInvocations],
   );
 
   const toolResults = useMemo(
-    () => toolInvocations.filter((inv) => inv.toolInvocation.state === 'result'),
+    () => toolInvocations.filter((inv) => ToolState.isResult(getToolState(inv))),
     [toolInvocations],
   );
 
@@ -186,7 +206,7 @@ const toolVariants = {
 };
 
 interface ToolResultsListProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   theme: Theme;
 }
@@ -196,20 +216,23 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-4">
         {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
+          const toolCallState = getToolState(tool);
 
-          if (toolCallState !== 'result') {
+          if (!ToolState.isResult(toolCallState)) {
             return null;
           }
 
-          const { toolName, toolCallId } = tool.toolInvocation;
+          const toolName = getToolNameFromPart(tool);
+          const toolCallId = getToolCallId(tool);
+          const args = getToolInput(tool);
+          const result = getToolOutput(tool);
 
           const annotation = toolCallAnnotations.find((annotation) => {
             return annotation.toolCallId === toolCallId;
           });
 
           const isErrorResult = [TOOL_NO_EXECUTE_FUNCTION, TOOL_EXECUTION_DENIED, TOOL_EXECUTION_ERROR].includes(
-            tool.toolInvocation.result,
+            result,
           );
 
           return (
@@ -248,15 +271,72 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
                 <div className="text-amplify-elements-textSecondary text-xs mb-1">Parameters:</div>
                 <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
                   <div className="relative group/copy">
-                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.args)} theme={theme} />
-                    <CopyJsonButton text={JSON.stringify(tool.toolInvocation.args, null, 2)} />
+                    <JsonCodeBlock className="mb-0" code={JSON.stringify(args)} theme={theme} />
+                    <CopyJsonButton text={JSON.stringify(args, null, 2)} />
                   </div>
                 </div>
                 <div className="text-amplify-elements-textSecondary text-xs mt-3 mb-1">Result:</div>
                 <div className="bg-amplify-elements-background-depth-1 p-3 rounded-md">
                   <div className="relative group/copy">
-                    <JsonCodeBlock className="mb-0" code={JSON.stringify(tool.toolInvocation.result)} theme={theme} />
-                    <CopyJsonButton text={typeof tool.toolInvocation.result === 'string' ? tool.toolInvocation.result : JSON.stringify(tool.toolInvocation.result, null, 2)} />
+                    <JsonCodeBlock
+                      className="mb-0"
+                      code={JSON.stringify(
+                        (() => {
+                          /*
+                           * Strip model-only fields from the rendered JSON.
+                           * `files` is the (potentially huge) file list from
+                           * inject_template; `userMessage` is the verbose
+                           * template instructions / file-access rules meant
+                           * for the model; `warning` is a stale legacy field.
+                           * The user explicitly said they don't want to see
+                           * these in the UI.
+                           */
+                          if (result && typeof result === 'object') {
+                            const filtered: Record<string, any> = {};
+
+                            for (const [k, v] of Object.entries(result)) {
+                              if (k === 'files' || k === 'userMessage' || k === 'warning') {
+                                continue;
+                              }
+
+                              filtered[k] = v;
+                            }
+
+                            return Object.keys(filtered).length > 0 ? filtered : result;
+                          }
+
+                          return result;
+                        })(),
+                      )}
+                      theme={theme}
+                    />
+                    <CopyJsonButton
+                      text={
+                        typeof result === 'string'
+                          ? result
+                          : JSON.stringify(
+                              (() => {
+                                if (result && typeof result === 'object') {
+                                  const filtered: Record<string, any> = {};
+
+                                  for (const [k, v] of Object.entries(result)) {
+                                    if (k === 'files' || k === 'userMessage' || k === 'warning') {
+                                      continue;
+                                    }
+
+                                    filtered[k] = v;
+                                  }
+
+                                  return Object.keys(filtered).length > 0 ? filtered : result;
+                                }
+
+                                return result;
+                              })(),
+                              null,
+                              2,
+                            )
+                      }
+                    />
                   </div>
                 </div>
               </div>
@@ -269,7 +349,7 @@ const ToolResultsList = memo(({ toolInvocations, toolCallAnnotations, theme }: T
 });
 
 interface ToolCallsListProps {
-  toolInvocations: ToolInvocationUIPart[];
+  toolInvocations: any[];
   toolCallAnnotations: ToolCallAnnotation[];
   addToolResult: ({ toolCallId, result }: { toolCallId: string; result: any }) => void;
   theme: Theme;
@@ -278,22 +358,84 @@ interface ToolCallsListProps {
 const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResult }: ToolCallsListProps) => {
   const [expanded, setExpanded] = useState<{ [id: string]: boolean }>({});
 
+  /*
+   * Dedup guard for auto-approval. This component, ToolProgress.tsx, AND
+   * Chat.client.tsx ALL have auto-approve effects that can fire in parallel
+   * for the same pending toolCallId.
+   *
+   * We use a MODULE-LEVEL shared Set (tool-approval-dedup.ts) so that once
+   * ANY component claims a toolCallId, the others skip. This is the
+   * PERMANENT fix for message duplication on tool error — without it, 2-3
+   * `addToolResult` calls per toolCallId cause the AI SDK to send multiple
+   * follow-up requests, each appending a new step (reasoning + text) to
+   * the same assistant message.
+   *
+   * The local ref is kept as a secondary guard for same-component
+   * re-renders (cheaper than the module Set lookup for the common case).
+   */
+  const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
   // OS detection for shortcut display
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
-  // ───────────────────────────────────────────────────────────────
-  // Auto-approval: every tool runs automatically EXCEPT execute_plan,
-  // which is the only tool that requires explicit user approval
-  // (the user approves the full enriched plan in PlanApprovalDialog).
-  // ───────────────────────────────────────────────────────────────
+  /*
+   * ───────────────────────────────────────────────────────────────
+   * Auto-approval: every tool runs automatically EXCEPT:
+   *   - execute_plan (user approves the full enriched plan in
+   *     PlanApprovalDialog)
+   *   - client-side tools (store_user_fact, search_user_context, etc.)
+   *     These are executed CLIENT-SIDE by Chat.client.tsx because they
+   *     use IndexedDB which is browser-only. If we send APPROVE here,
+   *     the server would run their execute function server-side, which
+   *     returns "not available on the server" — so we MUST skip them
+   *     and let the client-side effect handle them.
+   * ───────────────────────────────────────────────────────────────
+   */
   useEffect(() => {
-    const pending = toolInvocations.filter(
-      (inv) => inv.toolInvocation.state === 'call' && inv.toolInvocation.toolName !== 'execute_plan',
-    );
+    const pending = toolInvocations.filter((inv) => {
+      if (!ToolState.isCall(getToolState(inv))) {
+        return false;
+      }
+
+      const toolName = getToolNameFromPart(inv);
+
+      // Skip execute_plan — handled by PlanApprovalDialog
+      if (toolName === 'execute_plan') {
+        return false;
+      }
+
+      // Skip client-side tools — handled by Chat.client.tsx
+      if (isClientSideTool(toolName)) {
+        return false;
+      }
+
+      return true;
+    });
 
     for (const inv of pending) {
+      const id = getToolCallId(inv);
+
+      if (!id) {
+        continue;
+      }
+
+      // Local dedup (same-component re-renders).
+      if (autoApprovedToolCallIdsRef.current.has(id)) {
+        continue;
+      }
+
+      /*
+       * SHARED dedup (across all components — see tool-approval-dedup.ts).
+       * If Chat.client.tsx or ToolProgress.tsx already claimed this
+       * toolCallId, skip. This is the permanent fix for duplication.
+       */
+      if (!tryClaimToolCallApproval(id)) {
+        continue;
+      }
+
+      autoApprovedToolCallIdsRef.current.add(id);
       addToolResult({
-        toolCallId: inv.toolInvocation.toolCallId,
+        toolCallId: id,
         result: TOOL_EXECUTION_APPROVAL.APPROVE,
       });
     }
@@ -302,8 +444,8 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
   useEffect(() => {
     const expandedState: { [id: string]: boolean } = {};
     toolInvocations.forEach((inv) => {
-      if (inv.toolInvocation.state === 'call') {
-        expandedState[inv.toolInvocation.toolCallId] = true;
+      if (ToolState.isCall(getToolState(inv))) {
+        expandedState[getToolCallId(inv)] = true;
       }
     });
     setExpanded(expandedState);
@@ -356,19 +498,22 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
       <ul className="list-none space-y-4">
         {toolInvocations.map((tool, index) => {
-          const toolCallState = tool.toolInvocation.state;
+          const toolCallState = getToolState(tool);
 
-          if (toolCallState !== 'call') {
+          if (!ToolState.isCall(toolCallState)) {
             return null;
           }
 
-          const { toolName, toolCallId } = tool.toolInvocation;
+          const toolName = getToolNameFromPart(tool);
+          const toolCallId = getToolCallId(tool);
           const annotation = toolCallAnnotations.find((annotation) => annotation.toolCallId === toolCallId);
 
-          // Only execute_plan requires explicit user approval — it opens the
-          // PlanApprovalDialog after planner enrichment. All other tools
-          // auto-approve (see the useEffect above) and just show a "running"
-          // indicator while they execute.
+          /*
+           * Only execute_plan requires explicit user approval — it opens the
+           * PlanApprovalDialog after planner enrichment. All other tools
+           * auto-approve (see the useEffect above) and just show a "running"
+           * indicator while they execute.
+           */
           const needsApproval = toolName === 'execute_plan';
 
           return (
@@ -428,7 +573,7 @@ const ToolCallsList = memo(({ toolInvocations, toolCallAnnotations, addToolResul
                       </>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-xs text-amplify-elements-textSecondary">
-                        <span className="inline-block w-3 h-3 border-2 border-purple-500/40 border-t-purple-500 rounded-full animate-spin" />
+                        <span className="inline-block w-3 h-3 border-2 border-blue-500/40 border-t-blue-500 rounded-full animate-spin" />
                         Running…
                       </span>
                     )}

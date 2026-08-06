@@ -1,8 +1,8 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class GithubProvider extends BaseProvider {
   name = 'Github';
@@ -105,6 +105,7 @@ export default class GithubProvider extends BaseProvider {
             provider: 'Github',
             maxTokenAllowed: model.limits?.max_input_tokens || 128000,
             maxCompletionTokens: model.limits?.max_output_tokens || 16384,
+            capabilities: detectModelCapabilities(this.name, model.id),
           }));
         }
       } else {
@@ -125,7 +126,7 @@ export default class GithubProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     console.log(`GitHub: Creating model instance for ${model}`);

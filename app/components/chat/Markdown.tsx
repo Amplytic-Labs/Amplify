@@ -6,8 +6,10 @@ import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markd
 import { Artifact, openArtifactInWorkbench } from './Artifact';
 import { CodeBlock } from './CodeBlock';
 import { Mermaid } from './Mermaid';
+import { Chart } from './Chart';
 import { FilePill } from './copilot/FilePill';
-import type { Message } from 'ai';
+import { transformAmplifyQuickActions } from '~/lib/chat/quick-actions';
+import type { UIMessage } from 'ai';
 import styles from './Markdown.module.scss';
 import type { ProviderInfo } from '~/types/model';
 
@@ -17,7 +19,7 @@ interface MarkdownProps {
   children: string;
   html?: boolean;
   limitedMarkdown?: boolean;
-  append?: (message: Message) => void;
+  append?: (message: UIMessage) => void;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
   model?: string;
@@ -40,10 +42,18 @@ export const Markdown = memo(
      *      the old multi-panel "thought block" UI inside the answer.
      *      `transformThoughtBlocks` is kept as a no-op safety net for
      *      any external callers that still rely on it.
+     *   3. Transform `<amplify-quick-actions>` XML → `<div class="__amplifyQuickAction__">`
+     *      HTML so the existing div/button component handlers below can
+     *      render them as styled pill buttons. Without this step, the raw
+     *      XML would render as plain text (react-markdown doesn't know
+     *      about custom XML element names). Streaming-safe — see
+     *      quick-actions.ts for details.
      */
     const parsedChildren = useMemo(() => {
       const stripped = stripCodeFenceFromArtifact(children);
-      return stripResidualThoughtTags(stripped);
+      const thoughtsStripped = stripResidualThoughtTags(stripped);
+
+      return transformAmplifyQuickActions(thoughtsStripped);
     }, [children]);
 
     const childrenRef = useRef(parsedChildren);
@@ -159,6 +169,32 @@ export const Markdown = memo(
               return null;
             }
 
+            if (language === 'chartjs') {
+              const code = firstChild.children[0].value;
+              let isClosed = false;
+
+              if (node?.position?.start?.offset !== undefined) {
+                isClosed = childrenRef.current.indexOf('```', node.position.start.offset + 10) !== -1;
+              } else {
+                const lastChartIndex = childrenRef.current.lastIndexOf('```chartjs');
+                isClosed = childrenRef.current.indexOf('```', lastChartIndex + 10) !== -1;
+              }
+
+              /*
+               * Only mount the Chart component once the closing fence has
+               * arrived. Chart.js mutates a <canvas> on mount and destroys
+               * it on unmount, so mounting on a partial JSON blob would
+               * throw a parse error and flash an error card. Once closed,
+               * the module-level config cache inside Chart.tsx keeps the
+               * parsed config stable across ReactMarkdown re-parses.
+               */
+              if (isClosed) {
+                return <Chart config={code} />;
+              }
+
+              return null;
+            }
+
             return <CodeBlock code={firstChild.children[0].value} language={language as BundledLanguage} {...rest} />;
           }
 
@@ -199,12 +235,14 @@ export const Markdown = memo(
                   } else if (type === 'message' && append) {
                     append({
                       id: `quick-action-message-${Date.now()}`,
-                      content: [
+
+                      // AI SDK v7: use parts instead of content
+                      parts: [
                         {
-                          type: 'text',
+                          type: 'text' as const,
                           text: `[Model: ${model}]\n\n[Provider: ${provider?.name}]\n\n${message}`,
                         },
-                      ] as any,
+                      ],
                       role: 'user',
                     });
                     console.log('Message appended:', message);
@@ -212,12 +250,14 @@ export const Markdown = memo(
                     setChatMode('build');
                     append({
                       id: `quick-action-implement-${Date.now()}`,
-                      content: [
+
+                      // AI SDK v7: use parts instead of content
+                      parts: [
                         {
-                          type: 'text',
+                          type: 'text' as const,
                           text: `[Model: ${model}]\n\n[Provider: ${provider?.name}]\n\n${message}`,
                         },
-                      ] as any,
+                      ],
                       role: 'user',
                     });
                   } else if (type === 'link' && typeof href === 'string') {
@@ -236,7 +276,11 @@ export const Markdown = memo(
             );
           }
 
-          return <button className="bg-transparent" {...props}>{children}</button>;
+          return (
+            <button className="bg-transparent" {...props}>
+              {children}
+            </button>
+          );
         },
         a: ({ node, children, ...props }) => {
           const href = props.href;

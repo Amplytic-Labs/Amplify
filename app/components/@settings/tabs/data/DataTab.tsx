@@ -8,7 +8,7 @@ import { openDatabase } from '~/lib/persistence/db';
 import { getAllChats, type Chat } from '~/lib/persistence/chats';
 import { DataVisualization } from './DataVisualization';
 import { classNames } from '~/utils/classNames';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 
 // Create a custom hook to connect to the amplifyHistory database
 function useAmplifyHistoryDB() {

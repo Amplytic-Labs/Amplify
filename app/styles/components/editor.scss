@@ -6,7 +6,10 @@
 
   --cm-gutter-backgroundColor: var(--amplify-elements-editor-gutter-backgroundColor, var(--cm-backgroundColor));
   --cm-gutter-textColor: var(--amplify-elements-editor-gutter-textColor, var(--amplify-elements-textSecondary));
-  --cm-gutter-activeLineTextColor: var(--amplify-elements-editor-gutter-activeLineTextColor, var(--cm-gutter-textColor));
+  --cm-gutter-activeLineTextColor: var(
+    --amplify-elements-editor-gutter-activeLineTextColor,
+    var(--cm-gutter-textColor)
+  );
 
   /* Fold Gutter */
 
@@ -41,7 +44,10 @@
 
   --cm-search-backgroundColor: var(--amplify-elements-editor-search-backgroundColor, var(--cm-backgroundColor));
   --cm-search-textColor: var(--amplify-elements-editor-search-textColor, var(--amplify-elements-textSecondary));
-  --cm-search-closeButton-backgroundColor: var(--amplify-elements-editor-search-closeButton-backgroundColor, transparent);
+  --cm-search-closeButton-backgroundColor: var(
+    --amplify-elements-editor-search-closeButton-backgroundColor,
+    transparent
+  );
 
   --cm-search-closeButton-backgroundColorHover: var(
     --amplify-elements-editor-search-closeButton-backgroundColorHover,
@@ -68,7 +74,10 @@
     var(--amplify-elements-item-backgroundActive)
   );
 
-  --cm-search-button-textColor: var(--amplify-elements-editor-search-button-textColor, var(--amplify-elements-textSecondary));
+  --cm-search-button-textColor: var(
+    --amplify-elements-editor-search-button-textColor,
+    var(--amplify-elements-textSecondary)
+  );
 
   --cm-search-button-textColorHover: var(
     --amplify-elements-editor-search-button-textColorHover,
@@ -84,8 +93,14 @@
   );
 
   --cm-search-input-backgroundColor: var(--amplify-elements-editor-search-input-backgroundColor, transparent);
-  --cm-search-input-textColor: var(--amplify-elements-editor-search-input-textColor, var(--amplify-elements-textPrimary));
-  --cm-search-input-borderColor: var(--amplify-elements-editor-search-input-borderColor, var(--amplify-elements-borderColor));
+  --cm-search-input-textColor: var(
+    --amplify-elements-editor-search-input-textColor,
+    var(--amplify-elements-textPrimary)
+  );
+  --cm-search-input-borderColor: var(
+    --amplify-elements-editor-search-input-borderColor,
+    var(--amplify-elements-borderColor)
+  );
 
   --cm-search-input-borderColorFocused: var(
     --amplify-elements-editor-search-input-borderColorFocused,

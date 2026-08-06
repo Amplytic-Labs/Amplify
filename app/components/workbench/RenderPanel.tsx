@@ -48,6 +48,7 @@ export const RenderPanel = memo(() => {
     }
 
     const query = searchQuery.toLowerCase();
+
     return renderableFiles.filter((fp) => fp.toLowerCase().includes(query));
   }, [renderableFiles, searchQuery]);
 

@@ -15,7 +15,8 @@ import fileSaver from 'file-saver';
 import { Octokit, type RestEndpointMethodTypes } from '@octokit/rest';
 import { path } from '~/utils/path';
 import { extractRelativePath } from '~/utils/diff';
-import { description } from '~/lib/persistence';
+import { description, db } from '~/lib/persistence';
+import { saveProjectFiles } from '~/lib/persistence/project-files';
 import Cookies from 'js-cookie';
 import { createSampler } from '~/utils/sampler';
 import type { ActionAlert, DeployAlert, SupabaseAlert } from '~/types/actions';
@@ -36,7 +37,7 @@ export type ArtifactUpdateState = Pick<ArtifactState, 'title' | 'closed'>;
 
 type Artifacts = MapStore<Record<string, ArtifactState>>;
 
-export type WorkbenchViewType = 'code' | 'diff' | 'preview' | 'render';
+export type WorkbenchViewType = 'code' | 'diff' | 'preview' | 'render' | 'document';
 
 export class WorkbenchStore {
   #previewsStore = new PreviewsStore(webcontainer);
@@ -80,8 +81,7 @@ export class WorkbenchStore {
    * has already been run in this session. Prevents re-running `npm install`
    * + `npm run dev` on every chat switch inside the same project.
    */
-  projectAutoStarted: WritableAtom<boolean> =
-    import.meta.hot?.data.projectAutoStarted ?? atom<boolean>(false);
+  projectAutoStarted: WritableAtom<boolean> = import.meta.hot?.data.projectAutoStarted ?? atom<boolean>(false);
 
   modifiedFiles = new Set<string>();
   artifactIdList: string[] = [];
@@ -146,6 +146,15 @@ export class WorkbenchStore {
   get amplifyTerminal() {
     return this.#terminalStore.amplifyTerminal;
   }
+
+  /*
+   * Dedicated shell for project initialization (npm install + start).
+   * Separate from amplifyTerminal (which AI actions use) so the dev server
+   * isn't killed when the AI runs a shell command.
+   */
+  get initTerminal() {
+    return this.#terminalStore.initTerminal;
+  }
   get alert() {
     return this.actionAlert;
   }
@@ -179,6 +188,9 @@ export class WorkbenchStore {
   attachAmplifyTerminal(terminal: ITerminal) {
     this.#terminalStore.attachAmplifyTerminal(terminal);
   }
+  attachInitTerminal(terminal: ITerminal) {
+    this.#terminalStore.attachInitTerminal(terminal);
+  }
 
   detachTerminal(terminal: ITerminal) {
     this.#terminalStore.detachTerminal(terminal);
@@ -189,6 +201,38 @@ export class WorkbenchStore {
   }
 
   setDocuments(files: FileMap) {
+    const previousFiles = this.#filesStore.files.get();
+    const previousFileKeys = new Set(Object.keys(previousFiles).filter((k) => previousFiles[k]?.type === 'file'));
+    const newFileKeys = new Set(Object.keys(files).filter((k) => files[k]?.type === 'file'));
+
+    /*
+     * Detect whether the file set has completely changed (e.g. a different
+     * project was loaded). If the overlap between old and new file paths
+     * is less than 50 %, we treat it as a new project and reset the
+     * selected file so the auto-select logic picks a file from the new set.
+     */
+    let filesCompletelyChanged = false;
+
+    if (previousFileKeys.size > 0 && newFileKeys.size > 0) {
+      let overlap = 0;
+
+      for (const key of newFileKeys) {
+        if (previousFileKeys.has(key)) {
+          overlap++;
+        }
+      }
+
+      filesCompletelyChanged = overlap / Math.min(previousFileKeys.size, newFileKeys.size) < 0.5;
+    } else if (previousFileKeys.size > 0 && newFileKeys.size === 0) {
+      // All files removed — definitely a reset
+      filesCompletelyChanged = true;
+    }
+
+    if (filesCompletelyChanged) {
+      // Clear stale selectedFile so that auto-select picks a file from the new set
+      this.setSelectedFile(undefined);
+    }
+
     this.#editorStore.setDocuments(files);
 
     if (this.#filesStore.filesCount > 0 && this.currentDocument.get() === undefined) {
@@ -200,6 +244,156 @@ export class WorkbenchStore {
         }
       }
     }
+  }
+
+  /**
+   * DESTROY the current workspace and reinitialize for a new chat load.
+   *
+   * This is called on EVERY chat switch to ensure terminal processes from
+   * the previous chat don't leak into the new one. It:
+   *   1. Kills any running processes on the init terminal (dev server).
+   *   2. Kills any running processes on the AI terminal.
+   *   3. Clears the WebContainer filesystem (removes all files/dirs in the
+   *      workdir so orphan files from a previous project don't persist).
+   *   4. Resets the in-memory file store, editor, and artifacts.
+   *   5. Resets `projectAutoStarted` so `runProjectAutoSetup` will fire.
+   *
+   * After this, the caller restores the new project's files via
+   * `restoreFileMap` and triggers `runProjectAutoSetup`.
+   */
+  async clearWorkspace() {
+    /*
+     * Step 1+2: Kill running processes on both terminals.
+     * The init terminal likely has a detached dev server running — Ctrl+C
+     * kills it so the port is freed for the new project.
+     */
+    try {
+      this.initTerminal.killRunningProcesses();
+    } catch {
+      /* ignore — shell may not be initialized yet */
+    }
+
+    try {
+      this.amplifyTerminal.killRunningProcesses();
+    } catch {
+      /* ignore */
+    }
+
+    /*
+     * Step 3: Clear the WebContainer filesystem. Remove all entries in the
+     * workdir so files from the previous project don't leak into the new one.
+     */
+    try {
+      const container = await webcontainer;
+      const entries = await container.fs.readdir(container.workdir);
+
+      for (const entry of entries) {
+        try {
+          await container.fs.rm(`${container.workdir}/${entry}`, { recursive: true });
+        } catch {
+          /* ignore individual rm errors */
+        }
+      }
+    } catch (e) {
+      console.warn('[WorkbenchStore] Failed to clear WebContainer FS:', e);
+    }
+
+    /*
+     * Step 4: Reset in-memory state.
+     */
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.modifiedFiles.clear();
+    this.setSelectedFile(undefined);
+    this.#editorStore.setDocuments({});
+    this.#filesStore.files.set({});
+    this.#filesStore.resetFileModifications();
+
+    /*
+     * Step 5: Reset project state so the new project's auto-setup runs.
+     */
+    this.loadedProjectId.set('<none>');
+    this.projectAutoStarted.set(false);
+  }
+
+  /**
+   * Reset all chat-scoped workbench state so that stale data from a
+   * previous chat doesn't bleed into a new one. Called by
+   * `useChatHistory` when navigating to the home page (new chat)
+   * or when switching between unrelated chats.
+   */
+  resetForNewChat() {
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.showWorkbench.set(false);
+    this.loadedProjectId.set('<none>');
+    this.projectAutoStarted.set(false);
+    this.modifiedFiles.clear();
+
+    // Clear editor state so a new file is auto-selected when files arrive
+    this.setSelectedFile(undefined);
+    this.#editorStore.setDocuments({});
+
+    /*
+     * CRITICAL (Bug 2 root cause): clear the files atom.
+     *
+     * Without this, stale files from the previous project chat remain in
+     * the `files` store and:
+     *   1. are sent to `/api/chat` in the request body, so the server
+     *      believes an existing project is loaded (workspaceHasProject()
+     *      returns true) and withholds inject_template + injects the
+     *      workspace_guardrails prompt;
+     *   2. are persisted as the NEW chat's snapshot via takeSnapshot(),
+     *      which permanently "copies" the old chat's workspace into the
+     *      new chat — exactly the "new chat becomes the old chat" bug.
+     *
+     * Also reset per-file modification tracking in the FilesStore so edit
+     * state from the previous chat doesn't leak.
+     */
+    this.#filesStore.files.set({});
+    this.#filesStore.resetFileModifications();
+  }
+
+  /**
+   * Reset only the conversation-scoped state (artifacts, file history,
+   * unsaved files, editor selection) WITHOUT touching project-related
+   * atoms (showWorkbench, loadedProjectId, projectAutoStarted).
+   *
+   * Used when switching between chats inside the same project — the
+   * workspace stays open, but the chat overlay resets.
+   */
+  resetChatState() {
+    this.artifacts.set({});
+    this.artifactIdList = [];
+    this.fileHistory.set({});
+    this.unsavedFiles.set(new Set<string>());
+    this.currentView.set('code');
+    this.modifiedFiles.clear();
+
+    // Reset selected file so the new chat auto-selects a file
+    this.setSelectedFile(undefined);
+
+    /*
+     * Re-sync editor documents from the CURRENT file map instead of
+     * clearing to {}. In the same-project "new chat" fast path the files
+     * atom is intentionally preserved (so the workspace stays open), but
+     * the Workbench's `useEffect[files]` only re-fires when the `files`
+     * reference changes. Clearing documents to {} here would leave the
+     * editor pane blank because the effect wouldn't re-populate it.
+     *
+     * By re-setting documents from the live file map we guarantee the
+     * editor reflects the current workspace even when the files reference
+     * is unchanged. setDocuments() also auto-selects the first file when
+     * no file is currently selected (which we just cleared above).
+     */
+    const currentFiles = this.#filesStore.files.get();
+    this.#editorStore.setDocuments({ ...currentFiles });
   }
 
   setShowWorkbench(show: boolean) {
@@ -270,6 +464,17 @@ export class WorkbenchStore {
      */
 
     await this.#filesStore.saveFile(filePath, document.value);
+
+    /*
+     * If a project is loaded, persist this file change to the project's global FileMap.
+     * This ensures that "New Chat" in the same project starts with the latest files.
+     */
+    const projectId = this.loadedProjectId.get();
+
+    if (projectId && projectId !== '<none>' && db) {
+      const files = this.files.get();
+      await saveProjectFiles(db, projectId, files);
+    }
 
     const newUnsavedFiles = new Set(this.unsavedFiles.get());
     newUnsavedFiles.delete(filePath);
@@ -436,7 +641,7 @@ export class WorkbenchStore {
       | { op: 'replace'; filePath: string; oldString: string; newString: string }
       | { op: 'multi_replace'; filePath: string; edits: Array<{ oldString: string; newString: string }> },
   ): Promise<string> {
-    const fullPath = op.filePath.startsWith('/home/') ? op.filePath : `${WORK_DIR}/${op.filePath}`;
+    const fullPath = op.filePath.startsWith(WORK_DIR) ? op.filePath : `${WORK_DIR}/${op.filePath}`;
 
     try {
       if (op.op === 'create') {
@@ -566,6 +771,98 @@ export class WorkbenchStore {
     }
   }
 
+  /**
+   * Rename a file or folder
+   * @param oldPath Current path of the file/folder
+   * @param newPath New path for the file/folder
+   * @returns true if successful, false otherwise
+   */
+  async renameFile(oldPath: string, newPath: string): Promise<boolean> {
+    try {
+      const files = this.files.get();
+      const entry = files[oldPath];
+
+      if (!entry) {
+        console.error('File/folder not found:', oldPath);
+        return false;
+      }
+
+      const isFolder = entry.type === 'folder';
+      const currentDocument = this.currentDocument.get();
+      const isCurrentFile = currentDocument?.filePath === oldPath;
+
+      if (isFolder) {
+        // For folders, we need to move all contents
+        const success = await this.#filesStore.renameFolder(oldPath, newPath);
+
+        if (success) {
+          // Update unsaved files list
+          const unsavedFiles = this.unsavedFiles.get();
+          const newUnsavedFiles = new Set<string>();
+
+          for (const file of unsavedFiles) {
+            if (file.startsWith(oldPath + '/')) {
+              // Update path for files inside the renamed folder
+              const relativePath = file.slice(oldPath.length + 1);
+              newUnsavedFiles.add(newPath + '/' + relativePath);
+            } else if (file !== oldPath) {
+              newUnsavedFiles.add(file);
+            }
+          }
+
+          this.unsavedFiles.set(newUnsavedFiles);
+
+          // Update current document if it was inside the renamed folder
+          if (currentDocument?.filePath?.startsWith(oldPath + '/')) {
+            const relativePath = currentDocument.filePath.slice(oldPath.length + 1);
+            this.setSelectedFile(newPath + '/' + relativePath);
+          }
+        }
+
+        return success;
+      } else {
+        // For files, read content, create new file, delete old
+        const content = await this.#filesStore.readFile(oldPath);
+
+        if (content === undefined) {
+          console.error('Could not read file:', oldPath);
+          return false;
+        }
+
+        // Create new file with the content
+        const createSuccess = await this.#filesStore.createFile(newPath, content);
+
+        if (!createSuccess) {
+          return false;
+        }
+
+        // Delete old file
+        const deleteSuccess = await this.#filesStore.deleteFile(oldPath);
+
+        if (deleteSuccess) {
+          // Update unsaved files tracking
+          const newUnsavedFiles = new Set(this.unsavedFiles.get());
+
+          if (newUnsavedFiles.has(oldPath)) {
+            newUnsavedFiles.delete(oldPath);
+            newUnsavedFiles.add(newPath);
+            this.unsavedFiles.set(newUnsavedFiles);
+          }
+
+          // Update selected file if this was the active file
+          if (isCurrentFile) {
+            this.setSelectedFile(newPath);
+          }
+        }
+
+        return deleteSuccess;
+      }
+    } catch (error) {
+      console.error('Failed to rename file/folder:', error);
+      throw error;
+    }
+  }
+
   abortAllActions() {
     // TODO: what do we wanna do and how do we wanna recover from this?
   }
@@ -667,6 +964,45 @@ export class WorkbenchStore {
     const action = artifact.runner.actions.get()[data.actionId];
 
     if (!action || action.executed) {
+      return;
+    }
+
+    /*
+     * ── Replay suppression for loaded (historical) chats ──────────────
+     *
+     * When an old chat is opened, its messages are re-parsed by the message
+     * parser, which re-fires `onActionOpen` / `onActionClose` /
+     * `onActionStream` for every action stored in the chat history. Those
+     * callbacks route back here into `_runAction`, which — without this
+     * guard — would RE-EXECUTE every file write, shell command, and start
+     * command against the live WebContainer.
+     *
+     * That replay is destructive:
+     *  • File writes overwrite any manual modifications the user made since
+     *    the chat was last active (the AI's stale version clobbers the
+     *    user's current version, "breaking the project again and again").
+     *  • Shell actions re-run `npm install` (slow, wastes bandwidth).
+     *  • Start actions kill and relaunch the dev server.
+     *
+     * The project files have ALREADY been restored into the WebContainer
+     * from IndexedDB (the latest committed version) via `restoreFileMap()`
+     * in `useChatHistory` — or, for non-project chats, via
+     * `restoreSnapshot()`. So replaying the action stream is both
+     * redundant AND destructive.
+     *
+     * `Chat.client.tsx` calls `workbenchStore.setReloadedMessages(
+     * initialMessages.map((m) => m.id))` before parsing begins, so every
+     * message that came from IndexedDB is in `#reloadedMessages`. For
+     * those messages we register the action in the UI (already done by
+     * `addAction` above) but mark it complete WITHOUT executing it — the
+     * message still renders correctly (action chip shows "done", no stuck
+     * spinner) and the workspace is left untouched.
+     *
+     * Brand-new messages (the user just sent one) are NOT in the set, so
+     * they execute normally.
+     */
+    if (this.#reloadedMessages.has(data.messageId)) {
+      artifact.runner.markActionAsReplayed(data.actionId);
       return;
     }
 

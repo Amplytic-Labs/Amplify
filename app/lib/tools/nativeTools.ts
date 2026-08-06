@@ -258,6 +258,31 @@ export function parseFileMutationSignal(value: string): FileMutationSignal | nul
  *
  * The execute function reads `files` from the second argument (the tool-call
  * context). The MCP service is responsible for passing `files` through.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * ERROR-REPORTING CONVENTION (READ THIS BEFORE ADDING A TOOL)
+ * ──────────────────────────────────────────────────────────────────────────
+ * Tool execute() functions return a STRING (the AI SDK feeds it back to the
+ * model and the UI displays it). To classify results as success vs. error
+ * WITHOUT hardcoding every error message, the UI (`classifyResult` in
+ * ToolProgress.tsx and `isError` in ToolInvocationItem.tsx) uses ONE rule:
+ *
+ *   A result is an error IFF its string starts with `Error:`.
+ *
+ * Implications for tool authors:
+ *   1. GENUINE failures (bad input, file missing, network error, parse
+ *      failure, conflict, etc.) MUST be returned as `Error: <description>`.
+ *      The UI will render a red ✗ icon next to it.
+ *   2. "No results" cases (empty dir, zero grep matches, zero web hits, no
+ *      workspace loaded, etc.) are NOT errors — they are successes with
+ *      empty data. Return a plain message like `No matches for pattern: X`
+ *      or `No workspace is currently open. ...`. The UI shows a green ✓.
+ *   3. Hint / guidance messages (e.g. "Use list_dir with '.' to see the
+ *      workspace root.") are also successes — they tell the model how to
+ *      proceed, not that something broke.
+ *
+ * Following this convention means new tools automatically get correct UI
+ * classification without touching the classifier.
  */
 export function buildNativeTools(): Record<string, any> {
   return {
@@ -279,11 +304,11 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, filePath);
 
         if (!file) {
-          return `File not found: ${filePath}. Use list_dir to inspect the workspace first.`;
+          return `Error: File not found: ${filePath}. Use list_dir to inspect the workspace first.`;
         }
 
         if (file.isBinary) {
-          return `File is binary and cannot be displayed as text: ${filePath}`;
+          return `Error: File is binary and cannot be displayed as text: ${filePath}`;
         }
 
         const lines = file.content.split('\n');
@@ -307,10 +332,38 @@ export function buildNativeTools(): Record<string, any> {
         path: z.string().describe('Absolute or workspace-relative path of the directory to list'),
       }),
       execute: async ({ path }: { path: string }, ctx: NativeToolContext = {}) => {
-        const entries = listEntriesInDir(ctx.files, path);
+        const rel = normalizePath(path);
+        const entries = listEntriesInDir(ctx.files, rel);
 
         if (entries.length === 0) {
-          return `Directory is empty or does not exist: ${path}`;
+          /*
+           * Distinguish "no workspace loaded" (not an error — just nothing to list) from
+           * "directory does not exist in the workspace" (real error — bad path).
+           *
+           * Per the file-level convention: only `Error:`-prefixed strings are errors.
+           * No-workspace and empty-dir are successes-with-empty-data.
+           */
+          if (!ctx.files || Object.keys(ctx.files).length === 0) {
+            return `No workspace is currently open. Open a workspace to list its contents.`;
+          }
+
+          const prefix = rel === '' ? '' : `${rel}/`;
+          const dirExists = Object.keys(ctx.files).some((key) => {
+            let relKey = key;
+
+            if (relKey.startsWith(WORK_DIR + '/')) {
+              relKey = relKey.slice(WORK_DIR.length + 1);
+            }
+
+            return relKey.startsWith(prefix) && relKey !== prefix;
+          });
+
+          if (!dirExists) {
+            return `Error: Directory not found: ${path}. Use list_dir with "." to see the workspace root.`;
+          }
+
+          // The directory exists but genuinely has no entries — that's a successful empty result.
+          return `Directory is empty: ${normalizePath(path)}`;
         }
 
         const lines = entries.map((e) => `${e.type === 'folder' ? '[dir] ' : '      '}${e.name}`);
@@ -395,7 +448,7 @@ export function buildNativeTools(): Record<string, any> {
             ? new RegExp(pattern, caseSensitive ? '' : 'i')
             : new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? '' : 'i');
         } catch (e: any) {
-          return `Invalid pattern: ${e.message}`;
+          return `Error: Invalid pattern: ${e.message}`;
         }
 
         const globRe = includePattern ? globToRegex(includePattern) : null;
@@ -448,41 +501,306 @@ export function buildNativeTools(): Record<string, any> {
     web_search: {
       description:
         'Search the web for current information. Returns a list of results with title, url, and snippet. ' +
-        'Use this when the user asks about recent events, library docs, or anything outside the workspace.',
+        'Use this when the user asks about recent events, library docs, product versions, changelogs, ' +
+        'or anything outside the workspace. Results include URLs you can pass to fetch_webpage to read ' +
+        'the full content of a specific page.',
       parameters: z.object({
         query: z.string().describe('The search query'),
         maxResults: z.number().optional().default(5).describe('Maximum number of results to return (default 5)'),
       }),
       execute: async ({ query, maxResults }: { query: string; maxResults?: number }, ctx: NativeToolContext = {}) => {
+        /*
+         * ─── Fallback chain ─────────────────────────────────────────────────
+         * Sources are tried in order. We STOP at the first source that returns
+         * actual results — sources after it are NEVER contacted. We only fall
+         * through to the next source when the current one returns ZERO results
+         * or fails outright (network/HTTP error, anti-bot challenge, non-JSON
+         * response, etc.).
+         *
+         *   1. DuckDuckGo HTML (PRIMARY)  — real web search across the open web.
+         *      Covers recent release notes, vendor docs, npm versions, blog posts,
+         *      changelogs, forum threads — everything Wikipedia misses. No API key,
+         *      reliable with a proper User-Agent.
+         *
+         *   2. Wikipedia search API (FALLBACK) — full-text search across English
+         *      Wikipedia. Good for encyclopedic topics (people, places, concepts).
+         *
+         *   3. DuckDuckGo Instant Answer (LAST RESORT) — entity-style queries
+         *      with a Wikipedia abstract. Rarely useful, kept as a safety net.
+         *
+         * `sawSuccessfulSource` distinguishes "search ran fine but found zero
+         * hits" (success, just empty) from "every source failed" (real error).
+         */
+        const fetchFn = ctx.fetch || fetch;
+        const limit = maxResults ?? 5;
+
+        type SearchResult = { title: string; url: string; snippet: string };
+        type SourceOutcome = { status: 'ok'; results: SearchResult[] } | { status: 'error'; error: string };
+
+        /*
+         * ─── Source 1: DuckDuckGo HTML search ─────────────────────────────
+         * Parses result__a (link) + result__snippet (snippet) from
+         * https://html.duckduckgo.com/html/. DDG wraps result URLs in a redirect
+         * (//duckduckgo.com/l/?uddg=ENCODED) so we unwrap to the real URL.
+         */
+        const searchDdgHtml = async (): Promise<SourceOutcome> => {
+          try {
+            const ddgHtmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+            const ddgResp = await fetchFn(ddgHtmlUrl, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+              },
+            });
+
+            if (!ddgResp.ok) {
+              return { status: 'error', error: `DuckDuckGo HTML returned ${ddgResp.status} ${ddgResp.statusText}` };
+            }
+
+            const html = await ddgResp.text();
+
+            /*
+             * Detect DDG's anti-bot challenge page. Treat as a failure so we
+             * fall through to the next source instead of silently swallowing it.
+             */
+            const isChallenge = html.includes('anomaly.js') || html.includes('challenge-form');
+
+            if (isChallenge) {
+              return { status: 'error', error: 'DuckDuckGo HTML returned an anti-bot challenge page' };
+            }
+
+            const linkRe = /<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+            const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+            const links = [...html.matchAll(linkRe)];
+            const snips = [...html.matchAll(snipRe)];
+
+            const results: SearchResult[] = [];
+
+            for (let i = 0; i < links.length && results.length < limit; i++) {
+              let url = links[i][1];
+              const uddgMatch = url.match(/uddg=([^&]+)/);
+
+              if (uddgMatch) {
+                try {
+                  url = decodeURIComponent(uddgMatch[1]);
+                } catch {
+                  // leave url as-is if decode fails
+                }
+              }
+
+              const title = links[i][2].replace(/<[^>]+>/g, '').trim();
+              const snippet = (snips[i]?.[1] || '').replace(/<[^>]+>/g, '').trim();
+
+              if (title && url) {
+                results.push({ title, url, snippet: snippet.slice(0, 300) });
+              }
+            }
+
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'DuckDuckGo HTML request failed' };
+          }
+        };
+
+        /*
+         * ─── Source 2: Wikipedia search API ───────────────────────────────
+         * Requires a descriptive User-Agent per Wikimedia policy (else 429).
+         */
+        const searchWikipedia = async (): Promise<SourceOutcome> => {
+          try {
+            const wikiUrl =
+              `https://en.wikipedia.org/w/api.php?action=query&list=search` +
+              `&srsearch=${encodeURIComponent(query)}&format=json&srlimit=${limit}&srprop=snippet`;
+            const wikiResp = await fetchFn(wikiUrl, {
+              headers: {
+                Accept: 'application/json',
+                'User-Agent': 'Amplify-WebSearch/1.0 (https://github.com/imtia33/Open_Claude)',
+              },
+            });
+
+            if (!wikiResp.ok) {
+              return { status: 'error', error: `Wikipedia API returned ${wikiResp.status} ${wikiResp.statusText}` };
+            }
+
+            // Guard against non-JSON responses (Wikimedia's HTML error page on rate-limit).
+            const contentType = wikiResp.headers.get('content-type') || '';
+
+            if (!contentType.includes('application/json')) {
+              return {
+                status: 'error',
+                error: `Wikipedia API returned non-JSON response (content-type: ${contentType || 'unknown'})`,
+              };
+            }
+
+            const wikiData: any = await wikiResp.json();
+            const results: SearchResult[] = (wikiData?.query?.search || []).map((item: any) => {
+              const snippet = String(item.snippet || '').replace(/<[^>]+>/g, '');
+              const title = String(item.title || '');
+              const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+
+              return { title, url, snippet };
+            });
+
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'Wikipedia search request failed' };
+          }
+        };
+
+        /*
+         * ─── Source 3: DuckDuckGo Instant Answer API ─────────────────────
+         * Only returns results for entity-style queries with a Wikipedia abstract.
+         */
+        const searchDdgIa = async (): Promise<SourceOutcome> => {
+          try {
+            const ddgIaUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+            const ddgIaResp = await fetchFn(ddgIaUrl, { headers: { Accept: 'application/json' } });
+
+            if (!ddgIaResp.ok) {
+              return { status: 'error', error: `DuckDuckGo IA returned ${ddgIaResp.status} ${ddgIaResp.statusText}` };
+            }
+
+            const data: any = await ddgIaResp.json();
+            const results: SearchResult[] = [];
+
+            if (data.AbstractText) {
+              results.push({
+                title: data.AbstractSource || 'DuckDuckGo',
+                url: data.AbstractURL || '',
+                snippet: data.AbstractText,
+              });
+            }
+
+            if (Array.isArray(data.RelatedTopics)) {
+              for (const topic of data.RelatedTopics) {
+                if (results.length >= limit) {
+                  break;
+                }
+
+                if (topic.Text && topic.FirstURL) {
+                  results.push({
+                    title: topic.Text.split(' - ')[0] || 'Related',
+                    url: topic.FirstURL,
+                    snippet: topic.Text,
+                  });
+                }
+              }
+            }
+
+            return { status: 'ok', results };
+          } catch (err: any) {
+            return { status: 'error', error: err?.message || 'DuckDuckGo IA request failed' };
+          }
+        };
+
+        /*
+         * ─── Run the fallback chain ───────────────────────────────────────
+         * First source that returns ≥1 result wins. Sources after it are never
+         * contacted. We only advance when the current source returns 0 results
+         * OR fails outright.
+         */
+        const sources: Array<{ name: string; search: () => Promise<SourceOutcome> }> = [
+          { name: 'DuckDuckGo HTML', search: searchDdgHtml },
+          { name: 'Wikipedia', search: searchWikipedia },
+          { name: 'DuckDuckGo Instant Answer', search: searchDdgIa },
+        ];
+
+        let sawSuccessfulSource = false;
+        let lastError: string | null = null;
+
         try {
-          const fetchFn = ctx.fetch || fetch;
+          for (const source of sources) {
+            const outcome = await source.search();
+
+            // Failed → record error and fall through to the next source.
+            if (outcome.status === 'error') {
+              lastError = outcome.error;
+              continue;
+            }
+
+            // Source responded successfully (even if it found 0 results).
+            sawSuccessfulSource = true;
+
+            /*
+             * Got actual results → return immediately. Sources after this
+             * one are NEVER contacted.
+             */
+            if (outcome.results.length > 0) {
+              const lines = outcome.results
+                .slice(0, limit)
+                .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`);
+              return `Web search results for "${query}" (via ${source.name}):\n\n${lines.join('\n\n')}`;
+            }
+
+            // Source returned 0 results → fall through to next source.
+          }
+
+          // All sources exhausted.
+          if (sawSuccessfulSource) {
+            return `No web results found for: ${query}. The search completed successfully but returned zero hits.`;
+          }
+
+          return `Error: Web search failed: ${lastError || 'all search sources failed'}`;
+        } catch (e: any) {
+          logger.error('web_search failed', e);
+          return `Error: Web search failed: ${e.message}`;
+        }
+      },
+    },
+
+    /* --------------------------------------------------- fetch_webpage */
+    fetch_webpage: {
+      description:
+        'Fetch the content of a specific web page by URL. Use this AFTER web_search to read the full text of ' +
+        'a result page (e.g. a changelog entry, documentation page, blog post, or release notes). ' +
+        'Strips navigation/scripts/styles and returns clean title + main text content (max ~8000 chars). ' +
+        'The URL MUST come from a web_search result or be explicitly provided by the user.',
+      parameters: z.object({
+        url: z
+          .string()
+          .describe('Absolute https URL of the page to fetch (must come from web_search results or user input)'),
+      }),
+      execute: async ({ url }: { url: string }, ctx: NativeToolContext = {}) => {
+        const fetchFn = ctx.fetch || fetch;
+
+        try {
+          /*
+           * Reuse the server-side /api/web-search route (it has the HTML→text extraction logic).
+           * We hit it with the target URL and return the extracted title + content.
+           */
           const base = ctx.apiBaseUrl || '';
-          const resp = await fetchFn(`${base}/api/web-search?query=${encodeURIComponent(query)}`, {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
+          const resp = await fetchFn(`${base}/api/web-search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
           });
 
           if (!resp.ok) {
-            return `Web search failed: HTTP ${resp.status}`;
+            const errBody: any = await resp.json().catch(() => ({}));
+            return `Error: Fetch failed: ${errBody?.error || resp.status + ' ' + resp.statusText}`;
           }
 
           const data: any = await resp.json();
-          const results: any[] = Array.isArray(data?.results) ? data.results : [];
 
-          if (results.length === 0) {
-            return `No web results found for: ${query}`;
+          if (data?.error) {
+            return `Error: Fetch failed: ${data.error}`;
           }
 
-          const limited = results.slice(0, maxResults ?? 5);
-          const lines = limited.map(
-            (r, i) =>
-              `${i + 1}. ${r.title || '(no title)'}\n   ${r.url || r.link || ''}\n   ${(r.snippet || r.description || '').slice(0, 300)}`,
-          );
+          const page = data?.data || data;
+          const title = page?.title || '';
+          const content = page?.content || page?.text || '';
+          const sourceUrl = page?.sourceUrl || url;
 
-          return `Web search results for "${query}":\n\n${lines.join('\n\n')}`;
+          if (!content) {
+            return `Page returned no extractable content: ${sourceUrl}`;
+          }
+
+          return `Title: ${title}\nURL: ${sourceUrl}\n\n${content}`;
         } catch (e: any) {
-          logger.error('web_search failed', e);
-          return `Web search error: ${e.message}`;
+          logger.error('fetch_webpage failed', e);
+          return `Error: Fetch failed: ${e.message}`;
         }
       },
     },
@@ -508,21 +826,21 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, rel);
 
         if (!file) {
-          return `File not found: ${filePath}. Use list_dir or find_files to locate the file.`;
+          return `Error: File not found: ${filePath}. Use list_dir or find_files to locate the file.`;
         }
 
         if (file.isBinary) {
-          return `Cannot edit binary file: ${filePath}`;
+          return `Error: Cannot edit binary file: ${filePath}`;
         }
 
         const occurrences = file.content.split(oldString).length - 1;
 
         if (occurrences === 0) {
-          return `oldString not found in ${rel}. Make sure you copied the exact text including whitespace and indentation.`;
+          return `Error: oldString not found in ${rel}. Make sure you copied the exact text including whitespace and indentation.`;
         }
 
         if (occurrences > 1) {
-          return `oldString matched ${occurrences} times in ${rel}. Add more surrounding context so the match is unique.`;
+          return `Error: oldString matched ${occurrences} times in ${rel}. Add more surrounding context so the match is unique.`;
         }
 
         const signal: FileMutationSignal = {
@@ -560,11 +878,11 @@ export function buildNativeTools(): Record<string, any> {
         const file = getFileFromMap(ctx.files, rel);
 
         if (!file) {
-          return `File not found: ${filePath}.`;
+          return `Error: File not found: ${filePath}.`;
         }
 
         if (file.isBinary) {
-          return `Cannot edit binary file: ${filePath}.`;
+          return `Error: Cannot edit binary file: ${filePath}.`;
         }
 
         /*
@@ -575,11 +893,11 @@ export function buildNativeTools(): Record<string, any> {
           const occ = file.content.split(e.oldString).length - 1;
 
           if (occ === 0) {
-            return `Edit #${i + 1} failed: oldString not found in ${rel}.`;
+            return `Error: Edit #${i + 1} failed: oldString not found in ${rel}.`;
           }
 
           if (occ > 1) {
-            return `Edit #${i + 1} failed: oldString matched ${occ} times in ${rel}. Add more surrounding context.`;
+            return `Error: Edit #${i + 1} failed: oldString matched ${occ} times in ${rel}. Add more surrounding context.`;
           }
         }
 
@@ -606,7 +924,7 @@ export function buildNativeTools(): Record<string, any> {
         const existing = getFileFromMap(ctx.files, rel);
 
         if (existing) {
-          return `File already exists: ${rel}. Use replace_string_in_file to edit it, or delete it first.`;
+          return `Error: File already exists: ${rel}. Use replace_string_in_file to edit it, or delete it first.`;
         }
 
         const signal: FileMutationSignal = {
@@ -630,6 +948,7 @@ export const NATIVE_TOOL_NAMES = [
   'find_files',
   'grep_search',
   'web_search',
+  'fetch_webpage',
   'replace_string_in_file',
   'multi_replace_string_in_file',
   'create_file',
@@ -653,6 +972,7 @@ export const READ_ONLY_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   'find_files',
   'grep_search',
   'web_search',
+  'fetch_webpage',
 ]);
 
 /**

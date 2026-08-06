@@ -1,16 +1,48 @@
 import ignore from 'ignore';
 import { useGit } from '~/lib/hooks/useGit';
-import type { Message } from 'ai';
-import { detectProjectCommands, createCommandsMessage, escapeAmplifyTags } from '~/utils/projectCommands';
-import { generateId } from '~/utils/fileUtils';
+import { detectProjectCommands } from '~/utils/projectCommands';
 import { useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
 
 import { classNames } from '~/utils/classNames';
 import { Button } from '~/components/ui/Button';
 import type { IChatMetadata } from '~/lib/persistence/db';
 import { X, Github, GitBranch } from 'lucide-react';
+import type { FileMap } from '~/lib/stores/files';
+import { WORK_DIR, chatNameForRepo } from '~/utils/constants';
+
+/*
+ * Build a FileMap (keyed by full WORK_DIR paths, matching how the
+ * `workbenchStore.files` store and the file watcher key entries) from a list
+ * of `{ path, content }` records whose `path` is relative to the workdir.
+ * Also synthesizes `folder` entries for every parent directory.
+ */
+function buildFileMapFromContents(files: Array<{ path: string; content: string }>): FileMap {
+  const fileMap: FileMap = {};
+
+  for (const file of files) {
+    const fullPath = `${WORK_DIR}/${file.path}`;
+    fileMap[fullPath] = {
+      type: 'file',
+      content: file.content,
+      isBinary: false,
+    };
+
+    const parts = file.path.split('/');
+    let current = WORK_DIR;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current = `${current}/${parts[i]}`;
+
+      if (!fileMap[current]) {
+        fileMap[current] = { type: 'folder' };
+      }
+    }
+  }
+
+  return fileMap;
+}
 
 // Import the new repository selector components
 import { GitHubRepositorySelector } from '~/components/@settings/tabs/github/components/GitHubRepositorySelector';
@@ -44,7 +76,12 @@ const MAX_TOTAL_SIZE = 500 * 1024; // 500KB total limit
 
 interface GitCloneButtonProps {
   className?: string;
-  importChat?: (description: string, messages: Message[], metadata?: IChatMetadata) => Promise<void>;
+  importChat?: (
+    description: string,
+    messages: Message[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
 }
 
 export default function GitCloneButton({ importChat, className }: GitCloneButtonProps) {
@@ -63,7 +100,7 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
     setSelectedProvider(null);
 
     try {
-      const { workdir, data } = await gitClone(repoUrl);
+      const { data } = await gitClone(repoUrl);
 
       if (importChat) {
         const filePaths = Object.keys(data).filter((filePath) => !ig.ignores(filePath));
@@ -118,39 +155,35 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
         }
 
         const commands = await detectProjectCommands(fileContents);
-        const commandsMessage = createCommandsMessage(commands);
 
-        const filesMessage: Message = {
-          role: 'assistant',
-          content: `Cloning the repo ${repoUrl} into ${workdir}
-${
-  skippedFiles.length > 0
-    ? `\nSkipped files (${skippedFiles.length}):
-${skippedFiles.map((f) => `- ${f}`).join('\n')}`
-    : ''
-}
+        /*
+         * SILENT FILE LOADING: Do NOT create chat messages for system-initiated
+         * file loading. Previously this built a `filesMessage` (with
+         * "Cloning the repo..." text + a bundled artifact that rendered as
+         * "Created N files") and a `commandsMessage` (with "Found 'start'
+         * script..." text). Those messages cluttered the chat and confused
+         * users into thinking the AI created the files.
+         *
+         * Now we pass an EMPTY messages array. The files are persisted to
+         * IndexedDB via `initialFileMap` (importChat calls createProjectCommit
+         * + detectProjectCommands + setProjectCommands). After the page
+         * reload, `restoreFileMap` writes files to the WebContainer from
+         * IndexedDB, and `runProjectAutoSetup` silently runs npm install +
+         * start. The chat starts clean — no file-loading messages.
+         *
+         * The `commands` variable is still computed here for potential future
+         * use but is NOT embedded in any message. importChat detects commands
+         * independently from the FileMap.
+         */
+        void commands; // detected inside importChat via initialFileMap
 
-<amplifyArtifact id="imported-files" title="Git Cloned Files" type="bundled">
-${fileContents
-  .map(
-    (file) =>
-      `<amplifyAction type="file" filePath="${file.path}">
-${escapeAmplifyTags(file.content)}
-</amplifyAction>`,
-  )
-  .join('\n')}
-</amplifyArtifact>`,
-          id: generateId(),
-          createdAt: new Date(),
-        };
-
-        const messages = [filesMessage];
-
-        if (commandsMessage) {
-          messages.push(commandsMessage);
+        if (skippedFiles.length > 0) {
+          console.log(`[GitClone] Skipped ${skippedFiles.length} files:`, skippedFiles);
         }
 
-        await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages);
+        const initialFileMap = buildFileMapFromContents(fileContents);
+
+        await importChat(chatNameForRepo(repoUrl), [], undefined, initialFileMap);
       }
     } catch (error) {
       console.error('Error during import:', error);

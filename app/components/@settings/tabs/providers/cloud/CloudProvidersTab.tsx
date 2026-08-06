@@ -6,9 +6,9 @@ import type { IProviderConfig } from '~/types/model';
 import { logStore } from '~/lib/stores/logs';
 import { motion } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { providerBaseUrlEnvKeys } from '~/utils/constants';
-import { SiAmazon, SiGoogle, SiGithub, SiHuggingface, SiPerplexity, SiOpenai } from 'react-icons/si';
+import { SiGoogle, SiGithub, SiHuggingface, SiPerplexity, SiOpenai } from 'react-icons/si';
 import { BsRobot, BsCloud } from 'react-icons/bs';
 import { TbBrain, TbCloudComputing } from 'react-icons/tb';
 import { BiCodeBlock, BiChip } from 'react-icons/bi';
@@ -35,7 +35,7 @@ type ProviderName =
 
 // Update the PROVIDER_ICONS type to use the ProviderName type
 const PROVIDER_ICONS: Record<ProviderName, IconType> = {
-  AmazonBedrock: SiAmazon,
+  AmazonBedrock: BsCloud,
   Anthropic: FaBrain,
   Cohere: BiChip,
   Deepseek: BiCodeBlock,
@@ -147,14 +147,16 @@ const CloudProvidersTab = () => {
               className={classNames(
                 'w-8 h-8 flex items-center justify-center rounded-lg',
                 'bg-amplify-elements-background-depth-3',
-                'text-purple-500',
+                'text-blue-500',
               )}
             >
               <TbCloudComputing className="w-5 h-5" />
             </div>
             <div>
               <h4 className="text-md font-medium text-amplify-elements-textPrimary">Cloud Providers</h4>
-              <p className="text-sm text-amplify-elements-textSecondary">Connect to cloud-based AI models and services</p>
+              <p className="text-sm text-amplify-elements-textSecondary">
+                Connect to cloud-based AI models and services
+              </p>
             </div>
           </div>
 
@@ -184,7 +186,7 @@ const CloudProvidersTab = () => {
               <div className="absolute top-0 right-0 p-2 flex gap-1">
                 {URL_CONFIGURABLE_PROVIDERS.includes(provider.name) && (
                   <motion.span
-                    className="px-2 py-0.5 text-xs rounded-full bg-purple-500/10 text-purple-500 font-medium"
+                    className="px-2 py-0.5 text-xs rounded-full bg-blue-500/10 text-blue-500 font-medium"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
@@ -199,7 +201,7 @@ const CloudProvidersTab = () => {
                     'w-10 h-10 flex items-center justify-center rounded-xl',
                     'bg-amplify-elements-background-depth-3 group-hover:bg-amplify-elements-background-depth-4',
                     'transition-all duration-200',
-                    provider.settings.enabled ? 'text-purple-500' : 'text-amplify-elements-textSecondary',
+                    provider.settings.enabled ? 'text-blue-500' : 'text-amplify-elements-textSecondary',
                   )}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
@@ -215,7 +217,7 @@ const CloudProvidersTab = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-4 mb-2">
                     <div>
-                      <h4 className="text-sm font-medium text-amplify-elements-textPrimary group-hover:text-purple-500 transition-colors">
+                      <h4 className="text-sm font-medium text-amplify-elements-textPrimary group-hover:text-blue-500 transition-colors">
                         {provider.name}
                       </h4>
                       <p className="text-xs text-amplify-elements-textSecondary mt-0.5">
@@ -248,7 +250,7 @@ const CloudProvidersTab = () => {
                               'flex-1 px-3 py-1.5 rounded-lg text-sm',
                               'bg-amplify-elements-background-depth-3 border border-amplify-elements-borderColor',
                               'text-amplify-elements-textPrimary placeholder-amplify-elements-textTertiary',
-                              'focus:outline-none focus:ring-2 focus:ring-purple-500/30',
+                              'focus:outline-none focus:ring-2 focus:ring-blue-500/30',
                               'transition-all duration-200',
                             )}
                             onKeyDown={(e) => {
@@ -268,7 +270,7 @@ const CloudProvidersTab = () => {
                           >
                             <div className="flex items-center gap-2 text-amplify-elements-textSecondary">
                               <div className="i-ph:link text-sm" />
-                              <span className="group-hover/url:text-purple-500 transition-colors">
+                              <span className="group-hover/url:text-blue-500 transition-colors">
                                 {provider.settings.baseUrl || 'Click to set base URL'}
                               </span>
                             </div>
@@ -290,7 +292,7 @@ const CloudProvidersTab = () => {
               </div>
 
               <motion.div
-                className="absolute inset-0 border-2 border-purple-500/0 rounded-lg pointer-events-none"
+                className="absolute inset-0 border-2 border-blue-500/0 rounded-lg pointer-events-none"
                 animate={{
                   borderColor: provider.settings.enabled ? 'rgba(168, 85, 247, 0.2)' : 'rgba(168, 85, 247, 0)',
                   scale: provider.settings.enabled ? 1 : 0.98,

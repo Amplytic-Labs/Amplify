@@ -67,21 +67,30 @@ interface CaptureResult {
 let _listenerInstalled = false;
 
 function installGlobalListener() {
-  if (_listenerInstalled || typeof window === 'undefined') return;
+  if (_listenerInstalled || typeof window === 'undefined') {
+    return;
+  }
+
   _listenerInstalled = true;
 
   window.addEventListener('message', (event: MessageEvent) => {
     const data = event.data;
 
-    if (!data || data.type !== 'AMPLIFY_SCREENSHOT_RESULT') return;
+    if (!data || data.type !== 'AMPLIFY_SCREENSHOT_RESULT') {
+      return;
+    }
 
     const requestId = data.requestId as string | undefined;
 
-    if (!requestId) return;
+    if (!requestId) {
+      return;
+    }
 
     const resolver = _pending.get(requestId);
 
-    if (!resolver) return;
+    if (!resolver) {
+      return;
+    }
 
     _pending.delete(requestId);
 
@@ -100,13 +109,20 @@ function installGlobalListener() {
  * renders an iframe whose `src` matches the current preview URL.
  */
 function findPreviewIframe(previewUrl: string): HTMLIFrameElement | null {
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
   const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('iframe[title="preview"]'));
 
-  if (iframes.length === 0) return null;
+  if (iframes.length === 0) {
+    return null;
+  }
 
-  // Prefer the iframe whose src matches the preview URL; fall back to the
-  // first preview iframe.
+  /*
+   * Prefer the iframe whose src matches the preview URL; fall back to the
+   * first preview iframe.
+   */
   return iframes.find((f) => f.src && (f.src === previewUrl || previewUrl.startsWith(f.src))) ?? iframes[0];
 }
 
@@ -118,10 +134,7 @@ function requestCapture(iframe: HTMLIFrameElement, timeoutMs = 6000): Promise<Ca
     _pending.set(requestId, resolve);
 
     try {
-      iframe.contentWindow?.postMessage(
-        { type: 'AMPLIFY_CAPTURE_SCREENSHOT', requestId },
-        '*',
-      );
+      iframe.contentWindow?.postMessage({ type: 'AMPLIFY_CAPTURE_SCREENSHOT', requestId }, '*');
     } catch (e) {
       _pending.delete(requestId);
       resolve({ ok: false, error: String(e) });
@@ -129,9 +142,11 @@ function requestCapture(iframe: HTMLIFrameElement, timeoutMs = 6000): Promise<Ca
       return;
     }
 
-    // Timeout — inspector script didn't reply (e.g. not loaded yet, or the
-    // app blocked postMessage). Resolve as failure so the caller can retry
-    // or fall back.
+    /*
+     * Timeout — inspector script didn't reply (e.g. not loaded yet, or the
+     * app blocked postMessage). Resolve as failure so the caller can retry
+     * or fall back.
+     */
     setTimeout(() => {
       if (_pending.has(requestId)) {
         _pending.delete(requestId);
@@ -236,9 +251,11 @@ async function captureForCurrentProject(): Promise<void> {
   const now = new Date().toISOString();
 
   try {
-    // setProjectScreenshot uses `put` — overwrites any previous screenshot
-    // for this projectId. This is the "delete old screenshots" behaviour:
-    // we never keep more than one per project.
+    /*
+     * setProjectScreenshot uses `put` — overwrites any previous screenshot
+     * for this projectId. This is the "delete old screenshots" behaviour:
+     * we never keep more than one per project.
+     */
     await setProjectScreenshot(db, {
       projectId,
       dataUrl,
@@ -254,7 +271,12 @@ async function captureForCurrentProject(): Promise<void> {
       screenshotFramework: framework,
     });
 
-    console.log('[screenshotCapture] captured for', projectId, `${width}x${height}`, dataUrl.startsWith('data:image/svg') ? '(synthetic)' : '(real)');
+    console.log(
+      '[screenshotCapture] captured for',
+      projectId,
+      `${width}x${height}`,
+      dataUrl.startsWith('data:image/svg') ? '(synthetic)' : '(real)',
+    );
   } catch (e) {
     console.warn('[screenshotCapture] failed to store:', e);
     _capturedThisSession.delete(projectId);
@@ -275,6 +297,7 @@ function generateSyntheticThumbnail(projectName: string, framework?: string): st
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
+
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
@@ -294,6 +317,7 @@ function generateSyntheticThumbnail(projectName: string, framework?: string): st
 
   // Subtle dot grid overlay.
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
+
   for (let x = 40; x < W; x += 40) {
     for (let y = 40; y < H; y += 40) {
       ctx.beginPath();
@@ -326,6 +350,7 @@ function generateSyntheticThumbnail(projectName: string, framework?: string): st
   // Project name.
   ctx.fillStyle = 'rgba(255,255,255,0.98)';
   ctx.font = 'bold 48px Inter, system-ui, sans-serif';
+
   const name = projectName.length > 32 ? projectName.slice(0, 32) + '…' : projectName;
   ctx.fillText(name, cx, cy + 170);
 
@@ -347,13 +372,33 @@ function gradientColorsFor(meta: { gradient: string }): [string, string] {
   // Map a few known gradient classes to concrete colors. Default = purple.
   const g = meta.gradient;
 
-  if (g.includes('sky') || g.includes('cyan')) return ['#0ea5e9', '#0369a1'];
-  if (g.includes('emerald') || g.includes('teal')) return ['#10b981', '#047857'];
-  if (g.includes('amber')) return ['#f59e0b', '#7c3aed'];
-  if (g.includes('orange')) return ['#f97316', '#db2777'];
-  if (g.includes('red') || g.includes('rose')) return ['#ef4444', '#9f1239'];
-  if (g.includes('zinc')) return ['#3f3f46', '#18181b'];
-  if (g.includes('blue')) return ['#3b82f6', '#1e40af'];
+  if (g.includes('sky') || g.includes('cyan')) {
+    return ['#0ea5e9', '#0369a1'];
+  }
+
+  if (g.includes('emerald') || g.includes('teal')) {
+    return ['#10b981', '#047857'];
+  }
+
+  if (g.includes('amber')) {
+    return ['#f59e0b', '#7c3aed'];
+  }
+
+  if (g.includes('orange')) {
+    return ['#f97316', '#db2777'];
+  }
+
+  if (g.includes('red') || g.includes('rose')) {
+    return ['#ef4444', '#9f1239'];
+  }
+
+  if (g.includes('zinc')) {
+    return ['#3f3f46', '#18181b'];
+  }
+
+  if (g.includes('blue')) {
+    return ['#3b82f6', '#1e40af'];
+  }
 
   return ['#a855f7', '#7c3aed']; // purple default
 }
@@ -384,9 +429,11 @@ export function useScreenshotCapture(): void {
       return;
     }
 
-    // Only capture when there's at least one ready preview (preview available).
-    // This is the "Preview is not available disappears" moment — works for any
-    // start command (npm start, npm run dev, npx expo start, custom, etc.).
+    /*
+     * Only capture when there's at least one ready preview (preview available).
+     * This is the "Preview is not available disappears" moment — works for any
+     * start command (npm start, npm run dev, npx expo start, custom, etc.).
+     */
     const hasReady = previews.some((p) => p.ready);
 
     if (!hasReady) {
@@ -406,7 +453,6 @@ export function useScreenshotCapture(): void {
     captureForCurrentProject().catch((e) => {
       console.warn('[screenshotCapture] error:', e);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previews, loadedProjectId]);
 }
 
@@ -422,7 +468,9 @@ export function resetScreenshotCaptureForProject(projectId: string): void {
  * Manually delete a project's stored screenshot (e.g. on project delete).
  */
 export async function clearProjectScreenshot(projectId: string): Promise<void> {
-  if (!db) return;
+  if (!db) {
+    return;
+  }
 
   try {
     await deleteProjectScreenshot(db, projectId);

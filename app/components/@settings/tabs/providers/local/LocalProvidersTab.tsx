@@ -305,8 +305,8 @@ export default function LocalProvidersTab() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center ring-1 ring-purple-500/30">
-              <Cpu className="w-6 h-6 text-purple-500" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/20 flex items-center justify-center ring-1 ring-blue-500/30">
+              <Cpu className="w-6 h-6 text-blue-500" />
             </div>
             <div>
               <h2 className="text-2xl font-semibold text-amplify-elements-textPrimary">Local AI Providers</h2>
@@ -327,7 +327,7 @@ export default function LocalProvidersTab() {
                 variant="outline"
                 size="sm"
                 onClick={() => setViewMode('guide')}
-                className="bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-background-depth-3 border-amplify-elements-borderColor hover:border-purple-500/30 transition-all duration-200 gap-2"
+                className="bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-background-depth-3 border-amplify-elements-borderColor hover:border-blue-500/30 transition-all duration-200 gap-2"
               >
                 <BookOpen className="w-4 h-4" />
                 Setup Guide
@@ -336,7 +336,7 @@ export default function LocalProvidersTab() {
                 variant="outline"
                 size="sm"
                 onClick={() => setViewMode('status')}
-                className="bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-background-depth-3 border-amplify-elements-borderColor hover:border-purple-500/30 transition-all duration-200 gap-2"
+                className="bg-amplify-elements-background-depth-2 hover:bg-amplify-elements-background-depth-3 border-amplify-elements-borderColor hover:border-blue-500/30 transition-all duration-200 gap-2"
               >
                 <Activity className="w-4 h-4" />
                 Status
@@ -364,7 +364,7 @@ export default function LocalProvidersTab() {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <PackageOpen className="w-5 h-5 text-purple-500" />
+                        <PackageOpen className="w-5 h-5 text-blue-500" />
                         <h3 className="text-lg font-semibold text-amplify-elements-textPrimary">Installed Models</h3>
                       </div>
                       <Button
@@ -393,14 +393,16 @@ export default function LocalProvidersTab() {
                     ) : ollamaModels.length === 0 ? (
                       <div className="text-center py-8">
                         <PackageOpen className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Models Installed</h3>
+                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                          No Models Installed
+                        </h3>
                         <p className="text-sm text-amplify-elements-textSecondary mb-4">
                           Visit{' '}
                           <a
                             href="https://ollama.com/library"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-purple-500 hover:underline inline-flex items-center gap-1"
+                            className="text-blue-500 hover:underline inline-flex items-center gap-1"
                           >
                             ollama.com/library
                             <ExternalLink className="w-3 h-3" />
@@ -410,7 +412,7 @@ export default function LocalProvidersTab() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="bg-gradient-to-r from-purple-500/8 to-purple-600/8 hover:from-purple-500/15 hover:to-purple-600/15 border-purple-500/25 hover:border-purple-500/40 transition-all duration-300 gap-2 group shadow-sm hover:shadow-md font-medium"
+                          className="bg-gradient-to-r from-blue-500/8 to-blue-600/8 hover:from-blue-500/15 hover:to-blue-600/15 border-blue-500/25 hover:border-blue-500/40 transition-all duration-300 gap-2 group shadow-sm hover:shadow-md font-medium"
                           _asChild
                         >
                           <a
@@ -475,7 +477,9 @@ export default function LocalProvidersTab() {
                     ) : lmStudioModels.length === 0 ? (
                       <div className="text-center py-8">
                         <Monitor className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Models Available</h3>
+                        <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                          No Models Available
+                        </h3>
                         <p className="text-sm text-amplify-elements-textSecondary mb-4">
                           Make sure LM Studio is running with the local server started and CORS enabled.
                         </p>
@@ -543,7 +547,9 @@ export default function LocalProvidersTab() {
           <Card className="bg-amplify-elements-background-depth-2">
             <CardContent className="p-8 text-center">
               <Server className="w-16 h-16 mx-auto text-amplify-elements-textTertiary mb-4" />
-              <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">No Local Providers Available</h3>
+              <h3 className="text-lg font-medium text-amplify-elements-textPrimary mb-2">
+                No Local Providers Available
+              </h3>
               <p className="text-sm text-amplify-elements-textSecondary">
                 Local providers will appear here when they're configured in the system.
               </p>

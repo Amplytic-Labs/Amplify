@@ -16,12 +16,14 @@ import {
   Folder,
   ArrowLeft,
   MessageSquarePlus,
+  Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'react-toastify';
-import { useParams, useNavigate, Link } from '@remix-run/react';
+import { toast } from '~/components/ui/toast';
+import { useParams, useNavigate } from '@remix-run/react';
 import { useStore } from '@nanostores/react';
 import { TemplatesModal } from './TemplatesModal';
+import { ControlPanel } from '~/components/@settings/core/ControlPanel';
 import { Dialog, DialogButton, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import {
   db,
@@ -65,14 +67,36 @@ interface ProjectSidebarProps {
 
 export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   const { duplicateCurrentChat, exportChat } = useChatHistory();
-  const { id: urlId } = useParams();
-  const navigate = useNavigate();
+
+  /*
+   * Active-chat detection: derive the current chat's urlId from the URL.
+   *
+   * Remix route param names come from the route filename:
+   *   chat.$id.tsx          → /chat/<id>          → useParams() = { id }
+   *   $projectId.$chatId.tsx → /<projectId>/<chatId> → useParams() = { projectId, chatId }
+   *
+   * Previously this used `const { id: urlId } = useParams()`, which returned
+   * undefined on project-chat routes (the param is `chatId`, not `id`), so no
+   * project chat was ever highlighted in the sidebar. Fall back to `chatId`
+   * for the project-chat route.
+   */
+  const params = useParams();
+  const urlId = params.id ?? params.chatId;
   const currentChatId = useStore(chatId);
 
   const [isNewChatDropdownOpen, setIsNewChatDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+
+  /*
+   * Settings / ControlPanel visibility. Previously the ONLY entry point to the
+   * full Settings UI (providers, API keys, cloud connections, data export,
+   * MCP, memory, etc.) lived inside the old Menu overlay, which is unreachable
+   * in the new ProjectSidebar-based layout. Surfacing it here restores access
+   * to the entire Settings surface.
+   */
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const theme = useStore(themeStore);
 
@@ -133,6 +157,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
    * (create / rename / delete / memory update) because `_versionStore` is
    * bumped on every mutation. Used to keep the selected-project lookup fresh.
    */
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-expect-error — _versionStore is private but stable across releases.
   const projectsVersion = useStore(projectStore._versionStore);
 
@@ -257,115 +282,165 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
    * If the current chat is already in the selected project, this is a no-op
    * for chat creation, but still ensures the workspace is visible.
    */
-  const handleSelectProject = useCallback(
-    async (project: Project) => {
-      setSelectedProject(project.id);
+  const handleSelectProject = useCallback(async (project: Project) => {
+    setSelectedProject(project.id);
 
-      /*
-       * Reset the project-chats search so the new project's chats aren't
-       * accidentally filtered by the previous project's query.
-       */
-      setProjectChatsSearch('');
+    /*
+     * Reset the project-chats search so the new project's chats aren't
+     * accidentally filtered by the previous project's query.
+     */
+    setProjectChatsSearch('');
 
-      /*
-       * Make sure we're back in the chat view (the gallery may have been
-       * showing in the inset).
-       */
-      showChatView();
+    /*
+     * Make sure we're back in the chat view (the gallery may have been
+     * showing in the inset).
+     */
+    showChatView();
 
-      /*
-       * Auto-open the workspace immediately so the user sees the project's
-       * running preview without any AI / user input. The actual file restore
-       * + `npm install` / `npm run dev` is handled by useChatHistory when the
-       * new project chat loads (and skipped if the project is already loaded,
-       * so switching chats inside a project never reloads the workspace).
-       */
-      workbenchStore.showWorkbench.set(true);
+    /*
+     * Auto-open the workspace immediately so the user sees the project's
+     * running preview without any AI / user input. The actual file restore
+     * + `npm install` / `npm run dev` is handled by useChatHistory when the
+     * new project chat loads (and skipped if the project is already loaded,
+     * so switching chats inside a project never reloads the workspace).
+     */
+    workbenchStore.showWorkbench.set(true);
 
-      /*
-       * Already in this project? Just keep the current chat (no duplicate
-       * empty chats) — but still make sure the workbench is open + auto-start
-       * has fired.
-       */
-      const currentId = chatId.get();
+    /*
+     * Already in this project? Just keep the current chat (no duplicate
+     * empty chats) — but still make sure the workbench is open + auto-start
+     * has fired.
+     */
+    const currentId = chatId.get();
 
-      if (currentId) {
-        const currentProject = projectStore.getProjectByChat(currentId);
+    if (currentId) {
+      const currentProject = projectStore.getProjectByChat(currentId);
 
-        if (currentProject?.id === project.id) {
-          if (!workbenchStore.projectAutoStarted.get()) {
-            const { runProjectAutoSetup } = await import('~/lib/persistence/project-auto-run');
-            runProjectAutoSetup(project).catch((e) => console.warn('[ProjectSidebar] Auto setup failed:', e));
-          }
-
-          return;
+      if (currentProject?.id === project.id) {
+        if (!workbenchStore.projectAutoStarted.get()) {
+          const { runProjectAutoSetup } = await import('~/lib/persistence/project-auto-run');
+          runProjectAutoSetup(project).catch((e) => console.warn('[ProjectSidebar] Auto setup failed:', e));
         }
-      }
 
-      // Create a new empty chat linked to the project.
-      if (!db) {
+        return;
+      }
+    }
+
+    // Try to load existing chats for this project first (to avoid creating empty chats)
+    if (!db) {
+      return;
+    }
+
+    try {
+      // Get all chats and find the latest one for this project
+      const allChats = await getAll(db);
+      const projectChats = allChats.filter(
+        (chat) => chat.metadata?.projectId === project.id || projectStore.getProjectByChat(chat.id)?.id === project.id,
+      );
+
+      // Sort by timestamp descending to get the most recent chat
+      const sortedChats = projectChats.sort((a, b) => {
+        const aTime = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const bTime = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+
+        return bTime - aTime;
+      });
+
+      // If we have existing chats, navigate to the latest one
+      if (sortedChats.length > 0) {
+        const latestChat = sortedChats[0];
+        loadEntries();
+        window.location.href = `/${project.id}/${latestChat.urlId}`;
+        toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
+
         return;
       }
 
-      try {
-        const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
-          projectId: project.id,
-          projectInitiated: true,
-        });
-        const newChat = await getMessages(db, newUrlId);
+      // No existing chats - create a new one
+      const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
+        projectId: project.id,
+        projectInitiated: true,
+      });
+      const newChat = await getMessages(db, newUrlId);
 
-        if (newChat) {
-          projectStore.linkChatToProject(newChat.id, project.id);
-        }
-
-        loadEntries();
-
-        /*
-         * Client-side navigation (Remix useNavigate) — preserves the
-         * WebContainer + workspace state, so no page refresh / file re-inject.
-         */
-        navigate(`/chat/${newUrlId}`);
-        toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
-      } catch (e) {
-        console.error('[ProjectSidebar] Failed to load project:', e);
-        toast.error('Failed to load project');
+      if (newChat) {
+        projectStore.linkChatToProject(newChat.id, project.id);
       }
-    },
-    [navigate],
-  );
+
+      loadEntries();
+
+      /*
+       * Full page navigation — forces a complete reload so the workspace,
+       * WebContainer, and file store are rebuilt from IndexedDB. This
+       * guarantees the project's files + auto-setup (npm install + start)
+       * run cleanly on every navigation, with no stale state from the
+       * previous chat.
+       */
+      window.location.href = `/${project.id}/${newUrlId}`;
+      toast.success(`Project "${project.name}" loaded`, { autoClose: 2000 });
+    } catch (e) {
+      console.error('[ProjectSidebar] Failed to load project:', e);
+      toast.error('Failed to load project');
+    }
+  }, []);
 
   /**
    * Create a new chat in the currently-selected project and navigate to it.
    * The new chat inherits the project's global files + memory.
    */
-  const handleNewChatInProject = useCallback(
-    async (project: Project) => {
-      if (!db) {
-        return;
-      }
+  const handleNewChatInProject = useCallback(async (project: Project) => {
+    if (!db) {
+      return;
+    }
 
-      try {
-        const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
-          projectId: project.id,
-          projectInitiated: true,
-        });
-        const newChat = await getMessages(db, newUrlId);
+    /*
+     * Empty-chat guard — same pattern as handleNewChat below. If the
+     * current chat hasn't started yet AND it belongs to this project,
+     * don't create a duplicate empty chat.
+     */
+    if (!chatStore.get().started) {
+      const currentChat = chatId.get();
 
-        if (newChat) {
-          projectStore.linkChatToProject(newChat.id, project.id);
+      if (currentChat) {
+        const currentProject = projectStore.getProjectByChat(currentChat);
+
+        if (currentProject?.id === project.id) {
+          // Already on an empty chat in this project — no-op.
+          return;
         }
-
-        setSelectedProject(project.id);
-        loadEntries();
-        navigate(`/chat/${newUrlId}`);
-        toast.success('New chat created in project', { autoClose: 2000 });
-      } catch (e) {
-        console.error('[ProjectSidebar] Failed to create chat in project:', e);
-        toast.error('Failed to create chat in project');
       }
-    },
-    [navigate],
-  );
+    }
+
+    try {
+      /*
+       * Before creating the new chat, reset the workbench and chat state.
+       * This "destroys" the current workspace environment to prevent glitches
+       * and ensure the new chat starts with a fresh, clean state.
+       */
+      workbenchStore.resetForNewChat();
+      chatStore.setKey('started', false);
+
+      const newUrlId = await createChatFromMessages(db, 'New project chat', [], {
+        projectId: project.id,
+        projectInitiated: true,
+      });
+      const newChat = await getMessages(db, newUrlId);
+
+      if (newChat) {
+        projectStore.linkChatToProject(newChat.id, project.id);
+      }
+
+      setSelectedProject(project.id);
+      loadEntries();
+
+      // Full page reload to the new chat — ensures clean workspace load.
+      window.location.href = `/${project.id}/${newUrlId}`;
+      toast.success('New chat created in project', { autoClose: 2000 });
+    } catch (e) {
+      console.error('[ProjectSidebar] Failed to create chat in project:', e);
+      toast.error('Failed to create chat in project');
+    }
+  }, []);
 
   const loadEntries = useCallback(() => {
     if (db) {
@@ -412,7 +487,6 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
     if (db) {
       loadEntries();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listVersion]);
 
   // Delete single chat
@@ -455,7 +529,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
           loadEntries();
 
           if (chatId.get() === item.id) {
-            window.location.pathname = '/';
+            window.location.href = '/';
           }
         })
         .catch((error) => {
@@ -473,21 +547,41 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
   };
 
   /*
-   * Delete a project (and unlink its chats). The chats themselves are preserved
-   * and become personal chats again.
+   * Delete a project AND all of its chats. The chats are removed from
+   * IndexedDB — they do not become personal chats.
    */
   const handleDeleteProject = useCallback(
     (project: Project) => {
+      const projectChatIds = projectStore.getProjectChatIds(project.id);
+      const currentChat = chatId.get();
+      const currentChatBelongsToProject = currentChat && projectChatIds.includes(currentChat);
+
       projectStore.deleteProject(project.id);
       toast.success(`Project "${project.name}" deleted`, { autoClose: 2500 });
 
       /*
-       * If we're currently viewing one of the project's chats, stay on it —
-       * it just becomes a personal chat again.
+       * Clear the selected project + workbench state so the workspace
+       * doesn't show stale files from the deleted project.
        */
+      if (selectedProjectId.get() === project.id) {
+        clearSelectedProject();
+      }
+
+      workbenchStore.showWorkbench.set(false);
+      workbenchStore.loadedProjectId.set('<none>');
+      workbenchStore.projectAutoStarted.set(false);
+
+      /*
+       * If we're currently viewing one of the project's chats, navigate
+       * home — the chat was deleted along with the project.
+       */
+      if (currentChatBelongsToProject) {
+        window.location.href = '/';
+      }
+
       loadEntries();
     },
-    [loadEntries],
+    [loadEntries, selectedProjectId],
   );
 
   // Rename a project.
@@ -554,42 +648,35 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
    * "Empty chat" = `chatStore.started` is false (no messages have been sent
    * in the current chat, or we're on the home `/` route with no chatId).
    */
-  const handleNewChat = useCallback(
-    (e?: React.UIEvent) => {
-      /*
-       * If the projects gallery is showing in the inset, flip back to chat
-       * first so the user sees their (empty) chat.
-       */
-      if (insetView.get() === 'projects') {
-        showChatView();
-      }
+  const handleNewChat = useCallback((e?: React.UIEvent) => {
+    /*
+     * If the projects gallery is showing in the inset, flip back to chat
+     * first so the user sees their (empty) chat.
+     */
+    if (insetView.get() === 'projects') {
+      showChatView();
+    }
 
-      if (!chatStore.get().started) {
-        // Already on a clean empty chat — don't navigate / create a new one.
-        e?.preventDefault();
+    if (!chatStore.get().started) {
+      // Already on a clean empty chat — don't navigate / create a new one.
+      e?.preventDefault();
 
-        return;
-      }
+      return;
+    }
 
-      /*
-       * Starting a brand-new personal chat — clear any project selection so
-       * the sidebar shows personal chats.
-       */
-      clearSelectedProject();
-      setIsNewChatDropdownOpen(false);
-
-      /*
-       * Client-side navigation to home — preserves the WebContainer state
-       * (no full page refresh) so the workspace isn't torn down.
-       */
-      if (e) {
-        e.preventDefault();
-      }
-
-      navigate('/');
-    },
-    [navigate],
-  );
+    /*
+     * Starting a brand-new personal chat. We do NOT call preventDefault
+     * here — the <a href="/"> anchor's default behavior performs a full
+     * page reload to "/", which tears down the WebContainer + workspace
+     * for a clean new chat. The store resets below are belt-and-suspenders
+     * (the reload wipes everything anyway, but they prevent any flash of
+     * stale UI in the brief moment before the reload fires).
+     */
+    clearSelectedProject();
+    workbenchStore.resetForNewChat();
+    chatStore.setKey('started', false);
+    setIsNewChatDropdownOpen(false);
+  }, []);
 
   // Chats to show in sidebar
   const binnedChats = binDates(categoryFilteredList);
@@ -601,8 +688,8 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
         <div data-slot="sidebar-header" data-sidebar="header" className="flex flex-col gap-2 mb-5">
           <ul data-slot="sidebar-menu" data-sidebar="menu" className="flex w-full min-w-0 flex-col gap-1">
             <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className="group/menu-item relative">
-              <Link
-                to="/"
+              <a
+                href="/"
                 data-slot="sidebar-menu-button"
                 data-sidebar="menu-button"
                 data-size="lg"
@@ -623,15 +710,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   <span className="truncate font-medium">Amplify</span>
                   <span className="truncate text-xs">AI agent platform</span>
                 </div>
-              </Link>
+              </a>
             </li>
           </ul>
         </div>
 
         {/* New Chat Button */}
         <div className="relative w-full mb-[20px]" ref={dropdownRef}>
-          <Link
-            to="/"
+          <a
+            href="/"
             onClick={(e) => {
               // Guarded: don't create a new empty chat if we're already on one.
               handleNewChat(e);
@@ -651,7 +738,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
             >
               <ChevronDown size={14} className="text-sidebar-foreground" strokeWidth={2.5} />
             </div>
-          </Link>
+          </a>
 
           <AnimatePresence>
             {isNewChatDropdownOpen && (
@@ -667,8 +754,8 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
                 className="absolute top-[calc(100%+4px)] left-0 font-geist w-[210px] bg-white dark:bg-sidebar border border-sidebar-border rounded-xl shadow-xl z-50 p-2 overflow-hidden ring-1 ring-black/5"
               >
-                <Link
-                  to="/"
+                <a
+                  href="/"
                   onClick={(e) => handleNewChat(e)}
                   className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent no-underline"
                 >
@@ -692,8 +779,24 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                     />
                   </svg>
                   <span>Blank Chat</span>
-                </Link>
-                <button className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent">
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewChatDropdownOpen(false);
+
+                    /*
+                     * Navigate to the /git route which renders the GitUrlImport
+                     * flow (clone a repo by URL into a new chat). Previously
+                     * this button had no onClick and did nothing. A full-page
+                     * navigation is used here because the dropdown's
+                     * AnimatePresence exit can race with Remix's client-side
+                     * navigate() and swallow it.
+                     */
+                    window.location.assign('/git');
+                  }}
+                  className="w-full flex items-center gap-3 p-2 text-sm font-medium text-sidebar-foreground bg-white dark:bg-sidebar rounded-md hover:bg-sidebar-accent"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="1.5em"
@@ -750,12 +853,13 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                 handleSearchChange(e);
               }
             }}
-            className="w-full bg-sidebar border border-sidebar-border rounded-[8px] pl-9 pr-3 py-[7px] text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="w-full bg-sidebar border border-sidebar-border rounded-[8px] pl-9 pr-3 py-[7px] text-[13px] text-sidebar-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           />
         </div>
 
         {/* Navigation Links */}
         <div className="w-full flex flex-col gap-[2px]">
+          {/* eslint-disable-next-line @typescript-eslint/naming-convention */}
           {navItems.map(({ icon: Icon, label }) => {
             /*
              * Active-state logic for the three nav buttons:
@@ -799,7 +903,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   'bg-sidebar w-full h-[32px] flex items-center gap-[11px] rounded-[8px] px-[9px] transition-colors',
                   isProjectsActive && 'bg-sidebar-accent',
                   isNormalChatsActive && 'bg-sidebar-accent',
-                  isProjectChatsActive && 'bg-purple-500/10 ring-1 ring-purple-500/30',
+                  isProjectChatsActive && 'bg-blue-500/10 ring-1 ring-blue-500/30',
                 )}
               >
                 <Icon
@@ -809,7 +913,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                     isProjectsActive || isNormalChatsActive
                       ? 'text-sidebar-foreground'
                       : isProjectChatsActive
-                        ? 'text-purple-500'
+                        ? 'text-blue-500'
                         : 'text-muted-foreground',
                   )}
                 />
@@ -819,7 +923,7 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                     isProjectsActive || isNormalChatsActive
                       ? 'text-sidebar-foreground'
                       : isProjectChatsActive
-                        ? 'text-purple-600 dark:text-purple-400'
+                        ? 'text-blue-600 dark:text-blue-400'
                         : 'text-sidebar-foreground/80',
                   )}
                 >
@@ -872,9 +976,10 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
                   onNewChat={() => handleNewChatInProject(selectedProject)}
                   onBackToAllChats={() => {
                     /*
-                     * Full page refresh to root — clears the project
-                     * selection AND tears down the workspace so the user
-                     * lands on a clean base chat with no project context.
+                     * Full page reload to root — clears the project
+                     * selection so the user lands on a clean base chat
+                     * with no project context. A full reload ensures the
+                     * workspace is torn down and rebuilt cleanly.
                      */
                     clearSelectedProject();
                     window.location.href = '/';
@@ -939,6 +1044,15 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
             defaultTheme={theme}
             onChange={(newTheme: string) => setTheme(newTheme as 'light' | 'dark')}
           />
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            aria-label="Open settings"
+            title="Settings"
+            className="flex items-center justify-center w-[40px] h-[40px] rounded-lg text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors cursor-pointer"
+          >
+            <Settings size={18} className="shrink-0" />
+          </button>
         </div>
       </div>
 
@@ -986,6 +1100,14 @@ export function ProjectSidebar({ user: _user }: ProjectSidebarProps) {
       </DialogRoot>
 
       <TemplatesModal isOpen={isTemplatesModalOpen} onClose={() => setIsTemplatesModalOpen(false)} />
+
+      {/*
+        Full Settings / ControlPanel. The only entry point used to live inside
+        the old Menu overlay (now unreachable in the new layout). Triggered by
+        the footer Settings button above so every user can reach providers, API
+        keys, cloud connections, data export/import, MCP, memory, etc.
+      */}
+      <ControlPanel open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* Project rename / delete dialogs */}
       <ProjectManagementDialogs
@@ -1047,13 +1169,13 @@ function SelectedProjectChatsList({
         <span>All chats</span>
       </button>
 
-      <div className="rounded-lg border border-purple-500/30 bg-gradient-to-br from-purple-500/[0.04] to-fuchsia-500/[0.02] overflow-hidden overflow-x-hidden mb-[6px]">
+      <div className="rounded-lg border border-blue-500/30 bg-gradient-to-br from-blue-500/[0.04] to-blue-500/[0.02] overflow-hidden overflow-x-hidden mb-[6px]">
         <div className="flex items-center gap-2 px-[10px] py-[8px]">
           <div
-            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] ring-1 ring-purple-500/20"
+            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[12px] ring-1 ring-blue-500/20"
             style={{ background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(217, 70, 239, 0.08))' }}
           >
-            <span className="text-purple-500">{project.icon || <Folder size={13} />}</span>
+            <span className="text-blue-500">{project.icon || <Folder size={13} />}</span>
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-medium text-sidebar-foreground truncate">{project.name}</div>
@@ -1066,7 +1188,7 @@ function SelectedProjectChatsList({
               {project.startCommand && (
                 <>
                   <span className="shrink-0">·</span>
-                  <span className="text-purple-500/80 font-mono truncate min-w-0">{project.startCommand}</span>
+                  <span className="text-blue-500/80 font-mono truncate min-w-0">{project.startCommand}</span>
                 </>
               )}
               {isAutoStarted && (
@@ -1093,7 +1215,7 @@ function SelectedProjectChatsList({
       <button
         type="button"
         onClick={onNewChat}
-        className="w-full flex items-center gap-2 px-[10px] py-[7px] mb-[4px] rounded-md text-[12px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 transition-colors border border-purple-500/20 bg-purple-500/5"
+        className="w-full flex items-center gap-2 px-[10px] py-[7px] mb-[4px] rounded-md text-[12px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 transition-colors border border-blue-500/20 bg-blue-500/5"
         aria-label="New chat in this project"
         title="Start a new chat in this project"
       >
@@ -1108,9 +1230,9 @@ function SelectedProjectChatsList({
         // Better empty state — icon + descriptive copy + CTA
         <div className="px-[8px] py-[16px] flex flex-col items-center justify-center gap-2 text-center">
           <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-fuchsia-500/10 blur-md rounded-full" />
-            <div className="relative w-10 h-10 rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20 flex items-center justify-center">
-              <MessageSquarePlus size={18} className="text-purple-500" />
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-blue-400/10 blur-md rounded-full" />
+            <div className="relative w-10 h-10 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 flex items-center justify-center">
+              <MessageSquarePlus size={18} className="text-blue-500" />
             </div>
           </div>
           <div className="space-y-0.5">
@@ -1122,7 +1244,7 @@ function SelectedProjectChatsList({
           <button
             type="button"
             onClick={onNewChat}
-            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/15 border border-purple-500/20 transition-colors"
+            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/15 border border-blue-500/20 transition-colors"
             title="Start your first chat in this project"
           >
             <Plus size={11} className="shrink-0" />
@@ -1227,7 +1349,7 @@ function ProjectManagementDialogs({ state, onClose, onConfirmRename, onConfirmDe
                   }
                 }}
                 autoFocus
-                className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="mt-4 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 placeholder="Project name"
               />
               <div className="flex justify-end gap-3 mt-6">
@@ -1280,6 +1402,48 @@ interface SidebarHistoryItemProps {
 }
 
 function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat }: SidebarHistoryItemProps) {
+  const navigate = useNavigate();
+
+  /*
+   * Compute the correct navigation URL based on whether this chat belongs
+   * to a project. Project chats use `/{projectId}/{chatId}`; personal chats
+   * use `/chat/{chatId}`. Previously this was hardcoded to `/chat/${urlId}`
+   * which broke project chats — the workspace + project files weren't loaded
+   * because the route loader didn't receive the projectId param.
+   */
+  const href = item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`;
+
+  /*
+   * SMART NAVIGATION: Use SPA navigation (no page reload) when switching
+   * between chats in the SAME project. The workspace (WebContainer, files,
+   * dev server) is already correct — a full reload would needlessly destroy
+   * it, causing:
+   *   - The workspace to "reset" (dev server killed + restarted)
+   *   - A visible sidebar flash (state re-hydration after reload)
+   *   - npm install to re-run unnecessarily
+   *
+   * For cross-project switches or personal chats, use a full page reload
+   * so the workspace is cleanly torn down and rebuilt from IndexedDB.
+   *
+   * The project-change guard in useChatHistory's load effect
+   * (workbenchStore.loadedProjectId check) ensures clearWorkspace() is
+   * skipped on same-project SPA navigation.
+   */
+  const handleNavigate = useCallback(() => {
+    const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
+    const targetProjectId = item.metadata?.projectId;
+    const sameProject =
+      targetProjectId && currentLoadedProjectId === targetProjectId && currentLoadedProjectId !== '<none>';
+
+    if (sameProject) {
+      // SPA navigation — workspace stays intact, no flash, no reset
+      navigate(href);
+    } else {
+      // Cross-project or personal — full reload for clean workspace rebuild
+      window.location.href = href;
+    }
+  }, [href, item.metadata?.projectId, navigate]);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -1303,6 +1467,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
     }
     document.addEventListener('mousedown', handleClickOutside);
 
+    // eslint-disable-next-line consistent-return
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMenuOpen]);
 
@@ -1313,13 +1478,24 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
         isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/50',
       )}
     >
-      <CircleDashed size={15} className="text-muted-foreground shrink-0" />
+      <CircleDashed
+        size={15}
+        className={classNames(
+          'text-muted-foreground shrink-0',
+
+          /*
+           * When NOT editing, clicks on the icon should fall through to the
+           * stretched link below — so disable pointer events on the icon.
+           */
+          !editing && 'pointer-events-none relative z-0',
+        )}
+      />
 
       {editing ? (
         <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-1 min-w-0">
           <input
             type="text"
-            className="flex-1 min-w-0 bg-sidebar border border-sidebar-border rounded px-2 py-0.5 text-[13px] text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="flex-1 min-w-0 bg-sidebar border border-sidebar-border rounded px-2 py-0.5 text-[13px] text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50"
             autoFocus
             value={currentDescription}
             onChange={handleChange}
@@ -1328,7 +1504,7 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
           />
           <button
             type="submit"
-            className="p-1 rounded bg-sidebar-accent text-muted-foreground hover:text-purple-500 hover:bg-sidebar-accent transition-colors shrink-0"
+            className="p-1 rounded bg-sidebar-accent text-muted-foreground hover:text-blue-500 hover:bg-sidebar-accent transition-colors shrink-0"
           >
             <Check size={12} />
           </button>
@@ -1336,21 +1512,39 @@ function SidebarHistoryItem({ item, isActive, onDelete, onDuplicate, exportChat 
       ) : (
         <>
           {/*
-            Client-side navigation (Remix <Link>) — preserves the WebContainer
-            + workspace state when switching chats, so the dev server keeps
-            running and files are NOT re-injected. The useChatHistory effect
-            short-circuits the file-restore step when the same project is
-            already loaded (loadedProjectId check).
-          */}
-          <Link
-            to={`/chat/${item.urlId}`}
-            className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate no-underline"
-          >
-            {currentDescription}
-          </Link>
+            Stretched click target — absolutely positioned to cover the
+            ENTIRE row (icon + text + padding) so a SINGLE click anywhere
+            navigates. Previously the <a> only wrapped the text, so clicks
+            on the icon or the row padding missed the link and did nothing
+            — which felt like the user had to "double-click" to switch chats.
+            The more-button container below is z-10 so it stays ABOVE this
+            stretched target and remains independently clickable.
 
-          {/* More button - visible on hover */}
-          <div className="relative shrink-0" ref={menuRef}>
+            Uses handleNavigate() instead of a plain <a href> so that
+            same-project chat switches use SPA navigation (no page reload,
+            no workspace reset, no sidebar flash). Cross-project switches
+            still trigger a full page reload for a clean workspace rebuild.
+          */}
+          <div
+            onClick={handleNavigate}
+            aria-label={currentDescription}
+            role="link"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleNavigate();
+              }
+            }}
+            className="absolute inset-0 z-0 rounded cursor-pointer"
+          />
+
+          <span className="flex-1 min-w-0 text-[13px] text-sidebar-foreground/90 truncate pointer-events-none relative z-0">
+            {currentDescription}
+          </span>
+
+          {/* More button - visible on hover. z-10 keeps it above the stretched link. */}
+          <div className="relative z-10 shrink-0" ref={menuRef}>
             <button
               onClick={(e) => {
                 e.preventDefault();

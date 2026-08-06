@@ -1,23 +1,10 @@
-@use '../z-index';
-
-.Toastify__toast-container {
-  @extend .z-toast;
-}
-
-.Toastify__toast {
-  --at-apply: shadow-md;
-
-  background-color: var(--amplify-elements-bg-depth-2);
-  color: var(--amplify-elements-textPrimary);
-  border: 1px solid var(--amplify-elements-borderColor);
-}
-
-.Toastify__close-button {
-  color: var(--amplify-elements-item-contentDefault);
-  opacity: 1;
-  transition: none;
-
-  &:hover {
-    color: var(--amplify-elements-item-contentActive);
-  }
-}
+/*
+ * Toast styles — premium iPhone-style toast stack.
+ *
+ * The old react-toastify CSS classes have been removed.
+ * The new toast system uses Tailwind CSS classes inline
+ * within the ToastStack component.
+ *
+ * This file is kept for backwards compatibility with the
+ * SCSS import chain (styles/index.scss).
+ */

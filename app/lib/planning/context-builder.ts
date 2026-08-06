@@ -16,20 +16,15 @@
  * If resuming, a RESUME section is prepended with the checkpoint info.
  */
 
-import type {
-  Checkpoint,
-  Plan,
-  PlanPoint,
-  SkillContext,
-  TaskConstraints,
-  ToolOutputReference,
-} from './types';
+import type { Checkpoint, Plan, PlanPoint, SkillContext, TaskConstraints, ToolOutputReference } from './types';
 import type { CachedToolOutput } from './tool-output-cache';
 import { SkillContextBuilder } from './skill-context';
 
-// ============================================================
-// Types
-// ============================================================
+/*
+ * ============================================================
+ * Types
+ * ============================================================
+ */
 
 export interface ProjectContextInfo {
   /**
@@ -124,9 +119,11 @@ export interface ContextBuildOptions {
   plannerNotes?: string;
 }
 
-// ============================================================
-// ContextBuilder
-// ============================================================
+/*
+ * ============================================================
+ * ContextBuilder
+ * ============================================================
+ */
 
 export class ContextBuilder {
   /**
@@ -162,7 +159,9 @@ export class ContextBuilder {
 
     // 7. PLAN CONTEXT (where the worker is in the overall plan)
     if (options.previousPointsSummary || options.plannerNotes) {
-      sections.push(this.buildPlanContextSection(options.plan, options.point, options.previousPointsSummary, options.plannerNotes));
+      sections.push(
+        this.buildPlanContextSection(options.plan, options.point, options.previousPointsSummary, options.plannerNotes),
+      );
     }
 
     // 8. CONSTRAINTS (explicit boundaries)
@@ -176,10 +175,13 @@ export class ContextBuilder {
     return sections.filter((s) => s.trim().length > 0).join('\n\n');
   }
 
-  // ============================================================
-  // Section builders
-  // ============================================================
+  /*
+   * ============================================================
+   * Section builders
+   * ============================================================
+   */
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildResumeSection(checkpoint: Checkpoint, point: PlanPoint): string {
     const lines: string[] = ['===== RESUME ====='];
     lines.push(`You are resuming task "${point.title}" after an interruption.`);
@@ -188,6 +190,7 @@ export class ContextBuilder {
 
     if (checkpoint.progressSummary.stepsCompleted.length > 0) {
       lines.push('Steps already completed (do NOT redo these):');
+
       for (const step of checkpoint.progressSummary.stepsCompleted) {
         lines.push(`  ✓ ${step}`);
       }
@@ -196,6 +199,7 @@ export class ContextBuilder {
 
     if (checkpoint.progressSummary.filesModified.length > 0) {
       lines.push('Files already modified:');
+
       for (const file of checkpoint.progressSummary.filesModified) {
         lines.push(`  - ${file}`);
       }
@@ -204,6 +208,7 @@ export class ContextBuilder {
 
     if (checkpoint.remainingWork.length > 0) {
       lines.push('Remaining work:');
+
       for (const item of checkpoint.remainingWork) {
         lines.push(`  ○ ${item}`);
       }
@@ -215,6 +220,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildTaskSection(point: PlanPoint): string {
     const lines: string[] = ['===== TASK ====='];
 
@@ -228,6 +234,7 @@ export class ContextBuilder {
 
     if (point.requirements && point.requirements.length > 0) {
       lines.push(``, `Requirements:`);
+
       for (const req of point.requirements) {
         lines.push(`  - ${req}`);
       }
@@ -235,6 +242,7 @@ export class ContextBuilder {
 
     if (point.successCriteria && point.successCriteria.length > 0) {
       lines.push(``, `Success Criteria:`);
+
       for (const crit of point.successCriteria) {
         lines.push(`  - ${crit}`);
       }
@@ -242,6 +250,7 @@ export class ContextBuilder {
 
     if (point.expectedFiles && point.expectedFiles.length > 0) {
       lines.push(``, `Expected files to create/modify:`);
+
       for (const file of point.expectedFiles) {
         lines.push(`  - ${file}`);
       }
@@ -250,6 +259,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildProjectSection(info: ProjectContextInfo): string {
     const lines: string[] = ['===== PROJECT ====='];
 
@@ -268,11 +278,13 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildSkillsSection(skills: SkillContext[]): string {
     const blocks = skills.map((s) => SkillContextBuilder.formatForPrompt(s));
     return `===== SKILLS =====\n${blocks.join('\n\n')}`;
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildToolResultsSection(
     references: ToolOutputReference[],
     resolved: Map<string, CachedToolOutput>,
@@ -292,10 +304,7 @@ export class ContextBuilder {
 
       // Truncate very long outputs to keep context lean
       const maxLen = 4000;
-      const text =
-        output.output.length > maxLen
-          ? output.output.slice(0, maxLen) + '\n... (truncated)'
-          : output.output;
+      const text = output.output.length > maxLen ? output.output.slice(0, maxLen) + '\n... (truncated)' : output.output;
       lines.push(text);
       lines.push('');
     }
@@ -303,6 +312,7 @@ export class ContextBuilder {
     return lines.join('\n').trimEnd();
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildWorkspaceSection(ws: WorkspaceSnapshot): string {
     const lines: string[] = ['===== WORKSPACE SNAPSHOT ====='];
 
@@ -312,9 +322,11 @@ export class ContextBuilder {
 
     if (ws.changedFiles.length > 0) {
       lines.push(``, `Changed files (${ws.pendingChangeCount} pending changes):`);
+
       for (const file of ws.changedFiles.slice(0, 20)) {
         lines.push(`  - ${file}`);
       }
+
       if (ws.changedFiles.length > 20) {
         lines.push(`  ... and ${ws.changedFiles.length - 20} more`);
       }
@@ -325,6 +337,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildPlanContextSection(
     plan: Plan,
     point: PlanPoint,
@@ -335,12 +348,9 @@ export class ContextBuilder {
 
     // Show where the worker is in the overall plan
     lines.push('Overall plan progress:');
+
     for (const p of plan.points) {
-      const marker =
-        p.status === 'completed' ? '✓' :
-        p.id === point.id ? '▶' :
-        p.status === 'failed' ? '✗' :
-        '○';
+      const marker = p.status === 'completed' ? '✓' : p.id === point.id ? '▶' : p.status === 'failed' ? '✗' : '○';
       lines.push(`  ${marker} ${p.title}`);
     }
 
@@ -355,11 +365,13 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildConstraintsSection(constraints: TaskConstraints): string {
     const lines: string[] = ['===== CONSTRAINTS ====='];
 
     if (constraints.doNotModify && constraints.doNotModify.length > 0) {
       lines.push('Do NOT modify:');
+
       for (const f of constraints.doNotModify) {
         lines.push(`  - ${f}`);
       }
@@ -367,6 +379,7 @@ export class ContextBuilder {
 
     if (constraints.doNotInstall && constraints.doNotInstall.length > 0) {
       lines.push('Do NOT install:');
+
       for (const p of constraints.doNotInstall) {
         lines.push(`  - ${p}`);
       }
@@ -374,6 +387,7 @@ export class ContextBuilder {
 
     if (constraints.additional && constraints.additional.length > 0) {
       lines.push('Additional constraints:');
+
       for (const c of constraints.additional) {
         lines.push(`  - ${c}`);
       }
@@ -382,6 +396,7 @@ export class ContextBuilder {
     return lines.join('\n');
   }
 
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   private static buildUserRequestSection(userRequest: string): string {
     return `===== USER REQUEST =====\n${userRequest}`;
   }

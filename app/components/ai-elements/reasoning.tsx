@@ -114,9 +114,12 @@ export const Reasoning = memo(
       }
     }, [isStreaming, setDuration]);
 
-    // Removed auto-open effect so the thinking box stays collapsed by default
-    // and only opens when the user explicitly clicks to expand it.
+    /*
+     * Removed auto-open effect so the thinking box stays collapsed by default
+     * and only opens when the user explicitly clicks to expand it.
+     */
 
+    // eslint-disable-next-line consistent-return
     useEffect(() => {
       if (hasEverStreamedRef.current && !isStreaming && isOpen && !hasAutoClosed) {
         const timer = setTimeout(() => {
@@ -235,6 +238,7 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
       setDisplayedText((prev) => prev + children.slice(prev.length, prev.length + chunkSize));
     }, 15);
 
+    // eslint-disable-next-line consistent-return
     return () => clearTimeout(timer);
   }, [children, displayedText, isStreaming]);
 

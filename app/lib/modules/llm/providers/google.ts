@@ -1,8 +1,8 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class GoogleProvider extends BaseProvider {
   name = 'Google';
@@ -19,6 +19,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'budget' },
     },
     {
       name: 'gemini-2.5-flash-lite',
@@ -26,6 +27,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'budget' },
     },
     {
       name: 'gemini-3-flash',
@@ -33,6 +35,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemini-3.1-flash-lite',
@@ -40,6 +43,7 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemini-3.5-flash',
@@ -47,19 +51,20 @@ export default class GoogleProvider extends BaseProvider {
       provider: 'Google',
       maxTokenAllowed: 1000000,
       maxCompletionTokens: 8192,
+      capabilities: { thinking: 'effort' },
     },
     {
       name: 'gemma-4-26b-a4b-it',
       label: 'Gemma 4 26B',
       provider: 'Google',
-      maxTokenAllowed: 128000,
+      maxTokenAllowed: 256000,
       maxCompletionTokens: 8192,
     },
     {
       name: 'gemma-4-31b-it',
       label: 'Gemma 4 31B',
       provider: 'Google',
-      maxTokenAllowed: 128000,
+      maxTokenAllowed: 256000,
       maxCompletionTokens: 8192,
     },
     {
@@ -104,12 +109,21 @@ export default class GoogleProvider extends BaseProvider {
       throw new Error('Invalid response format from Google API');
     }
 
-    // Filter out models with very low token limits and experimental/unstable models
+    /*
+     * Filter out non-chat models.
+     * Google's /v1beta/models response gives each model a
+     * `supportedGenerationMethods` array. Chat models include "generateContent";
+     * embedding-only models only include "embedContent" (e.g. text-embedding-004,
+     * gemini-embedding-001). Filtering on "generateContent" reliably removes
+     * embeddings, TTS, and countTokens-only entries — which the previous
+     * `outputTokenLimit > 8000` heuristic failed to do.
+     */
     const data = res.models.filter((model: any) => {
-      const hasGoodTokenLimit = (model.outputTokenLimit || 0) > 8000;
+      const methods: string[] = Array.isArray(model.supportedGenerationMethods) ? model.supportedGenerationMethods : [];
+      const isChatModel = methods.includes('generateContent');
       const isStable = !model.name.includes('exp') || model.name.includes('flash-exp');
 
-      return hasGoodTokenLimit && isStable;
+      return isChatModel && isStable;
     });
 
     return data.map((m: any) => {
@@ -131,6 +145,12 @@ export default class GoogleProvider extends BaseProvider {
         contextWindow = 32000; // Gemini Pro has 32k context
       } else if (modelName.includes('gemini-flash')) {
         contextWindow = 32000; // Gemini Flash has 32k context
+      } else if (modelName.includes('gemma-4')) {
+        contextWindow = 256000; // Gemma 4 models have 256k context
+      } else if (modelName.includes('gemma-3')) {
+        contextWindow = 128000; // Gemma 3 models have 128k context
+      } else if (modelName.includes('gemma-2')) {
+        contextWindow = 8192; // Gemma 2 models have 8k context
       }
 
       // Cap at reasonable limits to prevent issues
@@ -150,6 +170,7 @@ export default class GoogleProvider extends BaseProvider {
         provider: this.name,
         maxTokenAllowed: finalContext,
         maxCompletionTokens: completionTokens,
+        capabilities: detectModelCapabilities(this.name, modelName),
       };
     });
   }
@@ -159,7 +180,7 @@ export default class GoogleProvider extends BaseProvider {
     serverEnv: any;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { apiKey } = this.getProviderBaseUrlAndKey({

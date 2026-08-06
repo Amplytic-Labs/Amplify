@@ -1,7 +1,7 @@
 import { memo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
-import type { ToolInvocationUIPart } from '@ai-sdk/ui-utils';
+import { getToolNameFromPart, getToolState, getToolInput, getToolOutput, ToolState } from '~/lib/chat/tool-parts';
 import { parseFileMutationSignal, isFileMutationSignal } from '~/lib/tools/nativeTools';
 
 /**
@@ -11,6 +11,7 @@ import { parseFileMutationSignal, isFileMutationSignal } from '~/lib/tools/nativ
 const TOOL_FRIENDLY_NAMES: Record<string, string> = {
   // Native tools
   web_search: 'Searched the web',
+  fetch_webpage: 'Read web page',
   read_file: 'Read file',
   list_dir: 'Listed directory',
   find_files: 'Found files',
@@ -27,6 +28,7 @@ const TOOL_FRIENDLY_NAMES: Record<string, string> = {
 
 const TOOL_ICONS: Record<string, string> = {
   web_search: 'i-ph:globe',
+  fetch_webpage: 'i-ph:globe',
   read_file: 'i-ph:file-text',
   list_dir: 'i-ph:folder-open',
   find_files: 'i-ph:list-magnifying-glass',
@@ -61,6 +63,13 @@ function summarizeArgs(toolName: string, args: any): string {
         return args.pattern || '';
       case 'web_search':
         return args.query || '';
+      case 'fetch_webpage':
+        try {
+          const u = new URL(args.url);
+          return u.host + u.pathname.slice(0, 40);
+        } catch {
+          return args.url || '';
+        }
       case 'create_file':
         return args.filePath || '';
       case 'replace_string_in_file':
@@ -73,6 +82,26 @@ function summarizeArgs(toolName: string, args: any): string {
     return '';
   }
 }
+
+/**
+ * Keys to STRIP from a tool result object before rendering it as JSON.
+ *
+ * These fields are meant for the MODEL (or for the workspace file-writer),
+ * NOT for the user:
+ *   - `files`         — raw file list from inject_template (potentially
+ *                       hundreds of files with full content — huge noise).
+ *   - `userMessage`   — verbose template instructions / file-access rules
+ *                       echoed to the model by the AI SDK as part of the
+ *                       tool result. Never meant for the UI.
+ *   - `warning`       — legacy field that previously warned about async
+ *                       workspace loading. Stale but still in some old
+ *                       persisted messages.
+ *
+ * Without this filter, the user sees a giant JSON blob containing the
+ * `userMessage` text ("template import is done…") — which they explicitly
+ * said they don't want.
+ */
+const RESULT_KEYS_TO_STRIP = new Set(['files', 'userMessage', 'warning']);
 
 /**
  * Render the result of a native tool in a human-friendly way.
@@ -112,22 +141,58 @@ function renderResult(toolName: string, result: any): string {
     return result.length > 400 ? result.slice(0, 400) + '...' : result;
   }
 
+  /*
+   * Object result — strip model-only fields before JSON-stringifying.
+   * See RESULT_KEYS_TO_STRIP above for why each field is removed.
+   */
   try {
-    return JSON.stringify(result, null, 2);
+    const filtered: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(result)) {
+      if (RESULT_KEYS_TO_STRIP.has(key)) {
+        continue;
+      }
+
+      filtered[key] = value;
+    }
+
+    const json = JSON.stringify(filtered, null, 2);
+
+    if (json === '{}') {
+      // Everything was stripped — fall back to the summary string if present.
+      if (typeof result.summary === 'string') {
+        return result.summary;
+      }
+
+      return String(result);
+    }
+
+    return json.length > 1200 ? json.slice(0, 1200) + '...' : json;
   } catch {
     return String(result);
   }
 }
 
 interface ToolInvocationItemProps {
-  part: ToolInvocationUIPart;
+  /**
+   * v7 tool part (`type: 'tool-<name>'` or `'dynamic-tool'`) OR legacy v4
+   * `tool-invocation` part. Both shapes are accepted.
+   */
+  part: any;
   grouped?: boolean;
 }
 
 export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemProps) => {
   const [showDetails, setShowDetails] = useState(false);
-  const { toolInvocation } = part;
-  const { toolName, args, state, result } = toolInvocation as any;
+
+  /*
+   * v7 migration: tool fields are FLAT on the part. The shared helpers
+   * handle both v7 and legacy v4 nested shapes.
+   */
+  const toolName = getToolNameFromPart(part);
+  const args = getToolInput(part);
+  const state = getToolState(part);
+  const result = getToolOutput(part);
 
   const friendlyName = TOOL_FRIENDLY_NAMES[toolName] || `Used tool ${toolName}`;
   const icon = TOOL_ICONS[toolName] || 'i-ph:wrench';
@@ -135,18 +200,15 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
 
   const toggleDetails = () => setShowDetails(!showDetails);
 
-  const isResult = state === 'result';
-  const isError =
-    typeof result === 'string' &&
-    (result.startsWith('Error:') ||
-      result.startsWith('File not found') ||
-      result.startsWith('Edit failed') ||
-      result.startsWith('Cannot edit') ||
-      result.startsWith('File already exists') ||
-      result.startsWith('oldString') ||
-      result.startsWith('Invalid pattern') ||
-      result.startsWith('Web search failed') ||
-      result.startsWith('Web search error'));
+  const isResult = ToolState.isResult(state);
+
+  /*
+   * SINGLE-RULE CONVENTION (see nativeTools.ts → buildNativeTools docstring):
+   * a tool result is an error IFF its string starts with `Error:`. Everything
+   * else (no results, empty, not available, hint messages) is a success.
+   * New tools that follow the convention get correct UI without edits here.
+   */
+  const isError = typeof result === 'string' && result.startsWith('Error:');
 
   return (
     <div className={classNames('flex flex-col gap-1', !grouped && 'my-2')}>
@@ -161,7 +223,7 @@ export const ToolInvocationItem = memo(({ part, grouped }: ToolInvocationItemPro
       >
         <div className={classNames(icon, 'text-amplify-elements-textSecondary')} />
         <span className="text-amplify-elements-textPrimary font-medium">
-          {state === 'call' ? `${friendlyName}...` : friendlyName}
+          {ToolState.isCall(state) ? `${friendlyName}...` : friendlyName}
         </span>
         {summary && (
           <span className="text-amplify-elements-textSecondary text-xs truncate max-w-md font-mono">{summary}</span>

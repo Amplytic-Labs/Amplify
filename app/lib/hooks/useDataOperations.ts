@@ -1,8 +1,52 @@
 import { useState, useCallback } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { ImportExportService } from '~/lib/services/importExportService';
 import { useIndexedDB } from '~/lib/hooks/useIndexedDB';
 import { generateId } from 'ai';
+
+/**
+ * V7-compatible content extraction from messages.
+ * In AI SDK v7, message content can be either:
+ * - A string (simple text message)
+ * - An array of parts (complex message with tool invocations, etc.)
+ *
+ * This helper extracts the text content from both formats.
+ */
+function getMessageContent(msg: any): string {
+  if (!msg) {
+    return '';
+  }
+
+  // Simple string content
+  if (typeof msg.content === 'string') {
+    return msg.content;
+  }
+
+  // V7 parts-based content
+  if (Array.isArray(msg.parts)) {
+    const textParts = msg.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text);
+
+    if (textParts.length > 0) {
+      return textParts.join('');
+    }
+  }
+
+  // Fallback for other content formats
+  if (typeof msg.content === 'object' && msg.content !== null) {
+    // Handle content array format
+    if (Array.isArray(msg.content)) {
+      return msg.content
+        .filter((c: any) => c.type === 'text')
+        .map((c: any) => c.text)
+        .join('');
+    }
+
+    return JSON.stringify(msg.content);
+  }
+
+  // Last resort
+  return String(msg.content || '');
+}
 
 interface UseDataOperationsProps {
   /**
@@ -597,19 +641,27 @@ export function useDataOperations({
             throw new Error('Invalid chat format: missing required fields');
           }
 
-          // Ensure each message has required fields
+          /*
+           * Ensure each message has required fields
+           * V7 MIGRATION: Use getMessageContent for parts-based extraction
+           */
           const validatedMessages = chat.messages.map((msg: any) => {
-            if (!msg.role || !msg.content) {
+            const extractedContent = getMessageContent(msg);
+
+            if (!msg.role || !extractedContent) {
               throw new Error('Invalid message format: missing required fields');
             }
 
             return {
               id: msg.id || generateId(),
               role: msg.role,
-              content: msg.content,
+              content: extractedContent,
               name: msg.name,
               function_call: msg.function_call,
               timestamp: msg.timestamp || Date.now(),
+
+              // Preserve v7 parts array if present
+              ...(Array.isArray(msg.parts) ? { parts: msg.parts } : {}),
             };
           });
 

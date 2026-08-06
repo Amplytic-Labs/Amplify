@@ -12,8 +12,42 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('Terminal');
 
+/*
+ * Maximum number of USER-ADDED terminals (beyond the two fixed tabs).
+ * Total visible tabs = 2 (fixed) + MAX_TERMINALS (user) = 5.
+ */
 const MAX_TERMINALS = 3;
 export const DEFAULT_TERMINAL_SIZE = 25;
+
+/*
+ * Fixed tab indices.
+ *
+ *   Index 0 — "Amplify Terminal"  →  initTerminal  (project auto-setup:
+ *                                     npm install + npm run dev). This is
+ *                                     the SPECIAL terminal the user calls
+ *                                     "the amplify terminal" — it initializes
+ *                                     and runs the project. Visible by default
+ *                                     so the user can SEE the running command.
+ *                                     Silent in chat (no message created).
+ *
+ *   Index 1 — "AI Terminal"        →  amplifyTerminal (AI's shell + start
+ *                                     actions). SEPARATE from the project
+ *                                     init terminal so the AI's commands
+ *                                     (e.g. `npm install some-package`) don't
+ *                                     Ctrl+C the dev server, and the dev
+ *                                     server's output doesn't pollute the AI's
+ *                                     scrollback.
+ *
+ *   Index 2+ — user-added terminals (newShellProcess). Max MAX_TERMINALS.
+ *
+ * Previously the visible "Amplify Terminal" tab was attached to
+ * `amplifyTerminal` (AI's shell) while project-init ran on a HIDDEN off-screen
+ * `initTerminal` — so the user saw an empty terminal while npm install + start
+ * ran invisibly. This restructure makes the project-init terminal visible and
+ * gives AI commands their own visible tab.
+ */
+const INIT_TAB_INDEX = 0;
+const AI_TAB_INDEX = 1;
 
 export const TerminalTabs = memo(() => {
   const showTerminal = useStore(workbenchStore.showTerminal);
@@ -29,15 +63,18 @@ export const TerminalTabs = memo(() => {
   const addTerminal = () => {
     if (terminalCount < MAX_TERMINALS) {
       setTerminalCount(terminalCount + 1);
-      setActiveTerminal(terminalCount);
+
+      // New user terminal is at index (terminalCount + 2): old count + 2 fixed tabs.
+      setActiveTerminal(terminalCount + 2);
     }
   };
 
   const closeTerminal = useCallback(
     (index: number) => {
-      if (index === 0) {
+      // Can't close the two fixed tabs (init + AI).
+      if (index === INIT_TAB_INDEX || index === AI_TAB_INDEX) {
         return;
-      } // Can't close amplify terminal
+      }
 
       const terminalRef = terminalRefs.current.get(index);
 
@@ -67,7 +104,11 @@ export const TerminalTabs = memo(() => {
   useEffect(() => {
     return () => {
       terminalRefs.current.forEach((ref, index) => {
-        if (index > 0 && ref?.getTerminal) {
+        /*
+         * Only detach user-added terminals (index >= 2). The fixed tabs
+         * (init + AI) are managed by the store and don't need detaching.
+         */
+        if (index >= 2 && ref?.getTerminal) {
           const terminal = ref.getTerminal();
 
           if (terminal) {
@@ -113,6 +154,11 @@ export const TerminalTabs = memo(() => {
     };
   }, []);
 
+  /*
+   * Total tabs = 2 fixed (init + AI) + terminalCount (user-added).
+   */
+  const totalTabs = terminalCount + 2;
+
   return (
     <Panel
       ref={terminalPanelRef}
@@ -132,13 +178,13 @@ export const TerminalTabs = memo(() => {
     >
       <div className="h-full">
         <div className="bg-amplify-elements-terminals-background h-full flex flex-col">
-          <div className="flex items-center bg-amplify-elements-background-depth-2 border-y border-amplify-elements-borderColor gap-1.5 min-h-[34px] p-2">
-            {Array.from({ length: terminalCount + 1 }, (_, index) => {
+          <div className="flex items-center bg-amplify-elements-background-depth-2 border-y border-amplify-elements-borderColor gap-1 min-h-[34px] p-2">
+            {Array.from({ length: totalTabs }, (_, index) => {
               const isActive = activeTerminal === index;
 
               return (
                 <React.Fragment key={index}>
-                  {index == 0 ? (
+                  {index === INIT_TAB_INDEX ? (
                     <button
                       key={index}
                       className={classNames(
@@ -155,6 +201,23 @@ export const TerminalTabs = memo(() => {
                       <div className="i-ph:terminal-window-duotone text-lg" />
                       Amplify Terminal
                     </button>
+                  ) : index === AI_TAB_INDEX ? (
+                    <button
+                      key={index}
+                      className={classNames(
+                        'flex items-center text-sm cursor-pointer gap-1.5 px-3 py-2 h-full whitespace-nowrap rounded-full',
+                        {
+                          'bg-amplify-elements-terminals-buttonBackground text-amplify-elements-textSecondary hover:text-amplify-elements-textPrimary':
+                            isActive,
+                          'bg-amplify-elements-background-depth-2 text-amplify-elements-textSecondary hover:bg-amplify-elements-terminals-buttonBackground':
+                            !isActive,
+                        },
+                      )}
+                      onClick={() => setActiveTerminal(index)}
+                    >
+                      <div className="i-ph:robot-duotone text-lg" />
+                      AI Terminal
+                    </button>
                   ) : (
                     <React.Fragment>
                       <button
@@ -162,7 +225,8 @@ export const TerminalTabs = memo(() => {
                         className={classNames(
                           'flex items-center text-sm cursor-pointer gap-1.5 px-3 py-2 h-full whitespace-nowrap rounded-full',
                           {
-                            'bg-amplify-elements-terminals-buttonBackground text-amplify-elements-textPrimary': isActive,
+                            'bg-amplify-elements-terminals-buttonBackground text-amplify-elements-textPrimary':
+                              isActive,
                             'bg-amplify-elements-background-depth-2 text-amplify-elements-textSecondary hover:bg-amplify-elements-terminals-buttonBackground':
                               !isActive,
                           },
@@ -170,7 +234,7 @@ export const TerminalTabs = memo(() => {
                         onClick={() => setActiveTerminal(index)}
                       >
                         <div className="i-ph:terminal-window-duotone text-lg" />
-                        Terminal {terminalCount > 1 && index}
+                        Terminal {terminalCount > 1 && index - 1}
                         <button
                           className="bg-transparent text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary hover:bg-transparent rounded"
                           onClick={(e) => {
@@ -196,12 +260,29 @@ export const TerminalTabs = memo(() => {
 
                 if (ref?.getTerminal()) {
                   const terminal = ref.getTerminal()!;
-                  terminal.clear();
-                  terminal.focus();
 
-                  if (activeTerminal === 0) {
-                    workbenchStore.attachAmplifyTerminal(terminal);
+                  if (activeTerminal === INIT_TAB_INDEX) {
+                    /*
+                     * Amplify (init) terminal: use the shell's soft reset.
+                     * Clears the screen + sends `clear` to the running shell
+                     * WITHOUT spawning a new jsh process.
+                     */
+                    workbenchStore.initTerminal.resetTerminal();
+                    terminal.focus();
+                  } else if (activeTerminal === AI_TAB_INDEX) {
+                    /*
+                     * AI terminal: same soft reset as the init terminal.
+                     */
+                    workbenchStore.amplifyTerminal.resetTerminal();
+                    terminal.focus();
                   } else {
+                    /*
+                     * User terminal: detach (kills the old process) BEFORE
+                     * re-attaching so we don't accumulate onData listeners.
+                     */
+                    workbenchStore.detachTerminal(terminal);
+                    terminal.clear();
+                    terminal.focus();
                     workbenchStore.attachTerminal(terminal);
                   }
                 }
@@ -215,12 +296,36 @@ export const TerminalTabs = memo(() => {
               onClick={() => workbenchStore.toggleTerminal(false)}
             />
           </div>
-          {Array.from({ length: terminalCount + 1 }, (_, index) => {
+          {Array.from({ length: totalTabs }, (_, index) => {
             const isActive = activeTerminal === index;
 
-            logger.debug(`Starting amplify terminal [${index}]`);
+            logger.debug(`Starting terminal [${index}]`);
 
-            if (index == 0) {
+            if (index === INIT_TAB_INDEX) {
+              return (
+                <React.Fragment key={`terminal-container-${index}`}>
+                  <Terminal
+                    key={`terminal-${index}`}
+                    id={`terminal_${index}`}
+                    className={classNames('h-full overflow-hidden modern-scrollbar-invert', {
+                      hidden: !isActive,
+                    })}
+                    ref={(ref) => {
+                      if (ref) {
+                        terminalRefs.current.set(index, ref);
+                      }
+                    }}
+                    onTerminalReady={(terminal) => workbenchStore.attachInitTerminal(terminal)}
+                    onTerminalResize={(cols, rows) => workbenchStore.onTerminalResize(cols, rows)}
+                    theme={theme}
+                  />
+                  <TerminalManager
+                    terminal={terminalRefs.current.get(index)?.getTerminal() || null}
+                    isActive={isActive}
+                  />
+                </React.Fragment>
+              );
+            } else if (index === AI_TAB_INDEX) {
               return (
                 <React.Fragment key={`terminal-container-${index}`}>
                   <Terminal

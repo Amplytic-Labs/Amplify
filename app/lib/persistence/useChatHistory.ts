@@ -1,10 +1,10 @@
-import { useLoaderData, useNavigate, useSearchParams } from '@remix-run/react';
+import { useSearchParams, useMatches } from '@remix-run/react';
 import { useState, useEffect, useCallback } from 'react';
 import { atom } from 'nanostores';
-import { generateId, type JSONValue, type Message } from 'ai';
-import { toast } from 'react-toastify';
+import { generateId, type JSONValue, type UIMessage } from 'ai';
+import { toast } from '~/components/ui/toast';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { logStore } from '~/lib/stores/logs'; // Import logStore
+import { logStore } from '~/lib/stores/logs';
 import {
   getMessages,
   getAll,
@@ -14,6 +14,7 @@ import {
   setMessages,
   duplicateChat,
   createChatFromMessages,
+  updateChatMetadata,
   getSnapshot,
   setSnapshot,
   type IChatMetadata,
@@ -21,17 +22,17 @@ import {
 import type { FileMap } from '~/lib/stores/files';
 import type { Snapshot } from './types';
 import { webcontainer } from '~/lib/webcontainer';
-import { detectProjectCommands, createCommandActionsString } from '~/utils/projectCommands';
-import type { ContextAnnotation } from '~/types/context';
+import { detectProjectCommands } from '~/utils/projectCommands';
 import { projectStore } from './project-store';
 import { getProjectFiles, createProjectCommit } from './project-files';
 import { runProjectAutoSetup } from './project-auto-run';
+import { extractChatName } from '~/lib/chat/chatname';
 
 export interface ChatHistoryItem {
   id: string;
   urlId?: string;
   description?: string;
-  messages: Message[];
+  messages: UIMessage[];
   timestamp: string;
   metadata?: IChatMetadata;
 }
@@ -44,510 +45,201 @@ export const chatId = atom<string | undefined>(undefined);
 export const description = atom<string | undefined>(undefined);
 export const chatMetadata = atom<IChatMetadata | undefined>(undefined);
 
-/**
- * Bumped every time a chat is saved (in `storeMessageHistory`).
- * The sidebar `Menu.client.tsx` subscribes to this atom and re-runs
- * `loadEntries()` whenever it changes — so newly-created chats show up
- * in the Recent Chats list immediately, without the user having to
- * close and reopen the sidebar.
- */
 export const chatListVersion = atom(0);
 
-/**
- * Tracks whether we've already kicked off the LLM title-generation
- * call for the current chat. This is a module-level Set (not a store)
- * because we only want to fire the title API once per chat ID, even
- * though `storeMessageHistory` runs many times as the assistant
- * response streams in.
- */
-const _titleGenerationStarted = new Set<string>();
-
-/**
- * Calls the `/api/chat-title` route to generate a short 4-8 word title
- * for a chat based on the first user message. Falls back gracefully if
- * the route is unavailable or returns an error.
+/*
+ * Module-level guard that prevents the project-load IIFE (the
+ * `clearWorkspace → restoreFileMap → runProjectAutoSetup` chain) from
+ * running TWICE for the same project within a single page session.
  *
- * Uses the currently-selected model + provider from cookies so the
- * title is generated with the same provider the user is chatting with.
+ * WHY THIS EXISTS:
+ * After cloning a repo, `importChat` navigates to `/${projectId}/${chatId}`
+ * which triggers a full page reload. On reload, the load effect fires and
+ * starts the IIFE. The IIFE is ASYNC — between `clearWorkspace()` and
+ * `loadedProjectId.set(project.id)` there is a window where the effect can
+ * re-fire (e.g. when `Chat.client.tsx` strips a `prompt` query param via
+ * `setSearchParams({})`). At that point `loadedProjectId` is still the old
+ * value, so `projectChanged === true` and a SECOND IIFE starts.
+ *
+ * The second IIFE's `clearWorkspace()` sends Ctrl+C to the first `npm install`
+ * (which is still running), then `runProjectAutoSetup()` re-injects `npm install`
+ * — producing the "auto injected → stopped (^C) → injected again" redundancy.
+ *
+ * This guard makes the second IIFE a no-op for the same project. It is cleared
+ * as soon as the first IIFE sets `loadedProjectId` (after which `projectChanged`
+ * is false anyway), and in a `finally` block for safety. It does NOT block a
+ * genuine project switch (different project id) — only same-project re-entries.
  */
-async function generateChatTitle(_chatId: string, firstMessage: string): Promise<string | null> {
-  try {
-    /*
-     * Read the current model + provider from the API keys cookie
-     * (set by the ChatBox model selector).
-     */
-    let model = 'glm-4.7-flash';
-    let provider = { name: 'Z.ai' } as any;
-
-    try {
-      const cookieMatch = document.cookie.split('; ').find((c) => c.startsWith('selectedModel='));
-
-      if (cookieMatch) {
-        const decoded = decodeURIComponent(cookieMatch.split('=')[1]);
-
-        try {
-          const parsed = JSON.parse(decoded);
-
-          if (parsed.model) {
-            model = parsed.model;
-          }
-
-          if (parsed.provider) {
-            provider = parsed.provider;
-          }
-        } catch {
-          // Not JSON — ignore
-        }
-      }
-    } catch {
-      // cookie read failed — use defaults
-    }
-
-    const response = await fetch('/api/chat-title', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: firstMessage, model, provider }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data: any = await response.json();
-
-    return data.title || null;
-  } catch (e) {
-    console.warn('[ChatHistory] generateChatTitle error:', e);
-    return null;
-  }
-}
+let _projectLoadingInProgress: string | undefined;
 
 export function useChatHistory() {
-  const navigate = useNavigate();
-  const { id: mixedId } = useLoaderData<{ id?: string }>();
+  const matches = useMatches();
+
+  /*
+   * ROUTE DATA RESOLUTION — why we use useMatches() instead of useLoaderData()
+   * ========================================================================
+   *
+   * Remix v2 flat routes create an implicit PARENT-CHILD relationship between:
+   *   - routes/$projectId.tsx        (matches /:projectId — PARENT LAYOUT)
+   *   - routes/$projectId.$chatId.tsx (matches /:projectId/:chatId — CHILD)
+   *
+   * Both files `export default IndexRoute` (the same component from _index.tsx).
+   * When the URL is /:projectId/:chatId, BOTH routes match. The parent's
+   * component renders first. Since MainLayout does NOT render <Outlet/>, the
+   * child's component never mounts — but useLoaderData() returns the PARENT's
+   * loader data ({ projectId } with NO id field).
+   *
+   * This caused Bug 1: mixedId was always undefined for project chats, so the
+   * load effect's `!mixedId && urlProjectId` branch fired and picked the LATEST
+   * chat (project.chatIds[last]) instead of the chat from the URL.
+   *
+   * FIX: Scan useMatches() for the most specific route that has `id` in its
+   * data. That's the $projectId.$chatId child route. If no child matches (URL
+   * is /:projectId with no chatId), fall back to the $projectId parent's data.
+   */
+  const chatMatch = matches.find((m) => m.data && typeof (m.data as Record<string, unknown>).id !== 'undefined');
+  const projectMatch = matches.find((m) => m.data && 'projectId' in (m.data as Record<string, unknown>));
+  const resolvedData = (chatMatch?.data ?? projectMatch?.data ?? {}) as { id?: string; projectId?: string };
+  const { id: mixedId, projectId: urlProjectId } = resolvedData;
+
   const [searchParams] = useSearchParams();
 
-  const [archivedMessages, setArchivedMessages] = useState<Message[]>([]);
-  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const [archivedMessages, setArchivedMessages] = useState<UIMessage[]>([]);
+  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [ready, setReady] = useState<boolean>(false);
   const [urlId, setUrlId] = useState<string | undefined>();
 
-  useEffect(() => {
-    if (!db) {
-      setReady(true);
+  // Define restoreFileMap before it's used in the effect
+  const restoreFileMap = useCallback(async (files: FileMap) => {
+    const container = await webcontainer;
 
-      if (persistenceEnabled) {
-        const error = new Error('Chat persistence is unavailable');
-        logStore.logError('Chat persistence initialization failed', error);
-        toast.error('Chat persistence is unavailable');
+    const entries = Object.entries(files);
+
+    /*
+     * Phase 1: create all directories (sequential — the WebContainer FS
+     * is happiest with one mkdir at a time, and concurrent writes were
+     * causing files to silently fail to appear in the workspace after a
+     * page refresh).
+     */
+    for (const [rawKey, value] of entries) {
+      if (value?.type !== 'folder') {
+        continue;
       }
 
-      return;
-    }
+      let key = rawKey;
 
-    if (mixedId) {
-      /*
-       * Reset `ready` + `initialMessages` so ChatImpl UNMOUNTS during the
-       * async IndexedDB load. Without this, client-side navigation between
-       * chats keeps ChatImpl mounted with stale state — `chatStarted` and
-       * the `useChat` hook's internal `messages` only initialize from
-       * `initialMessages` on FIRST mount, so the new chat's messages and
-       * workspace files never render until a full page refresh.
-       *
-       * When the load completes, `setReady(true)` remounts ChatImpl fresh
-       * — it picks up the new `initialMessages` AND the workspace files
-       * that were restored into the WebContainer / workbenchStore during
-       * the same async callback.
-       */
-      setReady(false);
-      setInitialMessages([]);
+      if (key.startsWith(container.workdir)) {
+        key = key.replace(container.workdir, '');
+      }
 
-      Promise.all([
-        getMessages(db, mixedId),
-        getSnapshot(db, mixedId), // Fetch snapshot from DB
-      ])
-        .then(async ([storedMessages, snapshot]) => {
-          if (storedMessages && storedMessages.messages.length > 0) {
-            /*
-             * const snapshotStr = localStorage.getItem(`snapshot:${mixedId}`); // Remove localStorage usage
-             * const snapshot: Snapshot = snapshotStr ? JSON.parse(snapshotStr) : { chatIndex: 0, files: {} }; // Use snapshot from DB
-             */
-            const validSnapshot = snapshot || { chatIndex: '', files: {} }; // Ensure snapshot is not undefined
-            const summary = validSnapshot.summary;
-
-            const rewindId = searchParams.get('rewindTo');
-            const endingIdx = rewindId
-              ? storedMessages.messages.findIndex((m) => m.id === rewindId) + 1
-              : storedMessages.messages.length;
-            const snapshotIndex = storedMessages.messages.findIndex((m) => m.id === validSnapshot.chatIndex);
-
-            const filteredMessages = storedMessages.messages.slice(0, endingIdx);
-            const archivedMessages: Message[] = [];
-
-            setArchivedMessages(archivedMessages);
-
-            /*
-             * ── Project = source of truth ──────────────────────────────
-             * If this chat is linked to a Project, restore the project's
-             * GLOBAL file state (shared by all chats) instead of the stale
-             * per-chat snapshot. This is what makes switching chats inside a
-             * project never change the file version.
-             *
-             * IMPORTANT: skip the restore entirely when the project's files
-             * are ALREADY loaded in the WebContainer (same project, different
-             * chat). This prevents the workspace from visually "reloading" on
-             * every chat switch inside a project — only the chat messages
-             * change.
-             */
-            const linkedProject =
-              projectStore.getProjectByChat(storedMessages.id) ??
-              (storedMessages.metadata?.projectId
-                ? projectStore.getProject(storedMessages.metadata.projectId)
-                : undefined);
-
-            const currentlyLoadedProjectId = workbenchStore.loadedProjectId.get();
-
-            if (linkedProject) {
-              const projectFiles = await getProjectFiles(db, linkedProject.id);
-
-              if (
-                currentlyLoadedProjectId === linkedProject.id &&
-                projectFiles?.files &&
-                Object.keys(projectFiles.files).length > 0
-              ) {
-                /*
-                 * Same project, different chat — just bump the workbench
-                 * file store reference so the editor / file tree pick up
-                 * any in-memory edits, but DON'T re-write to WebContainer.
-                 */
-                workbenchStore.files.set(projectFiles.files);
-              } else if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
-                await restoreFileMap(projectFiles.files);
-                workbenchStore.files.set(projectFiles.files);
-
-                /*
-                 * Switching to a different project — reset the auto-start
-                 * flag so the new project's setup + start command can fire.
-                 */
-                if (currentlyLoadedProjectId !== linkedProject.id) {
-                  workbenchStore.projectAutoStarted.set(false);
-                }
-
-                workbenchStore.loadedProjectId.set(linkedProject.id);
-
-                /*
-                 * Auto-detect + persist project commands (setupCommand /
-                 * startCommand / projectType) so the sidebar can show them
-                 * and the auto-run helper can fire them.
-                 */
-                try {
-                  const fileList = Object.entries(projectFiles.files)
-                    .filter(([, v]) => v?.type === 'file')
-                    .map(([path, v]) => ({ path, content: (v as any)?.content ?? '' }));
-
-                  if (fileList.length > 0) {
-                    const detected = await detectProjectCommands(fileList);
-
-                    if (detected && (detected.setupCommand || detected.startCommand)) {
-                      projectStore.setProjectCommands(linkedProject.id, {
-                        type: detected.type,
-                        setupCommand: detected.setupCommand,
-                        startCommand: detected.startCommand,
-                        followupMessage: detected.followupMessage,
-                      });
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[ChatHistory] detectProjectCommands failed:', e);
-                }
-
-                /*
-                 * Open the workbench + trigger auto setup & start command
-                 * (npm install / npm run dev) once per session per project.
-                 * The helper checks `projectAutoStarted` so it won't fire
-                 * again on subsequent chat switches inside the same project.
-                 */
-                workbenchStore.showWorkbench.set(true);
-
-                if (!workbenchStore.projectAutoStarted.get()) {
-                  runProjectAutoSetup(linkedProject).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
-                }
-              } else if (storedMessages.metadata?.projectInitiated && snapshotIndex >= 0) {
-                /*
-                 * Fallback for chats promoted before the project-files store
-                 * existed: seed the project from the legacy chat snapshot.
-                 */
-                restoreSnapshot(mixedId);
-                workbenchStore.loadedProjectId.set(linkedProject.id);
-              }
-            } else {
-              /*
-               * Personal chat — mark the loaded project as "<none>" so a
-               * subsequent switch back into a project re-restores its files.
-               */
-              if (currentlyLoadedProjectId !== '<none>') {
-                workbenchStore.loadedProjectId.set('<none>');
-                workbenchStore.projectAutoStarted.set(false);
-              }
-
-              if (storedMessages.metadata?.projectInitiated && snapshotIndex >= 0) {
-                restoreSnapshot(mixedId);
-              }
-            }
-
-            setInitialMessages(filteredMessages);
-
-            setUrlId(storedMessages.urlId);
-            description.set(storedMessages.description);
-            chatId.set(storedMessages.id);
-            chatMetadata.set(storedMessages.metadata);
-          } else if (storedMessages && storedMessages.metadata?.projectId) {
-            /*
-             * Empty chat linked to a project — e.g. a fresh "New chat in
-             * project" created via the sidebar.
-             *
-             * We do NOT blindly restore project files here. If the project
-             * is already loaded in the WebContainer (the common case — the
-             * user is already in the project and just wants a new chat),
-             * we keep the workspace exactly as-is and only reset the chat
-             * state to an empty conversation. No file re-injection, no
-             * dependency reinstall, no terminal flicker — switching chats
-             * inside a project is instant.
-             *
-             * If the project is NOT yet loaded (rare — e.g. a direct URL
-             * load of an empty project chat, or the first project chat
-             * opened this session), we restore the project's files once so
-             * the workspace is usable.
-             */
-            const linkedProject = projectStore.getProject(storedMessages.metadata.projectId!);
-            const currentlyLoadedProjectId = workbenchStore.loadedProjectId.get();
-
-            if (linkedProject && currentlyLoadedProjectId === linkedProject.id) {
-              /*
-               * Fast path — same project already loaded. Keep the workspace
-               * (files, running dev server, terminal) untouched and just
-               * reset the chat to an empty conversation. This is the
-               * "new chat in project" experience: instant, no reload.
-               *
-               * Re-assert showWorkbench in case it was reset (e.g. by HMR
-               * or a prior navigation to a non-project route).
-               */
-              workbenchStore.showWorkbench.set(true);
-              setInitialMessages([]);
-              setUrlId(storedMessages.urlId);
-              description.set(storedMessages.description || '');
-              chatId.set(storedMessages.id);
-              chatMetadata.set(storedMessages.metadata);
-            } else if (linkedProject) {
-              /*
-               * Project not yet loaded this session — restore its global
-               * file state into the WebContainer so the workspace is
-               * usable, then reset the chat to an empty conversation.
-               */
-              const projectFiles = await getProjectFiles(db, linkedProject.id);
-
-              if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
-                await restoreFileMap(projectFiles.files);
-                workbenchStore.files.set(projectFiles.files);
-                workbenchStore.loadedProjectId.set(linkedProject.id);
-
-                if (!workbenchStore.projectAutoStarted.get()) {
-                  runProjectAutoSetup(linkedProject).catch((e) =>
-                    console.warn('[ChatHistory] Auto setup failed for empty project chat:', e),
-                  );
-                }
-              } else {
-                /*
-                 * Project has no committed files yet (e.g. a brand-new
-                 * project created from the gallery). Mark the project as
-                 * loaded so subsequent chats in this project take the fast
-                 * path. The workspace still opens (below) so the user sees
-                 * the empty editor + terminal.
-                 */
-                workbenchStore.loadedProjectId.set(linkedProject.id);
-              }
-
-              /*
-               * Always open the workspace for a project chat — even if the
-               * project has no files yet. This ensures the workspace
-               * survives a page refresh (showWorkbench is an in-memory atom
-               * that resets to false on reload, so we must re-assert it
-               * here).
-               */
-              workbenchStore.showWorkbench.set(true);
-
-              setInitialMessages([]);
-              setUrlId(storedMessages.urlId);
-              description.set(storedMessages.description || '');
-              chatId.set(storedMessages.id);
-              chatMetadata.set(storedMessages.metadata);
-            } else {
-              /*
-               * Metadata points to a project that no longer exists — treat
-               * as a plain empty chat and stay on the route so the user can
-               * still type a message.
-               */
-              setInitialMessages([]);
-              setUrlId(storedMessages.urlId);
-              description.set(storedMessages.description || '');
-              chatId.set(storedMessages.id);
-              chatMetadata.set(storedMessages.metadata);
-            }
-          } else {
-            navigate('/', { replace: true });
-          }
-
-          setReady(true);
-        })
-        .catch((error) => {
-          console.error(error);
-
-          logStore.logError('Failed to load chat messages or snapshot', error); // Updated error message
-          toast.error('Failed to load chat: ' + error.message); // More specific error
-        });
-    } else {
-      // Handle case where there is no mixedId (e.g., new chat)
-      setReady(true);
-    }
-  }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
-
-  /*
-   * One-time migration: fix legacy chats that were saved without a
-   * `urlId` or with a `[Model: ...]` prefix in their description.
-   *
-   * Before the chat-title fix, text-only chats were saved with
-   * `urlId: undefined` and `description` containing the raw
-   * `[Model: ...]\n\n[Provider: ...]\n\n<user message>` prefix. This
-   * migration runs once on app load and repairs those entries so they
-   * show up in the sidebar with clean titles.
-   *
-   * Note: the `urlId` index has a uniqueness constraint, so we collect
-   * all existing urlIds first and generate unique ones for chats that
-   * are missing them (by appending a suffix if the chatId is already
-   * taken as a urlId by another chat).
-   */
-  useEffect(() => {
-    if (!db) {
-      return;
-    }
-
-    (async () => {
       try {
-        const allChats = await getAll(db);
-        let fixed = 0;
-
-        /*
-         * Collect all existing urlIds so we can avoid collisions when
-         * assigning new ones.
-         */
-        const existingUrlIds = new Set<string>();
-
-        for (const chat of allChats) {
-          if (chat.urlId) {
-            existingUrlIds.add(chat.urlId);
-          }
-        }
-
-        for (const chat of allChats) {
-          let needsUpdate = false;
-          const updates: Partial<typeof chat> = {};
-
-          // Fix missing urlId — generate a unique one
-          if (!chat.urlId) {
-            let candidate = chat.id;
-            let suffix = 0;
-
-            while (existingUrlIds.has(candidate)) {
-              suffix++;
-              candidate = `${chat.id}-${suffix}`;
-            }
-
-            updates.urlId = candidate;
-            existingUrlIds.add(candidate);
-            needsUpdate = true;
-          }
-
-          // Fix description with [Model: ...] prefix
-          if (chat.description && chat.description.startsWith('[Model:')) {
-            const cleaned = chat.description
-              .replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '')
-              .trim();
-            updates.description = cleaned.slice(0, 60) || 'New chat';
-            needsUpdate = true;
-          }
-
-          // Fix missing description
-          if (!chat.description) {
-            updates.description = 'New chat';
-            needsUpdate = true;
-          }
-
-          if (needsUpdate) {
-            try {
-              await setMessages(
-                db,
-                chat.id,
-                chat.messages,
-                updates.urlId ?? chat.urlId,
-                updates.description ?? chat.description,
-                chat.timestamp,
-                chat.metadata,
-              );
-              fixed++;
-            } catch (e) {
-              /*
-               * Skip this chat if it still fails (e.g. collision we
-               * couldn't resolve) — don't abort the whole migration.
-               */
-              console.warn(`[ChatHistory] Migration: could not fix chat ${chat.id}:`, e);
-            }
-          }
-        }
-
-        if (fixed > 0) {
-          console.log(`[ChatHistory] Migration: fixed ${fixed} legacy chat(s)`);
-          chatListVersion.set(chatListVersion.get() + 1);
-        }
-      } catch (e) {
-        console.warn('[ChatHistory] Migration failed:', e);
+        await container.fs.mkdir(key, { recursive: true });
+      } catch {
+        /* ignore */
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db]);
+    }
 
+    /*
+     * Phase 2: write all files (sequential — see comment above).
+     */
+    for (const [rawKey, value] of entries) {
+      if (value?.type !== 'file') {
+        continue;
+      }
+
+      let key = rawKey;
+
+      if (key.startsWith(container.workdir)) {
+        key = key.replace(container.workdir, '');
+      }
+
+      try {
+        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
+      } catch (e) {
+        console.warn(`[restoreFileMap] Failed to write ${key}:`, e);
+      }
+    }
+  }, []);
+
+  // Define restoreSnapshot before it's used in the effect
+  const restoreSnapshot = useCallback(async (id: string, snapshot?: Snapshot) => {
+    const container = await webcontainer;
+
+    const validSnapshot = snapshot || { chatIndex: '', files: {} };
+
+    if (!validSnapshot?.files) {
+      return;
+    }
+
+    const entries = Object.entries(validSnapshot.files);
+
+    for (const [key, value] of entries) {
+      let filePath = key;
+
+      if (filePath.startsWith(container.workdir)) {
+        filePath = filePath.replace(container.workdir, '');
+      }
+
+      if (value?.type === 'folder') {
+        await container.fs.mkdir(filePath, { recursive: true });
+      }
+    }
+
+    for (const [key, value] of entries) {
+      let filePath = key;
+
+      if (filePath.startsWith(container.workdir)) {
+        filePath = filePath.replace(container.workdir, '');
+      }
+
+      if (value?.type === 'file') {
+        await container.fs.writeFile(filePath, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
+      }
+    }
+  }, []);
+
+  // Define takeSnapshot before it's used in the effect
   const takeSnapshot = useCallback(
-    async (chatIdx: string, files: FileMap, _chatId?: string | undefined, chatSummary?: string) => {
+    async (
+      chatIdx: string,
+      files: FileMap,
+      _chatId?: string | undefined,
+      chatSummary?: string,
+      lastUserText?: string,
+    ) => {
       const id = chatId.get();
 
       if (!id || !db) {
         return;
       }
 
-      /*
-       * ── Project = source of truth ──────────────────────────────────
-       * If this chat is linked to a Project, persist the file state to the
-       * PROJECT (a versioned commit + the current pointer), NOT a per-chat
-       * snapshot. Every chat in the project shares this same state.
-       */
       const project = projectStore.getProjectByChat(id);
 
       if (project) {
         try {
-          const message = chatSummary?.slice(0, 80) || `Update via chat ${id}`;
+          let commitMessage = chatSummary?.slice(0, 80);
 
-          await createProjectCommit(db, project.id, message, files, id);
+          if (!commitMessage) {
+            if (lastUserText) {
+              commitMessage =
+                lastUserText
+                  .replace(/<[^>]*>/g, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 80) || 'Update';
+            } else {
+              commitMessage = 'Update';
+            }
+          }
+
+          await createProjectCommit(db, project.id, commitMessage!, files, id);
           projectStore.updateProject(project.id, {
             currentCommitId: (await getProjectFiles(db, project.id))?.currentCommitId,
           });
 
-          /*
-           * Refresh structured project memory from the new file state.
-           * Missing fields are filled in; user-edited fields are preserved.
-           */
           try {
-            const { detectProjectMemory, mergeDetectedMemory } = await import(
-              '~/lib/persistence/project-memory-detect'
-            );
+            const { detectProjectMemory, mergeDetectedMemory } =
+              await import('~/lib/persistence/project-memory-detect');
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);
@@ -568,14 +260,12 @@ export function useChatHistory() {
         return;
       }
 
-      // Legacy per-chat snapshot for personal (non-project) chats.
       const snapshot: Snapshot = {
         chatIndex: chatIdx,
         files,
         summary: chatSummary,
       };
 
-      // localStorage.setItem(`snapshot:${id}`, JSON.stringify(snapshot)); // Remove localStorage usage
       try {
         await setSnapshot(db, id, snapshot);
       } catch (error) {
@@ -586,98 +276,520 @@ export function useChatHistory() {
     [db],
   );
 
-  const restoreSnapshot = useCallback(async (id: string, snapshot?: Snapshot) => {
-    // const snapshotStr = localStorage.getItem(`snapshot:${id}`); // Remove localStorage usage
-    const container = await webcontainer;
+  const navigateChat = useCallback((nextId: string) => {
+    const url = new URL(window.location.href);
 
-    const validSnapshot = snapshot || { chatIndex: '', files: {} };
+    /*
+     * Preserve the projectId segment if the current chat belongs to a
+     * project. Previously this hardcoded `/chat/${nextId}`, which DROPPED
+     * the project context — the URL became `/chat/<id>` instead of
+     * `/<projectId>/<id>`. On a subsequent reload, the load effect's
+     * `!mixedId && urlProjectId` branch would then fail to find the
+     * projectId, and in some cases fall through to loading the LATEST chat
+     * in the project (project.chatIds[last]) instead of the correct one.
+     */
+    const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
 
-    if (!validSnapshot?.files) {
+    if (currentLoadedProjectId && currentLoadedProjectId !== '<none>') {
+      url.pathname = `/${currentLoadedProjectId}/${nextId}`;
+    } else {
+      url.pathname = `/chat/${nextId}`;
+    }
+
+    window.history.replaceState({}, '', url);
+  }, []);
+
+  useEffect(() => {
+    if (!db) {
+      setReady(true);
+
+      if (persistenceEnabled) {
+        const error = new Error('Chat persistence is unavailable');
+        logStore.logError('Chat persistence initialization failed', error);
+        toast.error('Chat persistence is unavailable');
+      }
+
       return;
     }
 
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
+    if (mixedId || urlProjectId) {
+      setReady(false);
+      setInitialMessages([]);
+
+      const chatIdToLoad = mixedId ?? (urlProjectId ? generateId() : undefined);
+
+      let finalChatIdToLoad = chatIdToLoad;
+
+      if (!mixedId && urlProjectId) {
+        const project = projectStore.getProject(urlProjectId);
+
+        if (project && project.chatIds.length > 0) {
+          finalChatIdToLoad = project.chatIds[project.chatIds.length - 1];
+        }
       }
 
-      if (value?.type === 'folder') {
-        await container.fs.mkdir(key, { recursive: true });
+      if (!mixedId && urlProjectId && !finalChatIdToLoad) {
+        finalChatIdToLoad = generateId();
       }
-    });
-    Object.entries(validSnapshot.files).forEach(async ([key, value]) => {
-      if (value?.type === 'file') {
-        if (key.startsWith(container.workdir)) {
-          key = key.replace(container.workdir, '');
+
+      /*
+       * Immediately load project workspace if a project ID is in the URL.
+       *
+       * PROJECT-CHANGE GUARD: Only destroy + rebuild the workspace when
+       * switching to a DIFFERENT project. When switching between chats in
+       * the SAME project, the workspace (WebContainer, files, dev server)
+       * is already correct — destroying it would:
+       *   - Kill the running dev server (workspace "reset" the user sees)
+       *   - Wipe node_modules (forces npm install to re-run unnecessarily)
+       *   - Cause a visible sidebar flash (state re-hydration)
+       *
+       * The guard compares urlProjectId against workbenchStore.loadedProjectId.
+       * On a full page reload, loadedProjectId starts as '<none>' so the
+       * workspace IS rebuilt. On SPA navigation within the same project,
+       * loadedProjectId already equals the target project, so we skip the
+       * expensive teardown and just ensure the workbench is visible.
+       */
+      if (urlProjectId) {
+        const project = projectStore.getProject(urlProjectId);
+
+        if (project) {
+          const currentLoadedProjectId = workbenchStore.loadedProjectId.get();
+          const projectChanged = currentLoadedProjectId !== project.id;
+
+          if (projectChanged) {
+            /*
+             * Same-project re-entry guard: if an IIFE for THIS project is
+             * already in flight (between clearWorkspace and setting
+             * loadedProjectId), skip — otherwise the second IIFE's
+             * clearWorkspace would Ctrl+C the first npm install and
+             * re-inject it (the "injected → stopped → injected again"
+             * redundancy). See `_projectLoadingInProgress` docs above.
+             */
+            if (_projectLoadingInProgress === project.id) {
+              console.log('[ChatHistory] Project load already in progress for', project.id, '— skipping duplicate');
+            } else {
+              _projectLoadingInProgress = project.id;
+
+              console.log(
+                '[ChatHistory] Project changed:',
+                currentLoadedProjectId,
+                '→',
+                project.id,
+                '(destroying + rebuilding workspace)',
+              );
+
+              (async () => {
+                try {
+                  /*
+                   * DESTROY + REINITIALIZE the workspace — only when the
+                   * project actually changed. This kills the previous
+                   * project's dev server, clears its files from the
+                   * WebContainer FS, and resets projectAutoStarted so the
+                   * new project's npm install + start will fire.
+                   */
+                  await workbenchStore.clearWorkspace();
+
+                  const projectFiles = await getProjectFiles(db, project.id);
+                  console.log(
+                    '[ChatHistory] Project files retrieved:',
+                    projectFiles?.files ? Object.keys(projectFiles.files).length : 0,
+                    'files',
+                  );
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                  } else {
+                    /*
+                     * DON'T clear files here. The Promise.all safety net
+                     * below may have already populated `workbenchStore.files`
+                     * from the chat snapshot. Clearing them would wipe the
+                     * snapshot and leave the workspace showing
+                     * "Loading workspace…" forever — the
+                     * "workspace contents don't load on refresh" bug.
+                     *
+                     * Just log the warning; the safety net (or the
+                     * no-snapshot fallback) is responsible for setting
+                     * files in this case.
+                     */
+                    console.warn(
+                      '[ChatHistory] No project files found for project:',
+                      project.id,
+                      '— falling back to snapshot',
+                    );
+                  }
+
+                  workbenchStore.loadedProjectId.set(project.id);
+                  workbenchStore.showWorkbench.set(true);
+
+                  /*
+                   * Loading is complete — clear the guard so a genuine
+                   * future switch to a DIFFERENT project can proceed.
+                   * (Same-project re-entries are now blocked by
+                   * `projectChanged === false` anyway.)
+                   */
+                  _projectLoadingInProgress = undefined;
+
+                  console.log('[ChatHistory] Running auto setup for project:', project.id);
+                  runProjectAutoSetup(project).catch((e) => console.warn('[ChatHistory] Auto setup failed:', e));
+                } catch (e) {
+                  console.error('[ChatHistory] Immediate project load failed:', e);
+                  _projectLoadingInProgress = undefined;
+                }
+              })();
+            }
+          } else {
+            /*
+             * Same project — workspace is already loaded. Just ensure the
+             * workbench is visible. The dev server keeps running, files
+             * stay in place, and only the chat messages + description are
+             * swapped (handled by the Promise.all chain below).
+             */
+            console.log('[ChatHistory] Same project — skipping workspace rebuild');
+            workbenchStore.showWorkbench.set(true);
+          }
+        } else {
+          console.warn('[ChatHistory] Project not found in store for ID:', urlProjectId);
+        }
+      }
+
+      Promise.all([getMessages(db, finalChatIdToLoad!), getSnapshot(db, finalChatIdToLoad!)])
+        .then(async ([storedMessages, snapshot]) => {
+          if (storedMessages && storedMessages.messages.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const validSnapshot = snapshot || { chatIndex: '', files: {} };
+            const rewindId = searchParams.get('rewindTo');
+            const endingIdx = rewindId
+              ? storedMessages.messages.findIndex((m) => m.id === rewindId) + 1
+              : storedMessages.messages.length;
+
+            const filteredMessages = storedMessages.messages.slice(0, endingIdx);
+            const archivedMessages: UIMessage[] = [];
+
+            setArchivedMessages(archivedMessages);
+
+            /*
+             * linkedProject resolution — fall back to urlProjectId.
+             *
+             * Previously this ONLY checked `chatToProject[chatId]` and
+             * `metadata.projectId`. If both were missing (e.g. the chat
+             * was loaded via a URL like /{projectId}/{chatId} but the
+             * chat's metadata was never persisted with projectId, or the
+             * projectStore's chatToProject map was reset), linkedProject
+             * came back undefined and we fell into the "personal chat"
+             * branch below. That branch then called `clearWorkspace()`
+             * because `loadedProjectId !== '<none>'` — wiping files the
+             * IIFE had JUST loaded. The workspace ended up empty on
+             * refresh even though the URL clearly named a project.
+             *
+             * FIX: add `urlProjectId` as a final fallback so a project
+             * chat loaded via URL is recognised even when metadata is
+             * missing.
+             */
+            const linkedProject =
+              projectStore.getProjectByChat(storedMessages.id) ??
+              (storedMessages.metadata?.projectId
+                ? projectStore.getProject(storedMessages.metadata.projectId)
+                : undefined) ??
+              (urlProjectId ? projectStore.getProject(urlProjectId) : undefined);
+
+            /*
+             * "Snapshot has files" — used in place of the
+             * `metadata.projectInitiated` flag for deciding whether to
+             * restore files. The flag is set when an artifact is first
+             * created (see sendMessage flow), but it's unreliable on
+             * older chats or after metadata migrations. The snapshot
+             * itself is the source of truth: if it has files, restore
+             * them.
+             */
+            const snapshotHasFiles = !!snapshot?.files && Object.keys(snapshot.files).length > 0;
+
+            if (!linkedProject) {
+              /*
+               * Personal chat loaded via /chat/{chatId}. If a DIFFERENT
+               * project is currently loaded, destroy the workspace (kill
+               * processes, clear FS) so terminal processes from that
+               * project don't leak into this personal chat.
+               *
+               * BUG FIX: previously this fired whenever
+               * `loadedProjectId !== '<none>'`. But when the URL is
+               * `/{projectId}/{chatId}` and the IIFE has already set
+               * `loadedProjectId = project.id` (and loaded files), this
+               * branch would clearWorkspace() — wiping the IIFE's work.
+               * Now we only clear if loadedProjectId is set to something
+               * OTHER than urlProjectId (i.e. a genuinely different
+               * project is loaded).
+               */
+              const currentLoaded = workbenchStore.loadedProjectId.get();
+
+              if (currentLoaded && currentLoaded !== '<none>' && currentLoaded !== urlProjectId) {
+                await workbenchStore.clearWorkspace();
+              }
+
+              if (snapshotHasFiles) {
+                /*
+                 * Awaiting restoreSnapshot — previously this was
+                 * fire-and-forget, so WebContainer boot failures or FS
+                 * errors were silently swallowed and the workspace ended
+                 * up empty.
+                 */
+                try {
+                  await restoreSnapshot(mixedId || '', snapshot);
+                } catch (e) {
+                  console.warn('[ChatHistory] restoreSnapshot failed (personal chat):', e);
+                }
+
+                /*
+                 * Safety net: restoreSnapshot writes to the WebContainer FS
+                 * but does NOT update workbenchStore.files. Without this,
+                 * hasFiles stays false and the workspace shows "Loading…"
+                 * forever if the IIFE failed. Populate the file store from
+                 * the snapshot.
+                 */
+                const currentFiles = workbenchStore.files.get();
+
+                if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                  workbenchStore.files.set(snapshot!.files);
+                }
+
+                workbenchStore.showWorkbench.set(true);
+              }
+            } else if (snapshotHasFiles) {
+              /*
+               * Only restore the snapshot if the workspace is empty (initial
+               * load) or the project changed. When switching between chats
+               * in the same project that's already loaded, skip the snapshot
+               * restore to avoid resetting the WebContainer FS — the dev
+               * server keeps running and project-global files stay in place.
+               */
+              const currentFiles = workbenchStore.files.get();
+              const hasFiles = currentFiles && Object.keys(currentFiles).length > 0;
+              const sameProject = workbenchStore.loadedProjectId.get() === linkedProject?.id;
+
+              if (!hasFiles || !sameProject) {
+                /*
+                 * Awaiting restoreSnapshot — previously fire-and-forget,
+                 * which silently swallowed WebContainer boot / FS errors
+                 * and left the workspace empty.
+                 */
+                try {
+                  await restoreSnapshot(mixedId || '', snapshot);
+                } catch (e) {
+                  console.warn('[ChatHistory] restoreSnapshot failed (project chat):', e);
+                }
+              }
+
+              workbenchStore.loadedProjectId.set(linkedProject?.id || '<none>');
+              workbenchStore.showWorkbench.set(true);
+
+              /*
+               * Safety net: same as above — restoreSnapshot writes to the
+               * WebContainer but not to the file store. If the IIFE failed,
+               * populate the file store from the snapshot so hasFiles
+               * becomes true and the workspace renders.
+               *
+               * Re-check currentFiles here because the awaited
+               * restoreSnapshot may have completed AFTER the IIFE set
+               * files — in which case we should NOT overwrite them.
+               */
+              if (snapshotHasFiles) {
+                const currentFilesNow = workbenchStore.files.get();
+
+                if (!currentFilesNow || Object.keys(currentFilesNow).length === 0) {
+                  workbenchStore.files.set(snapshot!.files);
+                }
+              }
+            } else {
+              /*
+               * Project chat with messages but no snapshot (e.g. project
+               * chat created via handleNewChatInProject that has since
+               * received messages but no snapshot was taken). Show the
+               * workbench and load project-global files as a fallback.
+               */
+              workbenchStore.loadedProjectId.set(linkedProject.id);
+              workbenchStore.showWorkbench.set(true);
+
+              const currentFiles = workbenchStore.files.get();
+
+              if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                try {
+                  const projectFiles = await getProjectFiles(db, linkedProject.id);
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                  }
+                } catch (e) {
+                  console.warn('[ChatHistory] Safety net failed for project chat without snapshot:', e);
+                }
+              }
+            }
+
+            setInitialMessages(filteredMessages);
+            setUrlId(storedMessages.urlId);
+            description.set(storedMessages.description);
+            chatId.set(storedMessages.id);
+            chatMetadata.set(storedMessages.metadata);
+          } else if (
+            storedMessages &&
+            (storedMessages.metadata?.projectId || urlProjectId || projectStore.getProjectByChat(storedMessages.id))
+          ) {
+            /*
+             * Empty-messages project chat (e.g. git/template import). Load
+             * it as long as ANY project signal exists: explicit
+             * metadata.projectId, a projectId in the URL, or a project
+             * linked in the store. Previously this ONLY checked
+             * metadata.projectId, so if importChat failed to persist it
+             * the chat fell through to `navigate('/')` and the URL became
+             * `/` — the "template click redirects to root" bug.
+             */
+            const linkedProject =
+              (storedMessages.metadata?.projectId
+                ? projectStore.getProject(storedMessages.metadata.projectId)
+                : undefined) ??
+              (urlProjectId ? projectStore.getProject(urlProjectId) : undefined) ??
+              projectStore.getProjectByChat(storedMessages.id);
+
+            if (linkedProject) {
+              workbenchStore.loadedProjectId.set(linkedProject.id);
+              workbenchStore.showWorkbench.set(true);
+
+              /*
+               * ── File-loading safety net ──────────────────────────────
+               *
+               * The IIFE above (line ~342) is responsible for loading
+               * project files into the WebContainer + file store. But it's
+               * fire-and-forget — it runs in parallel with this Promise.all
+               * chain, and if it fails (e.g. WebContainer slow to boot on a
+               * full page reload, or clearWorkspace/restoreFileMap throws)
+               * the catch block swallows the error and files are NEVER
+               * loaded. The user sees showWorkbench=true but hasFiles=false
+               * → "Loading workspace…" forever.
+               *
+               * This safety net checks if files are still empty and, if so,
+               * loads them right here in the sequential .then() chain. If
+               * the IIFE already succeeded, this is a no-op (files already
+               * set). If the IIFE failed, this rescues the workspace.
+               */
+              const currentFiles = workbenchStore.files.get();
+
+              if (!currentFiles || Object.keys(currentFiles).length === 0) {
+                try {
+                  const projectFiles = await getProjectFiles(db, linkedProject.id);
+
+                  if (projectFiles?.files && Object.keys(projectFiles.files).length > 0) {
+                    await restoreFileMap(projectFiles.files);
+                    workbenchStore.files.set(projectFiles.files);
+                    console.log(
+                      `[ChatHistory] Safety net loaded ${Object.keys(projectFiles.files).length} files for project ${linkedProject.id}`,
+                    );
+                  }
+                } catch (e) {
+                  console.warn('[ChatHistory] Safety net failed to load project files:', e);
+                }
+              }
+            }
+
+            setInitialMessages([]);
+            setUrlId(storedMessages.urlId);
+            description.set(storedMessages.description || '');
+            chatId.set(storedMessages.id);
+            chatMetadata.set(storedMessages.metadata);
+          } else {
+            window.location.replace('/');
+          }
+
+          setReady(true);
+        })
+        .catch((error) => {
+          console.error(error);
+          logStore.logError('Failed to load chat messages or snapshot', error);
+          toast.error('Failed to load chat: ' + error.message);
+        });
+    } else {
+      setReady(true);
+    }
+  }, [mixedId, urlProjectId, db, searchParams, restoreFileMap, restoreSnapshot]);
+
+  useEffect(() => {
+    if (!db) {
+      return;
+    }
+
+    (async () => {
+      try {
+        const allChats = await getAll(db);
+        let fixed = 0;
+        const existingUrlIds = new Set<string>();
+
+        for (const chat of allChats) {
+          if (chat.urlId) {
+            existingUrlIds.add(chat.urlId);
+          }
         }
 
-        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } else {
+        for (const chat of allChats) {
+          let needsUpdate = false;
+          const updates: Partial<typeof chat> = {};
+
+          if (!chat.urlId) {
+            let candidate = chat.id;
+            let suffix = 0;
+
+            while (existingUrlIds.has(candidate)) {
+              suffix++;
+              candidate = `${chat.id}-${suffix}`;
+            }
+
+            updates.urlId = candidate;
+            existingUrlIds.add(candidate);
+            needsUpdate = true;
+          }
+
+          if (chat.description && chat.description.startsWith('[Model:')) {
+            const cleaned = chat.description
+              .replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '')
+              .trim();
+            updates.description = cleaned.slice(0, 60) || 'New chat';
+            needsUpdate = true;
+          }
+
+          if (!chat.description) {
+            updates.description = 'New chat';
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            try {
+              await setMessages(
+                db,
+                chat.id,
+                chat.messages,
+                updates.urlId ?? chat.urlId,
+                updates.description ?? chat.description,
+                chat.timestamp,
+                chat.metadata,
+              );
+              fixed++;
+            } catch (e) {
+              console.warn(`[ChatHistory] Migration: could not fix chat ${chat.id}:`, e);
+            }
+          }
+        }
+
+        if (fixed > 0) {
+          console.log(`[ChatHistory] Migration: fixed ${fixed} legacy chat(s)`);
+          chatListVersion.set(chatListVersion.get() + 1);
+        }
+      } catch (e) {
+        console.warn('[ChatHistory] Migration failed:', e);
       }
-    });
-
-    // workbenchStore.files.setKey(snapshot?.files)
-  }, []);
-
-  /**
-   * Restore an arbitrary FileMap (the project's global file state) into the
-   * WebContainer. This is the project-source-of-truth variant of
-   * `restoreSnapshot` — it does not depend on a chatId.
-   */
-  const restoreFileMap = useCallback(async (files: FileMap) => {
-    const container = await webcontainer;
-
-    // Create folders first, then write files.
-    const entries = Object.entries(files);
-
-    for (const [rawKey, value] of entries) {
-      if (value?.type !== 'folder') {
-        continue;
-      }
-
-      let key = rawKey;
-
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
-      try {
-        await container.fs.mkdir(key, { recursive: true });
-      } catch {
-        /* ignore */
-      }
-    }
-
-    for (const [rawKey, value] of entries) {
-      if (value?.type !== 'file') {
-        continue;
-      }
-
-      let key = rawKey;
-
-      if (key.startsWith(container.workdir)) {
-        key = key.replace(container.workdir, '');
-      }
-
-      try {
-        await container.fs.writeFile(key, value.content, { encoding: value.isBinary ? undefined : 'utf8' });
-      } catch {
-        /* ignore */
-      }
-    }
-  }, []);
+    })();
+  }, [db]);
 
   return {
     ready: !mixedId || ready,
     initialMessages,
-    /*
-     * The route-scoped chat key (urlId for chat pages, undefined for home).
-     * Used as a React `key` on <ChatImpl> so the component FULLY remounts
-     * whenever the route changes — resetting `chatStarted`, the `useChat`
-     * hook's internal message state, and all derived UI state. Without
-     * this, client-side navigation between chats (or chat → home) keeps
-     * ChatImpl mounted with stale state.
-     */
     chatKey: mixedId,
     updateChatMestaData: async (metadata: IChatMetadata) => {
       const id = chatId.get();
@@ -694,13 +806,15 @@ export function useChatHistory() {
         console.error(error);
       }
     },
-    storeMessageHistory: async (messages: Message[]) => {
+    storeMessageHistory: async (messages: UIMessage[]) => {
       if (!db || messages.length === 0) {
         return;
       }
 
       const { firstArtifact } = workbenchStore;
-      messages = messages.filter((m) => !m.annotations?.includes('no-store'));
+
+      // AI SDK v7: annotations may be stored as custom data, use type assertion
+      messages = messages.filter((m) => !(m as any).annotations?.includes('no-store'));
 
       let _urlId = urlId;
 
@@ -715,7 +829,8 @@ export function useChatHistory() {
       const lastMessage = messages[messages.length - 1];
 
       if (lastMessage.role === 'assistant') {
-        const annotations = lastMessage.annotations as JSONValue[];
+        // AI SDK v7: annotations accessed via type assertion
+        const annotations = (lastMessage as any).annotations as JSONValue[] | undefined;
         const filteredAnnotations = (annotations?.filter(
           (annotation: JSONValue) =>
             annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
@@ -726,7 +841,34 @@ export function useChatHistory() {
         }
       }
 
-      takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, chatSummary);
+      let lastUserText: string | undefined;
+
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          // AI SDK v7: extract content from parts or fallback to legacy content
+          const msg = messages[i];
+          let c: any;
+
+          if (Array.isArray(msg.parts)) {
+            c = msg.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('');
+          } else {
+            c = (msg as any).content;
+          }
+
+          if (typeof c === 'string') {
+            lastUserText = c;
+          } else if (Array.isArray(c)) {
+            lastUserText = c.map((part: any) => (typeof part === 'string' ? part : part?.text || '')).join(' ');
+          }
+
+          break;
+        }
+      }
+
+      takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, chatSummary, lastUserText);
 
       if (!description.get() && firstArtifact?.title) {
         description.set(firstArtifact?.title);
@@ -737,12 +879,6 @@ export function useChatHistory() {
         chatMetadata.set({ ...currentMetadata, projectInitiated: true });
       }
 
-      /*
-       * Auto-promote chat to project when workspace is first invoked.
-       * This is the "Open Workspace" moment: a normal chat becomes a
-       * project-linked chat, and the current file state is seeded as the
-       * project's first commit (the global source of truth from here on).
-       */
       if (firstArtifact) {
         const currentId = chatId.get();
 
@@ -753,7 +889,6 @@ export function useChatHistory() {
               firstArtifact.title || 'Untitled Project',
             );
 
-            // Seed the project's global file state + first commit.
             const currentFiles = workbenchStore.files.get();
 
             if (Object.keys(currentFiles).length > 0) {
@@ -768,10 +903,6 @@ export function useChatHistory() {
                 currentCommitId: (await getProjectFiles(db, project.id))?.currentCommitId,
               });
 
-              /*
-               * Detect setup/start commands from the freshly seeded files so
-               * subsequent project loads can auto-run them without the AI.
-               */
               try {
                 const fileList = Object.entries(currentFiles)
                   .filter(([, v]) => v?.type === 'file')
@@ -793,29 +924,176 @@ export function useChatHistory() {
                 console.warn('[ChatHistory] detectProjectCommands on promote failed:', e);
               }
 
-              // Mark this project as the loaded one + kick off auto-setup.
               workbenchStore.loadedProjectId.set(project.id);
 
+              /*
+               * IMPORTANT: Get the FRESH project from the store, not the
+               * stale `project` variable from promoteChatToProject.
+               * setProjectCommands() updates the project IN the store, but
+               * the local `project` variable is a snapshot from BEFORE
+               * commands were set. Passing the stale object to
+               * runProjectAutoSetup causes it to exit early because
+               * project.setupCommand / project.startCommand are undefined.
+               */
+              const freshProject = projectStore.getProject(project.id) || project;
+
               if (!workbenchStore.projectAutoStarted.get()) {
-                runProjectAutoSetup(project).catch((e) =>
+                runProjectAutoSetup(freshProject).catch((e) =>
                   console.warn('[ChatHistory] Auto setup failed on promote:', e),
                 );
               }
+
+              /*
+               * ── Migrate pending DOCX artifacts ───────────────────────────
+               *
+               * If the AI generated a `<docxartifact>` document BEFORE the
+               * workspace was initialized (i.e. before this promotion
+               * happened), the document was parked in the pendingDocxStore
+               * (localStorage) by AssistantMessage. Now that a workspace
+               * exists for this chat, migrate the document: re-publish it
+               * into the live docxArtifactStore so the DocxPreviewPanel
+               * picks it up, and switch the workbench to the Document view
+               * so the user sees their previously-generated docx living
+               * alongside the new project files.
+               *
+               * takePendingDocx both reads AND removes the entry, so this
+               * is a one-shot migration — subsequent docx generations go
+               * straight to the workspace via the normal path.
+               */
+              try {
+                const { takePendingDocx } = await import('~/lib/stores/pending-docx-artifacts');
+                const { setDocxArtifact } = await import('~/lib/stores/docx-artifact');
+                const pending = takePendingDocx(currentId);
+
+                if (pending) {
+                  setDocxArtifact(pending.markdown, pending.messageId, false, pending.theme);
+                  workbenchStore.showWorkbench.set(true);
+                  workbenchStore.currentView.set('document');
+                  console.log('[ChatHistory] Migrated pending docx into workspace for chat', currentId);
+                }
+              } catch (e) {
+                console.warn('[ChatHistory] Failed to migrate pending docx:', e);
+              }
             }
 
-            /*
-             * Persist projectId on the chat metadata so the link survives
-             * reloads even if the localStorage project index is reset.
-             */
             const currentMetadata = chatMetadata.get() || {};
             chatMetadata.set({ ...currentMetadata, projectId: project.id });
+
+            /*
+             * Update the browser URL from /chat/{urlId} to /{projectId}/{urlId}.
+             * navigateChat reads loadedProjectId (which was just set above)
+             * to construct the correct project-scoped URL. Without this,
+             * the URL stays at /chat/{urlId} even though the chat is now
+             * a project chat, causing a mismatch on page reload.
+             *
+             * Use _urlId (the local variable) instead of the urlId React
+             * state, because setUrlId is async (React batches updates) and
+             * the state may not have updated yet at this point.
+             */
+            const currentUrlId = _urlId || chatId.get();
+
+            if (currentUrlId) {
+              navigateChat(currentUrlId);
+            }
           } catch (e) {
             console.warn('[ChatHistory] Failed to auto-promote chat to project:', e);
           }
         }
       }
 
-      // Ensure chatId.get() is used here as well
+      /*
+       * ── Re-detect project commands if missing ────────────────────────
+       *
+       * For inject_template projects, the first call to detectProjectCommands
+       * may run before all files are written to the file store (e.g. package.json
+       * hasn't arrived yet). This block re-detects commands on every
+       * storeMessageHistory call if the project still doesn't have them.
+       * Once commands are set, setProjectCommands won't overwrite them
+       * (unless overwrite=true), so this is a no-op after the first success.
+       */
+      if (firstArtifact) {
+        const currentId = chatId.get();
+        const existingProject = currentId ? projectStore.getProjectByChat(currentId) : undefined;
+
+        if (existingProject && !existingProject.setupCommand && !existingProject.startCommand) {
+          try {
+            const currentFiles = workbenchStore.files.get();
+            const fileList = Object.entries(currentFiles)
+              .filter(([, v]) => v?.type === 'file')
+              .map(([path, v]) => ({ path, content: (v as any)?.content ?? '' }));
+
+            if (fileList.length > 0) {
+              const detected = await detectProjectCommands(fileList);
+
+              if (detected && (detected.setupCommand || detected.startCommand)) {
+                projectStore.setProjectCommands(existingProject.id, {
+                  type: detected.type,
+                  setupCommand: detected.setupCommand,
+                  startCommand: detected.startCommand,
+                  followupMessage: detected.followupMessage,
+                });
+
+                console.log(
+                  '[ChatHistory] Re-detected commands for project:',
+                  existingProject.id,
+                  'setup=',
+                  detected.setupCommand,
+                  'start=',
+                  detected.startCommand,
+                );
+
+                /*
+                 * Trigger auto-setup now that commands exist. Get the
+                 * fresh project from the store (with commands set).
+                 */
+                const freshProject = projectStore.getProject(existingProject.id);
+
+                if (freshProject && !workbenchStore.projectAutoStarted.get()) {
+                  runProjectAutoSetup(freshProject).catch((e) =>
+                    console.warn('[ChatHistory] Auto setup failed on re-detect:', e),
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[ChatHistory] Re-detect project commands failed:', e);
+          }
+        }
+      }
+
+      /*
+       * ── Ensure URL reflects project state ────────────────────────────
+       *
+       * If the chat belongs to a project but the URL is still /chat/{id}
+       * (no project segment), update the URL silently. This handles the
+       * case where the promotion block's navigateChat was called with a
+       * stale urlId (undefined React state), or where the promotion
+       * happened in a previous storeMessageHistory call but the URL
+       * wasn't updated for some reason.
+       *
+       * Uses window.history.replaceState (not a navigation) so the AI
+       * response is not interrupted.
+       */
+      if (firstArtifact) {
+        const currentId = chatId.get();
+        const projectForUrl = currentId ? projectStore.getProjectByChat(currentId) : undefined;
+
+        if (projectForUrl) {
+          const currentPathname = window.location.pathname;
+          const expectedProjectId = workbenchStore.loadedProjectId.get();
+
+          if (expectedProjectId && expectedProjectId !== '<none>' && !currentPathname.includes(expectedProjectId)) {
+            const urlIdForUpdate = _urlId || currentId;
+
+            if (urlIdForUpdate) {
+              const newUrl = new URL(window.location.href);
+              newUrl.pathname = `/${expectedProjectId}/${urlIdForUpdate}`;
+              window.history.replaceState({}, '', newUrl);
+            }
+          }
+        }
+      }
+
       if (initialMessages.length === 0 && !chatId.get()) {
         const nextId = await getNextId(db);
 
@@ -826,14 +1104,6 @@ export function useChatHistory() {
         }
       }
 
-      /*
-       * For text-only chats (no artifact), urlId is never set by the
-       * artifact block above. We need a urlId so the sidebar filter
-       * (`item.urlId`) doesn't hide the chat, and so the chat is
-       * addressable via `/chat/<urlId>`. We use the chatId itself as
-       * the urlId for text-only chats — this mirrors how the artifact
-       * flow derives urlId from the artifact id.
-       */
       const finalChatId = chatId.get();
 
       if (!finalChatId) {
@@ -852,7 +1122,7 @@ export function useChatHistory() {
 
       await setMessages(
         db,
-        finalChatId, // Use the potentially updated chatId
+        finalChatId,
         [...archivedMessages, ...messages],
         _finalUrlId,
         description.get(),
@@ -860,66 +1130,211 @@ export function useChatHistory() {
         chatMetadata.get(),
       );
 
-      /*
-       * Chat title generation — runs for EVERY chat (text-only AND
-       * artifact / project chats).
-       *
-       * Previously the LLM title call was gated behind `if (!firstArtifact)`,
-       * which meant artifact chats (including `inject_template` / project
-       * chats) were stuck with the artifact's title — almost always
-       * "Create initial files" — and never got a descriptive name. That
-       * made the sidebar unreadable: every project chat read "Create
-       * initial files".
-       *
-       * Now:
-       *   1. For text-only chats: set a provisional truncated title from
-       *      the first user message immediately (so the chat is never
-       *      untitled), then fire a one-shot LLM call to `/api/chat-title`
-       *      for a clean 4-8 word title.
-       *   2. For artifact / project chats: skip the provisional title
-       *      (the artifact title is already set), but STILL fire the LLM
-       *      call. When it returns, we override the description ONLY if
-       *      the current title is a default placeholder ("Create initial
-       *      files", "Untitled Project", "New project chat", etc.) — so
-       *      we never clobber a meaningful AI-provided title, but we do
-       *      fix the common default case. We also rename the linked
-       *      project if it still has a default name.
-       */
-      const firstUserMessage = messages.find((m) => m.role === 'user');
       const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
 
-      if (firstUserMessage) {
-        const rawContent: any = firstUserMessage.content;
-        let userText: string =
-          typeof rawContent === 'string'
-            ? rawContent
-            : Array.isArray(rawContent)
-              ? rawContent
-                  .filter((p: any) => p.type === 'text')
-                  .map((p: any) => p.text)
-                  .join(' ')
-              : '';
-
+      /*
+       * NEW chat-naming method (token-efficient, no separate AI call).
+       *
+       * The system prompt asks the AI to prepend a `<chatname>…</chatname>`
+       * tag to its FIRST response. Here we extract that tag from the first
+       * assistant message and use it as the chat description (and rename
+       * the linked project if its name is still a default/placeholder).
+       *
+       * `extractChatName` returns null while the tag is still streaming
+       * (closing tag not yet seen), so this is safe to run on every tick
+       * — it only commits a name once the tag is complete. Once committed,
+       * the subsequent `setMessages` calls below re-save the (now-named)
+       * chat, and later ticks find no new `<chatname>` (the tag is stripped
+       * from stored messages by stream-text.ts) so they no-op.
+       *
+       * The old method (a separate POST to /api/chat-title that fired a
+       * whole second LLM call) has been removed.
+       */
+      if (firstAssistantMessage) {
         /*
-         * Strip the [Model: ...]\n\n[Provider: ...]\n\n prefix that
-         * extractPropertiesFromMessage injects into user messages.
+         * Build the assistant's text representation for chatname extraction.
+         *
+         * PRIMARY source: the message's `text` parts (the visible answer).
+         * The system prompt explicitly asks the AI to emit <chatname> as
+         * the FIRST token of its VISIBLE answer, so the text channel is
+         * where the tag SHOULD live.
+         *
+         * FALLBACK: scan `reasoning` parts too. Some models (especially
+         * reasoning models that ignore system-prompt directives) emit the
+         * <chatname> tag INSIDE their reasoning / <thought> trace instead
+         * of in the visible text. Without this fallback, the chat would
+         * fall through to the provisional-title path and never pick up the
+         * AI's intended chat name — which is exactly the "header shows
+         * nothing, sidebar shows the user's first message" regression we
+         * are fixing.
+         *
+         * The fallback looks at reasoning.textDelta / reasoning.text /
+         * reasoning.details[].text, joins them in order, and runs the
+         * same extractChatName on the combined string. If the text-channel
+         * extraction already produced a name, the fallback is skipped.
          */
-        userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
+        const textPartsText = Array.isArray(firstAssistantMessage.parts)
+          ? firstAssistantMessage.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('')
+          : (firstAssistantMessage as any).content || '';
 
-        /*
-         * 1. Provisional fallback title (instant) — only for text-only
-         *    chats (artifact chats already have firstArtifact.title set).
-         *    Set immediately so the chat shows up in the sidebar.
-         */
-        if (!firstArtifact && !description.get()) {
-          const provisionalTitle =
-            userText.slice(0, 60).trim() + (userText.length > 60 ? '…' : '') || 'New Conversation';
-          description.set(provisionalTitle);
+        let chatName = extractChatName(textPartsText);
+
+        if (!chatName && Array.isArray(firstAssistantMessage.parts)) {
+          const reasoningText = firstAssistantMessage.parts
+            .filter((p: any) => p.type === 'reasoning')
+            .map((p: any) => {
+              if (p.details && Array.isArray(p.details)) {
+                return p.details.map((d: any) => d?.text || '').join('');
+              }
+
+              return p.textDelta || p.text || '';
+            })
+            .join('\n');
+
+          if (reasoningText) {
+            chatName = extractChatName(reasoningText);
+          }
+        }
+
+        if (chatName) {
+          const currentDesc = description.get() || '';
 
           /*
-           * Re-save immediately so the chat shows up in the sidebar
-           * with the provisional title right away.
+           * Only apply the extracted name if the current description is
+           * empty or a default/placeholder. This avoids clobbering a name
+           * the user manually set, or a name set by an artifact title
+           * (firstArtifact.title) for AI-injected templates.
+           *
+           * IMPORTANT — provisional-title detection:
+           *   The `else if` branch below sets a PROVISIONAL title (the
+           *   user's first message, truncated to 60 chars) so the sidebar
+           *   isn't empty while the AI's first response is streaming.
+           *   That provisional title is NOT one of the static placeholders
+           *   in the list above, so without special handling the AI's
+           *   `<chatname>` tag would be rejected ("shouldApply = false")
+           *   and the chat would stay named after the user's first
+           *   message forever — exactly the "chat naming is naming the
+           *   chat as my first message" bug we are fixing.
+           *
+           *   We detect a provisional title by comparing the current
+           *   description against the truncated first user message
+           *   (with and without the trailing ellipsis). A match means
+           *   the description is a provisional title that the AI's
+           *   `<chatname>` tag is allowed to replace.
            */
+          const firstUserMessage = messages.find((m) => m.role === 'user');
+          const provisionalTitleCandidates: string[] = [];
+
+          if (firstUserMessage) {
+            let rawContent: any;
+
+            if (Array.isArray(firstUserMessage.parts)) {
+              rawContent = firstUserMessage.parts;
+            } else {
+              rawContent = (firstUserMessage as any).content;
+            }
+
+            let userText: string =
+              typeof rawContent === 'string'
+                ? rawContent
+                : Array.isArray(rawContent)
+                  ? rawContent
+                      .filter((p: any) => p.type === 'text')
+                      .map((p: any) => p.text)
+                      .join(' ')
+                  : '';
+
+            userText = userText.replace(/^\[Model:[^\]]*\]\s*\n*\s*\[Provider:[^\]]*\]\s*\n*\s*/i, '').trim();
+
+            if (userText) {
+              const truncated = userText.slice(0, 60).trim();
+              const withEllipsis = truncated + (userText.length > 60 ? '…' : '');
+
+              // The provisional-title path produces both forms; check both.
+              if (truncated) {
+                provisionalTitleCandidates.push(truncated);
+              }
+
+              if (withEllipsis && withEllipsis !== truncated) {
+                provisionalTitleCandidates.push(withEllipsis);
+              }
+            }
+          }
+
+          const isProvisionalTitle = provisionalTitleCandidates.includes(currentDesc);
+
+          const isRenameableDesc =
+            !currentDesc ||
+            currentDesc === 'Create initial files' ||
+            currentDesc === 'Untitled Project' ||
+            currentDesc === 'New project chat' ||
+            currentDesc === 'New Conversation' ||
+            currentDesc === 'New chat' ||
+            currentDesc === 'Imported Project' ||
+            /^Start with .+ Template$/.test(currentDesc) ||
+            /^Git Project:/i.test(currentDesc) ||
+            isProvisionalTitle;
+
+          const firstArtifactTitle = firstArtifact?.title;
+          const descIsArtifactTitle = firstArtifactTitle && currentDesc === firstArtifactTitle;
+          const shouldApply = isRenameableDesc || !!descIsArtifactTitle;
+
+          if (shouldApply && chatName !== currentDesc) {
+            description.set(chatName);
+
+            await setMessages(
+              db,
+              finalChatId,
+              [...archivedMessages, ...messages],
+              _finalUrlId,
+              chatName,
+              undefined,
+              chatMetadata.get(),
+            );
+
+            chatListVersion.set(chatListVersion.get() + 1);
+
+            /*
+             * Rename the linked project too, so the sidebar / project list
+             * reflects the AI-provided name. Only rename if the project's
+             * current name is itself a default/placeholder (produced by
+             * chatNameForRepo or the promote path) — never clobber a name
+             * the user explicitly set.
+             */
+            try {
+              const linkedProject = projectStore.getProjectByChat(finalChatId);
+
+              if (linkedProject) {
+                const isDefaultProjectName =
+                  linkedProject.name === 'Create initial files' ||
+                  linkedProject.name === 'Untitled Project' ||
+                  linkedProject.name === 'New project chat' ||
+                  linkedProject.name === 'Imported Project' ||
+                  /^Project \d+$/.test(linkedProject.name) ||
+                  /^Start with .+ Template$/.test(linkedProject.name) ||
+                  /^Git Project:/i.test(linkedProject.name);
+
+                if (isDefaultProjectName) {
+                  projectStore.updateProject(linkedProject.id, { name: chatName });
+                }
+              }
+            } catch (e) {
+              console.warn('[ChatHistory] Failed to rename project from chatname tag:', e);
+            }
+          }
+        } else if (!description.get() && !firstArtifact) {
+          /*
+           * Brief provisional title so the chat appears in the sidebar
+           * immediately while the AI's first response (containing the
+           * `<chatname>` tag) is still streaming. This is replaced as
+           * soon as the `<chatname>` tag arrives (above). If the model
+           * never emits the tag, 'New chat' remains as a reasonable fallback name.
+           */
+          description.set('New chat');
+
           await setMessages(
             db,
             finalChatId,
@@ -930,91 +1345,8 @@ export function useChatHistory() {
             chatMetadata.get(),
           );
         }
-
-        /*
-         * 2. One-shot LLM title generation — fires once per chat when
-         *    the first assistant response is available. Runs for ALL
-         *    chats (text-only AND artifact/project). For artifact chats
-         *    we only override the default placeholder title, so a
-         *    meaningful AI-provided title is preserved.
-         */
-        if (firstAssistantMessage && !_titleGenerationStarted.has(finalChatId)) {
-          _titleGenerationStarted.add(finalChatId);
-
-          generateChatTitle(finalChatId, userText)
-            .then((title) => {
-              if (!title || chatId.get() !== finalChatId) {
-                return;
-              }
-
-              const currentDesc = description.get() || '';
-              const isDefaultPlaceholder =
-                !currentDesc ||
-                currentDesc === 'Create initial files' ||
-                currentDesc === 'Untitled Project' ||
-                currentDesc === 'New project chat' ||
-                currentDesc === 'New Conversation';
-
-              /*
-               * For text-only chats: always apply the LLM title.
-               * For artifact/project chats: only override a default
-               * placeholder, never clobber a meaningful title.
-               */
-              const shouldApply = !firstArtifact || isDefaultPlaceholder;
-
-              if (!shouldApply) {
-                return;
-              }
-
-              description.set(title);
-
-              setMessages(
-                db,
-                finalChatId,
-                [...archivedMessages, ...messages],
-                _finalUrlId,
-                title,
-                undefined,
-                chatMetadata.get(),
-              ).then(() => {
-                chatListVersion.set(chatListVersion.get() + 1);
-
-                /*
-                 * If this is a project chat whose project still has a
-                 * default name, rename the project to match the new
-                 * title too — so the sidebar project card shows a
-                 * descriptive name instead of "Create initial files".
-                 */
-                try {
-                  const linkedProject = projectStore.getProjectByChat(finalChatId);
-
-                  if (linkedProject) {
-                    const isDefaultProjectName =
-                      linkedProject.name === 'Create initial files' ||
-                      linkedProject.name === 'Untitled Project' ||
-                      linkedProject.name === 'New project chat' ||
-                      /^Project \d+$/.test(linkedProject.name);
-
-                    if (isDefaultProjectName) {
-                      projectStore.updateProject(linkedProject.id, { name: title });
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[ChatHistory] Failed to rename project after title gen:', e);
-                }
-              });
-            })
-            .catch((e) => {
-              console.warn('[ChatHistory] Title generation failed:', e);
-              _titleGenerationStarted.delete(finalChatId); // allow retry
-            });
-        }
       }
 
-      /*
-       * Notify the sidebar that the chat list has changed so it can
-       * re-fetch from IndexedDB and show the new/updated chat.
-       */
       chatListVersion.set(chatListVersion.get() + 1);
     },
     duplicateCurrentChat: async (listItemId: string) => {
@@ -1024,21 +1356,175 @@ export function useChatHistory() {
 
       try {
         const newId = await duplicateChat(db, mixedId || listItemId);
-        navigate(`/chat/${newId}`);
+        window.location.href = `/chat/${newId}`;
         toast.success('Chat duplicated successfully');
       } catch (error) {
         toast.error('Failed to duplicate chat');
         console.log(error);
       }
     },
-    importChat: async (description: string, messages: Message[], metadata?: IChatMetadata) => {
+    importChat: async (
+      description: string,
+      messages: UIMessage[],
+      metadata?: IChatMetadata,
+      initialFileMap?: FileMap,
+    ) => {
       if (!db) {
         return;
       }
 
       try {
         const newId = await createChatFromMessages(db, description, messages, metadata);
-        window.location.href = `/chat/${newId}`;
+
+        /*
+         * createChatFromMessages returns the urlId, NOT the internal chat
+         * id. We need the actual chat id for two reasons:
+         *  1. projectStore.linkChatToProject must be keyed by the SAME id
+         *     that getProjectByChat(storedMessages.id) looks up by later
+         *     (storedMessages.id is the internal id, not urlId). Linking by
+         *     urlId created a latent mismatch that broke project
+         *     association after the first message.
+         *  2. updateChatMetadata below needs the id to persist projectId
+         *     on the chat record.
+         */
+        const chatRecord = await getMessages(db, newId);
+        const actualChatId = chatRecord?.id ?? newId;
+
+        let projectId: string | undefined;
+
+        if (metadata?.projectId) {
+          projectId = metadata.projectId;
+        } else if (initialFileMap && Object.keys(initialFileMap).length > 0) {
+          /*
+           * Create a project whenever files are being imported (git clone
+           * or starter template). The `description` is already a clean,
+           * human-readable name (e.g. "Start with Expo Template") produced
+           * by `chatNameForRepo` — it is used as the initial project name.
+           *
+           * This replaces the old `description.startsWith('Git Project:')`
+           * check, which forced an ugly `Git Project:Expo-Starter-Template.git`
+           * name into both the chat description and the project name.
+           *
+           * Backward compat: if an old chat has a description that still
+           * starts with `Git Project:`, strip the prefix so the stored
+           * project name is clean.
+           */
+          const projectName = description.replace(/^Git Project:/i, '').trim() || 'Imported Project';
+          const project = projectStore.createProject({
+            name: projectName,
+            hasWorkspace: true,
+          });
+          projectId = project.id;
+          projectStore.linkChatToProject(actualChatId, projectId);
+        }
+
+        /*
+         * Persist projectId on the chat's metadata in IndexedDB. Without
+         * this, after the window.location.href reload below, the load
+         * effect's `else if (storedMessages.metadata?.projectId)` branch
+         * is FALSE (metadata only had { gitUrl }) and the chat falls
+         * through to `navigate('/', { replace: true })` — which is the
+         * bug where the URL stays at `/` after clicking a template.
+         */
+        if (projectId && chatRecord) {
+          try {
+            await updateChatMetadata(db, actualChatId, {
+              ...chatRecord.metadata,
+              projectId,
+            });
+          } catch (e) {
+            console.warn('[ChatHistory] Failed to persist projectId on chat metadata:', e);
+          }
+        }
+
+        if (projectId) {
+          const project = projectStore.getProject(projectId);
+
+          if (project) {
+            workbenchStore.loadedProjectId.set(projectId);
+            workbenchStore.showWorkbench.set(true);
+          }
+
+          /*
+           * ── Persist initial project files to IndexedDB ───────────────────
+           *
+           * This is the fix for: "new chats linked to a project can't access
+           * the project files — only the chat that initialized the project
+           * can".
+           *
+           * Root cause: for git/template imports ALL messages are pre-populated
+           * as "initial" messages. After the page reload below, `Chat.client.tsx`
+           * gates `storeMessageHistory()` behind `messages.length >
+           * initialMessages.length`, which is FALSE for these imports — so
+           * `storeMessageHistory()` (and therefore `createProjectCommit()`) is
+           * NEVER called. The files only live in the ephemeral WebContainer
+           * filesystem + the artifact messages, never in IndexedDB. When a NEW
+           * chat is opened for this project, `getProjectFiles()` returns
+           * undefined → empty workspace.
+           *
+           * Fix: persist the freshly-cloned FileMap to IndexedDB right here,
+           * before the reload, so every subsequent chat for this project can
+           * restore it via `getProjectFiles()`.
+           */
+          if (initialFileMap && Object.keys(initialFileMap).length > 0) {
+            try {
+              const commitId = await createProjectCommit(
+                db,
+                projectId,
+                `Project files imported`,
+                initialFileMap,
+                newId,
+              );
+              projectStore.updateProject(projectId, { currentCommitId: commitId });
+              console.log(
+                `[ChatHistory] Saved ${Object.keys(initialFileMap).length} initial project files for ${projectId}`,
+              );
+
+              /*
+               * Detect setup/start commands from the imported files (e.g.
+               * `npm install` + `npm run dev` from package.json) and persist
+               * them on the project. This is critical: after the page reload,
+               * `runProjectAutoSetup` reads `project.setupCommand` /
+               * `project.startCommand` to silently auto-inject npm install +
+               * start. Without this, the project has no commands and nothing
+               * auto-runs.
+               *
+               * Previously the commands were embedded in a chat message
+               * (createCommandsMessage) which (a) cluttered the chat with
+               * "Found 'start' script..." text, and (b) was suppressed by
+               * the Round-5 replay suppression on reload anyway. Now the
+               * commands are set directly on the project — no chat message,
+               * no clutter, and the auto-run works on every load.
+               */
+              const fileList = Object.entries(initialFileMap)
+                .filter(([, v]) => v?.type === 'file')
+                .map(([path, v]) => ({
+                  path: path.replace(/^\/home\/project\//, ''),
+                  content: (v as any).content ?? '',
+                }));
+
+              if (fileList.length > 0) {
+                const detected = await detectProjectCommands(fileList);
+
+                if (detected.setupCommand || detected.startCommand) {
+                  projectStore.setProjectCommands(projectId, detected, true);
+                  console.log(
+                    `[ChatHistory] Detected project commands: setup="${detected.setupCommand}" start="${detected.startCommand}"`,
+                  );
+                }
+              }
+            } catch (e) {
+              console.error('[ChatHistory] Failed to save initial project files:', e);
+            }
+          }
+        }
+
+        if (projectId) {
+          window.location.href = `/${projectId}/${newId}`;
+        } else {
+          window.location.href = `/chat/${newId}`;
+        }
+
         toast.success('Chat imported successfully');
       } catch (error) {
         if (error instanceof Error) {
@@ -1071,16 +1557,4 @@ export function useChatHistory() {
       URL.revokeObjectURL(url);
     },
   };
-}
-
-function navigateChat(nextId: string) {
-  /**
-   * FIXME: Using the intended navigate function causes a rerender for <Chat /> that breaks the app.
-   *
-   * `navigate(`/chat/${nextId}`, { replace: true });`
-   */
-  const url = new URL(window.location.href);
-  url.pathname = `/chat/${nextId}`;
-
-  window.history.replaceState({}, '', url);
 }

@@ -44,7 +44,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Basic Astro',
     label: 'Astro Basic',
     description: 'Lightweight Astro starter template for building fast static websites',
-    githubRepo: 'xKevIsDev/amplify-astro-basic-template',
+    githubRepo: 'Amplytic-Labs/amplify-astro-basic-template',
     tags: ['astro', 'blog', 'performance'],
     icon: 'i-amplify:astro',
   },
@@ -52,7 +52,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'NextJS Shadcn',
     label: 'Next.js with shadcn/ui',
     description: 'Next.js starter fullstack template integrated with shadcn/ui components and styling system',
-    githubRepo: 'xKevIsDev/amplify-nextjs-shadcn-template',
+    githubRepo: 'Amplytic-Labs/amplify-nextjs-shadcn-template',
     tags: ['nextjs', 'react', 'typescript', 'shadcn', 'tailwind'],
     icon: 'i-amplify:nextjs',
   },
@@ -60,23 +60,15 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Vite Shadcn',
     label: 'Vite with shadcn/ui',
     description: 'Vite starter fullstack template integrated with shadcn/ui components and styling system',
-    githubRepo: 'xKevIsDev/vite-shadcn',
+    githubRepo: 'Amplytic-Labs/vite-shadcn',
     tags: ['vite', 'react', 'typescript', 'shadcn', 'tailwind'],
     icon: 'i-amplify:shadcn',
-  },
-  {
-    name: 'Qwik Typescript',
-    label: 'Qwik TypeScript',
-    description: 'Qwik framework starter with TypeScript for building resumable applications',
-    githubRepo: 'xKevIsDev/amplify-qwik-ts-template',
-    tags: ['qwik', 'typescript', 'performance', 'resumable'],
-    icon: 'i-amplify:qwik',
   },
   {
     name: 'Remix Typescript',
     label: 'Remix TypeScript',
     description: 'Remix framework starter with TypeScript for full-stack web applications',
-    githubRepo: 'xKevIsDev/amplify-remix-ts-template',
+    githubRepo: 'Amplytic-Labs/amplify-remix-ts-template',
     tags: ['remix', 'typescript', 'fullstack', 'react'],
     icon: 'i-amplify:remix',
   },
@@ -84,7 +76,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Slidev',
     label: 'Slidev Presentation',
     description: 'Slidev starter template for creating developer-friendly presentations using Markdown',
-    githubRepo: 'xKevIsDev/amplify-slidev-template',
+    githubRepo: 'Amplytic-Labs/amplify-slidev-template',
     tags: ['slidev', 'presentation', 'markdown'],
     icon: 'i-amplify:slidev',
   },
@@ -92,7 +84,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Sveltekit',
     label: 'SvelteKit',
     description: 'SvelteKit starter template for building fast, efficient web applications',
-    githubRepo: 'amplify-sveltekit-template',
+    githubRepo: 'Amplytic-Labs/amplify-sveltekit-template',
     tags: ['svelte', 'sveltekit', 'typescript'],
     icon: 'i-amplify:svelte',
   },
@@ -100,15 +92,15 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Vanilla Vite',
     label: 'Vanilla + Vite',
     description: 'Minimal Vite starter template for vanilla JavaScript projects',
-    githubRepo: 'xKevIsDev/vanilla-vite-template',
+    githubRepo: 'Amplytic-Labs/vanilla-vite-template',
     tags: ['vite', 'vanilla-js', 'minimal'],
     icon: 'i-amplify:vite',
   },
   {
     name: 'Vite React',
-    label: 'React + Vite + typescript',
+    label: 'React + Vite + TypeScript',
     description: 'React starter template powered by Vite for fast development experience',
-    githubRepo: 'xKevIsDev/amplify-vite-react-ts-template',
+    githubRepo: 'Amplytic-Labs/amplify-vite-react-ts-template',
     tags: ['react', 'vite', 'frontend', 'website', 'app'],
     icon: 'i-amplify:react',
   },
@@ -116,7 +108,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Vite Typescript',
     label: 'Vite + TypeScript',
     description: 'Vite starter template with TypeScript configuration for type-safe development',
-    githubRepo: 'xKevIsDev/amplify-vite-ts-template',
+    githubRepo: 'Amplytic-Labs/amplify-vite-ts-template',
     tags: ['vite', 'typescript', 'minimal'],
     icon: 'i-amplify:typescript',
   },
@@ -124,7 +116,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Vue',
     label: 'Vue.js',
     description: 'Vue.js starter template with modern tooling and best practices',
-    githubRepo: 'xKevIsDev/amplify-vue-template',
+    githubRepo: 'Amplytic-Labs/amplify-vue-template',
     tags: ['vue', 'typescript', 'frontend'],
     icon: 'i-amplify:vue',
   },
@@ -132,7 +124,7 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'Angular',
     label: 'Angular Starter',
     description: 'A modern Angular starter template with TypeScript support and best practices configuration',
-    githubRepo: 'xKevIsDev/amplify-angular-template',
+    githubRepo: 'Amplytic-Labs/amplify-angular-template',
     tags: ['angular', 'typescript', 'frontend', 'spa'],
     icon: 'i-amplify:angular',
   },
@@ -140,8 +132,50 @@ export const STARTER_TEMPLATES: Template[] = [
     name: 'SolidJS',
     label: 'SolidJS Tailwind',
     description: 'Lightweight SolidJS starter template for building fast static websites',
-    githubRepo: 'xKevIsDev/solidjs-ts-tw',
+    githubRepo: 'Amplytic-Labs/solidjs-ts-tw',
     tags: ['solidjs'],
     icon: 'i-amplify:solidjs',
   },
 ];
+
+/**
+ * Generate a clean, human-readable chat/project name from a git repo URL.
+ *
+ * - If the repo matches a STARTER_TEMPLATES entry (by githubRepo), returns
+ *   `Start with {Template} Template` (e.g. "Start with Expo Template").
+ * - Otherwise, prettifies the repo name: strips `.git`, replaces `-`/`_`
+ *   with spaces, and Title-Cases it (e.g. "expo-starter-template" →
+ *   "Expo Starter Template").
+ *
+ * This replaces the old ugly `Git Project:Expo-Starter-Template.git`
+ * naming that leaked the raw repo slug (with `.git` suffix) into the
+ * sidebar and project list.
+ */
+export function chatNameForRepo(repoUrl: string): string {
+  if (!repoUrl || typeof repoUrl !== 'string') {
+    return 'Imported Project';
+  }
+
+  // Normalize: strip trailing slashes + .git suffix
+  const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
+  const repoName = cleaned.split('/').slice(-1)[0] || 'Imported Project';
+
+  // Match against STARTER_TEMPLATES by githubRepo
+  const match = STARTER_TEMPLATES.find((t) => cleaned.includes(t.githubRepo));
+
+  if (match) {
+    // Strip a trailing " App" so "Expo App" → "Expo"
+    const shortName = match.name.replace(/\s+App$/i, '').trim() || match.name;
+
+    return `Start with ${shortName} Template`;
+  }
+
+  // Fall back to a prettified repo name
+  const pretty = repoName
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return pretty || 'Imported Project';
+}

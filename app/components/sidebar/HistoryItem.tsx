@@ -25,7 +25,8 @@ export function HistoryItem({
   isSelected = false,
   onToggleSelection,
 }: HistoryItemProps) {
-  const { id: urlId } = useParams();
+  const params = useParams();
+  const urlId = params.id ?? params.chatId;
   const isActiveChat = urlId === item.urlId;
 
   const { editing, handleChange, handleBlur, handleSubmit, handleKeyDown, currentDescription, toggleEditMode } =
@@ -97,7 +98,7 @@ export function HistoryItem({
         <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
           <input
             type="text"
-            className="flex-1 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-800 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+            className="flex-1 bg-white dark:bg-gray-900 text-gray-900 dark:text-white rounded-md px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
             autoFocus
             value={currentDescription}
             onChange={handleChange}
@@ -106,13 +107,66 @@ export function HistoryItem({
           />
           <button
             type="submit"
-            className="bg-transparent i-ph:check h-4 w-4 text-gray-500 hover:text-purple-500 transition-colors"
+            className="bg-transparent i-ph:check h-4 w-4 text-gray-500 hover:text-blue-500 transition-colors"
             onMouseDown={handleSubmit}
           />
         </form>
+      ) : isActiveChat && !selectionMode ? (
+        <div className="flex w-full relative truncate block cursor-default">
+          <WithTooltip tooltip={displayLabel}>
+            <span
+              className={classNames(
+                'truncate pr-24',
+                !currentDescription?.trim() && 'text-gray-400 dark:text-gray-500 italic',
+              )}
+            >
+              {displayLabel}
+            </span>
+          </WithTooltip>
+          <div
+            className={classNames(
+              'absolute right-0 top-0 bottom-0 flex items-center bg-transparent px-2 transition-colors',
+            )}
+          >
+            <div className="flex items-center gap-2.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChatActionButton
+                toolTipContent="Export"
+                icon="i-ph:download-simple h-4 w-4"
+                onClick={(event) => {
+                  event.preventDefault();
+                  exportChat(item.id);
+                }}
+              />
+              {onDuplicate && (
+                <ChatActionButton
+                  toolTipContent="Duplicate"
+                  icon="i-ph:copy h-4 w-4"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onDuplicate?.(item.id);
+                  }}
+                />
+              )}
+              <ChatActionButton
+                toolTipContent="Rename"
+                icon="i-ph:pencil-fill h-4 w-4"
+                onClick={(event) => {
+                  event.preventDefault();
+                  toggleEditMode();
+                }}
+              />
+              <ChatActionButton
+                toolTipContent="Delete"
+                icon="i-ph:trash h-4 w-4"
+                className="hover:text-red-500 dark:hover:text-red-400"
+                onClick={handleDeleteClick}
+              />
+            </div>
+          </div>
+        </div>
       ) : (
         <a
-          href={`/chat/${item.urlId}`}
+          href={item.metadata?.projectId ? `/${item.metadata.projectId}/${item.urlId}` : `/chat/${item.urlId}`}
           className="flex w-full relative truncate block"
           onClick={selectionMode ? handleItemClick : undefined}
         >
@@ -193,7 +247,7 @@ const ChatActionButton = forwardRef(
         <button
           ref={ref}
           type="button"
-          className={`bg-transparent text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors ${icon} ${className ? className : ''}`}
+          className={`bg-transparent text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors ${icon} ${className ? className : ''}`}
           onClick={onClick}
         />
       </WithTooltip>

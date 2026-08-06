@@ -57,6 +57,7 @@ function AppSidebar() {
 /*  Info Card                                                          */
 /* ================================================================== */
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function InfoCard({ title, description }: { title: string; description: string }) {
   return (
     <div className="rounded-lg border border-amplify-elements-borderColor bg-amplify-elements-background-depth-2 p-4">

@@ -166,7 +166,9 @@ export function GitLabRepositorySelector({ onClone, className }: GitLabRepositor
   if (!isConnected || !connection) {
     return (
       <div className="text-center p-8">
-        <p className="text-amplify-elements-textSecondary mb-4">Please connect to GitLab first to browse repositories</p>
+        <p className="text-amplify-elements-textSecondary mb-4">
+          Please connect to GitLab first to browse repositories
+        </p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           Refresh Connection
         </Button>

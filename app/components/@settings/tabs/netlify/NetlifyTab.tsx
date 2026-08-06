@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { classNames } from '~/utils/classNames';
 import { useStore } from '@nanostores/react';
 import { netlifyConnection, updateNetlifyConnection, initializeNetlifyConnection } from '~/lib/stores/netlify';
@@ -782,9 +782,9 @@ export default function NetlifyTab() {
                         label: 'Custom Domain',
                         value: customDomain,
                         icon: 'i-ph:globe',
-                        color: 'text-purple-500',
-                        bgColor: 'bg-purple-100 dark:bg-purple-900/20',
-                        textColor: 'text-purple-800 dark:text-purple-400',
+                        color: 'text-blue-500',
+                        bgColor: 'bg-blue-100 dark:bg-blue-900/20',
+                        textColor: 'text-blue-800 dark:text-blue-400',
                       },
                       {
                         label: 'Building',

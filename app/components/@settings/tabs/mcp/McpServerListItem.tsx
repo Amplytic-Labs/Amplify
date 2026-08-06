@@ -1,15 +1,19 @@
 import type { Tool } from 'ai';
 
+/*
+ * AI SDK v7: Tool type uses `inputSchema` (FlexibleSchema) instead of
+ * the legacy `parameters` property. The inputSchema can be a Zod schema,
+ * JSON Schema object, or other schema format.
+ */
 type ParameterProperty = {
   type?: string;
   description?: string;
 };
 
-type ToolParameters = {
-  jsonSchema: {
-    properties?: Record<string, ParameterProperty>;
-    required?: string[];
-  };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type JsonSchemaObject = {
+  properties?: Record<string, ParameterProperty>;
+  required?: string[];
 };
 
 type McpToolProps = {
@@ -17,13 +21,69 @@ type McpToolProps = {
   toolSchema: Tool;
 };
 
+/*
+ * Extract parameters from Tool's inputSchema.
+ * In v7, inputSchema is a FlexibleSchema which can be:
+ * - A Zod schema (has .describe() or .shape())
+ * - A JSON Schema object (has .properties)
+ * - Other schema formats
+ */
+function extractParameters(toolSchema: Tool): { properties: Record<string, ParameterProperty>; required: string[] } {
+  // Try to access inputSchema (v7)
+  const inputSchema = (toolSchema as any).inputSchema;
+
+  if (!inputSchema) {
+    // Fallback to legacy parameters for backwards compatibility
+    const legacyParams = (toolSchema as any).parameters;
+
+    if (legacyParams?.jsonSchema) {
+      return {
+        properties: legacyParams.jsonSchema.properties || {},
+        required: legacyParams.jsonSchema.required || [],
+      };
+    }
+
+    return { properties: {}, required: [] };
+  }
+
+  // If it's a JSON-like schema with properties
+  if (inputSchema.properties) {
+    return {
+      properties: inputSchema.properties || {},
+      required: inputSchema.required || [],
+    };
+  }
+
+  // If it's a Zod-like schema with shape
+  if (typeof inputSchema.shape === 'object') {
+    const shape = inputSchema.shape;
+    const properties: Record<string, ParameterProperty> = {};
+    const required: string[] = [];
+
+    for (const [key, value] of Object.entries(shape)) {
+      const field = value as any;
+      properties[key] = {
+        type: field.type || 'string',
+        description: field.description || field.describe?.(),
+      };
+
+      if (!field.isOptional?.()) {
+        required.push(key);
+      }
+    }
+
+    return { properties, required };
+  }
+
+  return { properties: {}, required: [] };
+}
+
 export default function McpServerListItem({ toolName, toolSchema }: McpToolProps) {
   if (!toolSchema) {
     return null;
   }
 
-  const parameters = (toolSchema.parameters as ToolParameters)?.jsonSchema.properties || {};
-  const requiredParams = (toolSchema.parameters as ToolParameters)?.jsonSchema.required || [];
+  const { properties: parameters, required: requiredParams } = extractParameters(toolSchema);
 
   return (
     <div className="mt-2 ml-4 p-3 rounded-md bg-amplify-elements-background-depth-2 text-xs">
@@ -32,7 +92,9 @@ export default function McpServerListItem({ toolName, toolSchema }: McpToolProps
           {toolName}
         </h3>
 
-        <p className="text-amplify-elements-textSecondary">{toolSchema.description || 'No description available'}</p>
+        <p className="text-amplify-elements-textSecondary">
+          {typeof toolSchema.description === 'string' ? toolSchema.description : 'No description available'}
+        </p>
 
         {Object.keys(parameters).length > 0 && (
           <div className="mt-2.5">

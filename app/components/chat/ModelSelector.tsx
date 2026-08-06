@@ -494,7 +494,7 @@ export const ModelSelector = ({
                     'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all',
                     'hover:bg-amplify-elements-background-depth-3',
                     showFreeModelsOnly
-                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                       : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary border border-amplify-elements-borderColor',
                   )}
                 >
@@ -606,7 +606,7 @@ export const ModelSelector = ({
                     )}
                   </div>
                   <div className="space-y-0">
-                    {groupedModels[providerOption.name].map((modelOption, index) => {
+                    {groupedModels[providerOption.name].map((modelOption, _index) => {
                       const globalIndex = filteredModels.findIndex((m) => m.name === modelOption.name);
                       return (
                         <div
@@ -654,7 +654,7 @@ export const ModelSelector = ({
                             </div>
                             <div className="flex items-center gap-1 ml-2">
                               {isModelLikelyFree(modelOption, provider?.name) && (
-                                <span className="i-ph:gift text-xs text-purple-400" title="Free model" />
+                                <span className="i-ph:gift text-xs text-blue-400" title="Free model" />
                               )}
                               {model === modelOption.name && (
                                 <span className="i-ph:check text-xs text-green-500" title="Selected" />

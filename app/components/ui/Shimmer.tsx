@@ -1,38 +1,54 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
-// ------------------------------------------------------------
-// Types
-// ------------------------------------------------------------
+/*
+ * ------------------------------------------------------------
+ * Types
+ * ------------------------------------------------------------
+ */
 type ShinyTextProps = {
   /** The text to display */
   text?: string;
+
   /** Whether to show the shimmer animation (loading state) */
   loading?: boolean;
+
   /** Text alignment */
   textAlign?: 'left' | 'center' | 'right';
+
   /** Whether text should wrap onto multiple lines */
   wrap?: boolean;
+
   /** Direction of the shimmer sweep */
   sweepDirection?: 'leftToRight' | 'rightToLeft' | 'topToBottom' | 'bottomToTop';
+
   /** Base (dull) colour of the text – used both for static and the base of shimmer */
   baseColor?: string;
+
   /** Colour of the shiny highlight */
   shineColor?: string;
+
   /** Enable multi‑colour gradient shine */
   multiColorShine?: boolean;
+
   /** Second shine colour (if multi‑colour) */
   shineColor2?: string;
+
   /** Third shine colour (if multi‑colour) */
   shineColor3?: string;
+
   /** Speed multiplier (1 = normal) */
   shimmerSpeed?: number;
+
   /** Delay between animation loops (seconds) */
   shimmerWait?: number;
+
   /** Optional link URL */
   link?: string;
+
   /** Open link in new tab */
   openInNewTab?: boolean;
+
   /** Custom font settings (size, weight, line height, letter spacing) */
   font?: {
     fontSize?: number;
@@ -40,13 +56,16 @@ type ShinyTextProps = {
     lineHeight?: number;
     letterSpacing?: number;
   };
+
   /** Additional inline styles for the outer container */
   style?: React.CSSProperties;
 };
 
-// ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
+/*
+ * ------------------------------------------------------------
+ * Helpers
+ * ------------------------------------------------------------
+ */
 const BASE_SHIMMER_DURATION = 2.2;
 
 const SWEEP_CONFIG = {
@@ -59,25 +78,35 @@ const SWEEP_CONFIG = {
 // Hook to respect system motion preferences
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
     return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
   });
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return;
+    }
+
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReduced(mq.matches);
     update();
     mq.addEventListener?.('change', update);
+
+    // eslint-disable-next-line consistent-return
     return () => mq.removeEventListener?.('change', update);
   }, []);
 
   return reduced;
 }
 
-// ------------------------------------------------------------
-// Main Component
-// ------------------------------------------------------------
+/*
+ * ------------------------------------------------------------
+ * Main Component
+ * ------------------------------------------------------------
+ */
 export function ShinyText({
   text = 'Thinking',
   loading = false,
@@ -155,8 +184,10 @@ export function ShinyText({
     );
   }
 
-  // ----- Loading: show shimmer -----
-  // Static (frozen) gradient for reduced‑motion fallback
+  /*
+   * ----- Loading: show shimmer -----
+   * Static (frozen) gradient for reduced‑motion fallback
+   */
   const frozenStops = multiColorShine
     ? `${baseColor} 0%, ${baseColor} 15%, ${shineColor} 35%, ${shineColor2} 50%, ${shineColor3} 65%, ${baseColor} 85%, ${baseColor} 100%`
     : `${baseColor} 0%, ${baseColor} 20%, ${shineColor} 50%, ${baseColor} 80%, ${baseColor} 100%`;

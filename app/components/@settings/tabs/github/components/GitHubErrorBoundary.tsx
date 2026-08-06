@@ -57,7 +57,9 @@ export class GitHubErrorBoundary extends Component<Props, State> {
 
             {this.state.error && (
               <details className="text-xs text-amplify-elements-textTertiary mb-4">
-                <summary className="cursor-pointer hover:text-amplify-elements-textSecondary">Show error details</summary>
+                <summary className="cursor-pointer hover:text-amplify-elements-textSecondary">
+                  Show error details
+                </summary>
                 <pre className="mt-2 p-2 bg-amplify-elements-background-depth-2 rounded text-left overflow-auto">
                   {this.state.error.message}
                 </pre>

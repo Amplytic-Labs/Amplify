@@ -1,15 +1,29 @@
 import { useStore } from '@nanostores/react';
-import type { Message } from 'ai';
+import { modelConfigStore, getWireConfig } from '~/lib/stores/model-config';
+import { rateLimitStore, getRateLimitWire } from '~/lib/stores/rate-limit';
+import type { UIMessage } from 'ai';
+import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai';
 import { useChat } from '@ai-sdk/react';
+import {
+  isToolPart,
+  getToolNameFromPart,
+  getToolCallId,
+  getToolState,
+  getToolInput,
+  getToolOutput,
+  ToolState,
+} from '~/lib/chat/tool-parts';
 import { useAnimate } from 'framer-motion';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createDebugFetch } from '~/lib/debug/debug-broadcast';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { useMessageParser, usePromptEnhancer, useShortcuts } from '~/lib/hooks';
 import { description, useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { isReadOnlyNativeTool } from '~/lib/tools/nativeTools';
+import { isClientSideTool, executeClientSideTool } from '~/lib/tools/clientSideTools';
+import { tryClaimToolCallApproval, resetToolCallApprovals } from '~/lib/chat/tool-approval-dedup';
 import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER,
@@ -33,7 +47,7 @@ import { filesToArtifacts } from '~/utils/fileUtils';
 import { supabaseConnection } from '~/lib/stores/supabase';
 import { defaultDesignScheme, type DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
-import type { TextUIPart, FileUIPart, Attachment } from '@ai-sdk/ui-utils';
+import type { Attachment } from '@ai-sdk/ui-utils';
 import { useMCPStore } from '~/lib/stores/mcp';
 import type { LlmErrorAlertType } from '~/types/actions';
 import { projectStore } from '~/lib/persistence/project-store';
@@ -41,6 +55,8 @@ import { planStore } from '~/lib/planning/plan-store';
 import type { PlanProgressUpdate } from '~/lib/planning/sub-chat-engine';
 import { useProjectContextString } from '~/lib/persistence/useProjectContext';
 import { useScreenshotCapture } from '~/lib/services/screenshotCapture';
+import type { IChatMetadata } from '~/lib/persistence/db';
+import type { FileMap } from '~/lib/stores/files';
 
 const logger = createScopedLogger('Chat');
 
@@ -78,16 +94,16 @@ export function Chat() {
 
 const processSampledMessages = createSampler(
   (options: {
-    messages: Message[];
-    initialMessages: Message[];
+    messages: UIMessage[];
+    initialMessages: UIMessage[];
     isLoading: boolean;
-    parseMessages: (messages: Message[], isLoading: boolean) => void;
-    storeMessageHistory: (messages: Message[]) => Promise<void>;
+    parseMessages: (messages: UIMessage[], isLoading: boolean, chatMode?: 'discuss' | 'build') => void;
+    storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
   }) => {
     const { messages, initialMessages, isLoading, parseMessages, storeMessageHistory } = options;
     parseMessages(messages, isLoading);
 
-    if (messages.length > initialMessages.length) {
+    if ((messages?.length ?? 0) > (initialMessages?.length ?? 0)) {
       storeMessageHistory(messages).catch((error) => toast.error(error.message));
     }
   },
@@ -95,9 +111,14 @@ const processSampledMessages = createSampler(
 );
 
 interface ChatProps {
-  initialMessages: Message[];
-  storeMessageHistory: (messages: Message[]) => Promise<void>;
-  importChat: (description: string, messages: Message[]) => Promise<void>;
+  initialMessages: UIMessage[];
+  storeMessageHistory: (messages: UIMessage[]) => Promise<void>;
+  importChat: (
+    description: string,
+    messages: UIMessage[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
   exportChat: () => void;
   description?: string;
 }
@@ -107,13 +128,39 @@ export const ChatImpl = memo(
     useShortcuts();
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
+    const showWorkbench = useStore(workbenchStore.showWorkbench);
+    const files = useStore(workbenchStore.files);
+    const loadedProjectId = useStore(workbenchStore.loadedProjectId);
+
+    /*
+     * chatStarted must be true when either:
+     *   1. There are initialMessages (restoring an existing chat), OR
+     *   2. The workbench is open (project workspace is visible).
+     *
+     * Previously this also required loadedProjectId !== '<none>', which
+     * created a race condition: showWorkbench could be true (set by
+     * useChatHistory) before loadedProjectId was updated from '<none>'
+     * to the actual project ID, leaving the Workbench returning null.
+     * showWorkbench alone is sufficient because it is only set to true
+     * when a workspace should be visible (project selected, template
+     * injected, repo cloned).
+     *
+     * We use an internal state + a derived value to eliminate the
+     * one-render gap that existed when showWorkbench became true after
+     * mount. The derived `chatStarted` is true as soon as either
+     * the internal flag OR showWorkbench is true, so the Workbench
+     * never sees a stale false during the effect-to-render cycle.
+     */
+    const [chatStartedInternal, setChatStartedInternal] = useState((initialMessages?.length ?? 0) > 0 || showWorkbench);
+
+    // Use ref for synchronous access to avoid race condition with async state updates
+    const chatStartedRef = useRef((initialMessages?.length ?? 0) > 0 || showWorkbench);
+    const chatStarted =
+      chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current;
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [imageDataList, setImageDataList] = useState<string[]>([]);
     const [searchParams, setSearchParams] = useSearchParams();
     const [fakeLoading, setFakeLoading] = useState(false);
-    const files = useStore(workbenchStore.files);
-    const loadedProjectId = useStore(workbenchStore.loadedProjectId);
     const [designScheme, setDesignScheme] = useState<DesignScheme>(defaultDesignScheme);
     const actionAlert = useStore(workbenchStore.alert);
     const deployAlert = useStore(workbenchStore.deployAlert);
@@ -122,7 +169,7 @@ export const ChatImpl = memo(
       (project) => project.id === supabaseConn.selectedProjectId,
     );
     const supabaseAlert = useStore(workbenchStore.supabaseAlert);
-    const { activeProviders, promptId, autoSelectTemplate, contextOptimizationEnabled } = useSettings();
+    const { activeProviders, promptId, contextOptimizationEnabled } = useSettings();
     const [llmErrorAlert, setLlmErrorAlert] = useState<LlmErrorAlertType | undefined>(undefined);
     const [model, setModel] = useState(() => {
       const savedModel = Cookies.get('selectedModel');
@@ -184,86 +231,211 @@ export const ChatImpl = memo(
      */
     const projectContinuation = !!loadedProjectId && loadedProjectId !== '<none>' && Object.keys(files).length > 0;
 
-    const {
-      messages,
-      isLoading,
-      input,
-      handleInputChange,
-      setInput,
-      stop,
-      append,
-      setMessages,
-      reload,
-      error,
-      data: chatData,
-      setData,
-      addToolResult,
-    } = useChat({
-      api: '/api/chat',
-      fetch: debugFetch,
-      body: {
+    /*
+     * @ai-sdk/react v4 migration: useChat no longer manages input state.
+     * Missing from old API: input, setInput, handleInputChange, isLoading,
+     * append, reload, data, setData.
+     *
+     * We manage input locally and map old API calls to the new ones:
+     *   isLoading → status === 'streaming' || status === 'submitted'
+     *   append(msg) → sdkSendMessage(msg)   (user messages)
+     *   append(assistantMsg) → setMessages([...messages, assistantMsg])
+     *   reload() → regenerate()
+     *   data/setData → removed (not used in new API)
+     */
+    const [input, setInput] = useState(Cookies.get(PROMPT_COOKIE_KEY) || '');
+
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+      setInput(e.target.value);
+    }, []);
+
+    /*
+     * Subscribe to modelConfig + rateLimit stores so the transport body
+     * recomputes when the user changes thinking settings or rate limits
+     * in the ChatBox settings popup. The subscription itself is a no-op
+     * render-wise — we only read the latest value inside the body getter.
+     */
+    const modelConfig = useStore(modelConfigStore);
+    const rateLimits = useStore(rateLimitStore);
+
+    /*
+     * AI SDK v7 Native Transport Configuration
+     *
+     * Using DefaultChatTransport with NATIVE `body` option - NO CUSTOM FETCH!
+     * The SDK handles merging body data with messages automatically.
+     * This is identical to how the legacy bolt.diy v4 used `useChat({ body: {...} })`
+     * but adapted for v7's transport-based architecture.
+     *
+     * The `body` here can be either a static object OR a function. We use
+     * a FUNCTION so the latest `modelConfig` / `rateLimits` values are
+     * read at REQUEST time (not at memo creation time) — this avoids
+     * stale-closure bugs where the user changes a slider but the next
+     * request still uses the old value.
+     */
+    const chatTransport = useMemo(
+      () =>
+        new DefaultChatTransport({
+          api: '/api/chat',
+          body: () => ({
+            apiKeys,
+            files,
+            promptId,
+            contextOptimization: contextOptimizationEnabled,
+            chatMode,
+            designScheme,
+            supabase: {
+              isConnected: supabaseConn.isConnected,
+              hasSelectedProject: !!selectedProject,
+              credentials: {
+                supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
+                anonKey: supabaseConn?.credentials?.anonKey,
+              },
+            },
+            maxLLMSteps: mcpSettings.maxLLMSteps,
+            userContext: vectorUserContext || undefined,
+            projectContext: projectContextForPrompt,
+            projectContinuation,
+
+            /*
+             * Unified thinking/reasoning config (ChatBox settings popup).
+             * Server translates this into per-provider providerOptions.
+             */
+            modelConfig: getWireConfig(),
+
+            /*
+             * Per-provider rate-limit config for the CURRENT provider.
+             * Server uses this for pre-flight TPM checks and RPM throttling.
+             */
+            rateLimit: getRateLimitWire(provider.name),
+          }),
+
+          // Use debugFetch ONLY for debug page interception (optional)
+          fetch: debugFetch,
+        }),
+      [
         apiKeys,
         files,
         promptId,
-        contextOptimization: contextOptimizationEnabled,
+        contextOptimizationEnabled,
         chatMode,
         designScheme,
-        supabase: {
-          isConnected: supabaseConn.isConnected,
-          hasSelectedProject: !!selectedProject,
-          credentials: {
-            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-            anonKey: supabaseConn?.credentials?.anonKey,
-          },
-        },
-        maxLLMSteps: mcpSettings.maxLLMSteps,
-        userContext: vectorUserContext || undefined,
-        projectContext: projectContextForPrompt,
+        supabaseConn,
+        selectedProject,
+        mcpSettings.maxLLMSteps,
+        vectorUserContext,
+        projectContextForPrompt,
         projectContinuation,
-      },
-      sendExtraMessageFields: true,
+        debugFetch,
+        modelConfig,
+        rateLimits,
+        provider.name,
+      ],
+    );
+
+    const {
+      messages,
+      status,
+      stop,
+      setMessages,
+      sendMessage: sdkSendMessage,
+      regenerate,
+      error,
+      addToolResult,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      addToolOutput,
+    } = useChat({
+      /*
+       * AI SDK v7: Use transport with NATIVE body option (no custom fetch needed)
+       * The SDK automatically merges body data with messages on each request
+       */
+      transport: chatTransport,
+
+      // Pass initial messages if available (for chat history restoration)
+      ...(initialMessages && (initialMessages?.length ?? 0) > 0 ? { messages: initialMessages } : {}),
 
       /*
-       * Enable client-side multi-step continuation. Without this, calling
-       * `addToolResult` (used for native-tool auto-approve + mutating-tool
-       * approval) would only update local state and NEVER send the result
-       * back to the server — so the server-side `execute` would never run
-       * and tools would appear to "do nothing". With maxSteps set, the AI
-       * SDK automatically fires a follow-up /api/chat request carrying the
-       * tool result, `processToolInvocations` runs the real execute, and
-       * the actual result is streamed back. Mirrors the server's maxLLMSteps.
+       * CRITICAL (Task 3b): Native tools are sent to streamText WITHOUT an
+       * `execute` function (see api.chat.ts:301 `toolsWithoutExecute`). The
+       * SDK therefore cannot auto-run them and the stream for that step ends
+       * naturally after the tool-call part is emitted.
+       *
+       * The client-side auto-approve effect (below) calls `addToolResult`
+       * to populate the part's `output` field with a placeholder, but the
+       * SDK ONLY auto-sends a follow-up `/api/chat` request to actually
+       * execute the tool server-side if this predicate returns true.
+       *
+       * `lastAssistantMessageIsCompleteWithToolCalls` is the canonical
+       * helper exported from `ai@7` — it returns true when the last
+       * assistant message has tool-call parts ALL in the `output-available`
+       * / `output-error` state (i.e. every tool call has a result).
+       *
+       * Without this, the chat stream silently stops after the first tool
+       * call — no error, no log, no follow-up request, no rendered chip.
        */
-      maxSteps: mcpSettings.maxLLMSteps,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+
       onError: (e) => {
         setFakeLoading(false);
         handleError(e, 'chat');
       },
-      onFinish: (message, response) => {
-        const usage = response.usage;
-        setData(undefined);
+      onFinish: ({ message }) => {
+        console.log('[DEBUG Chat] onFinish called:', {
+          messageId: message?.id,
+          role: message?.role,
+          hasParts: Array.isArray(message?.parts),
+          partsCount: message?.parts?.length,
+          totalMessagesBefore: messages?.length,
+        });
 
-        if (usage) {
-          logStore.logProvider('Chat response completed', {
-            component: 'Chat',
-            action: 'response',
-            model,
-            provider: provider.name,
-            usage,
-            messageLength: message.content.length,
-          });
-        }
-
-        logger.debug('Finished streaming');
+        logger.debug('[Chat] Finished streaming - message received:', {
+          messageId: message?.id,
+          role: message?.role,
+          hasParts: Array.isArray(message?.parts),
+          partsCount: message?.parts?.length,
+          contentPreview: Array.isArray(message?.parts)
+            ? (
+                message.parts
+                  .filter((p: any) => p.type === 'text')
+                  .map((p: any) => p.text)
+                  .join('') || ''
+              ).slice(0, 100)
+            : '(no parts)',
+          totalMessages: messages?.length,
+          allMessageIds: messages?.map((m) => ({ id: m.id, role: m.role })),
+        });
 
         // M-1 fix: Auto-extract user facts and project context after each AI response
-        const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+        const lastUserMsg = (messages || []).filter((m) => m.role === 'user').pop();
 
-        if (lastUserMsg?.content) {
+        // Helper to extract text content from UIMessage parts (v7 uses parts, not content)
+        const getMessageContent = (msg: any): string => {
+          if (!msg) {
+            return '';
+          }
+
+          if (typeof msg.content === 'string') {
+            return msg.content;
+          }
+
+          if (Array.isArray(msg.parts)) {
+            return msg.parts
+              .filter((p: any) => p.type === 'text')
+              .map((p: any) => p.text)
+              .join('');
+          }
+
+          return '';
+        };
+
+        const lastUserContent = getMessageContent(lastUserMsg);
+        const assistantContent = getMessageContent(message);
+
+        if (lastUserContent) {
           import('~/lib/hooks/useVectorContext')
             .then(({ extractAndStoreUserFacts, extractAndStoreProjectContext }) => {
-              extractAndStoreUserFacts(lastUserMsg.content, message.content).catch(() => {});
+              extractAndStoreUserFacts(lastUserContent, assistantContent).catch(() => {});
 
-              const currentChatId = import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
+              import('~/lib/persistence/useChatHistory').then(({ chatId }) => {
                 const cid = chatId.get();
 
                 if (cid) {
@@ -272,7 +444,7 @@ export const ChatImpl = memo(
                   if (project) {
                     extractAndStoreProjectContext(
                       project.id,
-                      `Implemented: ${message.content.slice(0, 200)}`,
+                      `Implemented: ${assistantContent.slice(0, 200)}`,
                       'conversation_summary',
                     ).catch(() => {});
                   }
@@ -282,9 +454,40 @@ export const ChatImpl = memo(
             .catch(() => {});
         }
       },
-      initialMessages,
-      initialInput: Cookies.get(PROMPT_COOKIE_KEY) || '',
     });
+
+    // Derived: isLoading equivalent from new status API
+    const isLoading = status === 'streaming' || status === 'submitted';
+
+    // Adapter: append user message → sdkSendMessage; append assistant message → setMessages
+    const append = useCallback(
+      (message: { role: string; content?: string; parts?: any }, options?: any) => {
+        if (message.role === 'user') {
+          sdkSendMessage(
+            {
+              role: 'user' as const,
+
+              // AI SDK v7: use parts array instead of content
+              parts: message.parts || [{ type: 'text' as const, text: message.content || '' }],
+            } as any,
+            options,
+          );
+        } else {
+          // Assistant messages are appended locally (not sent to API)
+          setMessages((prev: any[]) => [...prev, { ...message, id: `local-${Date.now()}` } as any]);
+        }
+      },
+      [sdkSendMessage, setMessages],
+    );
+
+    // Adapter: reload → regenerate
+    const reload = useCallback(
+      (options?: any) => {
+        regenerate(options);
+      },
+      [regenerate],
+    );
+
     useEffect(() => {
       const prompt = searchParams.get('prompt');
 
@@ -301,23 +504,115 @@ export const ChatImpl = memo(
     }, [model, provider, searchParams]);
 
     const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
-    const { parsedMessages, parseMessages } = useMessageParser();
+    /*
+     * The message parser runs for its SIDE EFFECTS — its callbacks
+     * (onArtifactOpen / onActionClose / onActionStream) write files and
+     * shell actions to the workbench store. The returned `parsedMessages`
+     * string state is intentionally unused: we no longer re-inject parsed
+     * content back into the message parts (that caused duplicate text —
+     * see fix in render below).
+     */
+    const { parseMessages } = useMessageParser();
 
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
+    /*
+     * Keep chatStartedInternal and chatStore.started in sync with the
+     * workspace state. When the workbench opens (e.g. project loaded
+     * after initial render), we must flip chatStartedInternal to true so
+     * the Workbench component renders even if showWorkbench later becomes
+     * false. Only showWorkbench is needed — loadedProjectId may lag
+     * behind during async loading, causing a window where the panel is
+     * open but the Workbench returns null.
+     *
+     * This single effect replaces two separate effects: the old mount-only
+     * effect (with empty deps) and the sync effect. The mount-only effect
+     * was misleading because it never re-ran when showWorkbench changed
+     * after mount, and the two effects could race.
+     */
     useEffect(() => {
-      chatStore.setKey('started', initialMessages.length > 0);
+      /*
+       * Include `chatStartedRef.current` so the user-driven start signal
+       * (set synchronously by `runAnimation()` on first message send) is
+       * never overridden back to false. Without this, the effect re-fires
+       * when `chatStartedInternal` flips true, computes shouldStart=false
+       * (because initialMessages is empty and showWorkbench is still
+       * false at that instant), and clobbers `chatStore.started` back to
+       * false — which reverts the Background to opaque right after the
+       * user sends their first message.
+       */
+      const shouldStart = chatStartedRef.current || (initialMessages?.length ?? 0) > 0 || showWorkbench;
+
+      if (shouldStart !== chatStartedInternal) {
+        setChatStartedInternal(shouldStart);
+      }
+
+      chatStore.setKey('started', shouldStart);
+    }, [initialMessages?.length, showWorkbench, chatStartedInternal]);
+
+    /*
+     * Abort streaming and workbench actions when ChatImpl unmounts
+     * (e.g. when switching to a different chat). Without this, the old
+     * streaming HTTP connection may continue running, and stale responses
+     * could arrive after the user has switched to a different chat.
+     */
+    useEffect(() => {
+      return () => {
+        stop();
+        workbenchStore.abortAllActions();
+      };
     }, []);
 
     useEffect(() => {
-      processSampledMessages({
-        messages,
-        initialMessages,
-        isLoading,
-        parseMessages,
-        storeMessageHistory,
-      });
-    }, [messages, isLoading, parseMessages]);
+      /*
+       * Only process if we have messages — skip empty calls that may
+       * occur during chat switches when the sampler fires with stale state.
+       */
+      if ((messages?.length ?? 0) > 0) {
+        processSampledMessages({
+          messages,
+          initialMessages,
+          isLoading,
+          parseMessages,
+          storeMessageHistory,
+        });
+      }
+    }, [messages, isLoading, parseMessages, initialMessages, storeMessageHistory]);
+
+    // Debug: Log messages state changes to trace AI message flow
+    useEffect(() => {
+      if ((messages?.length ?? 0) > 0) {
+        console.log('[DEBUG Chat] Messages state updated:', {
+          count: messages?.length,
+          lastMessage: {
+            id: messages[messages.length - 1]?.id,
+            role: messages[messages.length - 1]?.role,
+            hasParts: Array.isArray(messages[messages.length - 1]?.parts),
+          },
+          chatStarted: {
+            ref: chatStartedRef.current,
+            state: chatStartedInternal,
+            derived:
+              chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+          },
+        });
+
+        logger.debug('[Chat] Messages state updated:', {
+          count: messages?.length,
+          lastMessage: {
+            id: messages[messages.length - 1]?.id,
+            role: messages[messages.length - 1]?.role,
+            hasParts: Array.isArray(messages[messages.length - 1]?.parts),
+          },
+          chatStarted: {
+            ref: chatStartedRef.current,
+            state: chatStartedInternal,
+            derived:
+              chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+          },
+        });
+      }
+    }, [messages?.length, messages?.[messages?.length - 1]?.id]);
 
     // Query vector stores for RAG context when user messages change
     useEffect(() => {
@@ -332,8 +627,22 @@ export const ChatImpl = memo(
           await userProfileStore.initialize();
 
           // Get last user message for context query
-          const userMessages = messages.filter((m) => m.role === 'user');
-          const lastMsg = userMessages[userMessages.length - 1]?.content || '';
+          const userMessages = (messages || []).filter((m) => m.role === 'user');
+
+          // Extract content from UIMessage v7 (uses parts array)
+          const lastUserMsg = userMessages[(userMessages?.length ?? 1) - 1];
+          let lastMsg = '';
+
+          if (lastUserMsg) {
+            if (typeof (lastUserMsg as any).content === 'string') {
+              lastMsg = (lastUserMsg as any).content;
+            } else if (Array.isArray((lastUserMsg as any).parts)) {
+              lastMsg = (lastUserMsg as any).parts
+                .filter((p: any) => p.type === 'text')
+                .map((p: any) => p.text)
+                .join('');
+            }
+          }
 
           if (!lastMsg) {
             setVectorUserContext('');
@@ -375,17 +684,30 @@ export const ChatImpl = memo(
       return () => {
         cancelled = true;
       };
-    }, [messages.length]);
+    }, [messages?.length]);
 
     // Detect execute_plan signal, enrich via the planner LLM, then show the approval dialog.
     useEffect(() => {
-      const lastAssistantMessage = messages.filter((m) => m.role === 'assistant').pop();
+      const lastAssistantMessage = (messages || []).filter((m) => m.role === 'assistant').pop();
 
-      if (!lastAssistantMessage?.content) {
-        return;
+      // Extract content from UIMessage v7 (uses parts array)
+      let content = '';
+
+      if (lastAssistantMessage) {
+        if (typeof (lastAssistantMessage as any).content === 'string') {
+          content = (lastAssistantMessage as any).content.trim();
+        } else if (Array.isArray((lastAssistantMessage as any).parts)) {
+          content = (lastAssistantMessage as any).parts
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text)
+            .join('')
+            .trim();
+        }
       }
 
-      const content = lastAssistantMessage.content.trim();
+      if (!content) {
+        return;
+      }
 
       /*
        * M-4 fix: Check for the signal marker before attempting JSON.parse
@@ -460,32 +782,46 @@ export const ChatImpl = memo(
     const processedMutationToolCallIdsRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
-      const lastAssistant = messages.filter((m) => m.role === 'assistant').pop();
+      const lastAssistant = (messages || []).filter((m) => m.role === 'assistant').pop();
 
       if (!lastAssistant) {
         return;
       }
 
       /*
-       * Tool invocations can live either on `toolInvocations` (legacy) or
-       * inside `parts` (current ai-sdk shape). Check both.
+       * Tool invocations can live either on `toolInvocations` (legacy v4) or
+       * inside `parts` (AI SDK v7 flat shape: `tool-<name>` / `dynamic-tool`).
+       * We normalise both into a flat `{ toolName, toolCallId, state, result }`
+       * shape via the helpers in `~/lib/chat/tool-parts` so the rest of this
+       * effect can use one consistent access pattern.
        */
       const allInvocations: any[] = [];
 
       if (Array.isArray((lastAssistant as any).parts)) {
         for (const p of (lastAssistant as any).parts) {
-          if (p?.type === 'tool-invocation' && p?.toolInvocation) {
-            allInvocations.push(p.toolInvocation);
+          if (isToolPart(p)) {
+            allInvocations.push({
+              toolName: getToolNameFromPart(p),
+              toolCallId: getToolCallId(p),
+              state: getToolState(p),
+              result: getToolOutput(p),
+            });
           }
         }
       }
 
+      /*
+       * Note: toolInvocations is deprecated in AI SDK v7, but kept for backward compatibility
+       * In v7, tool invocations live inline on the part (flat). This branch only
+       * catches old persisted v4 messages.
+       */
       if (Array.isArray((lastAssistant as any).toolInvocations)) {
         allInvocations.push(...(lastAssistant as any).toolInvocations);
       }
 
       for (const inv of allInvocations) {
-        if (inv.state !== 'result') {
+        // Accept both v7 'output-available'/'output-error' and legacy v4 'result'.
+        if (!ToolState.isResult(inv.state)) {
           continue;
         }
 
@@ -519,8 +855,32 @@ export const ChatImpl = memo(
 
         processedMutationToolCallIdsRef.current.add(toolCallId);
 
-        // Fire-and-forget — apply each operation in order
+        /*
+         * If the workspace is still loading files (e.g. after inject_template),
+         * delay the mutation until the workspace is ready. Mutating a file that
+         * hasn't been written to the WebContainer yet would fail or create an
+         * inconsistent state. We wait for workspaceReadyRef to become true,
+         * which happens when the files atom has file entries.
+         */
         (async () => {
+          if (!workspaceReadyRef.current) {
+            logger.debug(`[native-tool] delaying mutation ${toolCallId} — workspace not ready`);
+
+            // Wait for the workspace to become ready (poll every 200ms)
+            await new Promise<void>((resolve) => {
+              const check = () => {
+                if (workspaceReadyRef.current) {
+                  resolve();
+                } else {
+                  setTimeout(check, 200);
+                }
+              };
+              check();
+            });
+
+            logger.debug(`[native-tool] workspace ready, applying mutation ${toolCallId}`);
+          }
+
           for (const op of parsed.operations) {
             try {
               const summary = await workbenchStore.applyFileMutation(op);
@@ -551,9 +911,448 @@ export const ChatImpl = memo(
      * Mutating tools (replace_string_in_file, multi_replace_string_in_file,
      * create_file) are intentionally NOT in this list — they still show
      * the Approve/Reject UI so the user stays in control of file edits.
+     *
+     * IMPORTANT: If the workspace is still loading files (e.g. after an
+     * inject_template), we delay auto-approval until the workspace has
+     * finished loading. This prevents the AI from reading/modifying files
+     * that don't exist in the WebContainer yet.
      * ───────────────────────────────────────────────────────────────────
      */
     const autoApprovedToolCallIdsRef = useRef<Set<string>>(new Set());
+
+    /*
+     * Track which inject_template toolCallIds we've already processed
+     * (written files for). Prevents re-writing files on re-renders.
+     * Reset on chat switch — see the mount effect below.
+     */
+    const processedTemplateImportsRef = useRef<Set<string>>(new Set());
+
+    /*
+     * Track whether the workspace has finished processing an inject_template
+     * or file-loading operation. When a project is loaded, we wait for the
+     * files to be present in the workbench store before allowing tool
+     * results to be sent.
+     */
+    const workspaceReadyRef = useRef(true);
+    const pendingAutoApprovalsRef = useRef<Array<{ toolCallId: string; toolName?: string }>>([]);
+
+    /*
+     * Workspace file-stabilization tracking (Bug 3 robustness).
+     *
+     * When inject_template streams an <amplifyArtifact>, files are written
+     * to the WebContainer asynchronously by the message parser. The tool
+     * result is returned to the AI BEFORE all files are committed, so the
+     * AI may immediately try to read/modify files that don't exist yet.
+     *
+     * `workspaceFileCountRef` records the last-seen file count; the
+     * readiness effect only opens the gate once the count has STABILIZED
+     * (unchanged for WORKSPACE_STABILIZE_MS). This prevents the gate from
+     * opening the moment the first file appears while the rest are still
+     * streaming in.
+     */
+    const WORKSPACE_STABILIZE_MS = 600;
+    const workspaceFileCountRef = useRef(0);
+    const workspaceStabilizeTimerRef = useRef(0);
+
+    /*
+     * Reset tool call tracking refs on mount. When switching chats,
+     * ChatImpl remounts (due to chatKey change), but refs may retain
+     * stale IDs from the previous chat if React reuses the fiber.
+     * Clearing them ensures no cross-chat state bleeding.
+     *
+     * Also resets the MODULE-LEVEL shared dedup guard
+     * (tool-approval-dedup.ts) so toolCallIds from the previous chat
+     * don't linger. toolCallIds are UUIDs so this is mostly defensive,
+     * but it keeps memory bounded.
+     */
+    useEffect(() => {
+      processedMutationToolCallIdsRef.current = new Set();
+      autoApprovedToolCallIdsRef.current = new Set();
+      processedTemplateImportsRef.current = new Set();
+      pendingAutoApprovalsRef.current = [];
+      workspaceReadyRef.current = true;
+      workspaceFileCountRef.current = 0;
+      workspaceStabilizeTimerRef.current = 0;
+      resetToolCallApprovals();
+    }, []);
+
+    useEffect(() => {
+      /*
+       * Mark workspace as NOT ready when a project is being loaded or
+       * an inject_template is being processed (files map is empty but
+       * showWorkbench just turned on). Mark as ready once files are present
+       * AND have stabilized (no new files appearing for a brief window).
+       *
+       * Previously this required loadedProjectId !== '<none>', which missed
+       * the inject_template case where files are being created by the
+       * message parser but loadedProjectId hasn't been set to a real ID yet.
+       * Now we simply check: if the workbench is open and there are no files,
+       * the workspace isn't ready.
+       *
+       * We also check for inject_template tool calls in the messages — when
+       * the AI calls inject_template, the workspace will soon have files but
+       * they may not be loaded yet. We mark the workspace as not ready until
+       * the files actually appear AND stop growing.
+       */
+      const currentFiles = workbenchStore.files.get();
+      const fileCount = Object.keys(currentFiles).filter((k) => currentFiles[k]?.type === 'file').length;
+      const hasFiles = fileCount > 0;
+
+      /*
+       * Detect inject_template in progress: scan messages for an inject_template
+       * tool call that is in the call/partial/result lifecycle. We include the
+       * `result` state because the tool result is returned to the AI BEFORE the
+       * streamed <amplifyArtifact> XML has finished parsing and writing files
+       * to the WebContainer — so files may still be arriving after `result`.
+       */
+      let injectTemplateInProgress = false;
+
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (
+            isToolPart(p) &&
+            getToolNameFromPart(p) === 'inject_template' &&
+            (ToolState.isCall(getToolState(p)) ||
+              ToolState.isPartial(getToolState(p)) ||
+              ToolState.isResult(getToolState(p)))
+          ) {
+            injectTemplateInProgress = true;
+            break;
+          }
+        }
+
+        if (injectTemplateInProgress) {
+          break;
+        }
+      }
+
+      if ((showWorkbench && !hasFiles) || injectTemplateInProgress) {
+        workspaceReadyRef.current = false;
+
+        /*
+         * Track the current file count so we can detect when files stop
+         * growing (stabilization) before declaring the workspace ready.
+         * This prevents the gate from opening the moment the FIRST file
+         * appears while the rest of the template is still streaming in.
+         */
+        workspaceFileCountRef.current = fileCount;
+      } else if (hasFiles && !injectTemplateInProgress) {
+        /*
+         * Files exist and no inject_template is in progress. Before opening
+         * the gate, require the file count to STABILIZE — i.e. remain the
+         * same across two consecutive renders within a short time window.
+         * This handles the race where files are still being written by the
+         * message parser after the inject_template tool result arrived.
+         */
+        if (fileCount !== workspaceFileCountRef.current) {
+          // Files are still growing — keep gate closed, record new count.
+          workspaceFileCountRef.current = fileCount;
+          workspaceStabilizeTimerRef.current = Date.now();
+
+          return;
+        }
+
+        const elapsed = Date.now() - (workspaceStabilizeTimerRef.current || 0);
+
+        if (elapsed < WORKSPACE_STABILIZE_MS) {
+          /*
+           * Not yet stable — keep gate closed; this effect will re-run on
+           * the next files change or can be re-checked via the timer below.
+           */
+          return;
+        }
+
+        if (!workspaceReadyRef.current) {
+          workspaceReadyRef.current = true;
+          workspaceFileCountRef.current = 0;
+          workspaceStabilizeTimerRef.current = 0;
+
+          /*
+           * Flush any pending auto-approvals that were queued while
+           * the workspace was loading.
+           */
+          if (pendingAutoApprovalsRef.current.length > 0) {
+            const pending = [...pendingAutoApprovalsRef.current];
+            pendingAutoApprovalsRef.current = [];
+
+            for (const { toolCallId, toolName } of pending) {
+              logger.debug(`[auto-approve] flushing delayed ${toolCallId}`);
+
+              /*
+               * AI SDK v7 signature: { tool, toolCallId, output, state }
+               * State must be 'output-available' (not 'result' from v4)
+               */
+              addToolResult({
+                tool: toolName || 'unknown',
+                toolCallId,
+                output: TOOL_EXECUTION_APPROVAL.APPROVE,
+                state: 'output-available',
+              });
+            }
+          }
+        }
+      }
+    }, [files, showWorkbench, loadedProjectId, addToolResult, messages]);
+
+    /*
+     * Stabilization timer: the files effect above only re-runs when `files`
+     * changes. If files stop changing (stabilized) we still need to flip the
+     * gate open after the stabilization window elapses. This standalone timer
+     * polls the readiness condition while the workspace is in a "loading"
+     * state, ensuring the gate eventually opens even without further file
+     * changes.
+     */
+    useEffect(() => {
+      if (workspaceReadyRef.current) {
+        return undefined;
+      }
+
+      const interval = setInterval(() => {
+        const currentFiles = workbenchStore.files.get();
+        const fileCount = Object.keys(currentFiles).filter((k) => currentFiles[k]?.type === 'file').length;
+
+        if (fileCount === 0) {
+          return; // still no files
+        }
+
+        if (fileCount !== workspaceFileCountRef.current) {
+          workspaceFileCountRef.current = fileCount;
+          workspaceStabilizeTimerRef.current = Date.now();
+
+          return;
+        }
+
+        const elapsed = Date.now() - (workspaceStabilizeTimerRef.current || 0);
+
+        if (elapsed >= WORKSPACE_STABILIZE_MS && !workspaceReadyRef.current) {
+          // Re-verify no inject_template is still in progress.
+          let injectInProgress = false;
+
+          for (const msg of messages) {
+            if (msg.role !== 'assistant') {
+              continue;
+            }
+
+            const parts = (msg as any).parts as any[] | undefined;
+
+            if (!Array.isArray(parts)) {
+              continue;
+            }
+
+            for (const p of parts) {
+              if (
+                isToolPart(p) &&
+                getToolNameFromPart(p) === 'inject_template' &&
+                (ToolState.isCall(getToolState(p)) ||
+                  ToolState.isPartial(getToolState(p)) ||
+                  ToolState.isResult(getToolState(p)))
+              ) {
+                /*
+                 * Only block if the result hasn't arrived yet. Once state
+                 * is `output-available` (v4 `'result'`) the file-writing is
+                 * finishing up; combined with stabilization this is safe.
+                 * Keep simple: if any inject_template call/partial (not yet
+                 * result) exists, wait.
+                 */
+                if (!ToolState.isResult(getToolState(p))) {
+                  injectInProgress = true;
+                  break;
+                }
+              }
+            }
+
+            if (injectInProgress) {
+              break;
+            }
+          }
+
+          if (!injectInProgress) {
+            workspaceReadyRef.current = true;
+            workspaceFileCountRef.current = 0;
+            workspaceStabilizeTimerRef.current = 0;
+
+            if (pendingAutoApprovalsRef.current.length > 0) {
+              const pending = [...pendingAutoApprovalsRef.current];
+              pendingAutoApprovalsRef.current = [];
+
+              for (const { toolCallId, toolName } of pending) {
+                logger.debug(`[auto-approve] flushing delayed ${toolCallId} (stabilize timer)`);
+
+                /*
+                 * AI SDK v7 signature: { tool, toolCallId, output, state }
+                 * State must be 'output-available' (not 'result' from v4)
+                 */
+                addToolResult({
+                  tool: toolName || 'unknown',
+                  toolCallId,
+                  output: TOOL_EXECUTION_APPROVAL.APPROVE,
+                  state: 'output-available',
+                });
+              }
+            }
+          }
+        }
+      }, 250);
+
+      return () => clearInterval(interval);
+    }, [messages, addToolResult]);
+
+    /*
+     * ── inject_template file writer ────────────────────────────────────
+     *
+     * When the `inject_template` tool completes, its result contains a
+     * `files` array (path + content for each file in the template). This
+     * effect detects completed inject_template calls and writes the files
+     * to the WebContainer SEQUENTIALLY via workbenchStore's execution
+     * queue — the same mechanism the message parser uses for
+     * <amplifyArtifact> actions.
+     *
+     * WHY: the previous approach streamed the <amplifyArtifact> XML as a
+     * text-delta, which created a TEXT part in the message. That text part
+     * broke the chain-of-thought segment splitter (causing consecutive
+     * tools to appear as separate flat rows instead of one collapsible
+     * panel) and caused duplicate headings via the parsedContent
+     * replacement. By writing files from the tool RESULT instead, no text
+     * part is created, and the chain stays intact.
+     *
+     * DEDUP: `processedTemplateImportsRef` (declared with the other refs
+     * above) tracks processed toolCallIds so files are written exactly
+     * once per inject_template call, even across re-renders. It's cleared
+     * on chat switch by the mount effect.
+     */
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!isToolPart(p)) {
+            continue;
+          }
+
+          if (getToolNameFromPart(p) !== 'inject_template') {
+            continue;
+          }
+
+          const state = getToolState(p);
+
+          /*
+           * Only process results (output-available). While the tool is
+           * still in 'call'/'partial' state, files aren't available yet.
+           */
+          if (!ToolState.isResult(state)) {
+            continue;
+          }
+
+          const toolCallId = getToolCallId(p);
+
+          if (!toolCallId) {
+            continue;
+          }
+
+          /* Already processed this inject_template call — skip. */
+          if (processedTemplateImportsRef.current.has(toolCallId)) {
+            continue;
+          }
+
+          const result = getToolOutput(p);
+          const input = getToolInput(p);
+
+          if (!result || !result.files || !Array.isArray(result.files) || result.files.length === 0) {
+            continue;
+          }
+
+          processedTemplateImportsRef.current.add(toolCallId);
+
+          const messageId = msg.id;
+          const artifactId = `template-${toolCallId}`;
+          const title = input?.title || 'Imported Template';
+
+          logger.info(
+            `[inject_template] Writing ${result.files.length} files for artifact ${artifactId} (message ${messageId})`,
+          );
+
+          /*
+           * Create the artifact in the workbench store. This:
+           *   - Registers it in `workbenchStore.artifacts` so the
+           *     `firstArtifact` getter returns it (used by useChatHistory
+           *     for project auto-promotion + command detection).
+           *   - Creates an ActionRunner instance that manages the
+           *     execution queue for this artifact's file writes.
+           *
+           * `type: 'template'` matches what the message parser used to
+           * set for inject_template artifacts.
+           */
+          workbenchStore.addArtifact({
+            messageId,
+            id: artifactId,
+            title,
+            type: 'template',
+          });
+
+          /*
+           * Enqueue each file write. `addAction` registers the action in
+           * the runner; `runAction` executes it (writes to WebContainer +
+           * updates workbenchStore.files). Both are sequential via the
+           * global execution queue — no parallel writes, so no refresh
+           * bug.
+           *
+           * We wrap in `addToExecutionQueue` to ensure the entire batch
+           * is enqueued atomically (the individual addAction/runAction
+           * calls also enqueue, but this outer wrapper ensures ordering
+           * relative to any other pending actions).
+           */
+          workbenchStore.addToExecutionQueue(async () => {
+            for (let i = 0; i < result.files.length; i++) {
+              const file = result.files[i];
+              const actionId = `${artifactId}-file-${i}`;
+
+              const actionData = {
+                artifactId,
+                messageId,
+                actionId,
+                action: {
+                  type: 'file' as const,
+                  filePath: file.path,
+                  content: file.content,
+                },
+              };
+
+              /* Register the action in the runner (mimics onActionOpen). */
+              await workbenchStore._addAction(actionData);
+
+              /*
+               * Execute the action — writes to WebContainer + updates
+               * workbenchStore.files (mimics onActionClose).
+               */
+              await workbenchStore._runAction(actionData, false);
+            }
+
+            /* Mark the artifact as closed (all files written). */
+            workbenchStore.updateArtifact({ messageId, id: artifactId, title, type: 'template' }, { closed: true });
+
+            logger.info(`[inject_template] Finished writing ${result.files.length} files for artifact ${artifactId}`);
+          });
+        }
+      }
+    }, [messages]);
 
     useEffect(() => {
       for (const msg of messages) {
@@ -568,13 +1367,18 @@ export const ChatImpl = memo(
         }
 
         for (const p of parts) {
-          if (!p || p.type !== 'tool-invocation' || !p.toolInvocation) {
+          if (!isToolPart(p)) {
             continue;
           }
 
-          const inv = p.toolInvocation as any;
+          const inv = {
+            toolName: getToolNameFromPart(p),
+            toolCallId: getToolCallId(p),
+            state: getToolState(p),
+          };
 
-          if (inv.state !== 'call') {
+          // v7 'input-available' (and 'input-streaming') == v4 'call'.
+          if (!ToolState.isCall(inv.state)) {
             continue;
           }
 
@@ -586,12 +1390,154 @@ export const ChatImpl = memo(
             continue;
           }
 
+          /*
+           * SHARED DEDUP GUARD (tool-approval-dedup.ts).
+           * This is the PERMANENT fix for message duplication on tool
+           * error. Without it, three parallel effects (here,
+           * ToolInvocations.tsx, ToolProgress.tsx) each fire
+           * `addToolResult` for the same toolCallId — causing the AI
+           * SDK to send 2-3 follow-up /api/chat requests, each
+           * appending a new step (reasoning + text) to the SAME
+           * assistant message. The user sees duplicated thought blocks
+           * and duplicated message text.
+           *
+           * `tryClaimToolCallApproval` atomically checks-and-claims the
+           * toolCallId at the MODULE level. If another component already
+           * claimed it, we skip. This guarantees exactly ONE
+           * `addToolResult` call per toolCallId across the entire app.
+           *
+           * The local `autoApprovedToolCallIdsRef` is kept as a
+           * secondary guard for same-component re-renders (cheaper than
+           * the module-level Set lookup for the common case).
+           */
+          if (!tryClaimToolCallApproval(inv.toolCallId)) {
+            continue;
+          }
+
           autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+
+          /*
+           * If the workspace is still loading files (e.g. after
+           * inject_template), queue the auto-approval instead of
+           * sending it immediately. This prevents the AI from
+           * reading files that don't exist in the WebContainer yet.
+           */
+          if (!workspaceReadyRef.current) {
+            logger.debug(`[auto-approve] delaying ${inv.toolName} (${inv.toolCallId}) — workspace not ready`);
+            pendingAutoApprovalsRef.current.push({ toolCallId: inv.toolCallId, toolName: inv.toolName });
+            continue;
+          }
+
           logger.debug(`[auto-approve] ${inv.toolName} (${inv.toolCallId})`);
+
+          /*
+           * AI SDK v7 signature: { tool, toolCallId, output, state }
+           * State must be 'output-available' (not 'result' from v4)
+           */
           addToolResult({
+            tool: inv.toolName,
             toolCallId: inv.toolCallId,
-            result: TOOL_EXECUTION_APPROVAL.APPROVE,
+            output: TOOL_EXECUTION_APPROVAL.APPROVE,
+            state: 'output-available',
           });
+        }
+      }
+    }, [messages, addToolResult]);
+
+    /*
+     * ───────────────────────────────────────────────────────────────────
+     * CLIENT-SIDE TOOL EXECUTION (vector-store tools)
+     *
+     * Tools like `store_user_fact`, `search_user_context`,
+     * `search_project_context`, and `store_project_context` use IndexedDB
+     * (Orama) which is browser-only. Their server-side `execute` functions
+     * return "not available on the server" because `typeof window ===
+     * 'undefined'` on the server.
+     *
+     * Here we intercept those tool calls and execute them CLIENT-SIDE,
+     * sending the actual result (not APPROVE) back via `addToolResult`.
+     * The server's `processToolInvocations` sees a non-APPROVE output and
+     * passes it through unchanged.
+     *
+     * This effect MUST run before (or instead of) the auto-approve in
+     * ToolInvocations.tsx, which would otherwise send APPROVE and trigger
+     * the server-side execute (which fails). We use a shared dedup guard
+     * (autoApprovedToolCallIdsRef) so the same toolCallId is never handled
+     * by both paths.
+     * ───────────────────────────────────────────────────────────────────
+     */
+    useEffect(() => {
+      for (const msg of messages) {
+        if (msg.role !== 'assistant') {
+          continue;
+        }
+
+        const parts = (msg as any).parts as any[] | undefined;
+
+        if (!Array.isArray(parts)) {
+          continue;
+        }
+
+        for (const p of parts) {
+          if (!isToolPart(p)) {
+            continue;
+          }
+
+          const inv = {
+            toolName: getToolNameFromPart(p),
+            toolCallId: getToolCallId(p),
+            state: getToolState(p),
+            input: (p as any).input,
+          };
+
+          // Only handle 'input-available' (pending) tool calls.
+          if (!ToolState.isCall(inv.state)) {
+            continue;
+          }
+
+          // Only handle client-side tools (store_user_fact, etc.)
+          if (!isClientSideTool(inv.toolName)) {
+            continue;
+          }
+
+          // Local dedup guard (same-component re-renders).
+          if (autoApprovedToolCallIdsRef.current.has(inv.toolCallId)) {
+            continue;
+          }
+
+          /*
+           * SHARED dedup guard (across all components — see tool-approval-dedup.ts).
+           * Prevents ToolInvocations.tsx and ToolProgress.tsx from also firing
+           * addToolResult for this toolCallId, which would cause message duplication.
+           */
+          if (!tryClaimToolCallApproval(inv.toolCallId)) {
+            continue;
+          }
+
+          autoApprovedToolCallIdsRef.current.add(inv.toolCallId);
+
+          logger.debug(`[client-tool] executing ${inv.toolName} (${inv.toolCallId})`);
+
+          // Execute asynchronously and send the result back.
+          (async () => {
+            try {
+              const result = await executeClientSideTool(inv.toolName, inv.input || {});
+
+              addToolResult({
+                tool: inv.toolName,
+                toolCallId: inv.toolCallId,
+                output: result,
+                state: 'output-available',
+              });
+            } catch (e: any) {
+              addToolResult({
+                tool: inv.toolName,
+                toolCallId: inv.toolCallId,
+                output: `Error executing ${inv.toolName}: ${e.message}`,
+                state: 'output-available',
+              });
+            }
+          })();
         }
       }
     }, [messages, addToolResult]);
@@ -660,6 +1606,7 @@ export const ChatImpl = memo(
             signal.taskDescription,
             1000,
           );
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (e) {
           // Vector context is optional
         }
@@ -711,19 +1658,47 @@ export const ChatImpl = memo(
           projectContext: currentProjectContext,
         });
 
-        // Get tool execution results from recent messages (simplified extraction)
+        // Get tool execution results from recent messages (extract from parts for v7)
+        const getToolInvocations = (msg: any): any[] => {
+          if (!msg || !Array.isArray(msg.parts)) {
+            return [];
+          }
+
+          const out: any[] = [];
+
+          for (const p of msg.parts) {
+            if (!isToolPart(p)) {
+              continue;
+            }
+
+            out.push({
+              toolName: getToolNameFromPart(p),
+              result: getToolOutput(p),
+            });
+          }
+
+          return out;
+        };
         const toolResults = messages
-          .filter((m) => m.role === 'assistant' && m.toolInvocations)
-          .flatMap((m) =>
-            (m.toolInvocations || []).map(
+          .filter((m) => m.role === 'assistant')
+          .flatMap((m) => {
+            // Try v7 parts first, fallback to legacy toolInvocations
+            const invocations = getToolInvocations(m);
+
+            if (invocations.length > 0) {
+              return invocations.map((ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`);
+            }
+
+            // Fallback for backward compatibility
+            return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-            ),
-          )
+            );
+          })
           .join('\n');
 
         // Execute the plan
         const result = await executePlan(plan, {
-          callLLM: async (subMessages, systemPrompt) => {
+          callLLM: async (subMessages, _systemPrompt) => {
             // Make a real fetch to /api/chat and collect the streamed response
             const response = await fetch('/api/chat', {
               method: 'POST',
@@ -737,6 +1712,16 @@ export const ChatImpl = memo(
                 projectContext: currentProjectContext || '',
                 apiKeys,
                 files: workbenchStore.files.get(),
+
+                /*
+                 * Pass modelConfig so the server can translate the unified
+                 * thinking/reasoning config into per-provider providerOptions
+                 * for ALL providers (Anthropic, Google, OpenAI, xAI, Mistral,
+                 * DeepSeek, etc.). Without this, buildThinkingProviderOptions()
+                 * returns {} and NO thinking/reasoning is ever enabled on the
+                 * API — regardless of which provider is selected.
+                 */
+                modelConfig: getWireConfig(),
               }),
             });
 
@@ -749,10 +1734,11 @@ export const ChatImpl = memo(
               throw new Error('Sub-chat response body is null — streaming not supported');
             }
 
-            // Read the data stream and extract text parts
+            // Read the data stream and extract text + reasoning parts
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
+            let reasoningContent = '';
             const toolInvocations: any[] = [];
             let buffer = '';
 
@@ -779,6 +1765,27 @@ export const ChatImpl = memo(
 
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
+                  } else if (parsed.type === 'reasoning') {
+                    /*
+                     * Reasoning/thinking tokens from ANY provider:
+                     *   - Anthropic: extended thinking (budgetTokens / adaptive)
+                     *   - Google Gemini: includeThoughts
+                     *   - OpenAI o-series: reasoningSummary
+                     *   - DeepSeek: automatic reasoning_content
+                     *   - xAI / Mistral: reasoning_effort
+                     * The AI SDK normalises all of these into type='reasoning'
+                     * parts when sendReasoning:true is set on the server.
+                     */
+                    const delta = parsed.text || parsed.textDelta || '';
+
+                    if (delta) {
+                      reasoningContent += delta;
+                    } else if (parsed.details && Array.isArray(parsed.details)) {
+                      // Anthropic-style reasoning with details array
+                      for (const detail of parsed.details) {
+                        reasoningContent += detail.text || '';
+                      }
+                    }
                   }
                 } catch {
                   // Skip malformed lines
@@ -790,6 +1797,7 @@ export const ChatImpl = memo(
               id: crypto.randomUUID(),
               role: 'assistant' as const,
               content: fullContent || 'No response generated.',
+              reasoning: reasoningContent || undefined,
               toolInvocations: toolInvocations.length > 0 ? toolInvocations : undefined,
             };
           },
@@ -979,17 +1987,46 @@ export const ChatImpl = memo(
           })),
         );
 
+        // Get tool execution results from recent messages (extract from parts for v7)
+        const getToolInvocationsForResume = (msg: any): any[] => {
+          if (!msg || !Array.isArray(msg.parts)) {
+            return [];
+          }
+
+          const out: any[] = [];
+
+          for (const p of msg.parts) {
+            if (!isToolPart(p)) {
+              continue;
+            }
+
+            out.push({
+              toolName: getToolNameFromPart(p),
+              result: getToolOutput(p),
+            });
+          }
+
+          return out;
+        };
         const toolResults = messages
-          .filter((m) => m.role === 'assistant' && m.toolInvocations)
-          .flatMap((m) =>
-            (m.toolInvocations || []).map(
+          .filter((m) => m.role === 'assistant')
+          .flatMap((m) => {
+            // Try v7 parts first, fallback to legacy toolInvocations
+            const invocations = getToolInvocationsForResume(m);
+
+            if (invocations.length > 0) {
+              return invocations.map((ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`);
+            }
+
+            // Fallback for backward compatibility
+            return ((m as any).toolInvocations || []).map(
               (ti: any) => `${ti.toolName}: ${JSON.stringify(ti.result || {}).slice(0, 300)}`,
-            ),
-          )
+            );
+          })
           .join('\n');
 
         await resumePlan(plan, {
-          callLLM: async (subMessages, systemPrompt) => {
+          callLLM: async (subMessages, _systemPrompt) => {
             const response = await fetch('/api/chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1002,6 +2039,12 @@ export const ChatImpl = memo(
                 projectContext: currentProjectContext || '',
                 apiKeys,
                 files: workbenchStore.files.get(),
+
+                /*
+                 * Pass modelConfig for ALL providers — same fix as the
+                 * executePlan callLLM above.
+                 */
+                modelConfig: getWireConfig(),
               }),
             });
 
@@ -1017,6 +2060,7 @@ export const ChatImpl = memo(
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
+            let reasoningContent = '';
             let buffer = '';
 
             while (true) {
@@ -1041,6 +2085,20 @@ export const ChatImpl = memo(
 
                   if (parsed.type === 'text') {
                     fullContent += parsed.text || '';
+                  } else if (parsed.type === 'reasoning') {
+                    /*
+                     * Reasoning/thinking tokens from ANY provider —
+                     * same handler as the executePlan callLLM above.
+                     */
+                    const delta = parsed.text || parsed.textDelta || '';
+
+                    if (delta) {
+                      reasoningContent += delta;
+                    } else if (parsed.details && Array.isArray(parsed.details)) {
+                      for (const detail of parsed.details) {
+                        reasoningContent += detail.text || '';
+                      }
+                    }
                   }
                 } catch {
                   // Skip malformed lines
@@ -1052,6 +2110,7 @@ export const ChatImpl = memo(
               id: crypto.randomUUID(),
               role: 'assistant' as const,
               content: fullContent || 'No response generated.',
+              reasoning: reasoningContent || undefined,
             };
           },
           runShellCommand: async (cmd) => {
@@ -1200,7 +2259,8 @@ export const ChatImpl = memo(
           provider: provider.name,
           errorType,
         });
-        setData([]);
+
+        // Note: setData removed in @ai-sdk/react v4 — data is no longer managed by useChat
       },
       [provider.name, stop],
     );
@@ -1209,7 +2269,19 @@ export const ChatImpl = memo(
       setLlmErrorAlert(undefined);
     }, []);
 
-    useEffect(() => {
+    /*
+     * Auto-resize the textarea to fit its content. This MUST run as a
+     * layout effect (before paint) — not a regular effect — because the
+     * resize sets `height='auto'` (shrink) then measures `scrollHeight`
+     * then sets the final height. With useEffect the intermediate 'auto'
+     * state is painted for one frame, causing a visible shrink-then-grow
+     * flicker. That layout shift propagates through the flex container
+     * and triggers the StickToBottom scroll recalculation, making the
+     * chat messages jump on every keystroke. useLayoutEffect applies
+     * all three height changes synchronously before the browser paints,
+     * so only the final height is ever visible.
+     */
+    useLayoutEffect(() => {
       const textarea = textareaRef.current;
 
       if (textarea) {
@@ -1244,26 +2316,49 @@ export const ChatImpl = memo(
       return () => window.removeEventListener('amplify:quote-text', handleQuoteText);
     }, [input, handleInputChange]);
 
+    /*
+     * runAnimation - toggles chatStarted and runs exit animations.
+     *
+     * CRITICAL: chatStartedRef.current is set SYNCHRONOUSLY before any async
+     * operations. This ensures:
+     * 1. Messages component renders immediately (not after await)
+     * 2. UI shows chat area before AI response arrives
+     * 3. Background transitions to transparent state
+     *
+     * Matches the legacy bolt.diy pattern but with synchronous state update for reliability.
+     */
     const runAnimation = async () => {
-      if (chatStarted) {
+      // Only run if not already started
+      if (chatStartedRef.current) {
         return;
       }
 
-      setChatStarted(true);
+      // SYNCHRONOUS: Set chatStarted immediately - takes effect on next render
+      chatStartedRef.current = true;
+      setChatStartedInternal(true);
       chatStore.setKey('started', true);
 
-      await Promise.all([
-        animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
-        animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
-      ]);
+      // Run animations asynchronously (cosmetic only, doesn't affect rendering)
+      try {
+        await Promise.all([
+          animate('#examples', { opacity: 0, display: 'none' }, { duration: 0.1 }),
+          animate('#intro', { opacity: 0, flex: 1 }, { duration: 0.2, ease: cubicEasingFn }),
+        ]);
+      } catch (e) {
+        // Animation errors shouldn't block chat functionality
+        logger.warn('[Chat] Animation failed:', e);
+      }
     };
 
-    // Helper function to create message parts array from text and images
-    const createMessageParts = (text: string, images: string[] = []): Array<TextUIPart | FileUIPart> => {
+    /*
+     * Helper function to create message parts array from text and images
+     * AI SDK v7: FileUIPart requires mediaType and url (not mimeType and data)
+     */
+    const createMessageParts = (text: string, images: string[] = []): any[] => {
       // Create an array of properly typed message parts
-      const parts: Array<TextUIPart | FileUIPart> = [
+      const parts: any[] = [
         {
-          type: 'text',
+          type: 'text' as const,
           text,
         },
       ];
@@ -1271,13 +2366,16 @@ export const ChatImpl = memo(
       // Add image parts if any
       images.forEach((imageData) => {
         // Extract correct MIME type from the data URL
-        const mimeType = imageData.split(';')[0].split(':')[1] || 'image/jpeg';
+        const mediaType = imageData.split(';')[0].split(':')[1] || 'image/jpeg';
+        const base64Data = imageData.replace(/^data:image\/[^;]+;base64/, '');
 
-        // Create file part according to AI SDK format
+        // Create file part according to AI SDK v7 format
         parts.push({
-          type: 'file',
-          mimeType,
-          data: imageData.replace(/^data:image\/[^;]+;base64,/, ''),
+          type: 'file' as const,
+          mediaType,
+
+          // In v7, FileUIPart uses url (data URL) instead of data
+          url: `data:${mediaType};base64,${base64Data}`,
         });
       });
 
@@ -1334,23 +2432,38 @@ export const ChatImpl = memo(
 
       runAnimation();
 
-      if (!chatStarted) {
+      // Debug: Verify chatStarted is set before sending
+      logger.debug('[Chat] sendMessage called, chatStarted:', {
+        ref: chatStartedRef.current,
+        state: chatStartedInternal,
+        derived: chatStartedInternal || showWorkbench || (initialMessages?.length ?? 0) > 0 || chatStartedRef.current,
+      });
+
+      // Use ref for synchronous check (not stale state)
+      if (!chatStartedRef.current && !showWorkbench && (initialMessages?.length ?? 0) === 0) {
         setFakeLoading(true);
 
         // If autoSelectTemplate is disabled or template selection failed, proceed with normal message
         const userMessageText = `[Model: ${model}]\n\n[Provider: ${provider.name}]\n\n${finalMessageContent}`;
         const attachments = uploadedFiles.length > 0 ? await filesToAttachments(uploadedFiles) : undefined;
 
-        setMessages([
+        const attachmentOptions = attachments ? { experimental_attachments: attachments } : undefined;
+
+        /*
+         * FIX: Use sendMessage instead of setMessages + reload()
+         * Previously: setMessages([userMessage]) + reload() which called regenerate()
+         * Problem: regenerate() tries to re-generate last ASSISTANT message - but there isn't one yet!
+         * Solution: Use sdkSendMessage() which properly sends user message AND streams AI response
+         */
+        sdkSendMessage(
           {
-            id: `${new Date().getTime()}`,
-            role: 'user',
+            role: 'user' as const,
             content: userMessageText,
             parts: createMessageParts(userMessageText, imageDataList),
-            experimental_attachments: attachments,
-          },
-        ]);
-        reload(attachments ? { experimental_attachments: attachments } : undefined);
+          } as any,
+          attachmentOptions as any,
+        );
+
         setFakeLoading(false);
         setInput('');
         Cookies.remove(PROMPT_COOKIE_KEY);
@@ -1546,16 +2659,7 @@ export const ChatImpl = memo(
           description={description}
           importChat={importChat}
           exportChat={exportChat}
-          messages={messages.map((message, i) => {
-            if (message.role === 'user') {
-              return message;
-            }
-
-            return {
-              ...message,
-              content: parsedMessages[i] || '',
-            };
-          })}
+          messages={messages || []}
           enhancePrompt={() => {
             enhancePrompt(
               input,
@@ -1580,15 +2684,31 @@ export const ChatImpl = memo(
           clearDeployAlert={() => workbenchStore.clearDeployAlert()}
           llmErrorAlert={llmErrorAlert}
           clearLlmErrorAlert={clearApiErrorAlert}
-          data={chatData}
+          data={undefined}
           chatMode={chatMode}
           setChatMode={setChatMode}
+          isProjectChat={projectContinuation}
           append={append}
+          reload={reload}
           designScheme={designScheme}
           setDesignScheme={setDesignScheme}
           selectedElement={selectedElement}
           setSelectedElement={setSelectedElement}
-          addToolResult={addToolResult}
+          addToolResult={
+            // Adapt AI SDK v7 addToolResult signature to BaseChat's expected interface
+            /*
+             * BaseChat expects: ({ toolCallId, result }) => void
+             * v7 provides: ({ tool, toolCallId, state, output }) => void
+             */
+            ({ toolCallId, result }: { toolCallId: string; result: any }) => {
+              addToolResult({
+                tool: 'unknown', // BaseChat doesn't track tool name
+                toolCallId,
+                output: result,
+                state: 'output-available',
+              });
+            }
+          }
           onWebSearchResult={handleWebSearchResult}
           planExecuting={planExecuting}
           planProgress={planProgress}

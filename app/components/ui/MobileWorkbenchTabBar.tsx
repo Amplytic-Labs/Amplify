@@ -8,15 +8,17 @@ import type { WorkbenchViewType } from '~/lib/stores/workbench';
 
 interface TabConfig {
   value: WorkbenchViewType;
+
   /** Phosphor icon class for the tab */
   icon: string;
   label: string;
+
   /** Accent colour shown when the tab is active */
   color: string;
 }
 
 const TABS: TabConfig[] = [
-  { value: 'code',    icon: 'i-ph:code',    label: 'Code',    color: '#3b82f6' },
+  { value: 'code', icon: 'i-ph:code', label: 'Code', color: '#3b82f6' },
   { value: 'preview', icon: 'i-ph:eye', label: 'Preview', color: '#0698c9ff' },
 ];
 
@@ -44,7 +46,6 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
       <motion.span
         className="absolute inset-0  bg-amplify-elements-background-depth-1"
         animate={{
-          
           scale: isActive ? 1 : 0.9,
         }}
         transition={{ duration: 0.15, ease: cubicEasingFn }}
@@ -61,7 +62,6 @@ const TabPill = memo(({ tab, isActive, onSelect }: TabPillProps) => {
           className={classNames(tab.icon, 'text-lg shrink-0')}
           animate={{
             color: isActive ? tab.color : 'var(--amplify-elements-item-contentDefault, #94a3b8)',
-           
           }}
           transition={{ duration: 0.2, ease: cubicEasingFn }}
         />
@@ -92,26 +92,19 @@ interface MobileWorkbenchTabBarProps {
   className?: string;
 }
 
-export const MobileWorkbenchTabBar = memo(
-  ({ selected, onSelect, className }: MobileWorkbenchTabBarProps) => {
-    return (
-      <div
-        className={classNames(
-          'flex items-center gap-1 px-2 py-1 rounded-lg h-8 w-[130px]',
-          'bg-amplify-elements-background-depth-1 backdrop-blur-sm',
-          'border border-amplify-elements-borderColor/40',
-          className,
-        )}
-      >
-        {TABS.map((tab) => (
-          <TabPill
-            key={tab.value}
-            tab={tab}
-            isActive={selected === tab.value}
-            onSelect={() => onSelect(tab.value)}
-          />
-        ))}
-      </div>
-    );
-  },
-);
+export const MobileWorkbenchTabBar = memo(({ selected, onSelect, className }: MobileWorkbenchTabBarProps) => {
+  return (
+    <div
+      className={classNames(
+        'flex items-center gap-1 px-2 py-1 rounded-lg h-8 w-[130px]',
+        'bg-amplify-elements-background-depth-1 backdrop-blur-sm',
+        'border border-amplify-elements-borderColor/40',
+        className,
+      )}
+    >
+      {TABS.map((tab) => (
+        <TabPill key={tab.value} tab={tab} isActive={selected === tab.value} onSelect={() => onSelect(tab.value)} />
+      ))}
+    </div>
+  );
+});

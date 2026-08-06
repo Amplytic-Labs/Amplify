@@ -2,7 +2,7 @@
  * @ts-nocheck
  * Preventing TS checks with files presented in the video for a better presentation.
  */
-import type { JSONValue, Message } from 'ai';
+import type { JSONValue, UIMessage } from 'ai';
 import React, { type RefCallback, useEffect, useState } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { Menu } from '~/components/sidebar/Menu.client';
@@ -10,18 +10,13 @@ import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
 import { PROVIDER_LIST } from '~/utils/constants';
 import { Messages } from './Messages.client';
-import { getApiKeysFromCookies } from './APIKeyManager';
-import Cookies from 'js-cookie';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import useViewport from '~/lib/hooks';
 import { workbenchStore } from '~/lib/stores/workbench';
 import styles from './BaseChat.module.scss';
-import { ImportButtons } from '~/components/chat/chatExportAndImport/ImportButtons';
 import { ExamplePrompts } from '~/components/chat/ExamplePrompts';
-import GitCloneButton from './GitCloneButton';
 import type { ProviderInfo } from '~/types/model';
-import StarterTemplates from './StarterTemplates';
 import type { ActionAlert, SupabaseAlert, DeployAlert, LlmErrorAlertType } from '~/types/actions';
 import DeployChatAlert from '~/components/deploy/DeployAlert';
 import ChatAlert from './ChatAlert';
@@ -36,9 +31,14 @@ import type { DesignScheme } from '~/types/design-scheme';
 import type { ElementInfo } from '~/components/workbench/Inspector';
 import LlmErrorAlert from './LLMApiAlert';
 import { OpenWorkspaceButton } from './OpenWorkspaceButton';
-// OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
-// The workspace only opens when the AI injects a template, the user clones
-// a GitHub repo, or the user picks a template — never via a manual button.
+import type { IChatMetadata } from '~/lib/persistence/db';
+import type { FileMap } from '~/lib/stores/files';
+
+/*
+ * OpenWorkspaceButton is intentionally NOT rendered in the chat UI.
+ * The workspace only opens when the AI injects a template, the user clones
+ * a GitHub repo, or the user picks a template — never via a manual button.
+ */
 void OpenWorkspaceButton;
 
 const TEXTAREA_MIN_HEIGHT = 32;
@@ -51,7 +51,7 @@ interface BaseChatProps {
   chatStarted?: boolean;
   isStreaming?: boolean;
   onStreamingChange?: (streaming: boolean) => void;
-  messages?: Message[];
+  messages?: UIMessage[];
   description?: string;
   enhancingPrompt?: boolean;
   promptEnhanced?: boolean;
@@ -65,7 +65,12 @@ interface BaseChatProps {
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
   handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   enhancePrompt?: () => void;
-  importChat?: (description: string, messages: Message[]) => Promise<void>;
+  importChat?: (
+    description: string,
+    messages: UIMessage[],
+    metadata?: IChatMetadata,
+    initialFileMap?: FileMap,
+  ) => Promise<void>;
   exportChat?: () => void;
   uploadedFiles?: File[];
   setUploadedFiles?: (files: File[]) => void;
@@ -82,7 +87,11 @@ interface BaseChatProps {
   data?: JSONValue[] | undefined;
   chatMode?: 'discuss' | 'build';
   setChatMode?: (mode: 'discuss' | 'build') => void;
-  append?: (message: Message) => void;
+  isProjectChat?: boolean;
+  append?: (message: UIMessage) => void;
+
+  /** Regenerate the last assistant answer (v7: also known as onRegenerate). */
+  reload?: () => void;
   designScheme?: DesignScheme;
   setDesignScheme?: (scheme: DesignScheme) => void;
   selectedElement?: ElementInfo | null;
@@ -112,15 +121,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       setProvider,
       providerList,
       input = '',
-      enhancingPrompt,
+      enhancingPrompt: _enhancingPrompt,
       handleInputChange,
 
       // promptEnhanced,
-      enhancePrompt,
+      enhancePrompt: _enhancePrompt,
       sendMessage,
       handleStop,
-      importChat,
-      exportChat,
+      importChat: _importChat,
+      exportChat: _exportChat,
       uploadedFiles = [],
       setUploadedFiles,
       imageDataList = [],
@@ -134,18 +143,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       clearSupabaseAlert,
       llmErrorAlert,
       clearLlmErrorAlert,
-      data,
+      data: _data,
       chatMode,
       setChatMode,
+      isProjectChat,
       append,
-      designScheme,
-      setDesignScheme,
+      reload,
+      designScheme: _designScheme,
+      setDesignScheme: _setDesignScheme,
       selectedElement,
       setSelectedElement,
       addToolResult = () => {
         throw new Error('addToolResult not implemented');
       },
-      onWebSearchResult,
+      onWebSearchResult: _onWebSearchResult,
       apiKeys,
       onApiKeysChange,
       planExecuting = false,
@@ -158,12 +169,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
     const [modelList, setModelList] = useState<ModelInfo[]>([]);
-    const [isListening, setIsListening] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_isListening, setIsListening] = useState(false);
     const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
-    const [transcript, setTranscript] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_transcript, setTranscript] = useState('');
     const [isModelLoading, setIsModelLoading] = useState<string | undefined>('all');
     const expoUrl = useStore(expoUrlAtom);
-    const [qrModalOpen, setQrModalOpen] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_qrModalOpen, setQrModalOpen] = useState(false);
     const showWorkbench = useStore(workbenchStore.showWorkbench);
     const isSmallViewport = useViewport(1024);
 
@@ -173,14 +187,16 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     }, [expoUrl]);
 
-    useEffect(() => {
-      console.log(transcript);
-    }, [transcript]);
+    /*
+     * SpeechRecognition transcript is used via the `transcript` state variable
+     * No debug logging needed in production
+     */
 
     useEffect(() => {
       onStreamingChange?.(isStreaming);
     }, [isStreaming, onStreamingChange]);
 
+    // eslint-disable-next-line consistent-return
     useEffect(() => {
       if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -210,6 +226,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
         };
 
         setRecognition(recognition);
+
+        // Cleanup: abort speech recognition on unmount to prevent memory leaks
+        return () => {
+          try {
+            recognition.abort();
+          } catch {
+            // Ignore errors during cleanup
+          }
+        };
       }
     }, []);
 
@@ -254,6 +279,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       setIsModelLoading(undefined);
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const startListening = () => {
       if (recognition) {
         recognition.start();
@@ -261,6 +287,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const stopListening = () => {
       if (recognition) {
         recognition.stop();
@@ -292,20 +319,31 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     const handleFileUpload = () => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'image/*';
+
+      /*
+       * Accept images AND common code/text/config files so the button matches
+       * its "Attach images or files" label. Non-image files are still attached
+       * to the chat (uploadedFiles); only images populate the preview list.
+       */
+      input.accept =
+        'image/*,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.xml,.yml,.yaml,.csv,.py,.go,.rs,.java,.c,.cpp,.sh,.env';
 
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
 
         if (file) {
-          const reader = new FileReader();
+          const isImage = file.type.startsWith('image/');
+          setUploadedFiles?.([...uploadedFiles, file]);
 
-          reader.onload = (e) => {
-            const base64Image = e.target?.result as string;
-            setUploadedFiles?.([...uploadedFiles, file]);
-            setImageDataList?.([...imageDataList, base64Image]);
-          };
-          reader.readAsDataURL(file);
+          if (isImage) {
+            const reader = new FileReader();
+
+            reader.onload = (ev) => {
+              const base64Image = ev.target?.result as string;
+              setImageDataList?.([...imageDataList, base64Image]);
+            };
+            reader.readAsDataURL(file);
+          }
         }
       };
 
@@ -372,7 +410,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 className={classNames('pt-2 px-2 sm:px-0 relative', {
                   'h-full flex flex-col chat-scrollbar-hide': chatStarted,
                 })}
-                resize="smooth"
+                resize="instant"
                 initial="smooth"
               >
                 <StickToBottom.Content className="flex flex-col gap-4 relative ">
@@ -384,6 +422,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           messages={messages}
                           isStreaming={isStreaming}
                           append={append}
+                          onRegenerate={reload}
                           chatMode={chatMode}
                           setChatMode={setChatMode}
                           provider={provider}
@@ -433,7 +472,12 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     )}
                     {llmErrorAlert && <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />}
                     {planExecuting && planId && (
-                      <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
+                      <PlanView
+                        planId={planId}
+                        progress={planProgress}
+                        onCancel={onCancelPlan!}
+                        onResume={onResumePlan}
+                      />
                     )}
                   </div>
                   <ChatBox
@@ -459,23 +503,14 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     isStreaming={isStreaming}
                     handleStop={handleStop}
                     handleSendMessage={handleSendMessage}
-                    enhancingPrompt={enhancingPrompt}
-                    enhancePrompt={enhancePrompt}
-                    isListening={isListening}
-                    startListening={startListening}
-                    stopListening={stopListening}
                     chatStarted={chatStarted}
-                    exportChat={exportChat}
-                    qrModalOpen={qrModalOpen}
-                    setQrModalOpen={setQrModalOpen}
                     handleFileUpload={handleFileUpload}
-                    chatMode={chatMode}
-                    setChatMode={setChatMode}
-                    designScheme={designScheme}
-                    setDesignScheme={setDesignScheme}
                     selectedElement={selectedElement}
                     setSelectedElement={setSelectedElement}
-                    onWebSearchResult={onWebSearchResult}
+                    messages={messages}
+                    chatMode={chatMode}
+                    setChatMode={setChatMode}
+                    isProjectChat={isProjectChat}
                   />
                 </div>
               </StickToBottom>
@@ -547,7 +582,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       className={classNames('pt-6 px-2 sm:px-6 relative', {
                         'h-full flex flex-col chat-scrollbar-hide': chatStarted,
                       })}
-                      resize="smooth"
+                      resize="instant"
                       initial="smooth"
                     >
                       <StickToBottom.Content className="flex flex-col gap-4 relative ">
@@ -559,6 +594,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                                 messages={messages}
                                 isStreaming={isStreaming}
                                 append={append}
+                                onRegenerate={reload}
                                 chatMode={chatMode}
                                 setChatMode={setChatMode}
                                 provider={provider}
@@ -610,7 +646,12 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                             <LlmErrorAlert alert={llmErrorAlert} clearAlert={() => clearLlmErrorAlert?.()} />
                           )}
                           {planExecuting && planId && (
-                            <PlanView planId={planId} progress={planProgress} onCancel={onCancelPlan!} onResume={onResumePlan} />
+                            <PlanView
+                              planId={planId}
+                              progress={planProgress}
+                              onCancel={onCancelPlan!}
+                              onResume={onResumePlan}
+                            />
                           )}
                         </div>
                         <ChatBox
@@ -636,23 +677,14 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                           isStreaming={isStreaming}
                           handleStop={handleStop}
                           handleSendMessage={handleSendMessage}
-                          enhancingPrompt={enhancingPrompt}
-                          enhancePrompt={enhancePrompt}
-                          isListening={isListening}
-                          startListening={startListening}
-                          stopListening={stopListening}
                           chatStarted={chatStarted}
-                          exportChat={exportChat}
-                          qrModalOpen={qrModalOpen}
-                          setQrModalOpen={setQrModalOpen}
                           handleFileUpload={handleFileUpload}
-                          chatMode={chatMode}
-                          setChatMode={setChatMode}
-                          designScheme={designScheme}
-                          setDesignScheme={setDesignScheme}
                           selectedElement={selectedElement}
                           setSelectedElement={setSelectedElement}
-                          onWebSearchResult={onWebSearchResult}
+                          messages={messages}
+                          chatMode={chatMode}
+                          setChatMode={setChatMode}
+                          isProjectChat={isProjectChat}
                         />
                       </div>
                     </StickToBottom>
@@ -681,7 +713,7 @@ function ScrollToBottom() {
   return (
     !isAtBottom && (
       <>
-        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-card to-transparent h-20 z-10" />
+        <div className="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-card to-transparent h-20 z-10 pointer-events-none" />
         <button
           className="sticky z-50 bottom-0 left-0 right-0 text-4xl rounded-lg px-1.5 py-0.5 flex items-center justify-center mx-auto gap-2 bg-amplify-elements-background-depth-2 border border-amplify-elements-borderColor text-amplify-elements-textPrimary text-sm"
           onClick={() => scrollToBottom()}

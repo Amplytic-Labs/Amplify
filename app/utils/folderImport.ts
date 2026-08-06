@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { generateId } from './fileUtils';
 import { detectProjectCommands, createCommandsMessage, escapeAmplifyTags } from './projectCommands';
 
@@ -6,7 +6,7 @@ export const createChatFromFolder = async (
   files: File[],
   binaryFiles: string[],
   folderName: string,
-): Promise<Message[]> => {
+): Promise<UIMessage[]> => {
   const fileArtifacts = await Promise.all(
     files.map(async (file) => {
       return new Promise<{ content: string; path: string }>((resolve, reject) => {
@@ -34,9 +34,16 @@ export const createChatFromFolder = async (
       ? `\n\nSkipped ${binaryFiles.length} binary files:\n${binaryFiles.map((f) => `- ${f}`).join('\n')}`
       : '';
 
-  const filesMessage: Message = {
+  const filesMessage: UIMessage = {
     role: 'assistant',
-    content: `I've imported the contents of the "${folderName}" folder.${binaryFilesMessage}
+    id: generateId(),
+
+    // AI SDK v7: createdAt not part of UIMessage, using type assertion
+    ...({ createdAt: new Date() } as any),
+    parts: [
+      {
+        type: 'text' as const,
+        text: `I've imported the contents of the "${folderName}" folder.${binaryFilesMessage}
 
 <amplifyArtifact id="imported-files" title="Imported Files" type="bundled" >
 ${fileArtifacts
@@ -47,15 +54,22 @@ ${escapeAmplifyTags(file.content)}
   )
   .join('\n\n')}
 </amplifyArtifact>`,
-    id: generateId(),
-    createdAt: new Date(),
+      },
+    ],
   };
 
-  const userMessage: Message = {
+  const userMessage: UIMessage = {
     role: 'user',
     id: generateId(),
-    content: `Import the "${folderName}" folder`,
-    createdAt: new Date(),
+
+    // AI SDK v7: createdAt not part of UIMessage, using type assertion
+    ...({ createdAt: new Date() } as any),
+    parts: [
+      {
+        type: 'text' as const,
+        text: `Import the "${folderName}" folder`,
+      },
+    ],
   };
 
   const messages = [userMessage, filesMessage];
@@ -64,7 +78,12 @@ ${escapeAmplifyTags(file.content)}
     messages.push({
       role: 'user',
       id: generateId(),
-      content: 'Setup the codebase and Start the application',
+      parts: [
+        {
+          type: 'text' as const,
+          text: 'Setup the codebase and Start the application',
+        },
+      ],
     });
     messages.push(commandsMessage);
   }

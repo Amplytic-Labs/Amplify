@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { PanelLeftIcon } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
@@ -12,6 +11,7 @@ import { classNames } from '~/utils/classNames';
 const SIDEBAR_COOKIE_NAME = 'sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = '16rem';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
@@ -30,9 +30,11 @@ const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
 function useSidebar() {
   const context = React.useContext(SidebarContext);
+
   if (!context) {
     throw new Error('useSidebar must be used within a SidebarProvider.');
   }
+
   return context;
 }
 
@@ -48,6 +50,7 @@ function useIsMobile(breakpoint = 768) {
     const onChange = () => setIsMobile(mql.matches);
     mql.addEventListener('change', onChange);
     setIsMobile(mql.matches);
+
     return () => mql.removeEventListener('change', onChange);
   }, [breakpoint]);
 
@@ -79,11 +82,13 @@ function SidebarProvider({
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
+
       if (setOpenProp) {
         setOpenProp(openState);
       } else {
         _setOpen(openState);
       }
+
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
     },
     [setOpenProp, open],
@@ -101,6 +106,7 @@ function SidebarProvider({
       }
     };
     window.addEventListener('keydown', handleKeyDown);
+
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar]);
 

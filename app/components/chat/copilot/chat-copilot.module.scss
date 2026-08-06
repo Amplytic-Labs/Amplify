@@ -53,6 +53,64 @@
   }
 }
 
+/*
+ * ===== Standalone inline tool row (no chain-of-thought wrapper) =====
+ *
+ * Used by InlineToolRow for tools-only segments — when a tool call appears
+ * WITHOUT any surrounding reasoning (non-reasoning models, or a tool that
+ * follows a normal text response). Mirrors the visual of a tool step inside
+ * the chain (.chatThinkingToolWrapper), but WITHOUT:
+ *   - the vertical chain-of-thought connector line (::before)
+ *   - the .collapsibleList parent
+ *   - the .chat-thinking-box collapsible shell
+ *   - any card / border / box
+ *
+ * Layout: `[tool-type-icon] [ToolProgress flat row]` — flex, no chain line.
+ */
+.chatThinkingToolWrapper[data-standalone='true'] {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+  position: relative;
+
+  /* No ::before chain line — this is the whole point of the standalone
+   * variant. The rule above (.collapsibleList .chatThinkingToolWrapper::before)
+   * doesn't apply because we're not inside .collapsibleList, but we be
+   * explicit so future refactors of the chain line don't accidentally
+   * re-introduce a line here. */
+  &::before {
+    content: none;
+  }
+
+  /* Tool-type icon (globe / pencil / book / wrench / etc.) — same sizing
+   * as the chain-line icon (20px), secondary color, red on error. */
+  > .chatThinkingIconStandalone {
+    width: 20px;
+    height: 20px;
+    font-size: 18px;
+    line-height: 20px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--amplify-elements-textSecondary);
+    margin-top: 2px;
+
+    &.error {
+      color: var(--amplify-elements-icon-error);
+    }
+  }
+
+  /* ToolProgress fills the rest of the row. Both .chatThinkingToolWrapper
+   * and .toolInvocationPart are local classes in THIS module, so the
+   * selector resolves to the hashed names automatically. */
+  > .toolInvocationPart {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 /* ===== Progress container (flat inline row — NO CARD) ===== */
 /* This is the default rendering for a tool call. Icon + past-tense message. */
 .progressContainer {
@@ -911,9 +969,9 @@
   user-select: none;
   -webkit-user-select: none;
 
-  /* The colorized file-type / folder icon. For Phosphor-based icons (folder,
-   * generic file) this uses a CSS mask. For brand file-type icons (React, JS,
-   * TS, …) the parent uses an inline SVG background-image (see .filePillIconSvg). */
+  /* File-type / folder icon. Uses the SAME vscode-icons (or Phosphor for
+   * folders) UnoCSS classes as the workspace file tree, so the inline-chat
+   * pills match the workbench exactly. */
   .filePillIcon {
     display: inline-flex;
     align-items: center;
@@ -922,18 +980,6 @@
     height: 15px;
     font-size: 15px;
     flex-shrink: 0;
-  }
-
-  /* Inline-SVG brand icon (React atom, JS yellow, TS blue, …). Rendered as a
-   * background-image so the multi-colour SVG shows with no CSS masking. */
-  .filePillIconSvg {
-    display: inline-block;
-    width: 15px;
-    height: 15px;
-    flex-shrink: 0;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
   }
 
   .filePillName {
@@ -983,7 +1029,7 @@
   }
 }
 
-/* File pill — no extra tint (the inline SVG icon already carries brand colour). */
+/* File pill — no extra tint (the vscode-icon class carries brand colour). */
 .filePillFile {
-  /* intentionally empty — icon colour comes from the inline SVG */
+  /* intentionally empty — icon colour comes from the vscode-icon class */
 }

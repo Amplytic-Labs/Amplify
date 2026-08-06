@@ -39,9 +39,15 @@ describe('stripCodeFenceFromArtifact', () => {
       '```',
     ].join('\n');
 
-    const expected = ['Some text', '', "<div class='__amplifyArtifact__'></div>", '', '```', 'regular code', '```'].join(
-      '\n',
-    );
+    const expected = [
+      'Some text',
+      '',
+      "<div class='__amplifyArtifact__'></div>",
+      '',
+      '```',
+      'regular code',
+      '```',
+    ].join('\n');
 
     expect(stripCodeFenceFromArtifact(input)).toBe(expected);
   });
@@ -108,8 +114,10 @@ describe('stripResidualThoughtTags', () => {
     const input = '<thought>partial reasoning so far';
     const out = stripResidualThoughtTags(input);
 
-    // The partial thought should be stripped so it does not leak into
-    // the visible answer while streaming.
+    /*
+     * The partial thought should be stripped so it does not leak into
+     * the visible answer while streaming.
+     */
     expect(out).not.toContain('partial reasoning so far');
     expect(out).not.toContain('<thought>');
   });
@@ -124,11 +132,13 @@ describe('stripResidualThoughtTags', () => {
   });
 
   it('should not be confused by <thought> appearing inside a code fence', () => {
-    // The stripper is a string-level preprocessor; it WILL strip
-    // inside code fences. This is acceptable because the AI is
-    // instructed not to emit <thought> tags at all, and the
-    // ThoughtProcess component renders reasoning from the native
-    // reasoning channel instead.
+    /*
+     * The stripper is a string-level preprocessor; it WILL strip
+     * inside code fences. This is acceptable because the AI is
+     * instructed not to emit <thought> tags at all, and the
+     * ThoughtProcess component renders reasoning from the native
+     * reasoning channel instead.
+     */
     const input = '```\n<thought>not really a thought, just code</thought>\n```';
     const out = stripResidualThoughtTags(input);
 

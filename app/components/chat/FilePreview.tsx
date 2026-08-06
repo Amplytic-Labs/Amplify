@@ -12,7 +12,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ files, imageDataList, onRemov
   }
 
   return (
-    <div className="flex flex-row overflow-x-auto mx-2 -mt-1 p-2 bg-amplify-elements-background-depth-3 border border-b-none border-amplify-elements-borderColor rounded-lg rounded-b-none">
+    <div className="flex flex-row overflow-x-auto mx-2 -mt-1 p-2 bg-transparent rounded-t-[20px]">
       {files.map((file, index) => (
         <div key={file.name + file.size} className="mr-2 relative">
           {imageDataList[index] && (
@@ -20,7 +20,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ files, imageDataList, onRemov
               <img src={imageDataList[index]} alt={file.name} className="max-h-20 rounded-lg" />
               <button
                 onClick={() => onRemove(index)}
-                className="absolute -top-1 -right-1 z-10 bg-black rounded-full w-5 h-5 shadow-md hover:bg-gray-900 transition-colors flex items-center justify-center"
+                className="absolute top-1/2 -right-2 -translate-y-1/2 z-10 bg-black rounded-full w-5 h-5 shadow-md hover:bg-gray-900 transition-colors flex items-center justify-center"
               >
                 <div className="i-ph:x w-3 h-3 text-gray-200" />
               </button>

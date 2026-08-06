@@ -20,10 +20,7 @@ export interface ProjectScreenshot {
   height?: number;
 }
 
-export async function getProjectScreenshot(
-  db: IDBDatabase,
-  projectId: string,
-): Promise<ProjectScreenshot | undefined> {
+export async function getProjectScreenshot(db: IDBDatabase, projectId: string): Promise<ProjectScreenshot | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('project_screenshots', 'readonly');
     const store = tx.objectStore('project_screenshots');
@@ -33,9 +30,7 @@ export async function getProjectScreenshot(
   });
 }
 
-export async function getAllProjectScreenshots(
-  db: IDBDatabase,
-): Promise<ProjectScreenshot[]> {
+export async function getAllProjectScreenshots(db: IDBDatabase): Promise<ProjectScreenshot[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('project_screenshots', 'readonly');
     const store = tx.objectStore('project_screenshots');
@@ -50,10 +45,7 @@ export async function getAllProjectScreenshots(
  * replaced — this is the "delete old screenshots" behaviour: we never keep
  * more than one per project.
  */
-export async function setProjectScreenshot(
-  db: IDBDatabase,
-  screenshot: ProjectScreenshot,
-): Promise<void> {
+export async function setProjectScreenshot(db: IDBDatabase, screenshot: ProjectScreenshot): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('project_screenshots', 'readwrite');
     const store = tx.objectStore('project_screenshots');

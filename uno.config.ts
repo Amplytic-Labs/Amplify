@@ -9,6 +9,8 @@ import { defineConfig, presetIcons, presetUno, transformerDirectives } from 'uno
 
 // ── vscode-icons safelist ──────────────────────────────────────────
 const vscodeIconClasses: string[] = [
+  // Provider icons
+  'i-vscode-icons:file-type-gemini',
   // Languages
   'i-vscode-icons:file-type-typescript',
   'i-vscode-icons:file-type-js',
@@ -179,7 +181,7 @@ const customIconCollection = iconPaths.reduce(
     const [iconName] = basename(iconPath).split('.');
 
     acc[collectionName] ??= {};
-    acc[collectionName][iconName] = async () => fs.readFile(iconPath, 'utf8');
+    acc[collectionName][iconName.toLowerCase()] = async () => fs.readFile(iconPath, 'utf8');
 
     return acc;
   },
@@ -202,17 +204,17 @@ const BASE_COLORS = {
     950: '#0A0A0A',
   },
   accent: {
-    50: '#F8F5FF',
-    100: '#F0EBFF',
-    200: '#E1D6FF',
-    300: '#CEBEFF',
-    400: '#B69EFF',
-    500: '#9C7DFF',
-    600: '#8A5FFF',
-    700: '#7645E8',
-    800: '#6234BB',
-    900: '#502D93',
-    950: '#2D1959',
+    50: '#EBF8FF',
+    100: '#D6F0FF',
+    200: '#ADE4FF',
+    300: '#7AD4FF',
+    400: '#3DBFFF',
+    500: '#0d9fff',
+    600: '#0088E6',
+    700: '#006BBF',
+    800: '#004D8A',
+    900: '#003566',
+    950: '#001F3D',
   },
   green: {
     50: '#F0FDF4',
@@ -265,7 +267,10 @@ const COLOR_PRIMITIVES = {
 };
 
 export default defineConfig({
-  safelist: [...Object.keys(customIconCollection[collectionName] || {}).map((x) => `i-amplify:${x}`), ...vscodeIconClasses],
+  safelist: [
+    ...Object.keys(customIconCollection[collectionName] || {}).map((x) => `i-amplify:${x}`),
+    ...vscodeIconClasses,
+  ],
   shortcuts: {
     'amplify-ease-cubic-bezier': 'ease-[cubic-bezier(0.4,0,0.2,1)]',
     'transition-theme': 'transition-[background-color,border-color,color] duration-150 amplify-ease-cubic-bezier',
@@ -312,6 +317,24 @@ export default defineConfig({
           borderColor: 'var(--amplify-elements-borderColor)',
           borderColorActive: 'var(--amplify-elements-borderColorActive)',
           background: {
+            /*
+             * DEFAULT resolves `bg-amplify-elements-background` (used by the
+             * Button `default` variant and several containers) to
+             * `transparent`. Per the project-wide design rule, any
+             * container / button that does NOT carry an explicit `bg-*`
+             * class must render TRANSPARENT — it inherits whatever its
+             * parent paints. This eliminates the "white-on-white" default
+             * that previously made plain Buttons / Cards / Inputs look
+             * like flat slabs of the page background.
+             *
+             * Containers that need a solid theme-aware surface MUST opt in
+             * explicitly via `bg-amplify-elements-background-depth-1/2/3/4`
+             * or another explicit `bg-*` class.
+             *
+             * See `app/styles/variables.scss` for the source-of-truth token
+             * definition and the full rationale.
+             */
+            DEFAULT: 'var(--amplify-elements-background)',
             depth: {
               1: 'var(--amplify-elements-bg-depth-1)',
               2: 'var(--amplify-elements-bg-depth-2)',
@@ -400,6 +423,18 @@ export default defineConfig({
             buttonBackground: 'var(--amplify-elements-terminals-buttonBackground)',
           },
           dividerColor: 'var(--amplify-elements-dividerColor)',
+          /*
+           * Focus / accent token — registers `bg-amplify-elements-focus`,
+           * `text-amplify-elements-focus`, `ring-amplify-elements-focus`
+           * with UnoCSS so the classes actually generate CSS. Previously
+           * these classes were used in APIKeyPopup / ModelSelector / etc.
+           * but the token wasn't registered here OR in variables.scss,
+           * so the classes silently produced no styles and buttons
+           * rendered with no background.
+           */
+          focus: 'var(--amplify-elements-focus)',
+          focusHover: 'var(--amplify-elements-focus-hover)',
+          focusForeground: 'var(--amplify-elements-focus-foreground)',
           loader: {
             background: 'var(--amplify-elements-loader-background)',
             progress: 'var(--amplify-elements-loader-progress)',

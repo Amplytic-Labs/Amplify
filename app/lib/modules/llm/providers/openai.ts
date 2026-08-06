@@ -1,8 +1,8 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class OpenAIProvider extends BaseProvider {
   name = 'OpenAI';
@@ -44,10 +44,18 @@ export default class OpenAIProvider extends BaseProvider {
       provider: 'OpenAI',
       maxTokenAllowed: 128000,
       maxCompletionTokens: 32000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
     },
 
     // o1-mini: 128k context, 65k output limit (reasoning model)
-    { name: 'o1-mini', label: 'o1-mini', provider: 'OpenAI', maxTokenAllowed: 128000, maxCompletionTokens: 65000 },
+    {
+      name: 'o1-mini',
+      label: 'o1-mini',
+      provider: 'OpenAI',
+      maxTokenAllowed: 128000,
+      maxCompletionTokens: 65000,
+      capabilities: { thinking: 'effort', reasoningEffort: true },
+    },
   ];
 
   async getDynamicModels(
@@ -123,8 +131,16 @@ export default class OpenAIProvider extends BaseProvider {
         name: m.id,
         label: `${m.id} (${Math.floor(contextWindow / 1000)}k context)`,
         provider: this.name,
-        maxTokenAllowed: Math.min(contextWindow, 128000), // Cap at 128k for safety
+
+        /*
+         * Use the real context window from the API — do NOT cap at 128k.
+         * The cap was causing gpt-4o-mini (128k) and future 200k+ models to
+         * all report 128k, which broke context-budget-based summarization
+         * (it would trigger too early for large-context models).
+         */
+        maxTokenAllowed: contextWindow,
         maxCompletionTokens,
+        capabilities: detectModelCapabilities(this.name, m.id),
       };
     });
   }
@@ -134,7 +150,7 @@ export default class OpenAIProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { apiKey } = this.getProviderBaseUrlAndKey({

@@ -11,6 +11,7 @@ interface APIKeyPopupProps {
   onClose: () => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setApiKey, onClose }) => {
   const [tempKey, setTempKey] = useState(apiKey);
   const [isSaving, setIsSaving] = useState(false);
@@ -36,6 +37,15 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
 
       const newKeys = { ...currentKeys, [provider.name]: tempKey };
       localStorage.setItem('apiKeys', JSON.stringify(newKeys));
+
+      /*
+       * ALSO write the apiKeys cookie so server-side endpoints (which can only
+       * read cookies, not localStorage) can access the key. Without this,
+       * /api/chat (stream-text) fails with "Missing API key for Z.ai provider"
+       * on the very first turn — which would also block the one-shot
+       * <chatname> naming tag from being emitted, leaving the chat unnamed.
+       */
+      Cookies.set('apiKeys', JSON.stringify(newKeys), { expires: 365, sameSite: 'lax' });
 
       onClose();
     } catch (error) {
@@ -88,7 +98,7 @@ export const APIKeyPopup: React.FC<APIKeyPopupProps> = ({ provider, apiKey, setA
               'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
               isSaving || !tempKey
                 ? 'bg-amplify-elements-borderColor text-amplify-elements-textTertiary cursor-not-allowed'
-                : 'bg-amplify-elements-focus text-white hover:bg-amplify-elements-focus/90',
+                : 'bg-amplify-elements-focus text-amplify-elements-focus-foreground hover:bg-amplify-elements-focus-hover',
             )}
           >
             {isSaving ? 'Saving...' : 'Save Key'}

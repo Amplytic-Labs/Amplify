@@ -1,9 +1,9 @@
 import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { createOpenAI } from '@ai-sdk/openai';
 import crypto from 'node:crypto';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 /**
  * Custom fetch wrapper for z.ai that transparently retries transient
@@ -43,16 +43,20 @@ function makeZaiFetch(options: { maxRetries?: number; fallbackBaseUrls?: string[
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // Pick the base URL for this attempt. On attempt 0 we use the
-        // original URL as-is. On retries, we cycle through the fallback
-        // base URLs (if any) so that persistent failures on one endpoint
-        // get routed to another.
+        /*
+         * Pick the base URL for this attempt. On attempt 0 we use the
+         * original URL as-is. On retries, we cycle through the fallback
+         * base URLs (if any) so that persistent failures on one endpoint
+         * get routed to another.
+         */
         let urlForThisAttempt = originalUrl;
 
         if (attempt > 0 && fallbacks.length > 0) {
-          // Try to swap the base URL prefix. We look for any known
-          // fallback prefix in the current URL and replace it with the
-          // next fallback in the list (round-robin based on attempt).
+          /*
+           * Try to swap the base URL prefix. We look for any known
+           * fallback prefix in the current URL and replace it with the
+           * next fallback in the list (round-robin based on attempt).
+           */
           for (const fb of fallbacks) {
             if (originalUrl.includes(fb)) {
               const nextFb = fallbacks[attempt % fallbacks.length];
@@ -65,8 +69,10 @@ function makeZaiFetch(options: { maxRetries?: number; fallbackBaseUrls?: string[
         const finalInput = urlForThisAttempt === originalUrl ? input : urlForThisAttempt;
         const sendInit: RequestInit = { ...init };
 
-        // Snapshot the request body so we can re-send on retry.
-        // (Request bodies can only be consumed once.)
+        /*
+         * Snapshot the request body so we can re-send on retry.
+         * (Request bodies can only be consumed once.)
+         */
         if (init?.body) {
           if (typeof init.body === 'string') {
             sendInit.body = init.body;
@@ -86,8 +92,7 @@ function makeZaiFetch(options: { maxRetries?: number; fallbackBaseUrls?: string[
         const status = response.status;
 
         // Retryable upstream errors
-        const isRetryable =
-          status === 500 || status === 502 || status === 503 || status === 504 || status === 429;
+        const isRetryable = status === 500 || status === 502 || status === 503 || status === 504 || status === 429;
 
         if (!isRetryable || attempt === maxRetries) {
           return response;
@@ -122,6 +127,7 @@ function makeZaiFetch(options: { maxRetries?: number; fallbackBaseUrls?: string[
           console.warn(
             `[z.ai] network error on attempt ${attempt + 1}/${maxRetries + 1}: ${err?.message}. Retrying...`,
           );
+
           const delay = baseDelay * Math.pow(2, attempt);
           await new Promise((r) => setTimeout(r, delay));
           continue;
@@ -133,7 +139,10 @@ function makeZaiFetch(options: { maxRetries?: number; fallbackBaseUrls?: string[
     }
 
     // Should be unreachable, but return last response as a safety net
-    if (lastResponse) return lastResponse;
+    if (lastResponse) {
+      return lastResponse;
+    }
+
     throw lastError || new Error('z.ai fetch exhausted retries with no response');
   };
 }
@@ -251,6 +260,7 @@ export default class ZaiProvider extends BaseProvider {
           provider: this.name,
           maxTokenAllowed: contextWindow,
           maxCompletionTokens,
+          capabilities: detectModelCapabilities(this.name, m.id),
         };
       });
     } catch (error) {
@@ -310,7 +320,7 @@ export default class ZaiProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({
@@ -330,23 +340,22 @@ export default class ZaiProvider extends BaseProvider {
      * Default: plain Bearer token (z.ai API). JWT signing only when
      * `ZAI_AUTH_MODE=jwt` is set AND the key contains a ".".
      */
-    const authMode =
-      (serverEnv as any)?.ZAI_AUTH_MODE || (providerSettings as any)?.ZAI_AUTH_MODE || 'bearer';
+    const authMode = (serverEnv as any)?.ZAI_AUTH_MODE || (providerSettings as any)?.ZAI_AUTH_MODE || 'bearer';
     const token = authMode === 'jwt' && apiKey.includes('.') ? this._generateToken(apiKey) : apiKey;
     const zaiClient = createOpenAI({
       baseURL: baseUrl,
       apiKey: token,
-      // Inject the retry-aware fetch so transient 502/503/504 from z.ai's
-      // ALB are transparently retried instead of surfacing raw HTML error
-      // pages to the user. Also falls back from the Coding Plan endpoint
-      // (/api/coding/paas/v4) to the standard endpoint (/api/paas/v4)
-      // if the Coding Plan tier is persistently unavailable.
+
+      /*
+       * Inject the retry-aware fetch so transient 502/503/504 from z.ai's
+       * ALB are transparently retried instead of surfacing raw HTML error
+       * pages to the user. Also falls back from the Coding Plan endpoint
+       * (/api/coding/paas/v4) to the standard endpoint (/api/paas/v4)
+       * if the Coding Plan tier is persistently unavailable.
+       */
       fetch: makeZaiFetch({
         maxRetries: 4,
-        fallbackBaseUrls: [
-          'https://api.z.ai/api/coding/paas/v4',
-          'https://api.z.ai/api/paas/v4',
-        ],
+        fallbackBaseUrls: ['https://api.z.ai/api/coding/paas/v4', 'https://api.z.ai/api/paas/v4'],
       }),
     });
 

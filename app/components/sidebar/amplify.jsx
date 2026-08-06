@@ -30,10 +30,14 @@ export const Amplify = React.forwardRef((props, ref) => {
   }, [propVariant]);
 
   const handleMouseEnter = () => {
-    if (!propVariant) setCurrentVariant('YRCebAmpq');
+    if (!propVariant) {
+      setCurrentVariant('YRCebAmpq');
+    }
   };
   const handleMouseLeave = () => {
-    if (!propVariant) setCurrentVariant('EuVnQBrQj');
+    if (!propVariant) {
+      setCurrentVariant('EuVnQBrQj');
+    }
   };
 
   return (

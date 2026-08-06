@@ -7,26 +7,35 @@ import { getFrameworkMeta } from '~/lib/utils/framework-meta';
 export interface ExpandableCardProps {
   /** Project / site name (shown in the expanded detail panel header). */
   name: string;
+
   /** Framework label used for the badge + the fallback thumbnail tint. */
   framework?: string;
+
   /**
    * Screenshot data URL (PNG/JPEG). When provided, rendered as the card's
    * hero image. When absent, a branded placeholder (framework icon + gradient)
    * is shown instead.
    */
   screenshot?: string;
+
   /** Small badge tags shown in the expanded panel (e.g. ["Vite + React"]). */
   tags?: string[];
+
   /** ISO timestamp of the last screenshot capture (shown as "captured X ago"). */
   screenshotAt?: string;
+
   /** Click handler for the screenshot hero area (open the project, etc.). */
   onScreenshotPress?: () => void;
+
   /** Click handler for the whole card's select action (header row). */
   onSelect?: () => void;
+
   /** Whether this card is currently selected (drives ring + accent). */
   isSelected?: boolean;
+
   /** Kebab menu node (rename/delete actions), rendered top-right. */
   menu?: React.ReactNode;
+
   /** Expanded detail children (specs, version, latest deployment, etc.). */
   children?: React.ReactNode;
 }
@@ -60,8 +69,10 @@ export function ExpandableCard({
   const meta = getFrameworkMeta(framework);
   const heroRef = useRef<HTMLButtonElement>(null);
 
-  // Reset to collapsed when the project changes (defensive — keeps the list
-  // tidy when selection switches between projects).
+  /*
+   * Reset to collapsed when the project changes (defensive — keeps the list
+   * tidy when selection switches between projects).
+   */
   useEffect(() => {
     if (!isSelected) {
       setIsExpanded(false);
@@ -85,15 +96,13 @@ export function ExpandableCard({
       className={classNames(
         'relative rounded-2xl overflow-hidden border border-dashed transition-colors',
         isSelected
-          ? 'border-purple-500/60 bg-purple-500/[0.04]'
+          ? 'border-blue-500/60 bg-blue-500/[0.04]'
           : 'border-sidebar-border/70 bg-sidebar/60 hover:bg-sidebar/80',
       )}
       style={{ borderWidth: 1 }}
     >
       {/* Selection accent ring */}
-      {isSelected && (
-        <div className="pointer-events-none absolute inset-0 ring-1 ring-purple-500/40 rounded-2xl z-20" />
-      )}
+      {isSelected && <div className="pointer-events-none absolute inset-0 ring-1 ring-blue-500/40 rounded-2xl z-20" />}
 
       {/* Kebab menu — top-right, above the hero */}
       {menu && (
@@ -190,7 +199,7 @@ export function ExpandableCard({
           onClick={toggleExpand}
           className={classNames(
             'shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors',
-            isExpanded ? 'bg-purple-500/15 text-purple-500' : 'text-muted-foreground hover:bg-muted/60',
+            isExpanded ? 'bg-blue-500/15 text-blue-500' : 'text-muted-foreground hover:bg-muted/60',
           )}
           aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
           aria-expanded={isExpanded}
@@ -228,9 +237,17 @@ function timeFromNow(dateString: string): string {
   const now = new Date();
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 60) {
+    return 'just now';
+  }
+
+  if (diff < 3600) {
+    return `${Math.floor(diff / 60)}m ago`;
+  }
+
+  if (diff < 86400) {
+    return `${Math.floor(diff / 3600)}h ago`;
+  }
 
   return `${Math.floor(diff / 86400)}d ago`;
 }

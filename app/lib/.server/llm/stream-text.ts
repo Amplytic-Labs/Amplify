@@ -1,27 +1,174 @@
 import {
-  convertToCoreMessages,
+  convertToModelMessages,
   streamText as _streamText,
-  type Message,
-  formatDataStreamPart,
-  type DataStreamWriter,
+  type UIMessage,
+  type UIMessageStreamWriter,
+  isToolUIPart,
 } from 'ai';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel, type FileMap } from './constants';
 import { getSystemPrompt } from '~/lib/common/prompts/new-prompt';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODIFICATIONS_TAG_NAME, PROVIDER_LIST, WORK_DIR } from '~/utils/constants';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  MODIFICATIONS_TAG_NAME,
+  PROVIDER_LIST,
+  STARTER_TEMPLATES,
+  WORK_DIR,
+} from '~/utils/constants';
 import type { IProviderSetting } from '~/types/model';
 import { PromptLibrary } from '~/lib/common/prompt-library';
 import { allowedHTMLElements } from '~/utils/markdown';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createScopedLogger } from '~/utils/logger';
-import { createFilesContext, extractPropertiesFromMessage } from './utils';
+import { extractPropertiesFromMessage, simplifyBoltActions } from './utils';
 import { discussPrompt } from '~/lib/common/prompts/discuss-prompt';
 import type { DesignScheme } from '~/types/design-scheme';
 import { z } from 'zod';
 import { fetchWebPage } from '~/lib/utils/web-fetch';
 import { getTemplates } from '~/utils/selectStarterTemplate';
 import { SkillLoader } from '~/lib/services/skillLoader';
+import { stripChatName } from '~/lib/chat/chatname';
+import { getToolState, getToolOutput } from '~/lib/chat/tool-parts';
+import { buildThinkingProviderOptions, supportsThinkingConfig } from './thinking';
+import { preFlightCheck, estimateRequestTokens, shrinkMessagesToFit, type RateLimitConfig } from './rate-limit';
 
-export type Messages = Message[];
+export type Messages = UIMessage[];
+
+/**
+ * Enforce strict user/assistant message alternation for providers like
+ * Google Gemini that reject malformed turn sequences.
+ *
+ * Rules enforced:
+ *   1. First message must be from the user (drop leading assistant messages).
+ *   2. No consecutive same-role messages — merge consecutive user messages
+ *      and consecutive assistant messages.
+ *   3. Assistant messages with tool calls that have no corresponding function
+ *      response (orphaned tool calls) are stripped of those tool parts.
+ *   4. If an assistant message ends up empty after stripping, it is dropped.
+ */
+function enforceMessageAlternation(messages: any[], logger: ReturnType<typeof createScopedLogger>): any[] {
+  if (!messages.length) {
+    return messages;
+  }
+
+  // Step 1: Drop leading assistant messages (first turn must be user)
+  let result = [...messages];
+
+  while (result.length > 0 && result[0].role === 'assistant') {
+    logger.debug('[alternation] Dropped leading assistant message');
+    result = result.slice(1);
+  }
+
+  if (!result.length) {
+    return result;
+  }
+
+  // Step 2: Merge consecutive same-role messages
+  const merged: UIMessage[] = [result[0]];
+
+  for (let i = 1; i < result.length; i++) {
+    const msg = result[i];
+    const last = merged[merged.length - 1];
+
+    if (msg.role === last.role) {
+      // Same role — merge parts and content
+      const lastParts = (last as any).parts || [];
+      const msgParts = (msg as any).parts || [];
+
+      (last as any).parts = [...lastParts, ...msgParts];
+
+      // Also merge content string if present
+      const lastContent = (last as any).content || '';
+      const msgContent = (msg as any).content || '';
+
+      if (msgContent) {
+        (last as any).content = lastContent + msgContent;
+      }
+
+      // Merge annotations
+      const lastAnnotations = (last as any).annotations || [];
+      const msgAnnotations = (msg as any).annotations || [];
+      (last as any).annotations = [...lastAnnotations, ...msgAnnotations];
+
+      logger.debug(`[alternation] Merged consecutive ${msg.role} messages`);
+    } else {
+      merged.push(msg);
+    }
+  }
+
+  /*
+   * Step 3: Strip orphaned tool calls from assistant messages
+   * A tool call is "orphaned" if it appears in the LAST assistant message
+   * (no subsequent user message with function response to follow it).
+   * For Gemini, the last assistant message's tool calls are fine because
+   * the model will generate the next response. But tool calls in earlier
+   * assistant messages that have no matching function response are problematic.
+   * The convertToModelMessages function handles this, but we need to ensure
+   * that tool calls in non-last assistant messages have been resolved.
+   */
+
+  // Step 4: Drop empty assistant messages after all cleanup
+  const final = merged.filter((msg, _idx) => {
+    if (msg.role !== 'assistant') {
+      return true;
+    }
+
+    const parts = (msg as any).parts || [];
+    const content = (msg as any).content || '';
+
+    // Has text content? Keep it.
+    const hasText =
+      parts.some((p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0) ||
+      (typeof content === 'string' && content.trim().length > 0);
+
+    // Has reasoning content? Keep it.
+    const hasReasoning = parts.some((p: any) => p.type === 'reasoning');
+
+    // Has tool parts with results? Keep it.
+    const hasToolResult = parts.some((p: any) => {
+      const isToolPart = (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
+      return isToolPart;
+    });
+
+    if (!hasText && !hasReasoning && !hasToolResult) {
+      logger.debug('[alternation] Dropped empty assistant message after merge');
+      return false;
+    }
+
+    return true;
+  });
+
+  /*
+   * Step 5: Re-enforce alternation after filtering (filtering may have created
+   * consecutive same-role messages again)
+   */
+  const reenforced: UIMessage[] = final.length > 0 ? [final[0]] : [];
+
+  for (let i = 1; i < final.length; i++) {
+    const msg = final[i];
+    const last = reenforced[reenforced.length - 1];
+
+    if (msg.role === last.role) {
+      // Same role again after filtering — merge
+      const lastParts = (last as any).parts || [];
+      const msgParts = (msg as any).parts || [];
+      (last as any).parts = [...lastParts, ...msgParts];
+
+      const lastContent = (last as any).content || '';
+      const msgContent = (msg as any).content || '';
+
+      if (msgContent) {
+        (last as any).content = lastContent + msgContent;
+      }
+
+      logger.debug(`[alternation] Re-merged consecutive ${msg.role} messages after cleanup`);
+    } else {
+      reenforced.push(msg);
+    }
+  }
+
+  return reenforced;
+}
 
 /**
  * Project-marker filenames that indicate the workspace already contains an
@@ -95,22 +242,6 @@ export interface StreamingOptions extends Omit<Parameters<typeof _streamText>[0]
 
 const logger = createScopedLogger('stream-text');
 
-/**
- * Returns true for Google models that support native thinking/reasoning.
- * These models return thought: true parts in the SSE response when
- * thinkingConfig is injected into the request via providerOptions.
- */
-function isGoogleThinkingModel(modelName: string): boolean {
-  const name = modelName.toLowerCase();
-  return (
-    name.includes('gemini-2.5') ||
-    name.includes('gemini-3') ||
-    name.includes('gemma-3-27') ||
-    name.includes('gemma-4') ||
-    name.includes('learnlm')
-  );
-}
-
 function getCompletionTokenLimit(modelDetails: any): number {
   // 1. If model specifies completion tokens, use that
   if (modelDetails.maxCompletionTokens && modelDetails.maxCompletionTokens > 0) {
@@ -133,11 +264,26 @@ function sanitizeText(text: string): string {
   sanitized = sanitized.replace(/<(think|thought)>.*?<\/(think|thought)>/s, '');
   sanitized = sanitized.replace(/<boltAction type="file" filePath="package-lock\.json">[\s\S]*?<\/boltAction>/g, '');
 
+  /*
+   * Strip the CONTENTS of every <amplifyAction type="file"> tag before the
+   * text reaches the LLM. The file PATH (filePath attribute) is preserved so
+   * the model still knows which files exist in the workspace (the "file
+   * tree"), but the raw source code is removed. This prevents a single
+   * cloned-repo / template-injection message — which can carry hundreds of KB
+   * of source — from consuming the entire context window on EVERY subsequent
+   * turn. The model can retrieve actual contents on demand via read_file.
+   *
+   * The full contents remain in the stored messages (IndexedDB) so the
+   * client message parser can still write them to the WebContainer on load;
+   * this only affects the text sent to the model.
+   */
+  sanitized = simplifyBoltActions(sanitized);
+
   return sanitized.trim();
 }
 
 export async function streamText(props: {
-  messages: Omit<Message, 'id'>[];
+  messages: Omit<UIMessage, 'id'>[];
   env?: Env;
   options?: StreamingOptions;
   apiKeys?: Record<string, string>;
@@ -152,7 +298,7 @@ export async function streamText(props: {
   designScheme?: DesignScheme;
   skills?: string;
   memory?: string;
-  dataStream?: DataStreamWriter;
+  dataStream?: UIMessageStreamWriter;
   userContext?: string;
   projectContext?: string;
 
@@ -163,6 +309,29 @@ export async function streamText(props: {
    * the model works WITH the existing workspace instead of reinitializing.
    */
   projectContinuation?: boolean;
+
+  /**
+   * Unified thinking/reasoning config from the ChatBox settings popup.
+   * Translated into per-provider `providerOptions` via
+   * `buildThinkingProviderOptions` (see ./thinking.ts).
+   */
+  modelConfig?: {
+    thinkingEnabled: boolean;
+    budgetTokens: number;
+    effort: 'low' | 'medium' | 'high';
+    maxOutputTokens: number;
+  };
+
+  /**
+   * Per-provider rate-limit config (RPM / TPM / RPD) entered by the user.
+   * Used for pre-flight TPM checks and RPM throttling before the API call.
+   */
+  rateLimit?: {
+    rpm: number;
+    tpm: number;
+    rpd: number;
+    autoShrinkToTpm: boolean;
+  };
 }) {
   const {
     messages,
@@ -182,6 +351,8 @@ export async function streamText(props: {
     userContext,
     projectContext,
     projectContinuation,
+    modelConfig,
+    rateLimit,
   } = props;
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
@@ -192,20 +363,186 @@ export async function streamText(props: {
       const { model, provider, content } = extractPropertiesFromMessage(message);
       currentModel = model;
       currentProvider = provider;
-      newMessage.content = sanitizeText(content);
+
+      // In UIMessage, content is accessed via parts; store sanitized content for compatibility
+      if (typeof content === 'string') {
+        (newMessage as any).content = sanitizeText(content);
+      }
     } else if (message.role == 'assistant') {
-      newMessage.content = sanitizeText(message.content);
+      const textContent = Array.isArray(message.parts)
+        ? message.parts
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text)
+            .join('')
+        : (message as any).content || '';
+
+      /*
+       * Strip any `<chatname>…</chatname>` tag the model emitted on a
+       * PREVIOUS turn. The tag is a one-shot naming signal consumed by
+       * the client on the first response; it must NEVER be re-sent to
+       * the model on subsequent turns (the model should not "see" its
+       * own prior chatname, and the user should never see it either).
+       */
+      (newMessage as any).content = sanitizeText(stripChatName(textContent));
     }
 
     // Sanitize all text parts in parts array, if present
     if (Array.isArray(message.parts)) {
-      newMessage.parts = message.parts.map((part) =>
-        part.type === 'text' ? { ...part, text: sanitizeText(part.text) } : part,
-      );
+      newMessage.parts = message.parts.map((part) => {
+        if (part.type === 'text') {
+          /*
+           * For ASSISTANT text parts, also strip `<chatname>` tags so the
+           * one-shot naming signal never leaks back into the model's
+           * context on subsequent turns. (For user parts this is a no-op
+           * since users never emit the tag.)
+           */
+          const stripped = message.role === 'assistant' ? stripChatName(part.text) : part.text;
+
+          return { ...part, text: sanitizeText(stripped) };
+        }
+
+        /*
+         * Truncate large tool results (read_file, grep_search, etc.) to
+         * prevent token bloat from accumulating file contents in message
+         * history. On every turn ALL previous messages (including tool
+         * results) are re-sent to the LLM, so un-truncated read_file
+         * results cause exponential token growth.
+         *
+         * We replace the full result with a summary so the model knows
+         * the file was read but must re-read it if it needs the content.
+         *
+         * V7 MIGRATION (Task 3b): tool parts now use the FLAT v7 shape —
+         * `type: 'tool-<name>'` / `'dynamic-tool'`, with `output` instead
+         * of nested `toolInvocation.result`. We use `isToolUIPart` from
+         * `ai` for the type check (accepts both static and dynamic), and
+         * the shared `getToolState` / `getToolOutput` helpers so legacy
+         * v4 parts (still in IndexedDB for old chats) are also truncated.
+         */
+        const partAny = part as any;
+
+        if (isToolUIPart(partAny)) {
+          const partState = getToolState(partAny);
+          const result = getToolOutput(partAny);
+
+          if (
+            (partState === 'output-available' || partState === 'result') &&
+            typeof result === 'string' &&
+            result.length > 3000
+          ) {
+            const truncatedResult =
+              result.slice(0, 2000) + '\n\n... [truncated for context efficiency — use read_file to re-read if needed]';
+
+            const legacy: any = partAny as any;
+            const updatedPart: any = { ...partAny, output: truncatedResult };
+
+            if (legacy.toolInvocation) {
+              updatedPart.toolInvocation = { ...legacy.toolInvocation, result: truncatedResult };
+            }
+
+            return updatedPart as any;
+          }
+        }
+
+        return part;
+      });
     }
 
     return newMessage;
   });
+
+  /*
+   * GEMINI / STRICT-ALTERNATION SANITIZATION
+   * ------------------------------------------
+   * Google Gemini (and some other providers) require that every function-call
+   * part in an assistant turn is IMMEDIATELY followed by a function-response
+   * turn. Tool parts that are still in `input-available` or `input-streaming`
+   * state have NOT received a result yet — they are incomplete. If we send
+   * them to the API, Gemini rejects with:
+   *
+   *   "Please ensure that function call turn comes immediately after a user
+   *    turn or after a function response turn."
+   *
+   * This happens when:
+   *   1. A tool call failed (error thrown before the result was persisted).
+   *   2. The user submitted a new message before the previous tool resolved.
+   *   3. A client-side tool (search_user_context, store_user_fact) ran on the
+   *      browser but its result wasn't yet flushed back to the SDK.
+   *
+   * Fix: strip all tool parts whose state is NOT a terminal result state
+   * ('output-available', 'output-error', 'output-denied', legacy 'result').
+   * If stripping leaves an assistant message with no meaningful content,
+   * drop that message entirely.
+   */
+  const TERMINAL_TOOL_STATES = new Set(['output-available', 'output-error', 'output-denied', 'result']);
+
+  processedMessages = processedMessages.filter((message) => {
+    if (message.role !== 'assistant') {
+      return true;
+    }
+
+    if (!Array.isArray((message as any).parts)) {
+      return true;
+    }
+
+    // Strip incomplete tool parts in-place
+    const cleanedParts = (message as any).parts.filter((part: any) => {
+      const isToolPart = (typeof part.type === 'string' && part.type.startsWith('tool-')) || !!part.toolCallId;
+
+      if (!isToolPart) {
+        return true; // keep non-tool parts (text, reasoning, etc.)
+      }
+
+      const state: string = part.state || part.toolInvocation?.state || '';
+
+      // Keep only tool parts that have a terminal result
+      return TERMINAL_TOOL_STATES.has(state);
+    });
+
+    // Check if the message still has any meaningful content after stripping
+    const hasText = cleanedParts.some(
+      (p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0,
+    );
+    const hasToolResult = cleanedParts.some((p: any) => {
+      const isToolPart = (typeof p.type === 'string' && p.type.startsWith('tool-')) || !!p.toolCallId;
+      return isToolPart;
+    });
+
+    if (!hasText && !hasToolResult) {
+      // Nothing left — drop the entire message to avoid an empty assistant turn
+      logger.debug('[sanitize] Dropped empty assistant message (all tool parts were incomplete)');
+      return false;
+    }
+
+    // Update the parts in-place
+    (message as any).parts = cleanedParts;
+
+    return true;
+  });
+
+  /*
+   * GEMINI / STRICT-ALTERNATION — ENFORCE VALID TURN ORDER
+   * -------------------------------------------------------
+   * After the incomplete-tool sanitization above, the message sequence
+   * may still violate Gemini's strict alternation rules:
+   *
+   *   - Every functionCall must be immediately followed by a functionResponse
+   *   - No consecutive assistant turns (each assistant turn must be followed
+   *     by a user turn or a functionResponse turn)
+   *   - The first message must be a user turn
+   *
+   * Common causes after sanitization:
+   *   1. Dropping an empty assistant message leaves two user messages adjacent
+   *   2. An assistant message with only tool calls (no text) followed by another
+   *      assistant message creates consecutive assistant turns
+   *   3. A tool call whose function response was in a later dropped message
+   *
+   * Fix: walk the message list and enforce strict user/assistant alternation.
+   * If we find consecutive same-role messages, merge them. If we find an
+   * assistant message with tool calls that has no matching function response
+   * (because the response was in a dropped message), strip those orphaned
+   * tool calls.
+   */
+  processedMessages = enforceMessageAlternation(processedMessages, logger) as typeof processedMessages;
 
   const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
   const staticModels = LLMManager.getInstance().getStaticModelListFromProvider(provider);
@@ -267,15 +604,113 @@ export async function streamText(props: {
       modificationTagName: MODIFICATIONS_TAG_NAME,
     });
 
+  const isFirstMessage = !processedMessages.some((m) => m.role === 'assistant');
+
+  const chatNamingInstruction = isFirstMessage
+    ? `<chat_naming>
+  CRITICAL — This is the FIRST message of a new conversation. Your
+  response MUST begin with a single line of the form:
+
+      <chatname>a short 2-6 word title for this chat</chatname>
+
+  This tag MUST be the VERY FIRST thing you output — before any
+  reasoning, before any thought block, before any tool calls, before
+  any markdown. The runtime extracts this tag to name the chat in the
+  sidebar; if you don't emit it, the chat stays unnamed.
+
+  Rules for the title:
+  - 2 to 6 words, no quotes, no trailing punctuation.
+  - Title Case (capitalize major words).
+  - Capture the core intent of the user's request.
+  - Output the tag ONCE, at the very start of your response, then
+    continue with your normal answer.
+  - Do NOT mention the tag or the title to the user.
+  - Do NOT output this tag again in any future message.
+
+  CORRECT:
+      <chatname>Build React Dashboard</chatname>
+      Sure — let's scaffold...
+
+  WRONG (tag inside reasoning):
+      <thought>The user wants a dashboard. I should output
+      <chatname>Build Dashboard</chatname></thought>
+      <chatname>Build React Dashboard</chatname>
+      Sure...
+
+  WRONG (tag omitted):
+      Sure, let's build that dashboard...
+</chat_naming>\n\n`
+    : '';
+
+  if (chatNamingInstruction && chatMode === 'build') {
+    systemPrompt = chatNamingInstruction + systemPrompt;
+  }
+
+  /*
+   * CURRENT DATE — injected on every request so the AI knows what "today"
+   * is. Without this, the AI hallucinates dates (e.g. claims a 2024 release
+   * is "recent" when it's actually 2026) and conflicts with web_search
+   * results that contain the real current date. The AI must defer to web
+   * search results for any time-sensitive fact.
+   */
+  const now = new Date();
+  const dateString = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  const timeString = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+
+  systemPrompt = `<current_datetime>
+  Today's date: ${dateString}
+  Current time (UTC): ${timeString}
+
+  CRITICAL — Your training data has a cutoff date and is STALE for anything
+  time-sensitive (library versions, release dates, recent events, current
+  prices, API changes). When a user asks about anything that could have
+  changed since your training cutoff:
+    1. Use \`web_search\` to get the CURRENT information.
+    2. PRIORITIZE web search results over your internal knowledge — your
+       internal knowledge may be outdated by months or years.
+    3. If web search results conflict with what you "remember", trust the
+       web search results (they are more recent).
+    4. Always cite the source URL when providing time-sensitive information.
+</current_datetime>
+
+${systemPrompt}`;
+
   if (chatMode === 'build' && contextFiles && contextOptimization) {
-    const codeContext = createFilesContext(contextFiles, true);
+    /*
+     * List only the PATHS of the context files — NOT their full contents.
+     *
+     * Previously this called createFilesContext(contextFiles, true) which
+     * injected the full source code of ~5 files into the system prompt on
+     * every turn. That caused:
+     *   1. Token bloat (~7-8k extra prompt tokens per turn)
+     *   2. The AI could answer file-content questions WITHOUT calling any
+     *      tool, because the contents were already in its context — which
+     *      looked like "silent code leakage" to the user.
+     *
+     * Now the AI sees only the file paths and must use its tools
+     * (read_file / str_replace_editor) to access actual contents when it
+     * needs them.
+     */
+    const contextPaths = Object.keys(contextFiles)
+      .filter((p) => contextFiles[p]?.type === 'file')
+      .map((p) => p.replace('/home/project/', ''));
 
     systemPrompt = `${systemPrompt}
 
-    Below is the artifact containing the context loaded into context buffer for you to have knowledge of and might need changes to fullfill current user request.
-    CONTEXT BUFFER:
+    Below is the list of files currently in the project workspace that you may need to read or modify to fulfill the user's request. Use your file-reading tools to access their contents when needed — do NOT assume you already know their contents.
+    WORKSPACE FILES:
     ---
-    ${codeContext}
+    ${contextPaths.map((p) => `- ${p}`).join('\n')}
     ---
     `;
 
@@ -387,7 +822,7 @@ export async function streamText(props: {
   logger.info(`Sending llm call to ${provider.name} with model ${modelDetails.name}`);
 
   // Log reasoning model detection and token parameters
-  const isReasoning = isReasoningModel(modelDetails.name);
+  const isReasoning = isReasoningModel(modelDetails.name, modelDetails.capabilities);
   logger.info(
     `Model "${modelDetails.name}" is reasoning model: ${isReasoning}, using ${isReasoning ? 'maxCompletionTokens' : 'maxTokens'}: ${safeMaxTokens}`,
   );
@@ -399,8 +834,12 @@ export async function streamText(props: {
     );
   }
 
-  // Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models
-  const tokenParams = isReasoning ? { maxCompletionTokens: safeMaxTokens } : { maxTokens: safeMaxTokens };
+  /*
+   * Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models.
+   * NOTE: the actual tokenParams used in streamParams are computed later as
+   * `effectiveTokenParams` (which folds in the user's maxOutputTokens override).
+   * This declaration is kept only for the `isReasoning ? { temperature: 1 }` block below.
+   */
 
   // Filter out unsupported parameters for reasoning models
   const filteredOptions =
@@ -445,12 +884,136 @@ export async function streamText(props: {
     providerSettings,
   });
 
+  /*
+   * RATE-LIMIT PRE-FLIGHT (RPM / TPM / RPD)
+   * ----------------------------------------
+   * The user inputs their provider's actual limits in the ChatBox
+   * settings popup (we cannot reliably know them — they vary by tier,
+   * account, and payment status). Here we:
+   *
+   *   1. Estimate the request's token count from the message bodies.
+   *   2. Run the pre-flight check (see ./rate-limit.ts).
+   *   3. If the check says to throttle, sleep `throttleMs` before sending.
+   *   4. If the check says to auto-shrink, drop older messages from the
+   *      head of `processedMessages` until the estimate fits.
+   *   5. If the check says to hard-reject, throw with a user-readable
+   *      error so the UI surfaces a clear "would exceed X" message
+   *      instead of a generic 429 from the provider.
+   *
+   * NOTE: this runs ON THE SERVER, per-request. The counters are
+   * in-memory and per-instance (see ./rate-limit.ts header comment).
+   */
+  if (rateLimit && (rateLimit.rpm > 0 || rateLimit.tpm > 0 || rateLimit.rpd > 0)) {
+    const estimatedTokens = estimateRequestTokens(processedMessages as any, systemPrompt, safeMaxTokens);
+
+    const preFlight = preFlightCheck(provider.name, rateLimit as RateLimitConfig, estimatedTokens);
+
+    if (preFlight.message) {
+      logger.info(`[rate-limit] ${provider.name}: ${preFlight.message}`);
+    }
+
+    // Hard reject — surface a clean error to the user.
+    if (!preFlight.ok) {
+      const errMsg =
+        preFlight.message ?? `Rate limit (${preFlight.reason?.toUpperCase()}) would be exceeded for ${provider.name}.`;
+
+      logger.warn(`[rate-limit] REJECTING request for ${provider.name}: ${errMsg}`);
+      throw new Error(errMsg);
+    }
+
+    // Throttle — sleep before sending.
+    if (preFlight.throttleMs > 0) {
+      logger.info(`[rate-limit] Throttling ${preFlight.throttleMs}ms before sending to ${provider.name}…`);
+      await new Promise((resolve) => setTimeout(resolve, preFlight.throttleMs));
+    }
+
+    // Auto-shrink — drop older messages from the head.
+    if (preFlight.shrinkToTokens !== undefined && preFlight.shrinkToTokens > 0) {
+      const shrunk = shrinkMessagesToFit(
+        processedMessages as any,
+        systemPrompt,
+        safeMaxTokens,
+        preFlight.shrinkToTokens,
+      );
+
+      if (shrunk.length < processedMessages.length) {
+        logger.info(
+          `[rate-limit] Shrunk ${processedMessages.length - shrunk.length} older message(s) ` +
+            `to fit TPM budget for ${provider.name}.`,
+        );
+        processedMessages = shrunk as typeof processedMessages;
+      }
+    }
+  }
+
+  /*
+   * THINKING / REASONING providerOptions
+   * ------------------------------------
+   * Translate the unified `modelConfig` (edited by the ChatBox settings
+   * popup) into the per-provider `providerOptions` shape the Vercel AI
+   * SDK expects. This is the CRITICAL wiring that was missing — without
+   * it, the thinking toggle / effort slider in the UI had zero effect
+   * on the actual API request.
+   *
+   * For Gemini specifically, `includeThoughts: true` MUST be set or
+   * the API silently discards thought tokens even when the model is
+   * "thinking" internally.
+   *
+   * See ./thinking.ts for the full per-provider breakdown.
+   */
+  const thinkingProviderOptions = buildThinkingProviderOptions(
+    provider.name,
+    modelDetails.name,
+    modelConfig,
+    modelDetails.capabilities,
+  );
+
+  const hasThinkingOpts = supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities);
+
+  if (hasThinkingOpts) {
+    logger.info(
+      `[thinking] providerOptions for ${provider.name}/${modelDetails.name}: ` +
+        JSON.stringify(thinkingProviderOptions),
+    );
+  }
+
+  /*
+   * User-configured maxOutputTokens (from the ChatBox "Max Output Cap"
+   * slider) overrides the model's default. 0 = use model default
+   * (safeMaxTokens already reflects the model cap).
+   */
+  const effectiveMaxTokens =
+    modelConfig?.maxOutputTokens && modelConfig.maxOutputTokens > 0
+      ? Math.min(modelConfig.maxOutputTokens, safeMaxTokens)
+      : safeMaxTokens;
+
+  const effectiveTokenParams = isReasoning
+    ? { maxCompletionTokens: effectiveMaxTokens }
+    : { maxTokens: effectiveMaxTokens };
+
   const streamParams = {
     model: modelInstance,
-    system: chatMode === 'build' ? systemPrompt : discussPrompt(),
-    ...tokenParams,
-    messages: convertToCoreMessages(processedMessages as any),
+    system: chatMode === 'build' ? systemPrompt : chatNamingInstruction + discussPrompt(),
+    ...effectiveTokenParams,
+    messages: await convertToModelMessages(processedMessages as any),
     ...filteredOptions,
+
+    /*
+     * CRITICAL — merge the per-provider thinking options into the
+     * streamText call. The AI SDK passes `providerOptions` straight
+     * through to the underlying provider's HTTP request body, where:
+     *
+     *   - Google reads `providerOptions.google.thinkingConfig`
+     *   - Anthropic reads `providerOptions.anthropic.thinking`
+     *   - OpenAI reads `providerOptions.openai.reasoningEffort`
+     *   - xAI (openai-compatible) reads `providerOptions.openaiCompatible.reasoningEffort`
+     *   - Mistral reads `providerOptions.mistral.reasoningEffort`
+     *
+     * Empty object = SDK uses default behavior (no thinking config).
+     */
+    ...(hasThinkingOpts && Object.keys(thinkingProviderOptions).length > 0
+      ? { providerOptions: thinkingProviderOptions }
+      : {}),
 
     tools: {
       ...options?.tools,
@@ -545,16 +1108,26 @@ export async function streamText(props: {
         },
       },
       get_skill: {
-        description: 'Gets the instructions for a specific skill',
+        description: 'Gets the instructions for a specific skill. Pass the skill name as the "name" parameter.',
         parameters: z.object({
-          name: z.string().describe('The name of the skill folder'),
+          name: z.string().describe('The name of the skill (e.g., "webapp-builder", "react-components")'),
+          skill: z
+            .string()
+            .optional()
+            .describe('Alternative parameter name for the skill name (deprecated, use "name" instead)'),
         }),
-        execute: async ({ name }: { name: string }) => {
+        execute: async ({ name, skill }: { name: string; skill?: string }) => {
           try {
-            const loader = SkillLoader.getInstance();
-            const content = await loader.getSkillContent(name.toLowerCase());
+            const skillName = (name || skill || '').toLowerCase();
 
-            return content || `Skill "${name}" not found. Use list_skills to see available skills.`;
+            if (!skillName) {
+              return 'Error: No skill name provided. Use the "name" parameter with the skill ID.';
+            }
+
+            const loader = SkillLoader.getInstance();
+            const content = await loader.getSkillContent(skillName);
+
+            return content || `Skill "${skillName}" not found. Use list_skills to see available skills.`;
           } catch (e: any) {
             return { error: e.message };
           }
@@ -581,23 +1154,89 @@ export async function streamText(props: {
                   .describe(
                     'The name of the template to inject (e.g., "Vite Shadcn", "Expo App"). Must match a name in STARTER_TEMPLATES.',
                   ),
+                template: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Alternative parameter name for the template name (deprecated, use "templateName" instead)',
+                  ),
                 title: z.string().optional().describe('A title for the imported files artifact'),
               }),
-              execute: async ({ templateName, title }: { templateName: string; title?: string }) => {
+              execute: async ({
+                templateName,
+                template,
+                title,
+              }: {
+                templateName: string;
+                template?: string;
+                title?: string;
+              }) => {
                 try {
-                  const result = await getTemplates(templateName, title);
+                  const resolvedTemplateName = templateName || template || '';
+
+                  if (!resolvedTemplateName) {
+                    return {
+                      error: 'No template name provided. Use the "templateName" parameter with a valid template name.',
+                    };
+                  }
+
+                  const result = await getTemplates(resolvedTemplateName, title);
 
                   if (!result) {
-                    return { error: `Template "${templateName}" not found.` };
+                    const availableTemplates = STARTER_TEMPLATES.map((t: any) => t.name).join(', ');
+                    return {
+                      error: `Template "${resolvedTemplateName}" not found. Available templates: ${availableTemplates}`,
+                    };
                   }
 
-                  if (props.dataStream) {
-                    props.dataStream.write(formatDataStreamPart('text', result.assistantMessage));
-                  }
-
+                  /*
+                   * Return the file list to the client. The client-side
+                   * handler in Chat.client.tsx detects inject_template tool
+                   * results and writes files to the WebContainer
+                   * SEQUENTIALLY via workbenchStore.addAction/runAction
+                   * (same execution queue the message parser uses).
+                   *
+                   * WHY NOT stream the <amplifyArtifact> XML as text-delta?
+                   *
+                   *   Streaming the XML as a text part (the previous
+                   *   approach) caused THREE regressions:
+                   *
+                   *   1. CHAIN BREAK: the text part breaks the
+                   *      chain-of-thought segment splitter
+                   *      (splitPartsIntoSegments), so consecutive tools
+                   *      (list_skills → get_skill → inject_template) that
+                   *      should be in ONE collapsible "Thinking" panel end
+                   *      up as separate flat rows.
+                   *
+                   *   2. DUPLICATE HEADINGS: Chat.client.tsx replaces ALL
+                   *      text parts with the parsedContent (the full
+                   *      concatenated parsed output). When inject_template's
+                   *      text part is present alongside the model's response
+                   *      text parts, every text part gets the SAME full
+                   *      parsedContent — so the model's headings (e.g.
+                   *      "## Start Expo Application") appear multiple times.
+                   *
+                   *   3. ARTIFACT TITLE LEAK: the <amplifyArtifact
+                   *      title="Start Expo Application"> XML, after parsing
+                   *      and the parsedContent replacement, can render the
+                   *      title as visible text in the chat.
+                   *
+                   *   By returning files in the tool RESULT (not as a text
+                   *   part), no text part is created, so none of these
+                   *   issues occur. The client writes files from the result
+                   *   using the same sequential execution queue as the
+                   *   message parser — reliable, no parallel-write bug.
+                   *
+                   * The `files` array is consumed by the
+                   * `inject_template` result handler in Chat.client.tsx.
+                   * The `userMessage` is kept for the model (template
+                   * instructions + file-access rules) but is NOT displayed
+                   * in the UI — ToolProgress.renderResult filters it out.
+                   */
                   return {
                     summary: result.summary,
                     userMessage: result.userMessage,
+                    files: result.files.map((f) => ({ path: f.path, content: f.content })),
                   };
                 } catch (e: any) {
                   return { error: e.message };
@@ -643,7 +1282,7 @@ export async function streamText(props: {
     ),
   );
 
-  const result = await _streamText(streamParams);
+  const result = await _streamText(streamParams as any);
 
   return result;
 }

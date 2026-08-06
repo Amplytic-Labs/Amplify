@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import type { Message } from 'ai';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { MAX_FILES, isBinaryFile, shouldIncludeFile } from '~/utils/fileUtils';
 import { createChatFromFolder } from '~/utils/folderImport';
 import { logStore } from '~/lib/stores/logs'; // Assuming logStore is imported from this location
@@ -83,7 +82,7 @@ export const ImportFolderButton: React.FC<ImportFolderButtonProps> = ({ classNam
       const messages = await createChatFromFolder(textFiles, binaryFilePaths, folderName);
 
       if (importChat) {
-        await importChat(folderName, [...messages]);
+        await importChat(folderName, [...messages] as any);
       }
 
       logStore.logSystem('Folder imported successfully', {

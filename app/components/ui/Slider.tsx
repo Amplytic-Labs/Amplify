@@ -13,6 +13,7 @@ interface SliderProps<T> {
 
 export const Slider = genericMemo(<T,>({ selected, options, setSelected }: SliderProps<T>) => {
   const { state } = useSidebar();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isSidebarOpen = state === 'expanded';
 
   // Slower, elegant luxury spring physics for a deliberate premium transition

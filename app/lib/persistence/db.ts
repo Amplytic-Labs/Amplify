@@ -1,4 +1,4 @@
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
 import { createScopedLogger } from '~/utils/logger';
 import type { ChatHistoryItem } from './useChatHistory';
 import type { Snapshot } from './types'; // Import Snapshot type
@@ -108,7 +108,7 @@ export async function getAll(db: IDBDatabase): Promise<ChatHistoryItem[]> {
 export async function setMessages(
   db: IDBDatabase,
   id: string,
-  messages: Message[],
+  messages: UIMessage[],
   urlId?: string,
   description?: string,
   timestamp?: string,
@@ -216,8 +216,7 @@ export async function getNextId(db: IDBDatabase): Promise<string> {
     const request = store.getAllKeys();
 
     request.onsuccess = () => {
-      const highestId = request.result.reduce((cur, acc) => Math.max(+cur, +acc), 0);
-      resolve(String(+highestId + 1));
+      resolve(crypto.randomUUID());
     };
 
     request.onerror = () => reject(request.error);
@@ -298,7 +297,7 @@ export async function duplicateChat(db: IDBDatabase, id: string): Promise<string
 export async function createChatFromMessages(
   db: IDBDatabase,
   description: string,
-  messages: Message[],
+  messages: UIMessage[],
   metadata?: IChatMetadata,
 ): Promise<string> {
   const newId = await getNextId(db);

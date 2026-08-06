@@ -27,21 +27,13 @@ import {
   type WindowSizeOption,
 } from '~/lib/stores/previewHeader';
 
-const InjectFonts = () => (
-  <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&display=swap');
-    .custom-scroll::-webkit-scrollbar {
-      width: 4px;
-    }
-    .custom-scroll::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .custom-scroll::-webkit-scrollbar-thumb {
-      background: var(--amplify-elements-borderColor);
-      border-radius: 2px;
-    }
-  `}</style>
-);
+/*
+ * NOTE: InjectFonts component removed — @import url() inside an inline
+ * <style> tag blocks the main thread during CSS parsing and re-triggers
+ * on every re-render. The Roboto Mono font is now loaded via root.tsx
+ * <link> tags (alongside Inter), and scrollbar styles are handled by
+ * the global index.scss.
+ */
 
 const springTransition = {
   type: 'spring',
@@ -137,11 +129,13 @@ export const PreviewHeader = memo(() => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         isPortDropdownOpenAtom.set(false);
       }
+
       if (windowOptionsRef.current && !windowOptionsRef.current.contains(event.target as Node)) {
         isWindowSizeDropdownOpenAtom.set(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
+
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
@@ -162,15 +156,18 @@ export const PreviewHeader = memo(() => {
   const openInNewWindow = (size: WindowSizeOption) => {
     if (activePreview?.baseUrl) {
       const match = activePreview.baseUrl.match(/^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io/);
+
       if (match) {
         const previewId = match[1];
         const previewUrl = `/webcontainer/preview/${previewId}`;
         let width = size.width;
         let height = size.height;
+
         if (isLandscape && (size.frameType === 'mobile' || size.frameType === 'tablet')) {
           width = size.height;
           height = size.width;
         }
+
         if (showDeviceFrame && size.hasFrame) {
           const frameWidth = size.frameType === 'mobile' ? (isLandscape ? 120 : 40) : 60;
           const frameHeight = size.frameType === 'mobile' ? (isLandscape ? 80 : 80) : isLandscape ? 60 : 100;
@@ -179,9 +176,11 @@ export const PreviewHeader = memo(() => {
             '_blank',
             `width=${width + frameWidth},height=${height + frameHeight + 40},menubar=no,toolbar=no,location=no,status=no`,
           );
+
           if (!newWindow) {
             return;
           }
+
           const frameColor = getFrameColor();
           const frameRadius = size.frameType === 'mobile' ? '36px' : '20px';
           const framePadding =
@@ -212,6 +211,7 @@ export const PreviewHeader = memo(() => {
             '_blank',
             `width=${width},height=${height},menubar=no,toolbar=no,location=no,status=no`,
           );
+
           if (newWindow) {
             newWindow.focus();
           }
@@ -235,7 +235,6 @@ export const PreviewHeader = memo(() => {
       className="w-full flex items-center justify-center p-2 select-none relative z-40"
       style={{ fontFamily: "'Roboto Mono', monospace" }}
     >
-      <InjectFonts />
       <LayoutGroup>
         <motion.div layout transition={springTransition} className="flex items-center gap-[2px] relative">
           {/* ═══ PORT SELECTOR ═══ */}
@@ -468,18 +467,30 @@ export const PreviewHeader = memo(() => {
                         />
                       </IconWithTooltip>
                     </motion.div>
+                    {expoUrl && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10, scale: 0.8 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: -10, scale: 0.8 }}
+                        transition={{ duration: 0.15 }}
+                        className="flex items-center"
+                      >
+                        <IconWithTooltip
+                          id="qr"
+                          tooltip="Show QR"
+                          hoveredIcon={hoveredIcon}
+                          setHoveredIcon={setHoveredIcon}
+                        >
+                          <div
+                            className="i-ph:qr-code w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
+                            onClick={() => isExpoQrModalOpenAtom.set(true)}
+                          />
+                        </IconWithTooltip>
+                      </motion.div>
+                    )}
                   </>
                 )}
               </AnimatePresence>
-
-              {expoUrl && (
-                <IconWithTooltip id="qr" tooltip="Show QR" hoveredIcon={hoveredIcon} setHoveredIcon={setHoveredIcon}>
-                  <div
-                    className="i-ph:qr-code w-5 h-5 text-amplify-elements-textPrimary hover:text-amplify-elements-item-contentActive transition-colors cursor-pointer"
-                    onClick={() => isExpoQrModalOpenAtom.set(true)}
-                  />
-                </IconWithTooltip>
-              )}
 
               <IconWithTooltip
                 id="inspector"
@@ -542,11 +553,18 @@ export const PreviewHeader = memo(() => {
                         <button
                           className="flex w-full justify-between items-center text-start bg-transparent text-xs text-amplify-elements-textTertiary hover:text-amplify-elements-textPrimary font-sans"
                           onClick={() => {
-                            if (!activePreview?.baseUrl) return;
+                            if (!activePreview?.baseUrl) {
+                              return;
+                            }
+
                             const match = activePreview.baseUrl.match(
                               /^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io/,
                             );
-                            if (!match) return;
+
+                            if (!match) {
+                              return;
+                            }
+
                             const previewId = match[1];
                             const previewUrl = `/webcontainer/preview/${previewId}`;
                             window.open(
@@ -688,12 +706,15 @@ export const PreviewHeader = memo(() => {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && activePreview) {
                     let targetPath = displayPath.trim();
+
                     if (!targetPath.startsWith('/')) {
                       targetPath = '/' + targetPath;
                     }
+
                     const fullUrl = activePreview.baseUrl + targetPath;
                     iframeUrlAtom.set(fullUrl);
                     displayPathAtom.set(targetPath);
+
                     if (inputRef.current) {
                       inputRef.current.blur();
                     }

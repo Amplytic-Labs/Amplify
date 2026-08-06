@@ -3,7 +3,15 @@ export interface ITerminal {
   readonly rows?: number;
 
   reset: () => void;
+  clear?: () => void;
   write: (data: string) => void;
-  onData: (cb: (data: string) => void) => void;
+
+  /**
+   * Registers a data listener. Returns a disposable whose `dispose()` removes
+   * the listener. Capturing and disposing this is critical to avoid listener
+   * accumulation (e.g. the "characters multiply on terminal reset" bug).
+   */
+  onData: (cb: (data: string) => void) => { dispose: () => void };
   input: (data: string) => void;
+  focus?: () => void;
 }

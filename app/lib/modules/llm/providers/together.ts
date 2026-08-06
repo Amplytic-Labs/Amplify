@@ -1,7 +1,7 @@
 import { BaseProvider, getOpenAILikeModel } from '~/lib/modules/llm/base-provider';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import type { IProviderSetting } from '~/types/model';
-import type { LanguageModelV1 } from 'ai';
+import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
 
 export default class TogetherProvider extends BaseProvider {
   name = 'Together';
@@ -70,6 +70,7 @@ export default class TogetherProvider extends BaseProvider {
       provider: this.name,
       maxTokenAllowed: 8000,
       maxCompletionTokens: 8192,
+      capabilities: detectModelCapabilities(this.name, m.id),
     }));
   }
 
@@ -78,7 +79,7 @@ export default class TogetherProvider extends BaseProvider {
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): LanguageModelV1 {
+  }): any {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({

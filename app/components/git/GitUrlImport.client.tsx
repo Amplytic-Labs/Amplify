@@ -1,5 +1,4 @@
 import { useSearchParams } from '@remix-run/react';
-import { generateId, type Message } from 'ai';
 import ignore from 'ignore';
 import { useEffect, useState } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
@@ -7,9 +6,47 @@ import { BaseChat } from '~/components/chat/BaseChat';
 import { Chat } from '~/components/chat/Chat.client';
 import { useGit } from '~/lib/hooks/useGit';
 import { useChatHistory } from '~/lib/persistence';
-import { createCommandsMessage, detectProjectCommands, escapeAmplifyTags } from '~/utils/projectCommands';
+import { detectProjectCommands } from '~/utils/projectCommands';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
+import type { FileMap } from '~/lib/stores/files';
+import { WORK_DIR, chatNameForRepo } from '~/utils/constants';
+
+/*
+ * Build a FileMap (keyed by full WORK_DIR paths, matching how the
+ * `workbenchStore.files` store and the file watcher key entries) from a list
+ * of `{ path, content }` records whose `path` is relative to the workdir.
+ *
+ * Also synthesizes `folder` entries for every parent directory so the file
+ * tree renders correctly when the map is restored into the workbench store.
+ */
+function buildFileMapFromContents(files: Array<{ path: string; content: string }>): FileMap {
+  const fileMap: FileMap = {};
+
+  for (const file of files) {
+    const fullPath = `${WORK_DIR}/${file.path}`;
+    fileMap[fullPath] = {
+      type: 'file',
+      content: file.content,
+      isBinary: false,
+    };
+
+    // Create folder entries for every parent directory (relative parts).
+    const parts = file.path.split('/');
+
+    let current = WORK_DIR;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current = `${current}/${parts[i]}`;
+
+      if (!fileMap[current]) {
+        fileMap[current] = { type: 'folder' };
+      }
+    }
+  }
+
+  return fileMap;
+}
 
 const IGNORE_PATTERNS = [
   'node_modules/**',
@@ -38,6 +75,7 @@ const IGNORE_PATTERNS = [
 
 export function GitUrlImport() {
   const [searchParams] = useSearchParams();
+
   const { ready: historyReady, importChat } = useChatHistory();
   const { ready: gitReady, gitClone } = useGit();
   const [imported, setImported] = useState(false);
@@ -52,7 +90,7 @@ export function GitUrlImport() {
       const ig = ignore().add(IGNORE_PATTERNS);
 
       try {
-        const { workdir, data } = await gitClone(repoUrl);
+        const { data } = await gitClone(repoUrl);
 
         if (importChat) {
           const filePaths = Object.keys(data).filter((filePath) => !ig.ignores(filePath));
@@ -70,37 +108,21 @@ export function GitUrlImport() {
             .filter((f) => f.content);
 
           const commands = await detectProjectCommands(fileContents);
-          const commandsMessage = createCommandsMessage(commands);
 
-          const filesMessage: Message = {
-            role: 'assistant',
-            content: `Cloning the repo ${repoUrl} into ${workdir}
-<amplifyArtifact id="imported-files" title="Git Cloned Files"  type="bundled">
-${fileContents
-  .map(
-    (file) =>
-      `<amplifyAction type="file" filePath="${file.path}">
-${escapeAmplifyTags(file.content)}
-</amplifyAction>`,
-  )
-  .join('\n')}
-</amplifyArtifact>`,
-            id: generateId(),
-            createdAt: new Date(),
-          };
+          /*
+           * SILENT FILE LOADING: No chat messages for system-initiated file
+           * loading. Files are persisted to IndexedDB via `initialFileMap`;
+           * project commands are detected inside `importChat`. After reload,
+           * `restoreFileMap` writes files to the WebContainer and
+           * `runProjectAutoSetup` silently runs npm install + start. The chat
+           * starts clean — no "Cloning..." / "Created N files" / "Found
+           * 'start' script..." messages.
+           */
+          void commands;
 
-          const messages = [filesMessage];
+          const initialFileMap = buildFileMapFromContents(fileContents);
 
-          if (commandsMessage) {
-            messages.push({
-              role: 'user',
-              id: generateId(),
-              content: 'Setup the codebase and Start the application',
-            });
-            messages.push(commandsMessage);
-          }
-
-          await importChat(`Git Project:${repoUrl.split('/').slice(-1)[0]}`, messages, { gitUrl: repoUrl });
+          await importChat(chatNameForRepo(repoUrl), [], { gitUrl: repoUrl }, initialFileMap);
         }
       } catch (error) {
         console.error('Error during import:', error);

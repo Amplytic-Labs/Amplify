@@ -812,6 +812,7 @@ export const DiffView = memo(({ fileHistory, setFileHistory, comparisonContent, 
       }
     } // <-- THIS BRACE IS MISSING IN YOUR FILE
   }, [selectedFile, currentDocument?.value, files, setFileHistory, unsavedFiles, fileHistory]);
+
   if (!selectedFile || !currentDocument) {
     return (
       <div className="flex w-full h-full justify-center items-center bg-amplify-elements-background-depth-1 text-amplify-elements-textPrimary">

@@ -82,15 +82,15 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
             className={classNames(
               'flex items-center gap-2 px-4 py-2.5',
               'text-sm text-gray-700 dark:text-gray-200',
-              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
-              'hover:text-purple-500 dark:hover:text-purple-400',
+              'hover:bg-blue-50 dark:hover:bg-blue-500/10',
+              'hover:text-blue-500 dark:hover:text-blue-400',
               'cursor-pointer transition-all duration-200',
               'outline-none',
               'group',
             )}
             onClick={() => onSelectTab('profile')}
           >
-            <div className="i-ph:user-circle w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            <div className="i-ph:user-circle w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Edit Profile
           </DropdownMenu.Item>
 
@@ -98,15 +98,15 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
             className={classNames(
               'flex items-center gap-2 px-4 py-2.5',
               'text-sm text-gray-700 dark:text-gray-200',
-              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
-              'hover:text-purple-500 dark:hover:text-purple-400',
+              'hover:bg-blue-50 dark:hover:bg-blue-500/10',
+              'hover:text-blue-500 dark:hover:text-blue-400',
               'cursor-pointer transition-all duration-200',
               'outline-none',
               'group',
             )}
             onClick={() => onSelectTab('settings')}
           >
-            <div className="i-ph:gear-six w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            <div className="i-ph:gear-six w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Settings
           </DropdownMenu.Item>
 
@@ -116,17 +116,15 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
             className={classNames(
               'flex items-center gap-2 px-4 py-2.5',
               'text-sm text-gray-700 dark:text-gray-200',
-              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
-              'hover:text-purple-500 dark:hover:text-purple-400',
+              'hover:bg-blue-50 dark:hover:bg-blue-500/10',
+              'hover:text-blue-500 dark:hover:text-blue-400',
               'cursor-pointer transition-all duration-200',
               'outline-none',
               'group',
             )}
-            onClick={() =>
-              window.open('https://github.com/amplify/amplify/issues/new?template=bug_report.yml', '_blank')
-            }
+            onClick={() => window.open('https://github.com/imtia33/Open_Claude/issues/new', '_blank')}
           >
-            <div className="i-ph:bug w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            <div className="i-ph:bug w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Report Bug
           </DropdownMenu.Item>
 
@@ -134,8 +132,8 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
             className={classNames(
               'flex items-center gap-2 px-4 py-2.5',
               'text-sm text-gray-700 dark:text-gray-200',
-              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
-              'hover:text-purple-500 dark:hover:text-purple-400',
+              'hover:bg-blue-50 dark:hover:bg-blue-500/10',
+              'hover:text-blue-500 dark:hover:text-blue-400',
               'cursor-pointer transition-all duration-200',
               'outline-none',
               'group',
@@ -149,7 +147,7 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
               }
             }}
           >
-            <div className="i-ph:download w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            <div className="i-ph:download w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Download Debug Log
           </DropdownMenu.Item>
 
@@ -157,15 +155,15 @@ export const AvatarDropdown = ({ onSelectTab }: AvatarDropdownProps) => {
             className={classNames(
               'flex items-center gap-2 px-4 py-2.5',
               'text-sm text-gray-700 dark:text-gray-200',
-              'hover:bg-purple-50 dark:hover:bg-purple-500/10',
-              'hover:text-purple-500 dark:hover:text-purple-400',
+              'hover:bg-blue-50 dark:hover:bg-blue-500/10',
+              'hover:text-blue-500 dark:hover:text-blue-400',
               'cursor-pointer transition-all duration-200',
               'outline-none',
               'group',
             )}
-            onClick={() => window.open('https://amplify.dev/', '_blank')}
+            onClick={() => window.open('https://github.com/imtia33/Open_Claude#readme', '_blank')}
           >
-            <div className="i-ph:question w-4 h-4 text-gray-400 group-hover:text-purple-500 dark:group-hover:text-purple-400 transition-colors" />
+            <div className="i-ph:question w-4 h-4 text-gray-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" />
             Help & Documentation
           </DropdownMenu.Item>
         </DropdownMenu.Content>

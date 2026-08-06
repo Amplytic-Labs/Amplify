@@ -61,15 +61,12 @@ export async function runVerification(options: VerificationRunnerOptions): Promi
  */
 async function runBuildCheck(options: VerificationRunnerOptions): Promise<VerificationResult> {
   // Detect the build command from package.json
-  const buildCommands = [
-    'npm run build 2>&1',
-    'npx tsc --noEmit 2>&1',
-    'npm run typecheck 2>&1',
-  ];
+  const buildCommands = ['npm run build 2>&1', 'npx tsc --noEmit 2>&1', 'npm run typecheck 2>&1'];
 
   for (const cmd of buildCommands) {
     try {
       const result = await options.runShellCommand(cmd);
+
       if (result.exitCode === 0) {
         return {
           type: 'build_check',

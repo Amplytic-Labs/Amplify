@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { History, RotateCcw, GitCommit, Clock, MessageSquare } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '~/components/ui/toast';
 import { Button } from '~/components/ui/Button';
 import { Badge } from '~/components/ui/Badge';
 import { Dialog, DialogButton, DialogDescription, DialogTitle } from '~/components/ui/Dialog';
@@ -205,7 +205,7 @@ export function ProjectHistoryPanel({ projectId, embedded = false }: ProjectHist
       )}
     >
       <div className="flex items-center gap-2 px-4 py-3 border-b border-amplify-elements-borderColor">
-        <History size={16} className="text-purple-500 shrink-0" />
+        <History size={16} className="text-blue-500 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium truncate">{project.name}</span>
@@ -336,7 +336,7 @@ function CommitRow({ commit, isCurrent, onRestore }: CommitRowProps) {
           className={classNames(
             'shrink-0 mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold',
             isCurrent
-              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/30'
+              ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/30'
               : 'bg-amplify-elements-background-depth-3 text-amplify-elements-textSecondary',
           )}
         >

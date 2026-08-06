@@ -47,6 +47,92 @@ function extractTextContent(html: string): string {
     .trim();
 }
 
+/**
+ * Fetch a URL, working around Node's undici fetch header-size limit.
+ *
+ * Some servers (e.g. appwrite.io) send response headers larger than undici's
+ * hardcoded 16KB limit, causing `fetch failed: UND_ERR_HEADERS_OVERFLOW`. When
+ * that happens we fall back to node:https with a 1MB maxHeaderSize, which
+ * handles those servers fine.
+ *
+ * Returns a fetch-like Response object so the rest of the route can use the
+ * standard `.ok`, `.headers`, `.text()` API.
+ */
+async function fetchUrlWithFallback(url: string): Promise<Response> {
+  try {
+    return await fetch(url, {
+      headers: FETCH_HEADERS,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err: any) {
+    // Only fall back for the headers-overflow error; rethrow anything else.
+    const isHeadersOverflow =
+      err?.cause?.code === 'UND_ERR_HEADERS_OVERFLOW' ||
+      err?.message?.includes('Headers Overflow') ||
+      err?.message?.includes('UND_ERR_HEADERS_OVERFLOW');
+
+    if (!isHeadersOverflow) {
+      throw err;
+    }
+
+    /*
+     * Dynamic import so the route doesn't break in Cloudflare Workers (where
+     * node:https is unavailable). The import will fail there, which is fine —
+     * Cloudflare's fetch doesn't have the headers-overflow issue anyway.
+     */
+    const https = await import('node:https');
+    const httpUrl = new URL(url);
+
+    return await new Promise<Response>((resolve, reject) => {
+      const req = https.get(
+        {
+          hostname: httpUrl.hostname,
+          port: httpUrl.port || 443,
+          path: httpUrl.pathname + httpUrl.search,
+          method: 'GET',
+          headers: FETCH_HEADERS,
+          maxHeaderSize: 1024 * 1024, // 1MB — handles servers with large Set-Cookie chains
+        },
+        (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk) => {
+            body += chunk;
+          });
+          res.on('end', () => {
+            // Build a fetch-like Response. Headers get normalized to lowercase.
+            const headers = new Headers();
+
+            for (const [k, v] of Object.entries(res.headers || {})) {
+              if (Array.isArray(v)) {
+                for (const item of v) {
+                  headers.append(k, item);
+                }
+              } else if (v != null) {
+                headers.set(k, String(v));
+              }
+            }
+
+            resolve(
+              new Response(body, {
+                status: res.statusCode || 200,
+                statusText: res.statusMessage || '',
+                headers,
+              }),
+            );
+          });
+        },
+      );
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timed out after 10 seconds'));
+      });
+    });
+  }
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
@@ -63,10 +149,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'URL is not allowed. Only public HTTP/HTTPS URLs are accepted.' }, { status: 400 });
     }
 
-    const response = await fetch(url, {
-      headers: FETCH_HEADERS,
-      signal: AbortSignal.timeout(10_000),
-    });
+    const response = await fetchUrlWithFallback(url);
 
     if (!response.ok) {
       return json({ error: `Failed to fetch URL: ${response.status} ${response.statusText}` }, { status: 502 });

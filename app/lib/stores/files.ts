@@ -920,6 +920,84 @@ export class FilesStore {
     }
   }
 
+  /**
+   * Read file content
+   * @param filePath Path to the file to read
+   * @returns File content as string, or undefined if not found
+   */
+  async readFile(filePath: string): Promise<string | undefined> {
+    const webcontainer = await this.#webcontainer;
+
+    try {
+      const relativePath = path.relative(webcontainer.workdir, filePath);
+
+      if (!relativePath) {
+        throw new Error(`EINVAL: invalid file path, read '${relativePath}'`);
+      }
+
+      const content = await webcontainer.fs.readFile(relativePath, 'utf-8');
+
+      return content;
+    } catch (error) {
+      logger.error('Failed to read file\n\n', error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Rename a folder by moving it
+   * @param oldPath Current folder path
+   * @param newPath New folder path
+   * @returns true if successful
+   */
+  async renameFolder(oldPath: string, newPath: string): Promise<boolean> {
+    const webcontainer = await this.#webcontainer;
+
+    try {
+      const oldRelativePath = path.relative(webcontainer.workdir, oldPath);
+      const newRelativePath = path.relative(webcontainer.workdir, newPath);
+
+      if (!oldRelativePath || !newRelativePath) {
+        throw new Error(`EINVAL: invalid folder path, rename '${oldRelativePath}' -> '${newRelativePath}'`);
+      }
+
+      // Use WebContainer's fs.rename to move the folder
+      await webcontainer.fs.rename(oldRelativePath, newRelativePath);
+
+      // Update the files map - remove old entries and add new ones
+      const allFiles = this.files.get();
+      const entriesToUpdate: Array<[string, Dirent | undefined]> = [];
+
+      for (const [filePath, dirent] of Object.entries(allFiles)) {
+        if (filePath === oldPath || filePath.startsWith(oldPath + '/')) {
+          if (filePath === oldPath) {
+            entriesToUpdate.push([filePath, { type: 'folder' }]);
+          } else {
+            entriesToUpdate.push([filePath, dirent]);
+          }
+        }
+      }
+
+      for (const [oldKey, newDirent] of entriesToUpdate) {
+        if (newDirent) {
+          const newKey = oldKey === oldPath ? newPath : newPath + '/' + oldKey.slice(oldPath.length + 1);
+          this.files.setKey(newKey, newDirent);
+          this.#size++;
+        }
+
+        this.files.setKey(oldKey, undefined);
+        this.#size--;
+      }
+
+      logger.info(`Folder renamed: ${oldPath} -> ${newPath}`);
+
+      return true;
+    } catch (error) {
+      logger.error('Failed to rename folder\n\n', error);
+      throw error;
+    }
+  }
+
   // method to persist deleted paths to localStorage
   #persistDeletedPaths() {
     try {

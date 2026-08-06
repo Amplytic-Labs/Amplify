@@ -4,6 +4,7 @@ import type { IProviderSetting, ProviderInfo } from '~/types/model';
 import { generateText } from 'ai';
 import { PROVIDER_LIST } from '~/utils/constants';
 import { MAX_TOKENS, PROVIDER_COMPLETION_LIMITS, isReasoningModel } from '~/lib/.server/llm/constants';
+import { buildThinkingProviderOptions, supportsThinkingConfig } from '~/lib/.server/llm/thinking';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
@@ -74,6 +75,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
     provider,
     streamOutput,
     apiKeys: bodyApiKeys,
+    modelConfig,
   } = await request.json<{
     system: string;
     message: string;
@@ -81,6 +83,12 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
     provider: ProviderInfo;
     streamOutput?: boolean;
     apiKeys?: Record<string, string>;
+    modelConfig?: {
+      thinkingEnabled: boolean;
+      budgetTokens: number;
+      effort: 'low' | 'medium' | 'high';
+      maxOutputTokens: number;
+    };
   }>();
 
   const { name: providerName } = provider;
@@ -113,7 +121,9 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         messages: [
           {
             role: 'user',
-            content: `${message}`,
+
+            // AI SDK v7: use parts instead of content
+            parts: [{ type: 'text' as const, text: `${message}` }],
           },
         ],
         env: context.cloudflare?.env as any,
@@ -124,6 +134,15 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
           .getSkills()
           .map((s) => `<skill name="${s.id}" description="${s.description}"/>`)
           .join('\n'),
+
+        /*
+         * Pass modelConfig so streamText can translate the unified
+         * thinking/reasoning config into per-provider providerOptions
+         * for ALL providers (Anthropic, Google, OpenAI, xAI, Mistral,
+         * DeepSeek, etc.). Without this, no thinking/reasoning is
+         * enabled on any provider's API.
+         */
+        modelConfig,
       });
 
       return new Response(result.textStream, {
@@ -194,7 +213,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
       logger.info(`Generating response Provider: ${provider.name}, Model: ${modelDetails.name}`);
 
       // DEBUG: Log reasoning model detection
-      const isReasoning = isReasoningModel(modelDetails.name);
+      const isReasoning = isReasoningModel(modelDetails.name, modelDetails.capabilities);
       logger.info(`DEBUG: Model "${modelDetails.name}" detected as reasoning model: ${isReasoning}`);
 
       // Use maxCompletionTokens for reasoning models (o1, GPT-5), maxTokens for traditional models
@@ -224,6 +243,29 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         ? { ...baseParams, temperature: 1 } // Set to 1 for reasoning models (only supported value)
         : { ...baseParams, temperature: 0 };
 
+      /*
+       * THINKING / REASONING providerOptions for non-streaming generateText.
+       * Same logic as streamText — translate the unified modelConfig into
+       * per-provider options for ALL providers (Anthropic, Google, OpenAI,
+       * xAI, Mistral, DeepSeek, etc.).
+       */
+      const thinkingOpts = buildThinkingProviderOptions(
+        provider.name,
+        modelDetails.name,
+        modelConfig,
+        modelDetails.capabilities,
+      );
+      const hasThinking =
+        supportsThinkingConfig(provider.name, modelDetails.name, modelDetails.capabilities) &&
+        Object.keys(thinkingOpts).length > 0;
+
+      if (hasThinking) {
+        logger.info(
+          `[thinking] providerOptions for ${provider.name}/${modelDetails.name} (llmcall): ` +
+            JSON.stringify(thinkingOpts),
+        );
+      }
+
       // DEBUG: Log final parameters
       logger.info(
         `DEBUG: Final params for model "${modelDetails.name}":`,
@@ -244,7 +286,10 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         ),
       );
 
-      const result = await generateText(finalParams);
+      const result = await generateText({
+        ...finalParams,
+        ...(hasThinking ? { providerOptions: thinkingOpts as any } : {}),
+      });
       logger.info(`Generated response`);
 
       return new Response(JSON.stringify(result), {
