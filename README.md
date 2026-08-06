@@ -1,6 +1,6 @@
 # Amplify
 
-[![Amplify: AI-Powered Full-Stack Web Development in the Browser](./public/social_preview_index.jpg)](https://amplify.dev)
+[![Amplify: AI-Powered Full-Stack Web Development in the Browser](./public/amplify-preview.png)](https://amplify.amplytic.dev)
 
 Welcome to Amplify, an open source AI development platform, which allows you to choose the LLM that you use for each prompt! Currently, you can use OpenAI, Anthropic, Ollama, OpenRouter, Gemini, LMStudio, Mistral, xAI, HuggingFace, DeepSeek, Groq, Cohere, Together, Perplexity, Moonshot (Kimi), Hyperbolic, GitHub Models, Amazon Bedrock, and OpenAI-like providers - and it is easily extended to use any other model supported by the Vercel AI SDK! See the instructions below for running this locally and extending it to include more models.
 
