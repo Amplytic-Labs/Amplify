@@ -1,516 +1,275 @@
-# Amplify
-
-[![Amplify: AI-Powered Full-Stack Web Development in the Browser](./public/amplify-preview.png)](https://amplify.amplytic.dev)
-
-Welcome to Amplify, an open source AI development platform, which allows you to choose the LLM that you use for each prompt! Currently, you can use OpenAI, Anthropic, Ollama, OpenRouter, Gemini, LMStudio, Mistral, xAI, HuggingFace, DeepSeek, Groq, Cohere, Together, Perplexity, Moonshot (Kimi), Hyperbolic, GitHub Models, Amazon Bedrock, and OpenAI-like providers - and it is easily extended to use any other model supported by the Vercel AI SDK! See the instructions below for running this locally and extending it to include more models.
-
------
-Check the [Amplify Docs](https://amplify.dev/) for more official installation instructions and additional information.
-
------
-Also [this pinned post in our community](https://thinktank.ottomator.ai/t/videos-tutorial-helpful-content/3243) has a bunch of incredible resources for running and deploying Amplify yourself!
 
-We have also launched an experimental agent called the "Amplify Expert" that can answer common questions about Amplify. Find it here on the [oTTomator Live Agent Studio](https://studio.ottomator.ai/).
+<div align="center">
 
-Amplify was originally started by [Cole Medin](https://www.youtube.com/@ColeMedin) but has quickly grown into a massive community effort to build the BEST open source AI coding assistant!
+<img src="./public/amplify-preview.png" alt="Amplify - AI-Powered Full-Stack Web Development in the Browser" width="100%">
 
-## Table of Contents
-
-- [Join the Community](#join-the-community)
-- [Recent Major Additions](#recent-major-additions)
-- [Features](#features)
-- [Setup](#setup)
-- [Quick Installation](#quick-installation)
-- [Manual Installation](#manual-installation)
-- [Configuring API Keys and Providers](#configuring-api-keys-and-providers)
-- [Setup Using Git (For Developers only)](#setup-using-git-for-developers-only)
-- [Available Scripts](#available-scripts)
-- [Contributing](#contributing)
-- [Roadmap](#roadmap)
-- [FAQ](#faq)
-
-## Join the community
-
-[Join the Amplify community here, in the oTTomator Think Tank!](https://thinktank.ottomator.ai)
-
-## Project management
-
-Amplify is a community effort! Still, the core team of contributors aims at organizing the project in way that allows
-you to understand where the current areas of focus are.
-
-If you want to know what we are working on, what we are planning to work on, or if you want to contribute to the
-project, please check the [project management guide](./PROJECT.md) to get started easily.
-
-## Recent Major Additions
+<br/>
 
-### ✅ Completed Features
-- **19+ AI Provider Integrations** - OpenAI, Anthropic, Google, Groq, xAI, DeepSeek, Mistral, Cohere, Together, Perplexity, HuggingFace, Ollama, LM Studio, OpenRouter, Moonshot, Hyperbolic, GitHub Models, Amazon Bedrock, OpenAI-like
-- **Electron Desktop App** - Native desktop experience with full functionality
-- **Advanced Deployment Options** - Netlify, Vercel, and GitHub Pages deployment
-- **Supabase Integration** - Database management and query capabilities
-- **Data Visualization & Analysis** - Charts, graphs, and data analysis tools
-- **MCP (Model Context Protocol)** - Enhanced AI tool integration
-- **Search Functionality** - Codebase search and navigation
-- **File Locking System** - Prevents conflicts during AI code generation
-- **Diff View** - Visual representation of AI-made changes
-- **Git Integration** - Clone, import, and deployment capabilities
-- **Expo App Creation** - React Native development support
-- **Voice Prompting** - Audio input for prompts
-- **Bulk Chat Operations** - Delete multiple chats at once
-- **Project Snapshot Restoration** - Restore projects from snapshots on reload
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./public/Amplify-light-logo.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./public/Amplify-dark-logo.svg">
+  <img alt="Amplify" width="150">
+</picture>
 
-### 🔄 In Progress / Planned
-- **File Locking & Diff Improvements** - Enhanced conflict prevention
-- **Backend Agent Architecture** - Move from single model calls to agent-based system
-- **LLM Prompt Optimization** - Better performance for smaller models
-- **Project Planning Documentation** - LLM-generated project plans in markdown
-- **VSCode Integration** - Git-like confirmations and workflows
-- **Document Upload for Knowledge** - Reference materials and coding style guides
-- **Additional Provider Integrations** - Azure OpenAI, Vertex AI, Granite
+<br/>
 
-## Features
+**Build anything. Own everything.**
 
-- **AI-powered full-stack web development** for **NodeJS based applications** directly in your browser.
-- **Support for 19+ LLMs** with an extensible architecture to integrate additional models.
-- **Attach images to prompts** for better contextual understanding.
-- **Integrated terminal** to view output of LLM-run commands.
-- **Revert code to earlier versions** for easier debugging and quicker changes.
-- **Download projects as ZIP** for easy portability and sync to a folder on the host.
-- **Integration-ready Docker support** for a hassle-free setup.
-- **Deploy directly** to **Netlify**, **Vercel**, or **GitHub Pages**.
-- **Electron desktop app** for native desktop experience.
-- **Data visualization and analysis** with integrated charts and graphs.
-- **Git integration** with clone, import, and deployment capabilities.
-- **MCP (Model Context Protocol)** support for enhanced AI tool integration.
-- **Search functionality** to search through your codebase.
-- **File locking system** to prevent conflicts during AI code generation.
-- **Diff view** to see changes made by the AI.
-- **Supabase integration** for database management and queries.
-- **Expo app creation** for React Native development.
+An open-source, self-hostable AI coding assistant that runs in your browser — code editor, terminal, file explorer, and live preview — all connected to an AI that can read files, write code, search the web, and execute commands. Connect to **22+ LLM providers**, extend with built-in skills and MCP servers, and own every byte of your data.
 
-## Setup
+> *"Closed assistants lease you a model and a bill. Amplify is the opposite — open source, self-hosted, twenty-two providers behind one chat. Bring your keys. Run it in your browser. Own every byte."*
 
-If you're new to installing software from GitHub, don't worry! If you encounter any issues, feel free to submit an "issue" using the provided links or improve this documentation by forking the repository, editing the instructions, and submitting a pull request. The following instruction will help you get the stable branch up and running on your local machine in no time.
+[![License](https://img.shields.io/badge/License-MIT-FF2056?style=flat-square)](./LICENSE)
+[![Remix](https://img.shields.io/badge/Remix-2.15-1C1C1C?style=flat-square&logo=remix)](https://remix.run/)
+[![Vercel AI SDK](https://img.shields.io/badge/AI_SDK-7.0-000000?style=flat-square&logo=vercel)](https://sdk.vercel.ai/)
+[![WebContainers](https://img.shields.io/badge/WebContainers-1.6-00C4B4?style=flat-square)](https://webcontainers.io/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 
-Let's get you up and running with the stable version of Amplify!
+</div>
 
-## Quick Installation
+---
 
-[![Download Latest Release](https://img.shields.io/github/v/release/amplify/amplify?label=Download%20Amplify&sort=semver)](https://github.com/amplify/amplify/releases/latest) ← Click here to go to the latest release version!
+## <img src="https://api.iconify.design/mdi:sparkles.svg?color=%23FF6B6B" width="24" style="vertical-align:middle"> Features
 
-- Download the binary for your platform (available for Windows, macOS, and Linux)
-- **Note**: For macOS, if you get the error "This app is damaged", run:
-  ```bash
-  xattr -cr /path/to/Amplify.app
-  ```
+### <img src="https://api.iconify.design/mdi:robot.svg?color=%234ECDC4" width="22" style="vertical-align:middle"> AI & LLM
 
-## Manual installation
+- **22+ Provider Integrations** — OpenAI, Anthropic, Google, Groq, xAI, DeepSeek, Mistral, Cohere, Together, Perplexity, HuggingFace, Ollama, LM Studio, OpenRouter, Moonshot, Hyperbolic, GitHub Models, Amazon Bedrock, Cerebras, Fireworks, Z.AI, and OpenAI-like endpoints
+- **Chat & Agent Modes** — Conversational chat for quick questions; Agent Mode with full file CRUD, shell commands, and tool invocations
+- **Thinking / Reasoning UI** — Copilot-style thinking panels with chain-of-thought for supported models
+- **Smart Context Budgeting** — 70% summarization threshold, last 3 messages verbatim, vector store injection on every new chat
+- **Prompt Enhancement** — Built-in enhancer API to refine your prompts automatically
 
+### <img src="https://api.iconify.design/mdi:brain.svg?color=%23FFD93D" width="22" style="vertical-align:middle"> Planning & Intelligence
 
-### Option 1: Node.js
+- **Planning Engine** — Sub-chat workers with ContextBuilder and FlowVerifier for complex, multi-step code generation
+- **Checkpoint & Resume** — Execution manager with checkpointing so long-running tasks can be recovered
+- **Orama Vector Store** — BM25 full-text search + IndexedDB persistence for context, memory, and RAG across sessions
+- **User Memory** — Persistent per-user memory that survives across chats and projects
 
-Node.js is required to run the application.
+### <img src="https://api.iconify.design/mdi:code-braces.svg?color=%236C5CE7" width="22" style="vertical-align:middle"> Development Environment
 
-1. Visit the [Node.js Download Page](https://nodejs.org/en/download/)
-2. Download the "LTS" (Long Term Support) version for your operating system
-3. Run the installer, accepting the default settings
-4. Verify Node.js is properly installed:
-   - **For Windows Users**:
-     1. Press `Windows + R`
-     2. Type "sysdm.cpl" and press Enter
-     3. Go to "Advanced" tab → "Environment Variables"
-     4. Check if `Node.js` appears in the "Path" variable
-   - **For Mac/Linux Users**:
-     1. Open Terminal
-     2. Type this command:
-        ```bash
-        echo $PATH
-        ```
-     3. Look for `/usr/local/bin` in the output
+- **WebContainers** — Full Node.js runtime in the browser via WebAssembly — no Docker, no server, no setup
+- **CodeMirror Editor** — Syntax highlighting, diff view, multi-cursor, and file search
+- **xterm.js Terminal** — Multi-tab terminal with AI shell, init shell, and user shell types
+- **Live Preview** — iframe-based rendering with device mode, Expo QR code, and DOM inspector
+- **Git Integration** — Clone repos, import folders, push to GitHub/GitLab — all via isomorphic-git in the browser
 
-## Running the Application
+### <img src="https://api.iconify.design/mdi:puzzle.svg?color=%23A8E6CF" width="22" style="vertical-align:middle"> Extensibility
 
-You have two options for running Amplify: directly on your machine or using Docker.
+- **8 Built-in Skills** — api-integration, react-best-practices, frontend-design, docx, react-native-component, appwrite, react-component, mobile-app-development
+- **120+ Design Systems** — Visual presets inspired by Apple, Stripe, Vercel, Spotify, Airbnb, Notion, Linear, shadcn, and more
+- **13 Starter Templates** — Expo, Astro, Next.js + shadcn, Vite + shadcn, Qwik, Remix, Slidev, SvelteKit, Vanilla Vite, Vite React, Vite TypeScript, Vue, Angular
+- **MCP Support** — Model Context Protocol with stdio, SSE, and streamable-http transports
+- **8 Native Tools** — `read_file`, `list_dir`, `find_files`, `grep_search`, `web_search`, `create_file`, `replace_string_in_file`, `multi_replace_string_in_file`
 
-### Option 1: Direct Installation (Recommended for Beginners)
+### <img src="https://api.iconify.design/mdi:rocket-launch.svg?color=%23FF8A5C" width="22" style="vertical-align:middle"> Deployment & Integration
 
-1. **Install Package Manager (pnpm)**:
+- **Deploy to Netlify, Vercel, GitHub Pages, GitLab** — Direct deployment from the UI
+- **Docker** — Production and development Docker Compose profiles with prebuilt GHCR images
+- **Cloudflare Pages** — Edge-hosted deployment via Wrangler
+- **Electron Desktop App** — Native experience for macOS, Windows, and Linux with auto-update
+- **GitHub & GitLab** — Auth, repo selector, branch management, and deployment
+- **Supabase** — Connection, queries, and environment variable management
 
-   ```bash
-   npm install -g pnpm
-   ```
+### <img src="https://api.iconify.design/mdi:star-circle.svg?color=%23FF6B6B" width="22" style="vertical-align:middle"> User Experience
 
-2. **Install Project Dependencies**:
+- **File Locking** — Prevents conflicts during AI code generation
+- **Diff View** — Visual side-by-side of AI-made changes with approval/rejection flow
+- **Chat Export & Import** — Save and restore full conversations
+- **Project Gallery** — Tile-based project browsing with snapshot restoration
+- **Voice Prompting** — Audio input via Speech Recognition API
+- **Image Attachments** — Attach images to prompts for visual context
+- **Data Visualization** — Charts and graphs via Chart.js
+- **DOCX & PDF Export** — Generate and preview documents inline
 
-   ```bash
-   pnpm install
-   ```
+---
 
-3. **Start the Application**:
+## <img src="https://api.iconify.design/mdi:rocket-launch.svg?color=%23FF8A5C" width="24" style="vertical-align:middle"> Tech Stack
 
-   ```bash
-   pnpm run dev
-   ```
-   
-### Option 2: Using Docker
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | [Remix 2.15](https://remix.run/) + [Vite 5](https://vitejs.dev/) |
+| **Language** | [TypeScript 5.7+](https://www.typescriptlang.org/) |
+| **AI SDK** | [Vercel AI SDK 7](https://sdk.vercel.ai/) |
+| **Sandbox** | [WebContainers API 1.6](https://webcontainers.io/) |
+| **Styling** | [UnoCSS 0.61](https://unocss.dev/) + SCSS |
+| **State** | [Nanostores](https://github.com/nanostores/nanostores) + [Zustand 5](https://zustand.docs.pmnd.rs/) |
+| **Editor** | [CodeMirror 6](https://codemirror.net/) |
+| **Terminal** | [xterm.js 5](https://xtermjs.org/) |
+| **UI** | [Radix UI](https://www.radix-ui.com/) + [shadcn/ui](https://ui.shadcn.com/) + [Framer Motion](https://www.framer.com/motion/) |
+| **Persistence** | IndexedDB (client-side) |
+| **Vector Search** | [@orama/orama](https://oramasearch.com/) (in-browser) |
+| **Git** | [isomorphic-git](https://isomorphic-git.org/) (in-browser) |
+| **Markdown** | react-markdown + rehype-katex + remark-gfm + mermaid |
+| **MCP** | [@modelcontextprotocol/sdk](https://modelcontextprotocol.io/) |
+| **Desktop** | [Electron 33](https://www.electronjs.org/) |
+| **Deploy** | [Wrangler](https://developers.cloudflare.com/workers/wrangler/) (Cloudflare Pages) |
+| **Container** | Docker + docker-compose |
 
-This option requires Docker and is great when you want an isolated environment or to mirror the production image.
+---
 
-#### Additional Prerequisite
+## <img src="https://api.iconify.design/mdi:package-variant.svg?color=%234ECDC4" width="24" style="vertical-align:middle"> Getting Started
 
-- Install Docker: [Download Docker](https://www.docker.com/)
+### Prerequisites
 
-#### Steps
+- **Node.js 18.18+**
+- **pnpm 9.14+** — install with `npm install -g pnpm@9.14.4`
+- An API key for at least one LLM provider (or use [Ollama](https://ollama.com) locally for free)
 
-1. **Prepare Environment Variables**
+### 1. Clone & Install
 
-   Copy the provided examples and add your provider keys:
-
-   ```bash
-   cp .env.example .env
-   cp .env.example .env.local
-   ```
-
-   The runtime scripts inside the container source `.env` and `.env.local`, so keep any API keys you need in one of those files.
-
-2. **Build an Image**
-
-   ```bash
-   # Development image (bind-mounts your local source when run)
-   pnpm run dockerbuild
-   # ≈ docker build -t amplify-ai:development -t amplify-ai:latest --target development .
-
-   # Production image (self-contained build artifacts)
-   pnpm run dockerbuild:prod
-   # ≈ docker build -t amplify-ai:production -t amplify-ai:latest --target amplify-ai-production .
-   ```
-
-3. **Run the Container**
-
-   ```bash
-   # Development workflow with hot reload
-   docker compose --profile development up
-
-   # Production-style container using composed services
-   docker compose --profile production up
-
-   # One-off production container (exposes the app on port 5173)
-   docker run --rm -p 5173:5173 --env-file .env.local amplify-ai:latest
-   ```
-
-   When the container starts it runs `pnpm run dockerstart`, which in turn executes `bindings.sh` to pass Cloudflare bindings through Wrangler. You can override this command in `docker-compose.yaml` if you need a different startup routine.
-
-### Option 3: Desktop Application (Electron)
-
-For users who prefer a native desktop experience, Amplify is also available as an Electron desktop application:
-
-1. **Download the Desktop App**:
-   - Visit the [latest release](https://github.com/amplify/amplify/releases/latest)
-   - Download the appropriate binary for your operating system
-   - For macOS: Extract and run the `.dmg` file
-   - For Windows: Run the `.exe` installer
-   - For Linux: Extract and run the AppImage or install the `.deb` package
-
-2. **Alternative**: Build from Source:
-   ```bash
-   # Install dependencies
-   pnpm install
-
-   # Build the Electron app
-   pnpm electron:build:dist  # For all platforms
-   # OR platform-specific:
-   pnpm electron:build:mac   # macOS
-   pnpm electron:build:win   # Windows
-   pnpm electron:build:linux # Linux
-   ```
-
-The desktop app provides the same full functionality as the web version with additional native features.
-
-## Configuring API Keys and Providers
-
-Amplify features a modern, intuitive settings interface for managing AI providers and API keys. The settings are organized into dedicated panels for easy navigation and configuration.
-
-### Accessing Provider Settings
-
-1. **Open Settings**: Click the settings icon (⚙️) in the sidebar to access the settings panel
-2. **Navigate to Providers**: Select the "Providers" tab from the settings menu
-3. **Choose Provider Type**: Switch between "Cloud Providers" and "Local Providers" tabs
-
-### Cloud Providers Configuration
-
-The Cloud Providers tab displays all cloud-based AI services in an organized card layout:
-
-#### Adding API Keys
-1. **Select Provider**: Browse the grid of available cloud providers (OpenAI, Anthropic, Google, etc.)
-2. **Toggle Provider**: Use the switch to enable/disable each provider
-3. **Set API Key**:
-   - Click the provider card to expand its configuration
-   - Click on the "API Key" field to enter edit mode
-   - Paste your API key and press Enter to save
-   - The interface shows real-time validation with green checkmarks for valid keys
-
-#### Advanced Features
-- **Bulk Toggle**: Use "Enable All Cloud" to toggle all cloud providers at once
-- **Visual Status**: Green checkmarks indicate properly configured providers
-- **Provider Icons**: Each provider has a distinctive icon for easy identification
-- **Descriptions**: Helpful descriptions explain each provider's capabilities
-
-### Local Providers Configuration
-
-The Local Providers tab manages local AI installations and custom endpoints:
-
-#### Ollama Configuration
-1. **Enable Ollama**: Toggle the Ollama provider switch
-2. **Configure Endpoint**: Set the API endpoint (defaults to `http://127.0.0.1:11434`)
-3. **Model Management**:
-   - View all installed models with size and parameter information
-   - Update models to latest versions with one click
-   - Delete unused models
-   - Install new models by entering model names
-
-#### Other Local Providers
-- **LM Studio**: Configure custom base URLs for LM Studio endpoints
-- **OpenAI-like**: Connect to any OpenAI-compatible API endpoint
-- **Auto-detection**: The system automatically detects environment variables for base URLs
-
-### Environment Variables vs UI Configuration
-
-Amplify supports both methods for maximum flexibility:
-
-#### Environment Variables (Recommended for Production)
-Set API keys and base URLs in your `.env.local` file:
 ```bash
-# API Keys
-OPENAI_API_KEY=your_openai_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
-
-# Custom Base URLs
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-LMSTUDIO_BASE_URL=http://127.0.0.1:1234
+git clone https://github.com/imtia33/Amplify.git
+cd Amplify
+pnpm install
 ```
 
-#### UI-Based Configuration
-- **Real-time Updates**: Changes take effect immediately
-- **Secure Storage**: API keys are stored securely in browser cookies
-- **Visual Feedback**: Clear indicators show configuration status
-- **Easy Management**: Edit, view, and manage keys through the interface
+### 2. Start Development Server
 
-### Provider-Specific Features
+```bash
+pnpm run dev
+```
 
-#### OpenRouter
-- **Free Models Filter**: Toggle to show only free models when browsing
-- **Pricing Information**: View input/output costs for each model
-- **Model Search**: Fuzzy search through all available models
+Open **http://localhost:5173** in your browser.
 
-#### Ollama
-- **Model Installer**: Built-in interface to install new models
-- **Progress Tracking**: Real-time download progress for model updates
-- **Model Details**: View model size, parameters, and quantization levels
-- **Auto-refresh**: Automatically detects newly installed models
+### 3. Configure Providers (No `.env` needed!)
 
-#### Search & Navigation
-- **Fuzzy Search**: Type-ahead search across all providers and models
-- **Keyboard Navigation**: Use arrow keys and Enter to navigate quickly
-- **Clear Search**: Press `Cmd+K` (Mac) or `Ctrl+K` (Windows/Linux) to clear search
+Amplify's **Web UI** is the primary way to configure providers — no `.env` files required:
 
-### Troubleshooting
+1. Click the **model selector** in the chat interface
+2. Pick a provider (OpenAI, Anthropic, Google, DeepSeek, Ollama, etc.)
+3. Enter your API key in the popup
+4. Start chatting immediately
 
-#### Common Issues
-- **API Key Not Recognized**: Ensure you're using the correct API key format for each provider
-- **Base URL Issues**: Verify the endpoint URL is correct and accessible
-- **Model Not Loading**: Check that the provider is enabled and properly configured
-- **Environment Variables Not Working**: Restart the application after adding new environment variables
-
-#### Status Indicators
-- 🟢 **Green Checkmark**: Provider properly configured and ready to use
-- 🔴 **Red X**: Configuration missing or invalid
-- 🟡 **Yellow Indicator**: Provider enabled but may need additional setup
-- 🔵 **Blue Pencil**: Click to edit configuration
-
-### Supported Providers Overview
-
-#### Cloud Providers
-- **OpenAI** - GPT-4, GPT-3.5, and other OpenAI models
-- **Anthropic** - Claude 3.5 Sonnet, Claude 3 Opus, and other Claude models
-- **Google (Gemini)** - Gemini 1.5 Pro, Gemini 1.5 Flash, and other Gemini models
-- **Groq** - Fast inference with Llama, Mixtral, and other models
-- **xAI** - Grok models including Grok-2 and Grok-2 Vision
-- **DeepSeek** - DeepSeek Coder and other DeepSeek models
-- **Mistral** - Mixtral, Mistral 7B, and other Mistral models
-- **Cohere** - Command R, Command R+, and other Cohere models
-- **Together AI** - Various open-source models
-- **Perplexity** - Sonar models for search and reasoning
-- **HuggingFace** - Access to HuggingFace model hub
-- **OpenRouter** - Unified API for multiple model providers
-- **Moonshot (Kimi)** - Kimi AI models
-- **Hyperbolic** - High-performance model inference
-- **GitHub Models** - Models available through GitHub
-- **Amazon Bedrock** - AWS managed AI models
-
-#### Local Providers
-- **Ollama** - Run open-source models locally with advanced model management
-- **LM Studio** - Local model inference with LM Studio
-- **OpenAI-like** - Connect to any OpenAI-compatible API endpoint
-
-> **💡 Pro Tip**: Start with OpenAI or Anthropic for the best results, then explore other providers based on your specific needs and budget considerations.
-
-## Setup Using Git (For Developers only)
-
-This method is recommended for developers who want to:
-
-- Contribute to the project
-- Stay updated with the latest changes
-- Switch between different versions
-- Create custom modifications
-
-#### Prerequisites
-
-1. Install Git: [Download Git](https://git-scm.com/downloads)
-
-#### Initial Setup
-
-1. **Clone the Repository**:
-
-   ```bash
-   git clone -b stable https://github.com/amplify/amplify.git
-   ```
-
-2. **Navigate to Project Directory**:
-
-   ```bash
-   cd amplify
-   ```
-
-3. **Install Dependencies**:
-
-   ```bash
-   pnpm install
-   ```
-
-4. **Start the Development Server**:
-   ```bash
-   pnpm run dev
-   ```
-
-5. **(OPTIONAL)** Switch to the Main Branch if you want to use pre-release/testbranch:
-   ```bash
-   git checkout main
-   pnpm install
-   pnpm run dev
-   ```
-  Hint: Be aware that this can have beta-features and more likely got bugs than the stable release
-
->**Open the WebUI to test (Default: http://localhost:5173)**
->   - Beginners: 
->     - Try to use a sophisticated Provider/Model like Anthropic with Claude Sonnet 3.x Models to get best results
->     - Explanation: The System Prompt currently implemented in Amplify cant cover the best performance for all providers and models out there. So it works better with some models, then other, even if the models itself are perfect for >programming
->     - Future: Planned is a Plugin/Extentions-Library so there can be different System Prompts for different Models, which will help to get better results
-
-#### Staying Updated
-
-To get the latest changes from the repository:
-
-1. **Save Your Local Changes** (if any):
-
-   ```bash
-   git stash
-   ```
-
-2. **Pull Latest Updates**:
-
-   ```bash
-   git pull 
-   ```
-
-3. **Update Dependencies**:
-
-   ```bash
-   pnpm install
-   ```
-
-4. **Restore Your Local Changes** (if any):
-   ```bash
-   git stash pop
-   ```
-
-#### Troubleshooting Git Setup
-
-If you encounter issues:
-
-1. **Clean Installation**:
-
-   ```bash
-   # Remove node modules and lock files
-   rm -rf node_modules pnpm-lock.yaml
-
-   # Clear pnpm cache
-   pnpm store prune
-
-   # Reinstall dependencies
-   pnpm install
-   ```
-
-2. **Reset Local Changes**:
-   ```bash
-   # Discard all local changes
-   git reset --hard origin/main
-   ```
-
-Remember to always commit your local changes or stash them before pulling updates to avoid conflicts.
+Keys are stored securely in `localStorage` and cookies (365-day expiry). They are **never sent to Amplify's servers** — only directly to the provider's API.
 
 ---
 
-## Available Scripts
+## <img src="https://api.iconify.design/mdi:docker.svg?color=%232496ED" width="24" style="vertical-align:middle"> Docker
 
-- **`pnpm run dev`**: Starts the development server.
-- **`pnpm run build`**: Builds the project.
-- **`pnpm run start`**: Runs the built application locally using Wrangler Pages.
-- **`pnpm run preview`**: Builds and runs the production build locally.
-- **`pnpm test`**: Runs the test suite using Vitest.
-- **`pnpm run typecheck`**: Runs TypeScript type checking.
-- **`pnpm run typegen`**: Generates TypeScript types using Wrangler.
-- **`pnpm run deploy`**: Deploys the project to Cloudflare Pages.
-- **`pnpm run lint`**: Runs ESLint to check for code issues.
-- **`pnpm run lint:fix`**: Automatically fixes linting issues.
-- **`pnpm run clean`**: Cleans build artifacts and cache.
-- **`pnpm run prepare`**: Sets up husky for git hooks.
-- **Docker Scripts**:
-  - **`pnpm run dockerbuild`**: Builds the Docker image for development.
-  - **`pnpm run dockerbuild:prod`**: Builds the Docker image for production.
-  - **`pnpm run dockerrun`**: Runs the Docker container.
-  - **`pnpm run dockerstart`**: Starts the Docker container with proper bindings.
-- **Electron Scripts**:
-  - **`pnpm electron:build:deps`**: Builds Electron main and preload scripts.
-  - **`pnpm electron:build:main`**: Builds the Electron main process.
-  - **`pnpm electron:build:preload`**: Builds the Electron preload script.
-  - **`pnpm electron:build:renderer`**: Builds the Electron renderer.
-  - **`pnpm electron:build:unpack`**: Creates an unpacked Electron build.
-  - **`pnpm electron:build:mac`**: Builds for macOS.
-  - **`pnpm electron:build:win`**: Builds for Windows.
-  - **`pnpm electron:build:linux`**: Builds for Linux.
-  - **`pnpm electron:build:dist`**: Builds for all platforms.
+Run Amplify in an isolated container environment:
+
+```bash
+# Production
+docker compose --profile production up -d
+
+# Development (with HMR)
+docker compose --profile development up -d
+
+# Prebuilt image from GHCR
+docker compose --profile prebuilt up -d
+```
+
+The production container runs on port **5173** with `RUNNING_IN_DOCKER=true`. Local provider URLs (Ollama, LMStudio) are automatically rewritten to `host.docker.internal`.
 
 ---
 
-## Contributing
+## <img src="https://api.iconify.design/mdi:electron-framework.svg?color=%2347848F" width="24" style="vertical-align:middle"> Electron Desktop App
 
-We welcome contributions! Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
+For a native desktop experience:
+
+```bash
+# Development
+pnpm electron:dev
+
+# Build for all platforms
+pnpm electron:build:dist
+
+# Platform-specific
+pnpm electron:build:mac     # macOS (DMG)
+pnpm electron:build:win     # Windows (NSIS)
+pnpm electron:build:linux   # Linux (AppImage + deb)
+```
 
 ---
 
-## Roadmap
+## <img src="https://api.iconify.design/mdi:wrench.svg?color=%23FFD93D" width="24" style="vertical-align:middle"> Advanced Configuration
 
-Explore upcoming features and priorities on our [Roadmap](https://roadmap.sh/r/ottodev-roadmap-2ovzo).
+For server-side deployments (Cloudflare Pages, Docker with pre-configured keys), create a `.env.local` file:
+
+```bash
+# Cloud Providers
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_GENERATIVE_AI_API_KEY=...
+DEEPSEEK_API_KEY=...
+GROQ_API_KEY=...
+MISTRAL_API_KEY=...
+XAI_API_KEY=...
+OPEN_ROUTER_API_KEY=...
+
+# Local Providers
+OLLAMA_API_BASE_URL=http://127.0.0.1:11434
+LMSTUDIO_API_BASE_URL=http://127.0.0.1:1234
+```
+
+> **Priority chain**: cookies → localStorage → env vars → config defaults. The Web UI configuration always takes precedence.
 
 ---
 
-## FAQ
+## <img src="https://api.iconify.design/mdi:folder-multiple.svg?color=%236C5CE7" width="24" style="vertical-align:middle"> Project Structure
 
-For answers to common questions, issues, and to see a list of recommended models, visit our [FAQ Page](FAQ.md).
+```
+Amplify/
+├── app/                        # Main application (Remix)
+│   ├── components/
+│   │   ├── chat/               # Chat UI, messages, model selector, markdown
+│   │   │   └── copilot/        # Copilot-style thinking & tool panels
+│   │   ├── workbench/          # Editor, file tree, terminal, preview, diff
+│   │   ├── sidebar/            # Project sidebar, history, templates
+│   │   ├── deploy/             # Netlify, Vercel, GitHub, GitLab deploy
+│   │   ├── project/            # Projects gallery, tiles, memory panel
+│   │   └── @settings/          # Settings (providers, GitHub, MCP, Supabase...)
+│   ├── lib/
+│   │   ├── .server/llm/        # Server-side LLM logic (stream, context-budget)
+│   │   ├── modules/llm/        # Provider registry + 22 provider implementations
+│   │   ├── stores/             # 22 Nanostore stores
+│   │   ├── persistence/        # IndexedDB (chats, snapshots, project files)
+│   │   ├── planning/           # Planning engine (planner, execution-manager)
+│   │   ├── tools/              # 8 native tools with approval flow
+│   │   └── vector-store/       # Orama vector store
+│   └── routes/                 # 30+ API routes + page routes
+├── design/
+│   ├── design-systems/         # 120+ design system presets
+│   └── skills/                 # 8 skill definitions
+├── electron/                   # Electron desktop app
+├── public/                     # Static assets (logos, fonts, icons)
+└── icons/                      # 50+ provider/framework SVG icons
+```
 
+---
 
-# Licensing
-**Who needs a commercial WebContainer API license?**
+## <img src="https://api.iconify.design/mdi:handshake.svg?color=%23A8E6CF" width="24" style="vertical-align:middle"> Contributing
 
-Amplify source code is distributed as MIT, but it uses WebContainers API that [requires licensing](https://webcontainers.io/enterprise) for production usage in a commercial, for-profit setting. (Prototypes or POCs do not require a commercial license.) If you're using the API to meet the needs of your customers, prospective customers, and/or employees, you need a license to ensure compliance with our Terms of Service. Usage of the API in violation of these terms may result in your access being revoked.
-# Test commit to trigger Security Analysis workflow
+We welcome contributions! Whether it's adding missing features, fixing bugs, improving the UI, or adding new LLM providers — your help is appreciated.
+
+Check out our [Contributing Guide](./CONTRIBUTING.md) to get started.
+
+---
+
+## <img src="https://api.iconify.design/mdi:certificate.svg?color=%23FF8A5C" width="24" style="vertical-align:middle"> License
+
+Amplify is licensed under the **MIT License**. The source code is fully open-source with no hidden restrictions.
+
+> **Note on WebContainers**: The WebContainers API requires a [commercial license](https://webcontainers.io/enterprise) from StackBlitz for production use in a commercial, for-profit setting. Prototypes and POCs do not require a license. If you migrate the sandbox to a self-hosted Docker container or alternative runtime, you are free to commercialize under MIT.
+
+---
+
+<div align="center">
+
+<p align="center">
+  Forked and Maintained
+  <br>
+  <strong>BY</strong>
+  <br>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./public/amplytic-light.svg">
+    <source media="(prefers-color-scheme: light)" srcset="./public/amplytic-dark.svg">
+    <img alt="Amplytic Labs" height="28">
+  </picture>
+</p>
+
+<img src="https://api.iconify.design/mdi:star.svg?color=%23FF6B6B" width="16" style="vertical-align:middle"> Star this repo if you find it helpful!
+
+</div>
