@@ -208,7 +208,6 @@
     "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.1",
     "electron": "^33.2.0",
     "electron-builder": "^26.0.12",

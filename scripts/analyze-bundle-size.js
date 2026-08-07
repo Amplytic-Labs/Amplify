@@ -9,8 +9,12 @@
  * Usage: node scripts/analyze-bundle-size.js
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BUILD_DIR = path.join(__dirname, '..', 'build');
 const SIZE_LIMIT_MB = 3;
@@ -47,9 +51,13 @@ function analyzeDirectory(dir, label) {
 
       if (entry.isDirectory()) {
         walk(fullPath);
-      } else if (entry.name.endsWith('.js') || entry.name.endsWith('.mjs')) {
+      } else if (
+        entry.name.endsWith('.js') ||
+        entry.name.endsWith('.mjs')
+      ) {
         const stat = fs.statSync(fullPath);
         const content = fs.readFileSync(fullPath);
+
         results.push({
           path: path.relative(dir, fullPath),
           size: stat.size,
@@ -69,24 +77,41 @@ function analyzeDirectory(dir, label) {
 
   for (const r of results) {
     totalSize += r.size;
+
     const isOver = r.size > SIZE_LIMIT_BYTES;
     if (isOver) overLimit = true;
 
-    const icon = isOver ? '🔴' : r.size > SIZE_LIMIT_BYTES * 0.7 ? '🟡' : '🟢';
+    const icon = isOver
+      ? '🔴'
+      : r.size > SIZE_LIMIT_BYTES * 0.7
+        ? '🟡'
+        : '🟢';
+
     console.log(`  ${icon} ${r.path}`);
-    console.log(`     Raw: ${formatBytes(r.size)} | Est. gzip: ${formatBytes(r.gzipEstimate)}`);
+    console.log(
+      `     Raw: ${formatBytes(r.size)} | Est. gzip: ${formatBytes(r.gzipEstimate)}`
+    );
   }
 
   console.log('-'.repeat(60));
+
   const totalIcon = totalSize > SIZE_LIMIT_BYTES ? '🔴' : '🟢';
-  console.log(`  ${totalIcon} TOTAL: ${formatBytes(totalSize)} | Est. gzip: ${formatBytes(getGzipSize(Buffer.alloc(totalSize)))}`);
+
+  console.log(
+    `  ${totalIcon} TOTAL: ${formatBytes(totalSize)} | Est. gzip: ${formatBytes(
+      getGzipSize(Buffer.alloc(totalSize))
+    )}`
+  );
+
   console.log(`  Target: < ${SIZE_LIMIT_MB} MB per Worker`);
 
   if (overLimit) {
     console.log('\n  ⚠️  Some bundles exceed the 3MB size limit!');
     console.log('  Consider:');
     console.log('    - Lazy-loading heavy dependencies');
-    console.log('    - Splitting routes into separate Workers (functions/api/)');
+    console.log(
+      '    - Splitting routes into separate Workers (functions/api/)'
+    );
     console.log('    - Replacing heavy packages with lighter alternatives');
   }
 
@@ -94,8 +119,15 @@ function analyzeDirectory(dir, label) {
 }
 
 // Analyze both client and server bundles
-const serverResult = analyzeDirectory(path.join(BUILD_DIR, 'server'), 'Server (Worker)');
-const clientResult = analyzeDirectory(path.join(BUILD_DIR, 'client'), 'Client');
+const serverResult = analyzeDirectory(
+  path.join(BUILD_DIR, 'server'),
+  'Server (Worker)'
+);
+
+const clientResult = analyzeDirectory(
+  path.join(BUILD_DIR, 'client'),
+  'Client'
+);
 
 // Summary
 console.log('\n' + '='.repeat(60));
@@ -103,8 +135,13 @@ console.log('📊 Summary');
 console.log('='.repeat(60));
 
 if (serverResult) {
-  const status = serverResult.overLimit ? '🔴 OVER LIMIT' : '🟢 UNDER LIMIT';
-  console.log(`  Server Worker: ${formatBytes(serverResult.totalSize)} — ${status}`);
+  const status = serverResult.overLimit
+    ? '🔴 OVER LIMIT'
+    : '🟢 UNDER LIMIT';
+
+  console.log(
+    `  Server Worker: ${formatBytes(serverResult.totalSize)} — ${status}`
+  );
 }
 
 if (clientResult) {
