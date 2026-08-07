@@ -41,6 +41,7 @@ async function resolveDefaultBranch(repo: string, githubToken?: string): Promise
     }
 
     const repoData = (await repoResponse.json()) as any;
+
     return repoData?.default_branch || 'main';
   } catch {
     return 'main';
@@ -205,9 +206,11 @@ export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
   // Unauthenticated path — use codeload directly (NOT rate-limited like the API).
   const defaultBranch = await resolveDefaultBranch(repo, githubToken);
 
-  // Try the default branch first, then 'main', then 'master' — covers the
-  // rare case where resolveDefaultBranch fell back to 'main' but the repo
-  // actually uses 'master' (or vice versa).
+  /*
+   * Try the default branch first, then 'main', then 'master' — covers the
+   * rare case where resolveDefaultBranch fell back to 'main' but the repo
+   * actually uses 'master' (or vice versa).
+   */
   const branchesToTry = Array.from(new Set([defaultBranch, 'main', 'master']));
 
   for (const branch of branchesToTry) {
@@ -233,6 +236,7 @@ export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
 
   // Last resort — fall back to the Contents API (slow but works for any public repo).
   console.warn('[github-templates] All codeload branches failed, falling back to Contents API');
+
   return fetchRepoContentsCloudflare(repo, githubToken);
 }
 
@@ -246,8 +250,10 @@ export async function fetchRepoContentsZip(repo: string, githubToken?: string) {
 async function extractZipContents(zipArrayBuffer: ArrayBuffer) {
   const zip = await JSZip.loadAsync(zipArrayBuffer);
 
-  // Find the root folder name (GitHub wraps everything under
-  // "{owner}-{repo}-{sha}/" so we strip that prefix from each path).
+  /*
+   * Find the root folder name (GitHub wraps everything under
+   * "{owner}-{repo}-{sha}/" so we strip that prefix from each path).
+   */
   let rootFolderName = '';
   zip.forEach((relativePath) => {
     if (!rootFolderName && relativePath.includes('/')) {

@@ -238,8 +238,9 @@ export function useChatHistory() {
           });
 
           try {
-            const { detectProjectMemory, mergeDetectedMemory } =
-              await import('~/lib/persistence/project-memory-detect');
+            const { detectProjectMemory, mergeDetectedMemory } = await import(
+              '~/lib/persistence/project-memory-detect'
+            );
             const { memory, technologies } = detectProjectMemory(files);
             const merged = mergeDetectedMemory(project.memory, memory);
             projectStore.updateProjectMemory(project.id, merged, true);

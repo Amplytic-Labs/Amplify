@@ -5,13 +5,17 @@
 
 For the best experience with Amplify, we recommend using the following models:
 
-- **Claude 3.5 Sonnet (old)**: Best overall coder, providing excellent results across all use cases
-- **Gemini 2.0 Flash**: Exceptional speed while maintaining good performance
-- **GPT-4o**: Strong alternative to Claude 3.5 Sonnet with comparable capabilities
-- **DeepSeekCoder V2 236b**: Best open source model (available through OpenRouter, DeepSeek API, or self-hosted)
-- **Qwen 2.5 Coder 32b**: Best model for self-hosting with reasonable hardware requirements
+- **Claude Sonnet 5 / Claude Opus 4.8**: Best overall coders — 1M-token context window  on the API, strong at multi-file edits, tool use, and long agentic sessions. Sonnet 5 is the faster/cheaper default; Opus 4.8 is worth it for the hardest refactors and architecture decisions.
+- **Gemini 3.1 Pro**: Leads on long-context and reasoning tasks with a 1M+ token context window,  and remains a very fast, capable option.
+- **GPT-5.5 / GPT-5.6**: Strong all-rounder, comparable coding capability to Claude/Gemini, large ecosystem and tooling support.
+- **DeepSeek V4 Pro**: Best open-source pick if you want frontier-ish performance via API (OpenRouter, DeepSeek API) or self-hosting on a beefy cluster — V4 Pro ships with a 1M context window  and leads open-weight reasoning/agentic benchmarks.
+- **Qwen3-Coder (30B)**: Best model for realistic self-hosting — it's the default local coding model, with a 256K-token context window, Apache 2.0 license, and quantized weights that fit on a single 24GB GPU. 
 
-**Note**: Models with less than 7b parameters typically lack the capability to properly interact with Amplify!
+**Context window — how much do you actually need for "vibe coding"?**
+- **Quick edits / single-file work**: 32K–64K tokens is plenty.
+- **Whole small-to-medium repo in context, multi-file refactors, agentic back-and-forth (recommended for Amplify-style dev)**: aim for **200K tokens minimum**, ideally **500K–1M**. 1 million tokens is roughly 750,000 words — enough to hold an entire mid-sized codebase in a single prompt. 
+- **Note**: real-world reliability drops well before the advertised limit — for most models, effective usable context is only around half of what's advertised, so don't assume a "1M" model reliably tracks details at the very edge of that window.
+- Models under ~7B parameters still generally lack the reasoning depth to interact usefully with Amplify's codebase-level tasks.
 
 </details>
 
@@ -42,24 +46,36 @@ Check out our [Contribution Guide](CONTRIBUTING.md) for more details on how to g
 <details>
 <summary><strong>What are the future plans for Amplify?</strong></summary>
 
-Visit our [Roadmap](https://roadmap.sh/r/ottodev-roadmap-2ovzo) for the latest updates.  
-New features and improvements are on the way!
+We don't have a fixed roadmap — and that's intentional. As explained above, direction is set collaboratively through
+strategic epics, decided by the core team in open discussion and shaped by whoever shows up to build.
+
+That said, here's our north star: **we want Amplify to become the best open alternative in its space.**
+
+Where exactly that leads is up to the community. If you have ideas, strong opinions, or a feature you're passionate
+about, the best way to influence the direction is to:
+
+- Check the [epics](https://github.com/Amplytic-Labs/Amplify/issues?q=state%3Aopen%20label%3Aepic) to see what's
+  currently being prioritized
+- Open an issue or join the discussion if you think something's missing
+- Just start building — a well-executed PR speaks louder than a roadmap item
 
 </details>
 
 <details>
-<summary><strong>Why are there so many open issues/pull requests?</strong></summary>
+<summary><strong>How do local LLMs compare to larger models like Claude Opus 4.8 for Amplify?</strong></summary>
 
-Amplify began as a small showcase project on @ColeMedin's YouTube channel to explore editing open-source projects with local LLMs. However, it quickly grew into a massive community effort!
+Honestly, classic local models are nowhere near frontier cloud models like Claude Opus 4.8, GPT-5.5, or Gemini 3.1
+Pro for complex, agentic work — and that gap isn't closing as fast as people online might suggest. Most contributors
+will realistically be able to self-host something in the ~40B parameter range with 128K–256K context, not a
+frontier-scale model.
 
-We're forming a team of maintainers to manage demand and streamline issue resolution. The maintainers are rockstars, and we're also exploring partnerships to help the project thrive.
+That said, at that size, local models can work well and get the job done — especially for smaller, well-scoped
+tasks, simple edits, or when you're prioritizing privacy/cost over raw capability. They're not a drop-in replacement
+for cloud models on hard, multi-file, agentic work, but they're far from useless.
 
-</details>
-
-<details>
-<summary><strong>How do local LLMs compare to larger models like Claude 3.5 Sonnet for Amplify?</strong></summary>
-
-While local LLMs are improving rapidly, larger models like GPT-4o, Claude 3.5 Sonnet, and DeepSeek Coder V2 236b still offer the best results for complex applications. Our ongoing focus is to improve prompts, agents, and the platform to better support smaller local LLMs.
+Our ongoing focus is to improve prompts, agents, and the platform itself to get the most out of what a realistically
+self-hostable model (~40B, 128K–256K context) can do — rather than assuming everyone has access to frontier-scale
+compute.
 
 </details>
 
@@ -96,7 +112,7 @@ If you are getting this, you are probably on Windows. The fix is generally to up
 
 ### **"Miniflare or Wrangler errors in Windows"**
 
-You will need to make sure you have the latest version of Visual Studio C++ installed (14.40.33816), more information here https://github.com/amplify/amplify/issues/19.
+You will need to make sure you have the latest version of Visual Studio C++ installed (14.40.33816).
 
 </details>
 
