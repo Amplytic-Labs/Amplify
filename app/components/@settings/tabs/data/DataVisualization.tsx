@@ -38,7 +38,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
     let totalMessages = 0;
 
     chats.forEach((chat) => {
-      const date = new Date(chat.createdAt).toLocaleDateString();
+      const date = new Date(chat.timestamp).toLocaleDateString();
       chatsByDay[date] = (chatsByDay[date] || 0) + 1;
 
       if (chat.messages) {
@@ -47,8 +47,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
           roleCount[role] = (roleCount[role] || 0) + 1;
           totalMessages++;
 
-          if (msg.metadata?.provider) {
-            providerCount[msg.metadata.provider as string] = (providerCount[msg.metadata.provider as string] || 0) + 1;
+          const meta = msg.metadata as Record<string, unknown> | undefined;
+          if (meta?.provider) {
+            providerCount[meta.provider as string] = (providerCount[meta.provider as string] || 0) + 1;
           }
         });
       }

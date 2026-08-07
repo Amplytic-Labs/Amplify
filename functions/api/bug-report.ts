@@ -9,6 +9,7 @@
 export async function onRequestPost(context: any) {
   try {
     const { createPagesFunctionHandler } = await import('@remix-run/cloudflare-pages');
+    // @ts-ignore - build output not available at typecheck time
     const serverBuild = await import('../build/server');
     const handler = createPagesFunctionHandler({ build: serverBuild });
     return handler(context);
