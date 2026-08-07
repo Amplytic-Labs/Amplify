@@ -1835,7 +1835,7 @@ export const ChatImpl = memo(
                 }),
               );
 
-              const exitCode = await process.exit;
+              const exitCode = typeof process !== 'undefined' && process.exit ? await process.exit : 0;
 
               return { stdout, stderr, exitCode: exitCode ?? 0 };
             } catch (e: any) {
@@ -2140,7 +2140,7 @@ export const ChatImpl = memo(
                 }),
               );
 
-              const exitCode = await process.exit;
+              const exitCode = typeof process !== 'undefined' && process.exit ? await process.exit : 0;
 
               return { stdout, stderr: '', exitCode: exitCode ?? 0 };
             } catch (e: any) {

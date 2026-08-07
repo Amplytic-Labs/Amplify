@@ -1,8 +1,46 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import AdmZip from 'adm-zip';
+/**
+ * SkillLoader — Cloudflare Workers–compatible.
+ *
+ * The original implementation used `node:fs/promises`, `node:path`, `process.cwd()`,
+ * and `adm-zip`, none of which are available in the Cloudflare Workers V8 isolate.
+ *
+ * This version:
+ *   - Lazily imports Node.js–only modules inside try/catch so the file can be
+ *     parsed without throwing at import time on Workers.
+ *   - Falls back to no-op / empty results when the filesystem is unavailable.
+ *   - Still works fully in Node.js (local dev / Electron).
+ */
+
 import { SkillManifestSchema, type SkillManifest } from '~/types/skill-marketplace';
 import { getProjectSkills } from '~/lib/stores/projectSkills';
+
+// Lazy-loaded Node.js–only modules. These resolve to real modules on Node.js
+// and to undefined / empty objects on Cloudflare Workers (where Vite externalizes them).
+let fs: typeof import('node:fs/promises') | undefined;
+let path: typeof import('node:path') | undefined;
+let AdmZip: typeof import('adm-zip') | undefined;
+
+async function ensureNodeModules() {
+  if (fs) return true; // already loaded
+
+  try {
+    const fsMod = await import('node:fs/promises');
+    fs = fsMod;
+    const pathMod = await import('node:path');
+    path = pathMod;
+    const zipMod = await import('adm-zip');
+    AdmZip = zipMod.default;
+    return true;
+  } catch {
+    // Running in Cloudflare Workers — filesystem not available
+    return false;
+  }
+}
+
+/** Check if we're running in an environment with filesystem access */
+function isNodeEnv(): boolean {
+  return typeof process !== 'undefined' && !!process.cwd;
+}
 
 export interface Skill {
   id: string;
@@ -70,11 +108,12 @@ function parseFrontmatter(content: string): Record<string, string> {
 export class SkillLoader {
   private static _instance: SkillLoader;
   private _skills: Map<string, Skill> = new Map();
-  private readonly _skillsDir = path.join(process.cwd(), 'app/lib/skills');
-  private readonly _userSkillsDir = path.join(process.cwd(), 'user_skills');
-  private readonly _designSkillsDir = path.join(process.cwd(), 'design/skills');
-  private readonly _designSystemsDir = path.join(process.cwd(), 'design/design-systems');
+  private _skillsDir = '';
+  private _userSkillsDir = '';
+  private _designSkillsDir = '';
+  private _designSystemsDir = '';
   private _designSystems: Map<string, DesignSystemEntry> = new Map();
+  private _initialized = false;
 
   static getInstance(): SkillLoader {
     if (!SkillLoader._instance) {
@@ -84,7 +123,35 @@ export class SkillLoader {
     return SkillLoader._instance;
   }
 
+  /**
+   * Initialise directory paths using Node.js APIs.
+   * Returns false if running in Workers (no filesystem).
+   */
+  private async _ensureInitialized(): Promise<boolean> {
+    if (this._initialized) return isNodeEnv() && !!fs;
+
+    const nodeAvailable = await ensureNodeModules();
+
+    if (nodeAvailable && path && isNodeEnv()) {
+      const cwd = process.cwd();
+      this._skillsDir = path.join(cwd, 'app/lib/skills');
+      this._userSkillsDir = path.join(cwd, 'user_skills');
+      this._designSkillsDir = path.join(cwd, 'design/skills');
+      this._designSystemsDir = path.join(cwd, 'design/design-systems');
+    }
+
+    this._initialized = true;
+    return nodeAvailable;
+  }
+
   async loadSkills() {
+    const available = await this._ensureInitialized();
+
+    if (!available || !fs) {
+      // No filesystem — skip (Cloudflare Workers)
+      return;
+    }
+
     try {
       // Load core skills
       await this._loadFromDirectory(this._skillsDir, false);
@@ -105,6 +172,8 @@ export class SkillLoader {
   }
 
   private async _loadFromDirectory(dir: string, isUserDir: boolean, _useFrontmatter = false) {
+    if (!fs || !path) return;
+
     try {
       await fs.mkdir(dir, { recursive: true });
 
@@ -183,6 +252,8 @@ export class SkillLoader {
   }
 
   private async _loadDesignSystems() {
+    if (!fs || !path) return;
+
     try {
       await fs.mkdir(this._designSystemsDir, { recursive: true });
 
@@ -295,7 +366,7 @@ export class SkillLoader {
   async getDesignSystemContent(id: string): Promise<string | null> {
     const entry = this._designSystems.get(id);
 
-    if (!entry) {
+    if (!entry || !fs) {
       return null;
     }
 
@@ -307,6 +378,10 @@ export class SkillLoader {
   }
 
   async installSkill(bundlePath: string) {
+    if (!fs || !path || !AdmZip) {
+      throw new Error('Skill installation is not available in Cloudflare Workers environment');
+    }
+
     try {
       console.log(`Installing skill from ${bundlePath}...`);
 
@@ -348,6 +423,10 @@ export class SkillLoader {
   }
 
   async uninstallSkill(skillId: string) {
+    if (!fs || !path) {
+      throw new Error('Skill uninstallation is not available in Cloudflare Workers environment');
+    }
+
     const skillPath = path.join(this._userSkillsDir, skillId);
 
     try {

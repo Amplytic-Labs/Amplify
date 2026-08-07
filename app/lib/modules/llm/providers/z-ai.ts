@@ -2,8 +2,55 @@ import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { IProviderSetting } from '~/types/model';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { createOpenAI } from '@ai-sdk/openai';
-import crypto from 'node:crypto';
 import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
+
+/**
+ * Cross-runtime HMAC-SHA256 — works in both Node.js and Cloudflare Workers.
+ *
+ * With `nodejs_compat_v2`, `node:crypto` is available in Workers, so we
+ * try it first (synchronous, fast). If that fails (bundled out or
+ * incompatible runtime), we fall back to the Web Crypto API (async).
+ */
+let _nodeCrypto: any = undefined;
+
+function getNodeCrypto(): any {
+  if (_nodeCrypto !== undefined) return _nodeCrypto;
+  try {
+    _nodeCrypto = require('node:crypto');
+  } catch {
+    _nodeCrypto = null;
+  }
+  return _nodeCrypto;
+}
+
+/**
+ * Synchronous HMAC-SHA256 when node:crypto is available.
+ * Returns base64-encoded signature, or null if node:crypto is unavailable.
+ */
+function hmacSha256Sync(key: string, message: string): string | null {
+  const c = getNodeCrypto();
+  if (c) {
+    return c.createHmac('sha256', key).update(message).digest('base64');
+  }
+  return null;
+}
+
+/**
+ * Async HMAC-SHA256 fallback using Web Crypto API.
+ * Available in all Cloudflare Workers runtimes.
+ */
+async function hmacSha256Async(key: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(message));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
 
 /**
  * Custom fetch wrapper for z.ai that transparently retries transient
@@ -287,14 +334,19 @@ export default class ZaiProvider extends BaseProvider {
       const header = { alg: 'HS256', sign_type: 'SIGN' };
 
       const base64Url = (obj: any) =>
-        Buffer.from(JSON.stringify(obj)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-      const signature = crypto
-        .createHmac('sha256', secret)
-        .update(base64Url(header) + '.' + base64Url(payload))
-        .digest('base64')
-        .replace(/=/g, '')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_');
+        btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+      // Try synchronous HMAC via node:crypto (available with nodejs_compat_v2)
+      const message = base64Url(header) + '.' + base64Url(payload);
+      const sigB64 = hmacSha256Sync(secret, message);
+
+      if (sigB64 === null) {
+        throw new Error(
+          `JWT token generation requires node:crypto. Enable nodejs_compat_v2 in wrangler.toml, or use Bearer auth mode (ZAI_AUTH_MODE=bearer).`,
+        );
+      }
+
+      const signature = sigB64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
       return `${base64Url(header)}.${base64Url(payload)}.${signature}`;
     } catch (error) {

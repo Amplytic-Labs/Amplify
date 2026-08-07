@@ -5,6 +5,7 @@
   "license": "MIT",
   "sideEffects": [
     "vite-plugin-node-polyfills/**/*.js",
+    "vite-plugin-node-polyfills/shims/**",
     "**/*.css",
     "**/*.scss"
   ],
@@ -32,6 +33,7 @@
     "typecheck": "tsc",
     "typegen": "wrangler types",
     "preview": "pnpm run build && pnpm run start",
+    "postinstall": "node scripts/patch-polyfill-sideEffects.cjs",
     "prepare": "husky",
     "clean": "node scripts/clean.js",
     "analyze": "node scripts/analyze-bundle-size.js",

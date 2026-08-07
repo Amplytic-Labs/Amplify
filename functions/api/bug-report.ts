@@ -2,11 +2,8 @@
  * Standalone Cloudflare Pages Function: POST /api/bug-report
  *
  * Deployed as a SEPARATE Worker from the main Remix catch-all.
- * Handles bug report submission to GitHub.
- *
- * Note: @octokit/rest has been replaced with raw fetch() calls
- * in the Remix route, so this is mainly for architectural separation.
- * Kept as a separate function for future independence.
+ * Handles bug report submission to GitHub using raw fetch() calls
+ * (no @octokit/rest dependency — saves ~200KB from the Worker bundle).
  */
 
 export async function onRequestPost(context: any) {
