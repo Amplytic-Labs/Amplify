@@ -1,11 +1,4 @@
 import { memo, useEffect, useState, useRef } from 'react';
-import mermaid from 'mermaid';
-
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'loose',
-});
 
 /**
  * Module-level SVG cache keyed by chart source.
@@ -22,6 +15,23 @@ const svgCache = new Map<string, string>();
 
 /** Counter to produce unique IDs for each mermaid.render() call. */
 let renderCounter = 0;
+
+/** Lazy-loaded mermaid instance — only loaded when a diagram is actually rendered. */
+let _mermaid: any = null;
+
+async function getMermaid() {
+  if (!_mermaid) {
+    const mod = await import('mermaid');
+    _mermaid = mod.default;
+    _mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose',
+    });
+  }
+
+  return _mermaid;
+}
 
 interface MermaidProps {
   chart: string;
@@ -61,8 +71,9 @@ export const Mermaid = memo(({ chart }: MermaidProps) => {
       isRenderingRef.current = true;
 
       try {
+        const mermaidLib = await getMermaid();
         const renderId = `mermaid-svg-${++renderCounter}`;
-        const { svg: renderedSvg } = await mermaid.render(renderId, chart);
+        const { svg: renderedSvg } = await mermaidLib.render(renderId, chart);
         svgCache.set(chart, renderedSvg);
         setSvg(renderedSvg);
         setError(null);

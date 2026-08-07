@@ -49,7 +49,9 @@ export async function createSummary(props: {
 }) {
   const { messages, env: serverEnv, apiKeys, providerSettings, onFinish } = props;
   let currentModel = DEFAULT_MODEL;
-  let currentProvider = DEFAULT_PROVIDER.name;
+  // PROVIDER_LIST and DEFAULT_PROVIDER are Promises — resolve them
+  const [providerList, defaultProvider] = await Promise.all([PROVIDER_LIST, DEFAULT_PROVIDER]);
+  let currentProvider = defaultProvider.name;
   const processedMessages = messages.map((message) => {
     if (message.role === 'user') {
       const { model, provider } = extractPropertiesFromMessage(message);
@@ -71,8 +73,8 @@ export async function createSummary(props: {
     return message;
   });
 
-  const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
-  const staticModels = LLMManager.getInstance().getStaticModelListFromProvider(provider);
+  const provider = providerList.find((p) => p.name === currentProvider) || defaultProvider;
+  const staticModels = await LLMManager.getInstance().getStaticModelListFromProvider(provider);
   let modelDetails = staticModels.find((m) => m.name === currentModel);
 
   if (!modelDetails) {

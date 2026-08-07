@@ -943,38 +943,6 @@ export function useChatHistory() {
                   console.warn('[ChatHistory] Auto setup failed on promote:', e),
                 );
               }
-
-              /*
-               * ── Migrate pending DOCX artifacts ───────────────────────────
-               *
-               * If the AI generated a `<docxartifact>` document BEFORE the
-               * workspace was initialized (i.e. before this promotion
-               * happened), the document was parked in the pendingDocxStore
-               * (localStorage) by AssistantMessage. Now that a workspace
-               * exists for this chat, migrate the document: re-publish it
-               * into the live docxArtifactStore so the DocxPreviewPanel
-               * picks it up, and switch the workbench to the Document view
-               * so the user sees their previously-generated docx living
-               * alongside the new project files.
-               *
-               * takePendingDocx both reads AND removes the entry, so this
-               * is a one-shot migration — subsequent docx generations go
-               * straight to the workspace via the normal path.
-               */
-              try {
-                const { takePendingDocx } = await import('~/lib/stores/pending-docx-artifacts');
-                const { setDocxArtifact } = await import('~/lib/stores/docx-artifact');
-                const pending = takePendingDocx(currentId);
-
-                if (pending) {
-                  setDocxArtifact(pending.markdown, pending.messageId, false, pending.theme);
-                  workbenchStore.showWorkbench.set(true);
-                  workbenchStore.currentView.set('document');
-                  console.log('[ChatHistory] Migrated pending docx into workspace for chat', currentId);
-                }
-              } catch (e) {
-                console.warn('[ChatHistory] Failed to migrate pending docx:', e);
-              }
             }
 
             const currentMetadata = chatMetadata.get() || {};

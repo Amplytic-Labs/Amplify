@@ -162,7 +162,9 @@ export async function getModelContextInfo(
 ): Promise<ModelContextInfo> {
   // Extract model + provider from the last user message
   let modelName = DEFAULT_MODEL;
-  let providerName = DEFAULT_PROVIDER.name;
+  // PROVIDER_LIST and DEFAULT_PROVIDER are Promises — resolve them
+  const [providerList, defaultProvider] = await Promise.all([PROVIDER_LIST, DEFAULT_PROVIDER]);
+  let providerName = defaultProvider.name;
 
   const lastUserMessage = messages.filter((x) => x.role === 'user').slice(-1)[0];
 
@@ -172,7 +174,7 @@ export async function getModelContextInfo(
     providerName = extracted.provider;
   }
 
-  const provider = PROVIDER_LIST.find((p) => p.name === providerName) || DEFAULT_PROVIDER;
+  const provider = providerList.find((p) => p.name === providerName) || defaultProvider;
   const llmManager = LLMManager.getInstance();
 
   /*
@@ -198,7 +200,7 @@ export async function getModelContextInfo(
     modelDetails = mergedModels.find((m) => m.name === modelName);
   } catch (e) {
     logger.warn(`Failed to fetch merged model list for ${provider.name}, using static:`, e);
-    modelDetails = llmManager.getStaticModelListFromProvider(provider).find((m) => m.name === modelName);
+    modelDetails = (await llmManager.getStaticModelListFromProvider(provider)).find((m) => m.name === modelName);
   }
 
   // Fallback defaults if we still can't find the model

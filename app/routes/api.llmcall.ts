@@ -204,7 +204,7 @@ async function llmCallAction({ context, request }: ActionFunctionArgs) {
         });
       }
 
-      const providerInfo = PROVIDER_LIST.find((p) => p.name === provider.name);
+      const providerInfo = (await PROVIDER_LIST).find((p) => p.name === provider.name);
 
       if (!providerInfo) {
         throw new Error('Provider not found');

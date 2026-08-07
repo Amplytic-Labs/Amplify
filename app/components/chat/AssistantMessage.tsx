@@ -1,4 +1,4 @@
-import { memo, Fragment, useMemo, useEffect } from 'react';
+import { memo, Fragment, useMemo } from 'react';
 import { Markdown } from './Markdown';
 import type { JSONValue, UIMessage } from 'ai';
 import Popover from '~/components/ui/Popover';
@@ -11,10 +11,6 @@ import type { TextUIPart, ReasoningUIPart, SourceUIPart, FileUIPart, StepStartUI
 import { isToolPart, getToolCallId } from '~/lib/chat/tool-parts';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
-import { extractDocxArtifact } from '~/lib/chat/docx-artifact';
-import { setDocxArtifact } from '~/lib/stores/docx-artifact';
-import { setPendingDocx } from '~/lib/stores/pending-docx-artifacts';
-import { chatId as chatIdAtom } from '~/lib/persistence/useChatHistory';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 import { InlineToolRow } from './copilot/InlineToolRow';
@@ -159,9 +155,7 @@ export const AssistantMessage = memo(
     const useSegmentRenderer = segments !== undefined;
 
     /*
-     * Concatenated text from all text segments — used by the docx-artifact
-     * extractor (which needs the full text to scan for `<docxartifact>`
-     * blocks regardless of where they appear) and by the legacy fallback
+     * Concatenated text from all text segments — used by the legacy fallback
      * path (no `parts`).
      */
     const concatenatedText = useMemo(
@@ -170,9 +164,9 @@ export const AssistantMessage = memo(
     );
 
     /*
-     * Native reasoning presence — used to decide whether to surface the
-     * docx artifact even when the visible answer text is empty (the model
-     * put its response entirely in the reasoning channel).
+     * Native reasoning presence — used to decide whether to show content
+     * even when the visible answer text is empty (the model put its
+     * response entirely in the reasoning channel).
      */
     const hasNativeReasoning = useMemo(() => parts?.some((p) => p?.type === 'reasoning') ?? false, [parts]);
 
@@ -203,14 +197,7 @@ export const AssistantMessage = memo(
     const isTemplateInjection = useMemo(() => hasInjectTemplateCall(parts), [parts]);
 
     /*
-     * `answerText` — the FULL concatenated text, used only for the docx
-     * artifact extractor (which needs to scan the whole response for
-     * `<docxartifact>` blocks regardless of segment boundaries).
-     *
-     * In the segment render path, each text segment is stripped + rendered
-     * independently by `stripTextSegment` inside `SegmentRenderer`. This
-     * `answerText` is NOT used for visible rendering in that path — it's
-     * only the input to `extractDocxArtifact`.
+     * `answerText` — the FULL concatenated text used for rendering.
      */
     const answerText = useMemo(() => {
       const effectiveRaw = !concatenatedText && hasNativeReasoning ? visibleContent : concatenatedText;
@@ -225,81 +212,10 @@ export const AssistantMessage = memo(
     }, [concatenatedText, hasNativeReasoning, visibleContent, isTemplateInjection]);
 
     /*
-     * Extract a `<docxartifact>…</docxartifact>` block (if present) from the
-     * answer text. The inner markdown is captured into the DocxArtifact store
-     * so the Document preview panel can render it as a real .docx; the block
-     * itself is stripped from the chat-visible text so it isn't shown twice.
-     *
-     * Streaming-safe: an unclosed `<docxartifact>` still yields its (partial)
-     * inner markdown so the live preview updates as content arrives.
-     */
-    const {
-      visibleText: docxStrippedText,
-      docxMarkdown,
-      streaming: docxStreaming,
-      theme: docxTheme,
-    } = useMemo(() => extractDocxArtifact(answerText), [answerText]);
-
-    /*
-     * Push the extracted document into the store + surface the Document panel
-     * in the workbench. Latest-wins: a newer message's document replaces an
-     * older one. Only acts when there's actually markdown to show.
-     *
-     * WORKSPACE-AWARE BEHAVIOUR:
-     *   - If a workspace IS initialized for this chat (loadedProjectId is set
-     *     to a real project id, not '<none>'), the docx lives alongside the
-     *     project files: we open the workbench and switch to the Document
-     *     view so the user sees the docx preview immediately.
-     *   - If NO workspace is initialized, we DO NOT open the workbench —
-     *     opening it would make the chat look like a project chat and trip
-     *     workspace_guardrails. Instead, we stash the docx in the
-     *     pendingDocxStore (chatId-keyed, persisted to localStorage) so it
-     *     can be migrated into the workspace once one is initialized.
-     *     The user can still download the docx via the answer actions /
-     *     chat-level affordance — the docx artifact store is still set so
-     *     a DocxPreviewPanel can be rendered on demand.
-     */
-    useEffect(() => {
-      if (!docxMarkdown) {
-        return;
-      }
-
-      /*
-       * Always set the docxArtifactStore so a DocxPreviewPanel that's
-       * explicitly mounted (by the user clicking a "View document" button
-       * or by the workspace being opened later) has content to show.
-       */
-      setDocxArtifact(docxMarkdown, messageId || 'unknown', docxStreaming, docxTheme);
-
-      const loadedProjectId = workbenchStore.loadedProjectId.get();
-      const workspaceInitialized = !!loadedProjectId && loadedProjectId !== '<none>';
-
-      if (workspaceInitialized) {
-        // Workspace exists — surface the document panel immediately.
-        workbenchStore.showWorkbench.set(true);
-        workbenchStore.currentView.set('document');
-      } else {
-        /*
-         * No workspace yet — park the docx in localStorage so it can be
-         * migrated when a workspace is initialized in this same chat.
-         */
-        const currentChatId = chatIdAtom.get();
-
-        if (currentChatId) {
-          setPendingDocx(currentChatId, {
-            markdown: docxMarkdown,
-            messageId: messageId || 'unknown',
-            theme: docxTheme,
-          });
-        }
-      }
-    }, [docxMarkdown, messageId, docxStreaming, docxTheme]);
-
-    /*
      * Smooth-stream only the visible answer so we never animate thought chars
-     * (or stripped artifact chars) — and never the docx block either.
+     * (or stripped artifact chars).
      */
-    const smoothAnswer = useSmoothStream(docxStrippedText, isStreaming, 25);
+    const smoothAnswer = useSmoothStream(answerText, isStreaming, 25);
 
     let chatSummary: string | undefined = undefined;
 
@@ -552,16 +468,9 @@ export const AssistantMessage = memo(
 AssistantMessage.displayName = 'AssistantMessage';
 
 /**
- * Strip a `<docxartifact>…</docxartifact>` block (and the surrounding
- * amplify artifact XML) from a single text segment so it doesn't render
- * as raw markdown. The extracted markdown is captured separately by the
- * global `extractDocxArtifact(answerText)` call in AssistantMessage and
- * pushed to the docx store — this per-segment strip is purely for
- * rendering, so the user doesn't see the raw `<docxartifact>` tags inline.
- *
- * Also strips `<amplifyArtifact>` XML blocks, template-injection div
- * placeholders, AND the one-shot `<chatname>…</chatname>` naming tag —
- * mirroring the legacy `answerText` pipeline.
+ * Strip amplify artifact XML, template-injection div placeholders,
+ * and the one-shot `<chatname>…</chatname>` naming tag from a single
+ * text segment so it doesn't render as raw markdown.
  *
  * WHY stripChatName is here:
  * -------------------------
@@ -594,14 +503,7 @@ function stripTextSegment(text: string, isTemplateInjection: boolean): string {
     out = stripArtifactDivs(out);
   }
 
-  /*
-   * Strip `<docxartifact>` block for rendering. The global docx store
-   * update happens separately via `extractDocxArtifact(answerText)` in
-   * AssistantMessage — we only need to hide the raw tags here.
-   */
-  const { visibleText } = extractDocxArtifact(out);
-
-  return visibleText;
+  return out;
 }
 
 /**
@@ -721,7 +623,7 @@ const SegmentRenderer = memo(
           const stripped = stripTextSegment(seg.text, isTemplateInjection);
 
           if (!stripped) {
-            // Stripping removed everything (e.g. only a docxartifact block) — skip.
+            // Stripping removed everything (e.g. only artifact tags) — skip.
             return null;
           }
 

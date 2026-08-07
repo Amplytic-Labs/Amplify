@@ -1,7 +1,14 @@
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODEL_REGEX, PROVIDER_REGEX } from '~/utils/constants';
+import { DEFAULT_MODEL, MODEL_REGEX, PROVIDER_REGEX } from '~/utils/constants';
 import { IGNORE_PATTERNS, type FileMap } from './constants';
 import ignore from 'ignore';
 import type { ContextAnnotation } from '~/types/context';
+
+/**
+ * Default provider name used as a synchronous fallback.
+ * DEFAULT_PROVIDER is a Promise (lazy-loaded), so we can't access .name
+ * synchronously in non-async functions. This constant provides the fallback.
+ */
+const DEFAULT_PROVIDER_NAME = 'Anthropic';
 
 export function extractPropertiesFromMessage(message: any): {
   model: string;
@@ -31,7 +38,7 @@ export function extractPropertiesFromMessage(message: any): {
    * Extract provider
    * const providerMatch = message.content.match(PROVIDER_REGEX);
    */
-  const provider = providerMatch ? providerMatch[1] : DEFAULT_PROVIDER.name;
+  const provider = providerMatch ? providerMatch[1] : DEFAULT_PROVIDER_NAME;
 
   const cleanedContent = Array.isArray(message.parts)
     ? message.parts.map((part: any) => {

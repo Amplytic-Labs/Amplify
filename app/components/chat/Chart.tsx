@@ -1,38 +1,55 @@
 import { memo, useEffect, useState, useRef } from 'react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  RadialLinearScale,
-  BarElement,
-  ArcElement,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js';
-import { Chart as ReactChart } from 'react-chartjs-2';
 import styles from './Markdown.module.scss';
 
 /**
- * Register every Chart.js component the AI might use. Done once at module
- * load. Covers: bar, line, pie, doughnut, scatter, bubble, radar, polarArea.
+ * Lazy-loaded Chart.js components — only loaded when a chart is actually rendered.
+ * This avoids bundling the 6MB+ chart.js library in the initial page load.
  */
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  RadialLinearScale,
-  BarElement,
-  ArcElement,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-);
+type ChartJSModule = typeof import('chart.js');
+type ReactChartModule = typeof import('react-chartjs-2');
+
+let _chartJs: ChartJSModule | null = null;
+let _reactChart: ReactChartModule | null = null;
+
+async function getChartJs() {
+  if (!_chartJs) {
+    const [chartMod, reactChartMod] = await Promise.all([import('chart.js'), import('react-chartjs-2')]);
+
+    const {
+      Chart: chartJs,
+      CategoryScale,
+      LinearScale,
+      RadialLinearScale,
+      BarElement,
+      ArcElement,
+      PointElement,
+      LineElement,
+      Title,
+      Tooltip,
+      Legend,
+      Filler,
+    } = chartMod;
+
+    chartJs.register(
+      CategoryScale,
+      LinearScale,
+      RadialLinearScale,
+      BarElement,
+      ArcElement,
+      PointElement,
+      LineElement,
+      Title,
+      Tooltip,
+      Legend,
+      Filler,
+    );
+
+    _chartJs = chartMod;
+    _reactChart = reactChartMod;
+  }
+
+  return { chartJs: _chartJs!, reactChart: _reactChart! };
+}
 
 /**
  * Module-level config cache keyed by the raw JSON config string.
@@ -70,6 +87,7 @@ export const Chart = memo(({ config }: ChartProps) => {
   // Initialise from cache immediately — prevents blank-flash on remount.
   const [parsed, setParsed] = useState<ParsedChartConfig | null>(() => configCache.get(config) ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [ChartComponent, setChartComponent] = useState<React.ComponentType<any> | null>(null);
 
   // Track whether we've already parsed this exact config in this instance.
   const renderedConfigRef = useRef<string>('');
@@ -123,6 +141,17 @@ export const Chart = memo(({ config }: ChartProps) => {
     }
   }, [config]);
 
+  // Lazy-load chart.js when we have parsed data
+  useEffect(() => {
+    if (!parsed || ChartComponent) {
+      return;
+    }
+
+    getChartJs().then(({ reactChart }) => {
+      setChartComponent(() => reactChart.Chart);
+    });
+  }, [parsed, ChartComponent]);
+
   if (error) {
     return (
       <div className="p-4 my-2 rounded-lg bg-red-100 text-red-700 border border-red-200 text-sm font-mono whitespace-pre-wrap break-words">
@@ -131,7 +160,7 @@ export const Chart = memo(({ config }: ChartProps) => {
     );
   }
 
-  if (!parsed) {
+  if (!parsed || !ChartComponent) {
     /*
      * Placeholder while waiting for the first parse. A minHeight prevents
      * a layout shift that would scroll the page.
@@ -152,7 +181,7 @@ export const Chart = memo(({ config }: ChartProps) => {
       style={{ minHeight: '200px' }}
     >
       <div className="w-full max-w-2xl bg-amplify-elements-background-depth-2 rounded-lg p-4 border border-amplify-elements-borderColor">
-        <ReactChart type={parsed.type} data={parsed.data as any} options={parsed.options as any} />
+        <ChartComponent type={parsed.type} data={parsed.data as any} options={parsed.options as any} />
       </div>
     </div>
   );

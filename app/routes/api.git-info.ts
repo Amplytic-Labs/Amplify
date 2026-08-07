@@ -1,56 +1,49 @@
 import { json } from '@remix-run/cloudflare';
-import { execSync } from 'child_process';
-import { existsSync } from 'fs';
+
+/**
+ * Git repository information endpoint.
+ *
+ * Workers-compatible: `child_process` and `fs` are NOT available in
+ * Cloudflare Workers V8 isolates. This route now returns build-time
+ * git metadata injected via Vite `define` (set by CI/CD) or falls
+ * back to "unknown" values.
+ *
+ * For local development (Node/Bun), git info is read at build time
+ * by the `pre-start.cjs` script and injected as env vars.
+ */
+
+/*
+ * Build-time git metadata — these are replaced by Vite's `define` or
+ * remain as fallback strings. CI should set VITE_GIT_BRANCH etc.
+ */
+declare const process: { env: Record<string, string | undefined> };
 
 export async function loader() {
   try {
-    // Check if we're in a git repository
-    if (!existsSync('.git')) {
-      return json({
-        branch: 'unknown',
-        commit: 'unknown',
-        isDirty: false,
-      });
-    }
+    /*
+     * In Workers, use build-time injected env vars or Vite defines.
+     * In CI, these are typically set as environment variables.
+     */
+    const branch = process.env?.VITE_GIT_BRANCH || process.env?.CF_PAGES_BRANCH || 'unknown';
+    const commit = process.env?.VITE_GIT_COMMIT || process.env?.CF_PAGES_COMMIT_SHA || 'unknown';
+    const remoteUrl = process.env?.VITE_GIT_REMOTE_URL || undefined;
+    const isDirty = process.env?.VITE_GIT_DIRTY === 'true';
 
-    // Get current branch
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
-
-    // Get current commit hash
-    const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-
-    // Check if working directory is dirty
-    const statusOutput = execSync('git status --porcelain', { encoding: 'utf8' });
-    const isDirty = statusOutput.trim().length > 0;
-
-    // Get remote URL
-    let remoteUrl: string | undefined;
-
-    try {
-      remoteUrl = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
-    } catch {
-      // No remote origin, leave as undefined
-    }
-
-    // Get last commit info
+    // Last commit info from env (injected by CI)
     let lastCommit: { message: string; date: string; author: string } | undefined;
 
-    try {
-      const commitInfo = execSync('git log -1 --pretty=format:"%s|%ci|%an"', { encoding: 'utf8' }).trim();
-      const [message, date, author] = commitInfo.split('|');
+    if (process.env?.VITE_GIT_LAST_COMMIT_MSG) {
       lastCommit = {
-        message: message || 'unknown',
-        date: date || 'unknown',
-        author: author || 'unknown',
+        message: process.env.VITE_GIT_LAST_COMMIT_MSG,
+        date: process.env.VITE_GIT_LAST_COMMIT_DATE || 'unknown',
+        author: process.env.VITE_GIT_LAST_COMMIT_AUTHOR || 'unknown',
       };
-    } catch {
-      // Could not get commit info
     }
 
     return json({
       branch,
       commit,
-      isDirty,
+      isDirty: isDirty ?? false,
       remoteUrl,
       lastCommit,
     });

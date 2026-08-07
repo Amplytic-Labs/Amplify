@@ -316,7 +316,7 @@ export function resolveTheme(theme?: DocxTheme): ResolvedDocxTheme {
 /**
  * Validate a font-size in points. Returns a number clamped to [6, 72], or
  * null if the input is invalid. Half-points are NOT used here — the caller
- * (docx-builder) converts pt → half-points via `ptToHalfPoints()`.
+ * converts pt → half-points if needed.
  */
 export function sanitizeFontSize(n: number | null | undefined): number | null {
   if (n == null || typeof n !== 'number' || !isFinite(n)) {

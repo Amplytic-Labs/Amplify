@@ -1,6 +1,18 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "amplify"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat_v2"]
 compatibility_date = "2025-03-28"
 pages_build_output_dir = "./build/client"
 send_metrics = false
+
+# Worker size optimization settings
+# These help keep individual Workers under the 3MB target
+
+# Limits for the main Worker
+[limits]
+# Increase CPU time limit for AI streaming responses
+cpu_ms = 30000
+
+# Placement hints for lower latency
+# [placement]
+# mode = "smart"

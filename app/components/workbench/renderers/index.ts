@@ -1,6 +1,5 @@
 import type { ComponentType } from 'react';
 import { HtmlRenderer } from './HtmlRenderer';
-import { DocxRenderer } from './DocxRenderer';
 import { UnsupportedRenderer } from './UnsupportedRenderer';
 import { getFileExtension } from '~/lib/renderable/registry';
 
@@ -20,7 +19,6 @@ export interface RendererProps {
  */
 const RENDERER_MAP: Record<string, ComponentType<RendererProps>> = {
   html: HtmlRenderer as ComponentType<RendererProps>,
-  docx: DocxRenderer as ComponentType<RendererProps>,
 };
 
 /**
@@ -32,4 +30,4 @@ export function getRenderer(filePath: string): ComponentType<RendererProps> {
   return RENDERER_MAP[ext] ?? UnsupportedRenderer;
 }
 
-export { HtmlRenderer, DocxRenderer, UnsupportedRenderer };
+export { HtmlRenderer, UnsupportedRenderer };

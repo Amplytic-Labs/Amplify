@@ -1,6 +1,15 @@
 import { json, type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { Octokit } from '@octokit/rest';
 import { z } from 'zod';
+
+/**
+ * Bug report endpoint — Workers-compatible.
+ *
+ * Replaced `@octokit/rest` (~200KB) with raw `fetch()` calls to the
+ * GitHub REST API. This eliminates a large dependency from the Worker bundle.
+ *
+ * The GitHub REST API is simple enough that we don't need a full client
+ * library — just POST /repos/{owner}/{repo}/issues with proper auth headers.
+ */
 
 // Rate limiting store (in production, use Redis or similar)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
@@ -141,6 +150,42 @@ function formatIssueBody(data: z.infer<typeof bugReportSchema>): string {
   return body;
 }
 
+/**
+ * Create a GitHub issue using raw `fetch()` instead of `@octokit/rest`.
+ * This eliminates ~200KB from the Worker bundle.
+ */
+async function createGitHubIssue(
+  token: string,
+  owner: string,
+  repo: string,
+  title: string,
+  body: string,
+  labels: string[],
+): Promise<{ number: number; html_url: string }> {
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'Amplify',
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title, body, labels }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const error: any = new Error((errorData as any).message || `GitHub API error: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = (await response.json()) as any;
+
+  return { number: data.number, html_url: data.html_url };
+}
+
 export async function action({ request, context }: ActionFunctionArgs) {
   // Only allow POST requests
   if (request.method !== 'POST') {
@@ -204,26 +249,21 @@ export async function action({ request, context }: ActionFunctionArgs) {
       );
     }
 
-    // Initialize GitHub client
-    const octokit = new Octokit({
-      auth: githubToken,
-      userAgent: 'Amplify',
-    });
-
-    // Create GitHub issue
+    // Create GitHub issue using raw fetch (no @octokit/rest dependency)
     const [owner, repo] = targetRepo.split('/');
-    const issue = await octokit.rest.issues.create({
+    const issue = await createGitHubIssue(
+      githubToken,
       owner,
       repo,
-      title: sanitizedData.title,
-      body: formatIssueBody(sanitizedData),
-      labels: ['bug', 'user-reported'],
-    });
+      sanitizedData.title,
+      formatIssueBody(sanitizedData),
+      ['bug', 'user-reported'],
+    );
 
     return json({
       success: true,
-      issueNumber: issue.data.number,
-      issueUrl: issue.data.html_url,
+      issueNumber: issue.number,
+      issueUrl: issue.html_url,
       message: 'Bug report submitted successfully!',
     });
   } catch (error) {
@@ -236,15 +276,15 @@ export async function action({ request, context }: ActionFunctionArgs) {
 
     // Handle GitHub API errors
     if (error && typeof error === 'object' && 'status' in error) {
-      if (error.status === 401) {
+      if ((error as any).status === 401) {
         return json({ error: 'GitHub authentication failed. Please contact administrators.' }, { status: 500 });
       }
 
-      if (error.status === 403) {
+      if ((error as any).status === 403) {
         return json({ error: 'GitHub rate limit reached. Please try again later.' }, { status: 503 });
       }
 
-      if (error.status === 404) {
+      if ((error as any).status === 404) {
         return json({ error: 'Target repository not found. Please contact administrators.' }, { status: 500 });
       }
     }

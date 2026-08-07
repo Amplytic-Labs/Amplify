@@ -2,8 +2,47 @@ import { BaseProvider } from '~/lib/modules/llm/base-provider';
 import type { IProviderSetting } from '~/types/model';
 import type { ModelInfo } from '~/lib/modules/llm/types';
 import { createOpenAI } from '@ai-sdk/openai';
-import crypto from 'node:crypto';
 import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
+
+/**
+ * Cross-runtime HMAC-SHA256 — works in both Node.js and Cloudflare Workers.
+ *
+ * With `nodejs_compat_v2`, `node:crypto` is available in Workers, so we
+ * try it first (synchronous, fast). If that fails (bundled out or
+ * incompatible runtime), we fall back to the Web Crypto API (async).
+ */
+let _nodeCrypto: any = undefined;
+let _nodeCryptoLoaded = false;
+
+async function getNodeCrypto(): Promise<any> {
+  if (_nodeCryptoLoaded) {
+    return _nodeCrypto;
+  }
+
+  try {
+    _nodeCrypto = await import('node:crypto');
+  } catch {
+    _nodeCrypto = null;
+  }
+
+  _nodeCryptoLoaded = true;
+
+  return _nodeCrypto;
+}
+
+/**
+ * Async HMAC-SHA256 using node:crypto when available.
+ * Returns base64-encoded signature, or null if node:crypto is unavailable.
+ */
+async function hmacSha256(key: string, message: string): Promise<string | null> {
+  const c = await getNodeCrypto();
+
+  if (c) {
+    return c.createHmac('sha256', key).update(message).digest('base64');
+  }
+
+  return null;
+}
 
 /**
  * Custom fetch wrapper for z.ai that transparently retries transient
@@ -212,7 +251,7 @@ export default class ZaiProvider extends BaseProvider {
      * `id.secret` BigModel keys. Everything else uses the key as-is.
      */
     const authMode = (serverEnv as any)?.ZAI_AUTH_MODE || (apiKeys as any)?.ZAI_AUTH_MODE || 'bearer';
-    const token = authMode === 'jwt' && apiKey.includes('.') ? this._generateToken(apiKey) : apiKey;
+    const token = authMode === 'jwt' && apiKey.includes('.') ? await this._generateToken(apiKey) : apiKey;
 
     try {
       const response = await fetch(`${baseUrl}/models`, {
@@ -269,7 +308,7 @@ export default class ZaiProvider extends BaseProvider {
     }
   }
 
-  private _generateToken(apiKey: string): string {
+  private async _generateToken(apiKey: string): Promise<string> {
     try {
       const [id, secret] = apiKey.split('.');
 
@@ -287,14 +326,19 @@ export default class ZaiProvider extends BaseProvider {
       const header = { alg: 'HS256', sign_type: 'SIGN' };
 
       const base64Url = (obj: any) =>
-        Buffer.from(JSON.stringify(obj)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-      const signature = crypto
-        .createHmac('sha256', secret)
-        .update(base64Url(header) + '.' + base64Url(payload))
-        .digest('base64')
-        .replace(/=/g, '')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_');
+        btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+      // Try HMAC via node:crypto (available with nodejs_compat_v2)
+      const message = base64Url(header) + '.' + base64Url(payload);
+      const sigB64 = await hmacSha256(secret, message);
+
+      if (sigB64 === null) {
+        throw new Error(
+          `JWT token generation requires node:crypto. Enable nodejs_compat_v2 in wrangler.toml, or use Bearer auth mode (ZAI_AUTH_MODE=bearer).`,
+        );
+      }
+
+      const signature = sigB64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
       return `${base64Url(header)}.${base64Url(payload)}.${signature}`;
     } catch (error) {
@@ -315,12 +359,12 @@ export default class ZaiProvider extends BaseProvider {
     }
   }
 
-  getModelInstance(options: {
+  async getModelInstance(options: {
     model: string;
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): any {
+  }): Promise<any> {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({
@@ -341,7 +385,7 @@ export default class ZaiProvider extends BaseProvider {
      * `ZAI_AUTH_MODE=jwt` is set AND the key contains a ".".
      */
     const authMode = (serverEnv as any)?.ZAI_AUTH_MODE || (providerSettings as any)?.ZAI_AUTH_MODE || 'bearer';
-    const token = authMode === 'jwt' && apiKey.includes('.') ? this._generateToken(apiKey) : apiKey;
+    const token = authMode === 'jwt' && apiKey.includes('.') ? await this._generateToken(apiKey) : apiKey;
     const zaiClient = createOpenAI({
       baseURL: baseUrl,
       apiKey: token,

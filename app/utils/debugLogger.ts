@@ -1,6 +1,6 @@
 import { isMac, isWindows, isLinux } from './os';
 import { isMobile } from './mobile';
-import { PROVIDER_LIST, DEFAULT_MODEL } from './constants';
+import { DEFAULT_MODEL } from './constants';
 import { logger } from './logger';
 
 // Lazy import to avoid circular dependencies
@@ -881,9 +881,9 @@ class DebugLogger {
         }
       }
 
-      return PROVIDER_LIST[0]?.name || 'unknown';
+      return 'unknown'; // PROVIDER_LIST is async, return default
     } catch {
-      return PROVIDER_LIST[0]?.name || 'unknown';
+      return 'unknown'; // PROVIDER_LIST is async, return default
     }
   }
 
