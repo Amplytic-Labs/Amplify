@@ -3,7 +3,11 @@
   "description": "An AI Agent",
   "private": true,
   "license": "MIT",
-  "sideEffects": false,
+  "sideEffects": [
+    "vite-plugin-node-polyfills/**/*.js",
+    "**/*.css",
+    "**/*.scss"
+  ],
   "type": "module",
   "version": "1.0.0",
   "author": {
