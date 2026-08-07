@@ -12,44 +12,36 @@ import { detectModelCapabilities } from '~/lib/modules/llm/detect-capabilities';
  * incompatible runtime), we fall back to the Web Crypto API (async).
  */
 let _nodeCrypto: any = undefined;
+let _nodeCryptoLoaded = false;
 
-function getNodeCrypto(): any {
-  if (_nodeCrypto !== undefined) return _nodeCrypto;
+async function getNodeCrypto(): Promise<any> {
+  if (_nodeCryptoLoaded) {
+    return _nodeCrypto;
+  }
+
   try {
-    _nodeCrypto = require('node:crypto');
+    _nodeCrypto = await import('node:crypto');
   } catch {
     _nodeCrypto = null;
   }
+
+  _nodeCryptoLoaded = true;
+
   return _nodeCrypto;
 }
 
 /**
- * Synchronous HMAC-SHA256 when node:crypto is available.
+ * Async HMAC-SHA256 using node:crypto when available.
  * Returns base64-encoded signature, or null if node:crypto is unavailable.
  */
-function hmacSha256Sync(key: string, message: string): string | null {
-  const c = getNodeCrypto();
+async function hmacSha256(key: string, message: string): Promise<string | null> {
+  const c = await getNodeCrypto();
+
   if (c) {
     return c.createHmac('sha256', key).update(message).digest('base64');
   }
-  return null;
-}
 
-/**
- * Async HMAC-SHA256 fallback using Web Crypto API.
- * Available in all Cloudflare Workers runtimes.
- */
-async function hmacSha256Async(key: string, message: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(key),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(message));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+  return null;
 }
 
 /**
@@ -259,7 +251,7 @@ export default class ZaiProvider extends BaseProvider {
      * `id.secret` BigModel keys. Everything else uses the key as-is.
      */
     const authMode = (serverEnv as any)?.ZAI_AUTH_MODE || (apiKeys as any)?.ZAI_AUTH_MODE || 'bearer';
-    const token = authMode === 'jwt' && apiKey.includes('.') ? this._generateToken(apiKey) : apiKey;
+    const token = authMode === 'jwt' && apiKey.includes('.') ? await this._generateToken(apiKey) : apiKey;
 
     try {
       const response = await fetch(`${baseUrl}/models`, {
@@ -316,7 +308,7 @@ export default class ZaiProvider extends BaseProvider {
     }
   }
 
-  private _generateToken(apiKey: string): string {
+  private async _generateToken(apiKey: string): Promise<string> {
     try {
       const [id, secret] = apiKey.split('.');
 
@@ -336,9 +328,9 @@ export default class ZaiProvider extends BaseProvider {
       const base64Url = (obj: any) =>
         btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
-      // Try synchronous HMAC via node:crypto (available with nodejs_compat_v2)
+      // Try HMAC via node:crypto (available with nodejs_compat_v2)
       const message = base64Url(header) + '.' + base64Url(payload);
-      const sigB64 = hmacSha256Sync(secret, message);
+      const sigB64 = await hmacSha256(secret, message);
 
       if (sigB64 === null) {
         throw new Error(
@@ -367,12 +359,12 @@ export default class ZaiProvider extends BaseProvider {
     }
   }
 
-  getModelInstance(options: {
+  async getModelInstance(options: {
     model: string;
     serverEnv: Env;
     apiKeys?: Record<string, string>;
     providerSettings?: Record<string, IProviderSetting>;
-  }): any {
+  }): Promise<any> {
     const { model, serverEnv, apiKeys, providerSettings } = options;
 
     const { baseUrl, apiKey } = this.getProviderBaseUrlAndKey({
@@ -393,7 +385,7 @@ export default class ZaiProvider extends BaseProvider {
      * `ZAI_AUTH_MODE=jwt` is set AND the key contains a ".".
      */
     const authMode = (serverEnv as any)?.ZAI_AUTH_MODE || (providerSettings as any)?.ZAI_AUTH_MODE || 'bearer';
-    const token = authMode === 'jwt' && apiKey.includes('.') ? this._generateToken(apiKey) : apiKey;
+    const token = authMode === 'jwt' && apiKey.includes('.') ? await this._generateToken(apiKey) : apiKey;
     const zaiClient = createOpenAI({
       baseURL: baseUrl,
       apiKey: token,

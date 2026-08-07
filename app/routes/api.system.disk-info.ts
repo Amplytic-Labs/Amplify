@@ -25,8 +25,10 @@ interface DiskInfo {
 }
 
 function getDiskInfo(): DiskInfo[] {
-  // Cloudflare Workers environment — disk info is not available
-  // In development, return mock data for UI testing
+  /*
+   * Cloudflare Workers environment — disk info is not available
+   * In development, return mock data for UI testing
+   */
   const isDevelopment = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
 
   if (isDevelopment) {

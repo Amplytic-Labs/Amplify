@@ -48,6 +48,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
           totalMessages++;
 
           const meta = msg.metadata as Record<string, unknown> | undefined;
+
           if (meta?.provider) {
             providerCount[meta.provider as string] = (providerCount[meta.provider as string] || 0) + 1;
           }
@@ -79,7 +80,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
 
     Promise.all([import('chart.js'), import('react-chartjs-2')]).then(([chartMod, reactChartMod]) => {
       const {
-        Chart: ChartJS,
+        Chart: chartJs,
         CategoryScale,
         LinearScale,
         BarElement,
@@ -91,7 +92,17 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
         LineElement,
       } = chartMod;
 
-      ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, PointElement, LineElement);
+      chartJs.register(
+        CategoryScale,
+        LinearScale,
+        BarElement,
+        Title,
+        Tooltip,
+        Legend,
+        ArcElement,
+        PointElement,
+        LineElement,
+      );
 
       setChartComponents({
         Bar: reactChartMod.Bar,
@@ -103,9 +114,7 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
   // Placeholder while chart.js is loading
   if (!chartComponents) {
     return (
-      <div className="flex items-center justify-center h-64 text-amplify-elements-textTertiary">
-        Loading charts…
-      </div>
+      <div className="flex items-center justify-center h-64 text-amplify-elements-textTertiary">Loading charts…</div>
     );
   }
 
@@ -187,7 +196,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
         <div
           className={classNames(
             'rounded-lg border p-4',
-            isDarkMode ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor' : 'bg-white border-gray-200',
+            isDarkMode
+              ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor'
+              : 'bg-white border-gray-200',
           )}
         >
           <h3 className="text-sm font-medium mb-4 text-amplify-elements-textPrimary">Chat Activity</h3>
@@ -199,7 +210,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
         <div
           className={classNames(
             'rounded-lg border p-4',
-            isDarkMode ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor' : 'bg-white border-gray-200',
+            isDarkMode
+              ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor'
+              : 'bg-white border-gray-200',
           )}
         >
           <h3 className="text-sm font-medium mb-4 text-amplify-elements-textPrimary">Messages by Role</h3>
@@ -212,7 +225,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
           <div
             className={classNames(
               'rounded-lg border p-4 md:col-span-2',
-              isDarkMode ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor' : 'bg-white border-gray-200',
+              isDarkMode
+                ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor'
+                : 'bg-white border-gray-200',
             )}
           >
             <h3 className="text-sm font-medium mb-4 text-amplify-elements-textPrimary">API Provider Usage</h3>
@@ -226,7 +241,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
       <div
         className={classNames(
           'rounded-lg border p-4',
-          isDarkMode ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor' : 'bg-white border-gray-200',
+          isDarkMode
+            ? 'bg-amplify-elements-background-depth-2 border-amplify-elements-borderColor'
+            : 'bg-white border-gray-200',
         )}
       >
         <h3 className="text-sm font-medium mb-2 text-amplify-elements-textPrimary">Statistics</h3>
@@ -237,7 +254,9 @@ export function DataVisualization({ chats }: DataVisualizationProps) {
           </div>
           <div>
             <p className="text-xs text-amplify-elements-textTertiary">Avg Messages/Chat</p>
-            <p className="text-lg font-semibold text-amplify-elements-textPrimary">{averageMessagesPerChat.toFixed(1)}</p>
+            <p className="text-lg font-semibold text-amplify-elements-textPrimary">
+              {averageMessagesPerChat.toFixed(1)}
+            </p>
           </div>
           <div>
             <p className="text-xs text-amplify-elements-textTertiary">Total Messages</p>

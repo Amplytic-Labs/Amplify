@@ -13,13 +13,10 @@ let _reactChart: ReactChartModule | null = null;
 
 async function getChartJs() {
   if (!_chartJs) {
-    const [chartMod, reactChartMod] = await Promise.all([
-      import('chart.js'),
-      import('react-chartjs-2'),
-    ]);
+    const [chartMod, reactChartMod] = await Promise.all([import('chart.js'), import('react-chartjs-2')]);
 
     const {
-      Chart: ChartJS,
+      Chart: chartJs,
       CategoryScale,
       LinearScale,
       RadialLinearScale,
@@ -33,7 +30,7 @@ async function getChartJs() {
       Filler,
     } = chartMod;
 
-    ChartJS.register(
+    chartJs.register(
       CategoryScale,
       LinearScale,
       RadialLinearScale,

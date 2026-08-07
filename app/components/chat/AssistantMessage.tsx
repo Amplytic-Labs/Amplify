@@ -1,4 +1,4 @@
-import { memo, Fragment, useMemo, useEffect } from 'react';
+import { memo, Fragment, useMemo } from 'react';
 import { Markdown } from './Markdown';
 import type { JSONValue, UIMessage } from 'ai';
 import Popover from '~/components/ui/Popover';
@@ -11,7 +11,6 @@ import type { TextUIPart, ReasoningUIPart, SourceUIPart, FileUIPart, StepStartUI
 import { isToolPart, getToolCallId } from '~/lib/chat/tool-parts';
 import { stripAmplifyArtifacts, hasInjectTemplateCall } from '~/lib/chat/artifact-stripper';
 import { stripChatName } from '~/lib/chat/chatname';
-import { chatId as chatIdAtom } from '~/lib/persistence/useChatHistory';
 import { ThoughtsPanel } from './copilot/ThoughtsPanel';
 import { AnswerActions } from './copilot/AnswerActions';
 import { InlineToolRow } from './copilot/InlineToolRow';

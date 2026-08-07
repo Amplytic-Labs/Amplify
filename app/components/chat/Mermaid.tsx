@@ -29,6 +29,7 @@ async function getMermaid() {
       securityLevel: 'loose',
     });
   }
+
   return _mermaid;
 }
 

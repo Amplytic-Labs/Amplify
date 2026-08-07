@@ -182,6 +182,7 @@ async function createGitHubIssue(
   }
 
   const data = (await response.json()) as any;
+
   return { number: data.number, html_url: data.html_url };
 }
 

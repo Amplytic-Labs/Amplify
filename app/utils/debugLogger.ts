@@ -1,6 +1,6 @@
 import { isMac, isWindows, isLinux } from './os';
 import { isMobile } from './mobile';
-import { PROVIDER_LIST, DEFAULT_MODEL } from './constants';
+import { DEFAULT_MODEL } from './constants';
 import { logger } from './logger';
 
 // Lazy import to avoid circular dependencies

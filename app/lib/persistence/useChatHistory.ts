@@ -943,7 +943,6 @@ export function useChatHistory() {
                   console.warn('[ChatHistory] Auto setup failed on promote:', e),
                 );
               }
-
             }
 
             const currentMetadata = chatMetadata.get() || {};

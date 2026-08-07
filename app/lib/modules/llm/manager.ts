@@ -160,8 +160,8 @@ export class LLMManager {
         providerRegistry.map(async (entry) => {
           try {
             if (!entry.instance) {
-              const ProviderClass = await entry.loader();
-              entry.instance = new ProviderClass();
+              const providerClass = await entry.loader();
+              entry.instance = new providerClass();
             }
 
             return entry.instance;
@@ -192,7 +192,7 @@ export class LLMManager {
    * Ensure providers are loaded before any operation.
    * Call this at the start of any method that accesses _providers.
    */
-  private async ensureInitialized() {
+  private async _ensureInitialized() {
     if (!this._initialized) {
       await this._registerProvidersFromDirectory();
     }
@@ -210,17 +210,17 @@ export class LLMManager {
   }
 
   async getProvider(name: string): Promise<BaseProvider | undefined> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
     return this._providers.get(name);
   }
 
   async getAllProviders(): Promise<BaseProvider[]> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
     return Array.from(this._providers.values());
   }
 
   async getModelList(): Promise<ModelInfo[]> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
     return this._modelList;
   }
 
@@ -229,7 +229,7 @@ export class LLMManager {
     providerSettings?: Record<string, IProviderSetting>;
     serverEnv?: Record<string, string>;
   }): Promise<ModelInfo[]> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
 
     const { apiKeys, providerSettings, serverEnv } = options;
 
@@ -284,7 +284,7 @@ export class LLMManager {
   }
 
   async getStaticModelList() {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
     return [...this._providers.values()].flatMap((p) => p.staticModels || []);
   }
 
@@ -296,7 +296,7 @@ export class LLMManager {
       serverEnv?: Record<string, string>;
     },
   ): Promise<ModelInfo[]> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
 
     const provider = this._providers.get(providerArg.name);
 
@@ -346,7 +346,7 @@ export class LLMManager {
   }
 
   async getStaticModelListFromProvider(providerArg: BaseProvider) {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
 
     const provider = this._providers.get(providerArg.name);
 
@@ -358,7 +358,7 @@ export class LLMManager {
   }
 
   async getDefaultProvider(): Promise<BaseProvider> {
-    await this.ensureInitialized();
+    await this._ensureInitialized();
 
     const firstProvider = this._providers.values().next().value;
 

@@ -12,22 +12,20 @@ import { json } from '@remix-run/cloudflare';
  * by the `pre-start.cjs` script and injected as env vars.
  */
 
-// Build-time git metadata — these are replaced by Vite's `define` or
-// remain as fallback strings. CI should set VITE_GIT_BRANCH etc.
+/*
+ * Build-time git metadata — these are replaced by Vite's `define` or
+ * remain as fallback strings. CI should set VITE_GIT_BRANCH etc.
+ */
 declare const process: { env: Record<string, string | undefined> };
 
 export async function loader() {
   try {
-    // In Workers, use build-time injected env vars or Vite defines.
-    // In CI, these are typically set as environment variables.
-    const branch =
-      process.env?.VITE_GIT_BRANCH ||
-      process.env?.CF_PAGES_BRANCH ||
-      'unknown';
-    const commit =
-      process.env?.VITE_GIT_COMMIT ||
-      process.env?.CF_PAGES_COMMIT_SHA ||
-      'unknown';
+    /*
+     * In Workers, use build-time injected env vars or Vite defines.
+     * In CI, these are typically set as environment variables.
+     */
+    const branch = process.env?.VITE_GIT_BRANCH || process.env?.CF_PAGES_BRANCH || 'unknown';
+    const commit = process.env?.VITE_GIT_COMMIT || process.env?.CF_PAGES_COMMIT_SHA || 'unknown';
     const remoteUrl = process.env?.VITE_GIT_REMOTE_URL || undefined;
     const isDirty = process.env?.VITE_GIT_DIRTY === 'true';
 

@@ -187,11 +187,13 @@ const autoEnableConfiguredProviders = async () => {
 export const providersStore = map<ProviderSetting>({});
 
 // Initialize provider settings asynchronously — resolve the Promise and update the store
-getInitialProviderSettings().then((settings) => {
-  providersStore.set(settings);
-}).catch((error) => {
-  console.error('Error initializing provider settings:', error);
-});
+getInitialProviderSettings()
+  .then((settings) => {
+    providersStore.set(settings);
+  })
+  .catch((error) => {
+    console.error('Error initializing provider settings:', error);
+  });
 
 // Export the auto-enable function for use in components
 export const initializeProviders = autoEnableConfiguredProviders;

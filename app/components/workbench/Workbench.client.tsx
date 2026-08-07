@@ -575,7 +575,6 @@ export const Workbench = memo(
                     <View initial={{ x: '100%' }} animate={{ x: selectedView === 'render' ? '0%' : '100%' }}>
                       <RenderPanel />
                     </View>
-
                   </div>
                 )}
               </div>

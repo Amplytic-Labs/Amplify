@@ -182,16 +182,14 @@ export const ChatImpl = memo(
     });
 
     // Resolve provider list and default provider asynchronously
-    const [resolvedProviderList, setResolvedProviderList] = useState<ProviderInfo[]>([]);
-
     useEffect(() => {
       Promise.all([PROVIDER_LIST, DEFAULT_PROVIDER]).then(([providers, defaultProvider]) => {
-        setResolvedProviderList(providers as ProviderInfo[]);
         const savedProvider = Cookies.get('selectedProvider');
         const found = (providers as ProviderInfo[]).find((p) => p.name === savedProvider);
         setProvider(found || (defaultProvider as ProviderInfo));
       });
     }, []);
+
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
