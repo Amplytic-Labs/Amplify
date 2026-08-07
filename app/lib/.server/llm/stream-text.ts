@@ -355,7 +355,7 @@ export async function streamText(props: {
     rateLimit,
   } = props;
   let currentModel = DEFAULT_MODEL;
-  let currentProvider = DEFAULT_PROVIDER.name;
+  let currentProvider = (await DEFAULT_PROVIDER).name;
   let processedMessages = messages.map((message) => {
     const newMessage = { ...message };
 
@@ -544,8 +544,9 @@ export async function streamText(props: {
    */
   processedMessages = enforceMessageAlternation(processedMessages, logger) as typeof processedMessages;
 
-  const provider = PROVIDER_LIST.find((p) => p.name === currentProvider) || DEFAULT_PROVIDER;
-  const staticModels = LLMManager.getInstance().getStaticModelListFromProvider(provider);
+  const resolvedProviderList = await PROVIDER_LIST;
+  const provider = resolvedProviderList.find((p) => p.name === currentProvider) || (await DEFAULT_PROVIDER);
+  const staticModels = await LLMManager.getInstance().getStaticModelListFromProvider(provider);
   let modelDetails = staticModels.find((m) => m.name === currentModel);
 
   if (!modelDetails) {

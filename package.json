@@ -30,6 +30,8 @@
     "preview": "pnpm run build && pnpm run start",
     "prepare": "husky",
     "clean": "node scripts/clean.js",
+    "analyze": "node scripts/analyze-bundle-size.js",
+    "build:analyze": "NODE_OPTIONS=--max-old-space-size=4096 pnpm run build && node scripts/analyze-bundle-size.js",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:dev:inspect": "NODE_ENV=development electron --inspect=9229 build/electron/main/index.mjs",
     "electron:build:deps": "concurrently \"pnpm electron:build:main\" \"pnpm electron:build:preload\" --kill-others-on-fail",

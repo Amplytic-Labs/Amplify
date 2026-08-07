@@ -122,7 +122,7 @@ export async function action({ context, request }: ActionFunctionArgs) {
   const userMessage = buildPlannerUserMessage(userRequest, draftPoints, ctxStr);
 
   try {
-    const providerInfo = PROVIDER_LIST.find((p) => p.name === PLANNER_PROVIDER_NAME);
+    const providerInfo = (await PROVIDER_LIST).find((p) => p.name === PLANNER_PROVIDER_NAME);
 
     if (!providerInfo) {
       throw new Error(`Planner provider "${PLANNER_PROVIDER_NAME}" is not registered`);

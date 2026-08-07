@@ -83,11 +83,12 @@ const fetchConfiguredProviders = async (): Promise<ConfiguredProvider[]> => {
 };
 
 // Initialize provider settings from both localStorage and server-detected configuration
-const getInitialProviderSettings = (): ProviderSetting => {
+const getInitialProviderSettings = async (): Promise<ProviderSetting> => {
   const initialSettings: ProviderSetting = {};
 
-  // Start with default settings
-  PROVIDER_LIST.forEach((provider) => {
+  // Start with default settings — PROVIDER_LIST is a Promise (lazy-loaded providers)
+  const providers = await PROVIDER_LIST;
+  providers.forEach((provider) => {
     initialSettings[provider.name] = {
       ...provider,
       settings: {

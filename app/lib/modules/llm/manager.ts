@@ -1,18 +1,132 @@
 import type { IProviderSetting } from '~/types/model';
 import { BaseProvider } from './base-provider';
 import type { ModelInfo, ProviderInfo } from './types';
-import * as providers from './registry';
 import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('LLMManager');
+
+/**
+ * Provider registry — lazy-loaded to reduce the main Worker bundle.
+ *
+ * Instead of eagerly importing all 22+ provider packages (which adds
+ * ~500KB-1MB to the bundle), providers are loaded on-demand when first
+ * accessed. This is a significant bundle-size win for Cloudflare Workers
+ * where every byte counts toward the size limit.
+ *
+ * Provider modules are dynamically imported only when:
+ * 1. The provider is first accessed via getProvider()
+ * 2. The full model list is requested via updateModelList()
+ * 3. Static model names are needed for the UI
+ */
+
+type ProviderConstructor = new () => BaseProvider;
+
+/** Lazy provider entry — stores the module loader and cached instance */
+interface LazyProviderEntry {
+  name: string;
+  loader: () => Promise<ProviderConstructor>;
+  instance?: BaseProvider; // cached after first load
+}
+
+const providerRegistry: LazyProviderEntry[] = [
+  {
+    name: 'Anthropic',
+    loader: () => import('./providers/anthropic').then((m) => m.default),
+  },
+  {
+    name: 'AmazonBedrock',
+    loader: () => import('./providers/amazon-bedrock').then((m) => m.default),
+  },
+  {
+    name: 'Cerebras',
+    loader: () => import('./providers/cerebras').then((m) => m.default),
+  },
+  {
+    name: 'Cohere',
+    loader: () => import('./providers/cohere').then((m) => m.default),
+  },
+  {
+    name: 'Deepseek',
+    loader: () => import('./providers/deepseek').then((m) => m.default),
+  },
+  {
+    name: 'Fireworks',
+    loader: () => import('./providers/fireworks').then((m) => m.default),
+  },
+  {
+    name: 'Github',
+    loader: () => import('./providers/github').then((m) => m.default),
+  },
+  {
+    name: 'Google',
+    loader: () => import('./providers/google').then((m) => m.default),
+  },
+  {
+    name: 'Groq',
+    loader: () => import('./providers/groq').then((m) => m.default),
+  },
+  {
+    name: 'HuggingFace',
+    loader: () => import('./providers/huggingface').then((m) => m.default),
+  },
+  {
+    name: 'Hyperbolic',
+    loader: () => import('./providers/hyperbolic').then((m) => m.default),
+  },
+  {
+    name: 'LMStudio',
+    loader: () => import('./providers/lmstudio').then((m) => m.default),
+  },
+  {
+    name: 'Mistral',
+    loader: () => import('./providers/mistral').then((m) => m.default),
+  },
+  {
+    name: 'Moonshot',
+    loader: () => import('./providers/moonshot').then((m) => m.default),
+  },
+  {
+    name: 'Ollama',
+    loader: () => import('./providers/ollama').then((m) => m.default),
+  },
+  {
+    name: 'OpenAI',
+    loader: () => import('./providers/openai').then((m) => m.default),
+  },
+  {
+    name: 'OpenAILike',
+    loader: () => import('./providers/openai-like').then((m) => m.default),
+  },
+  {
+    name: 'OpenRouter',
+    loader: () => import('./providers/open-router').then((m) => m.default),
+  },
+  {
+    name: 'Perplexity',
+    loader: () => import('./providers/perplexity').then((m) => m.default),
+  },
+  {
+    name: 'Together',
+    loader: () => import('./providers/together').then((m) => m.default),
+  },
+  {
+    name: 'XAI',
+    loader: () => import('./providers/xai').then((m) => m.default),
+  },
+  {
+    name: 'Zai',
+    loader: () => import('./providers/z-ai').then((m) => m.default),
+  },
+];
+
 export class LLMManager {
   private static _instance: LLMManager;
   private _providers: Map<string, BaseProvider> = new Map();
   private _modelList: ModelInfo[] = [];
   private _env: Record<string, string> = {};
+  private _initialized = false;
 
   private constructor(_env: Record<string, string>) {
-    this._registerProvidersFromDirectory();
     this._env = _env;
   }
 
@@ -26,22 +140,40 @@ export class LLMManager {
 
     return LLMManager._instance;
   }
+
   get env() {
     return this._env;
   }
 
+  /**
+   * Initialize all providers — loads them lazily.
+   * This is called once and cached for subsequent requests.
+   */
   private async _registerProvidersFromDirectory() {
+    if (this._initialized) {
+      return;
+    }
+
     try {
-      /*
-       * Dynamically import all files from the providers directory
-       * const providerModules = import.meta.glob('./providers/*.ts', { eager: true });
-       */
+      // Load all providers in parallel for speed
+      const loaded = await Promise.all(
+        providerRegistry.map(async (entry) => {
+          try {
+            if (!entry.instance) {
+              const ProviderClass = await entry.loader();
+              entry.instance = new ProviderClass();
+            }
 
-      // Look for exported classes that extend BaseProvider
-      for (const exportedItem of Object.values(providers)) {
-        if (typeof exportedItem === 'function' && exportedItem.prototype instanceof BaseProvider) {
-          const provider = new exportedItem();
+            return entry.instance;
+          } catch (error: any) {
+            logger.warn('Failed To Load Provider: ', entry.name, 'error:', error.message);
+            return null;
+          }
+        }),
+      );
 
+      for (const provider of loaded) {
+        if (provider) {
           try {
             this.registerProvider(provider);
           } catch (error: any) {
@@ -49,8 +181,20 @@ export class LLMManager {
           }
         }
       }
+
+      this._initialized = true;
     } catch (error) {
       logger.error('Error registering providers:', error);
+    }
+  }
+
+  /**
+   * Ensure providers are loaded before any operation.
+   * Call this at the start of any method that accesses _providers.
+   */
+  private async ensureInitialized() {
+    if (!this._initialized) {
+      await this._registerProvidersFromDirectory();
     }
   }
 
@@ -65,15 +209,18 @@ export class LLMManager {
     this._modelList = [...this._modelList, ...provider.staticModels];
   }
 
-  getProvider(name: string): BaseProvider | undefined {
+  async getProvider(name: string): Promise<BaseProvider | undefined> {
+    await this.ensureInitialized();
     return this._providers.get(name);
   }
 
-  getAllProviders(): BaseProvider[] {
+  async getAllProviders(): Promise<BaseProvider[]> {
+    await this.ensureInitialized();
     return Array.from(this._providers.values());
   }
 
-  getModelList(): ModelInfo[] {
+  async getModelList(): Promise<ModelInfo[]> {
+    await this.ensureInitialized();
     return this._modelList;
   }
 
@@ -82,6 +229,8 @@ export class LLMManager {
     providerSettings?: Record<string, IProviderSetting>;
     serverEnv?: Record<string, string>;
   }): Promise<ModelInfo[]> {
+    await this.ensureInitialized();
+
     const { apiKeys, providerSettings, serverEnv } = options;
 
     let enabledProviders = Array.from(this._providers.values()).map((p) => p.name);
@@ -133,9 +282,12 @@ export class LLMManager {
 
     return modelList;
   }
-  getStaticModelList() {
+
+  async getStaticModelList() {
+    await this.ensureInitialized();
     return [...this._providers.values()].flatMap((p) => p.staticModels || []);
   }
+
   async getModelListFromProvider(
     providerArg: BaseProvider,
     options: {
@@ -144,6 +296,8 @@ export class LLMManager {
       serverEnv?: Record<string, string>;
     },
   ): Promise<ModelInfo[]> {
+    await this.ensureInitialized();
+
     const provider = this._providers.get(providerArg.name);
 
     if (!provider) {
@@ -190,7 +344,10 @@ export class LLMManager {
 
     return modelList;
   }
-  getStaticModelListFromProvider(providerArg: BaseProvider) {
+
+  async getStaticModelListFromProvider(providerArg: BaseProvider) {
+    await this.ensureInitialized();
+
     const provider = this._providers.get(providerArg.name);
 
     if (!provider) {
@@ -200,7 +357,9 @@ export class LLMManager {
     return [...(provider.staticModels || [])];
   }
 
-  getDefaultProvider(): BaseProvider {
+  async getDefaultProvider(): Promise<BaseProvider> {
+    await this.ensureInitialized();
+
     const firstProvider = this._providers.values().next().value;
 
     if (!firstProvider) {

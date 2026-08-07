@@ -11,7 +11,7 @@ export const loader: LoaderFunction = async ({ context, request }) => {
   const llmManager = LLMManager.getInstance(context?.cloudflare?.env as any);
 
   // Get all provider instances to find their API token keys
-  const providers = llmManager.getAllProviders();
+  const providers = await llmManager.getAllProviders();
 
   // Create a comprehensive API keys object
   const apiKeys: Record<string, string> = { ...apiKeysFromCookie };

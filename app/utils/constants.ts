@@ -16,18 +16,35 @@ export const TOOL_NO_EXECUTE_FUNCTION = 'Error: No execute function found on too
 export const TOOL_EXECUTION_DENIED = 'Error: User denied access to tool execution';
 export const TOOL_EXECUTION_ERROR = 'Error: An error occured while calling tool';
 
+/**
+ * Provider list and default provider are now lazy-loaded because
+ * LLMManager uses dynamic imports for providers (reducing the initial
+ * Worker bundle by ~500KB-1MB). These are Promises that resolve once
+ * on first access and are then cached.
+ */
 const llmManager = LLMManager.getInstance(import.meta.env);
 
 export const PROVIDER_LIST = llmManager.getAllProviders();
 export const DEFAULT_PROVIDER = llmManager.getDefaultProvider();
 
 export const providerBaseUrlEnvKeys: Record<string, { baseUrlKey?: string; apiTokenKey?: string }> = {};
-PROVIDER_LIST.forEach((provider) => {
-  providerBaseUrlEnvKeys[provider.name] = {
-    baseUrlKey: provider.config.baseUrlKey,
-    apiTokenKey: provider.config.apiTokenKey,
-  };
-});
+
+/**
+ * Initialize provider env keys mapping asynchronously.
+ * Called once during app startup.
+ */
+export async function initProviderEnvKeys() {
+  const providers = await PROVIDER_LIST;
+  providers.forEach((provider) => {
+    providerBaseUrlEnvKeys[provider.name] = {
+      baseUrlKey: provider.config.baseUrlKey,
+      apiTokenKey: provider.config.apiTokenKey,
+    };
+  });
+}
+
+// Eagerly initialize for backward compatibility
+initProviderEnvKeys().catch(() => {});
 
 // starter Templates
 

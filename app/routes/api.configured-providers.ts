@@ -24,7 +24,7 @@ export const loader: LoaderFunction = async ({ context }) => {
 
     // Check each local provider for environment configuration
     for (const providerName of LOCAL_PROVIDERS) {
-      const providerInstance = llmManager.getProvider(providerName);
+      const providerInstance = await llmManager.getProvider(providerName);
       let isConfigured = false;
       let configMethod: 'environment' | 'none' = 'none';
 

@@ -881,9 +881,9 @@ class DebugLogger {
         }
       }
 
-      return PROVIDER_LIST[0]?.name || 'unknown';
+      return 'unknown'; // PROVIDER_LIST is async, return default
     } catch {
-      return PROVIDER_LIST[0]?.name || 'unknown';
+      return 'unknown'; // PROVIDER_LIST is async, return default
     }
   }
 
