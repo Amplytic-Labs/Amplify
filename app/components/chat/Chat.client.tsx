@@ -175,10 +175,23 @@ export const ChatImpl = memo(
       const savedModel = Cookies.get('selectedModel');
       return savedModel || DEFAULT_MODEL;
     });
-    const [provider, setProvider] = useState(() => {
+    const [provider, setProvider] = useState<ProviderInfo>(() => {
+      // PROVIDER_LIST is a Promise — resolve async below, use cookie name as placeholder
       const savedProvider = Cookies.get('selectedProvider');
-      return (PROVIDER_LIST.find((p) => p.name === savedProvider) || DEFAULT_PROVIDER) as ProviderInfo;
+      return { name: savedProvider || 'Anthropic', config: {} as any, staticModels: [] } as ProviderInfo;
     });
+
+    // Resolve provider list and default provider asynchronously
+    const [resolvedProviderList, setResolvedProviderList] = useState<ProviderInfo[]>([]);
+
+    useEffect(() => {
+      Promise.all([PROVIDER_LIST, DEFAULT_PROVIDER]).then(([providers, defaultProvider]) => {
+        setResolvedProviderList(providers as ProviderInfo[]);
+        const savedProvider = Cookies.get('selectedProvider');
+        const found = (providers as ProviderInfo[]).find((p) => p.name === savedProvider);
+        setProvider(found || (defaultProvider as ProviderInfo));
+      });
+    }, []);
     const { showChat } = useStore(chatStore);
     const [animationScope, animate] = useAnimate();
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});

@@ -406,8 +406,16 @@ export const ChatBox: React.FC<ChatBoxProps> = (props) => {
    * parent (BaseChat ← useSettings) filters that list to ENABLED providers
    * only, which would mean disabled providers disappear from the overlay
    * and the user could never re-enable them.
+   *
+   * PROVIDER_LIST is a Promise (lazy-loaded), so we resolve it into state.
    */
-  const allProviders: ProviderInfo[] = useMemo(() => PROVIDER_LIST as ProviderInfo[], []);
+  const [allProviders, setAllProviders] = useState<ProviderInfo[]>([]);
+
+  useEffect(() => {
+    PROVIDER_LIST.then((providers) => {
+      setAllProviders(providers as ProviderInfo[]);
+    });
+  }, []);
 
   /*
    * Filtered + grouped models — models from ENABLED providers only.
